@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.hulei</groupId>
+        <artifactId>dependencies-parent</artifactId>
+        <version>1.0.0.5-SNAPSHOT</version>
+    </parent>
+
+    <groupId>org.hulei</groupId>
+    <artifactId>work</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- ============================================= 内部模块依赖 ========================================== -->
+        <dependency>
+            <groupId>org.hulei</groupId>
+            <artifactId>common-autoconfigure-starter</artifactId>
+            <version>1.0.0.5-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>org.hulei</groupId>
+            <artifactId>common-entity-mybatis-plus-starter</artifactId>
+            <version>1.0.0.5-SNAPSHOT</version>
+        </dependency>
+
+
+        <dependency>
+            <groupId>cglib</groupId>
+            <artifactId>cglib</artifactId>
+        </dependency>
+
+        <!-- ============================================= Spring Boot 核心依赖 ========================================== -->
+        <!-- Spring Boot Web 框架，同时默认嵌入了 Tomcat -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- 显式添加 Jakarta Servlet API (Spring Boot 3.x 需要) -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+        </dependency>
+
+        <!-- Spring 上下文支持 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context-support</artifactId>
+        </dependency>
+
+        <!-- ============================================= Web 相关依赖 ========================================== -->
+        <!-- Thymeleaf 模板引擎 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Spring WebFlux (包含 WebClient) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- ============================================= 数据库相关依赖 ========================================== -->
+        <!-- MySQL 驱动 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+        </dependency>
+
+        <!-- Spring Data JDBC -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jdbc</artifactId>
+        </dependency>
+
+        <!-- Spring Data JPA -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Spring Data MongoDB -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
+
+        <!-- Spring Data Elasticsearch -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
+        </dependency>
+
+        <!-- MyBatis 相关依赖 -->
+        <!-- MyBatis Spring Boot Starter -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <!-- TkMyBatis 通用 Mapper -->
+        <dependency>
+            <groupId>tk.mybatis</groupId>
+            <artifactId>mapper-spring-boot-starter</artifactId>
+        </dependency>
+        <!-- PageHelper 分页插件 -->
+        <dependency>
+            <groupId>com.github.pagehelper</groupId>
+            <artifactId>pagehelper-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- MyBatis Plus 相关依赖 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+        </dependency>
+
+        <!-- ============================================= 消息队列相关依赖 ========================================== -->
+        <!-- RabbitMQ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- Kafka -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
+        <!-- RocketMQ -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Redis (用于解决消息重复消费问题) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- Redisson Spring Boot Starter -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Jedis Redis 客户端 -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+        </dependency>
+        <!-- Lettuce Redis 客户端（Spring Data Redis 默认使用，但这里需要原生客户端） -->
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+        </dependency>
+        <!-- Spring Retry 重试机制 -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+        <!-- Jackson JSR310 时间类型支持 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <!-- ============================================= 监控相关依赖 ========================================== -->
+        <!-- Spring Boot Actuator - 提供应用监控和管理功能 -->
+        <!--
+        `spring-boot-starter-actuator` 是 Spring Boot 的一个启动器（starter）依赖，其设计初衷是为了让开发者能够方便快捷地获取应用程序的运行时信息和健康状况，无需编写额外的监控和管理代码。这个库提供了一系列的预设端点（endpoints），通过这些端点，可以访问应用程序的内部信息，比如运行状况（health）、指标信息（metrics）、环境属性（env）等。
+
+        出现契机：
+        - **提高可观察性**：在现代应用的开发过程中，理解应用的运行状况、性能指标和各项资源的使用情况变得至关重要。随着微服务架构的流行，单个应用可能被拆分成多个服务，这使得监控单个服务的性能和健康状态成为一项挑战。`spring-boot-starter-actuator` 被设计来简化这一过程，通过暴露端点来帮助开发者和运维人员监控和管理应用。
+        - **简化运维任务**：在没有合适工具的情况下，维护和监测应用可能需要编写大量定制代码。`spring-boot-starter-actuator` 提供了一个简单而强大的方式来进行操作，比如实时检查应用的健康状况，查看应用的配置信息，实时访问日志级别等，无需登录服务器或直接访问数据库。
+        - **增强微服务架构支持**：在微服务架构中，管理和监控数十或数百个服务可能非常复杂。Actuator提供的端点可以轻松集成到微服务监控工具中，如Prometheus、Grafana等，这使得集中监控变得容易。
+
+        解决问题：
+        - **透明度**：提供应用程序运行时的详细视图，帮助开发者了解应用的内部状态。
+        - **诊断能力**：通过提供详细的健康指标和信息，帮助开发者快速定位问题所在。
+        - **减少开发负担**：避免开发者需要自行实现监控和管理功能，提高开发效率。
+        - **易于集成**：Actuator 端点容易与现有的监控系统集成，提供实时监控和警报功能。
+
+        总之，`spring-boot-starter-actuator` 是一个非常强大的工具，它通过提供丰富的运行时信息和管理功能，帮助开发者更好地管理和监控他们的应用程序。
+         -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Prometheus 监控指标 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- ============================================= HTTP 客户端相关依赖 ========================================== -->
+        <!-- Apache HttpClient 5 (Spring Boot 3.x 需要) -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+
+        <!-- OkHttp 第三方 HTTP 客户端 -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+        </dependency>
+
+        <!-- ============================================= 工具类库 ========================================== -->
+        <!-- XML 解析 -->
+        <dependency>
+            <groupId>dom4j</groupId>
+            <artifactId>dom4j</artifactId>
+        </dependency>
+
+        <!-- Excel 解析工具 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+        </dependency>
+
+        <!-- ============================================= 对象存储相关依赖 ========================================== -->
+        <!-- 阿里云 OSS SDK -->
+        <dependency>
+            <groupId>com.aliyun.oss</groupId>
+            <artifactId>aliyun-sdk-oss</artifactId>
+        </dependency>
+
+        <!-- MinIO SDK -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+        </dependency>
+
+        <!-- UUID 生成工具 -->
+        <dependency>
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+        </dependency>
+
+        <!-- 命令执行工具 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-exec</artifactId>
+        </dependency>
+
+        <!-- SSH 连接工具 -->
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jsch</artifactId>
+        </dependency>
+
+        <!-- PDF 生成工具 -->
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itext-asian</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itextpdf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itext-pdfa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf.tool</groupId>
+            <artifactId>xmlworker</artifactId>
+        </dependency>
+
+        <!-- 表达式引擎 -->
+        <dependency>
+            <groupId>com.googlecode.aviator</groupId>
+            <artifactId>aviator</artifactId>
+        </dependency>
+
+        <!-- JSON 处理 -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+
+        <!-- ============================================= 安全相关依赖 ========================================== -->
+        <!-- BouncyCastle 加密库 -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk15to18</artifactId>
+        </dependency>
+
+        <!-- JWT 相关依赖 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ============================================= 邮件服务 ========================================== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- ============================================= 开发工具 ========================================== -->
+        <!--
+         顾名思义，DevTools 为 Spring 开发人员提供了一些方便的开发同步工具。这些是：
+        1. 当代码更改时自动重启应用程序
+        2. 当以浏览器为目标的资源（如模板、JavaScript、样式表等）发生变化时，浏览器会自动刷新
+        3. 自动禁用模板缓存
+        4. 如果 H2 数据库正在使用，则在 H2 控制台中构建
+        当 DevTools 起作用时，它会自动启用 LiveReload （http://livereload.com/）服务器和应用程序
+        LiveReload 有针对 Google Chrome、Safari 和 Firefox 浏览器的插件, 但是没有 edge 。请访问 http://livereload.com/extensions/，了解如何为浏览器安装 LiveReload。
+
+        当前使用 2024.2.2 在开启热部署的情况下,需要进行 ctrl + F9 的手动构建才能刷新项目
+         -->
+        <!--         <dependency> -->
+        <!--             <groupId>org.springframework.boot</groupId> -->
+        <!--             <artifactId>spring-boot-devtools</artifactId> -->
+        <!--             &lt;!&ndash; 只在运行时需要,且依赖不传递 &ndash;&gt; -->
+        <!--             <scope>runtime</scope> -->
+        <!--         </dependency> -->
+
+        <!-- ============================================= 测试相关依赖 ========================================== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- ========================================= 整合项目依赖 ========================================== -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.freemarker</groupId>
+            <artifactId>freemarker</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.jsonzou</groupId>
+            <artifactId>jmockdata</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.pagehelper</groupId>
+            <artifactId>pagehelper-spring-boot-starter</artifactId>
+        </dependency>
+<!--         <dependency> -->
+<!--             <groupId>org.springframework.boot</groupId> -->
+<!--             <artifactId>spring-boot-devtools</artifactId> -->
+<!--             <optional>true</optional> -->
+<!--         </dependency> -->
+
+    </dependencies>
+
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <compilerArgs>
+                        <arg>--add-opens=java.base/java.lang=ALL-UNNAMED</arg>
+                        <arg>--add-opens=java.base/java.lang.reflect=ALL-UNNAMED</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+
+
+
