@@ -1,4 +1,4 @@
-package work.N3mysql.deepseek.day1;
+package work.N3mysql.deepseek.day1.q1;
 
 import java.sql.*;
 import java.util.concurrent.Semaphore;
@@ -22,6 +22,10 @@ public class MysqlConnectionMonitor {
             try {
 
                 // show status like 'Threads_connected'
+
+                // show full processlist
+
+                // select * from information_schema.processlist
 
                 // 1. 等待业务线程就绪（连接建立前）
                 testDone.acquire(); 
