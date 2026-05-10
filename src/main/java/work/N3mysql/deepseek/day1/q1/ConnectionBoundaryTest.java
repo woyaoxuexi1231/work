@@ -1,4 +1,4 @@
-package work.N3mysql.deepseek.day1;
+package work.N3mysql.deepseek.day1.q1;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;

@@ -1,0 +1,446 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL 8.0 查询执行阶段分析与性能优化</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #FFFFFF;
+        }
+        .card {
+            background-color: white;
+            border: 1px solid #E5E7EB;
+            border-radius: 1.25rem; /* 20px */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            overflow: hidden;
+            position: relative;
+        }
+        .highlight-gradient-blue {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0), rgba(59, 130, 246, 0.05));
+        }
+        .highlight-gradient-green {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0), rgba(34, 197, 94, 0.05));
+        }
+        .highlight-gradient-amber {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0), rgba(245, 158, 11, 0.05));
+        }
+        .highlight-gradient-purple {
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0), rgba(168, 85, 247, 0.05));
+        }
+        .highlight-gradient-red {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0), rgba(239, 68, 68, 0.05));
+        }
+        .code-block {
+            background-color: #F9FAFB;
+            border: 1px solid #E5E7EB;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body class="bg-white">
+<div class="max-w-7xl mx-auto p-4 md:p-8">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+        <!-- 标题卡片 -->
+        <div class="card md:col-span-4 p-8 flex flex-col justify-center">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-blue"></div>
+            <div class="relative">
+                <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-2">MySQL 8.0 查询执行分析</h1>
+                <p class="text-xl text-gray-500">深入解析 SELECT * FROM t WHERE id=1 的执行过程与性能优化</p>
+            </div>
+        </div>
+
+        <!-- 查询执行阶段时间分析 -->
+        <div class="card md:col-span-2 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-green"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-clock text-2xl text-green-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">查询执行阶段时间</h2>
+                </div>
+                <div class="flex-grow h-64">
+                    <canvas id="executionPhasesChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 查询执行阶段详情 -->
+        <div class="card md:col-span-2 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-blue"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-list-check text-2xl text-blue-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">执行阶段详情</h2>
+                </div>
+                <div class="space-y-3 flex-grow overflow-y-auto">
+                    <div class="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                        <div class="font-semibold text-blue-800">连接阶段</div>
+                        <div class="text-sm text-blue-600">0.1-0.3 ms (5-10%)</div>
+                    </div>
+                    <div class="p-3 bg-purple-50 rounded-lg border-l-4 border-purple-500">
+                        <div class="font-semibold text-purple-800">解析阶段</div>
+                        <div class="text-sm text-purple-600">0.2-0.5 ms (10-15%)</div>
+                    </div>
+                    <div class="p-3 bg-amber-50 rounded-lg border-l-4 border-amber-500">
+                        <div class="font-semibold text-amber-800">优化阶段</div>
+                        <div class="text-sm text-amber-600">0.1-0.3 ms (5-10%)</div>
+                    </div>
+                    <div class="p-3 bg-green-50 rounded-lg border-l-4 border-green-500">
+                        <div class="font-semibold text-green-800">执行阶段</div>
+                        <div class="text-sm text-green-600">1.5-3.0 ms (60-80%)</div>
+                    </div>
+                    <div class="p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
+                        <div class="font-semibold text-red-800">发送结果阶段</div>
+                        <div class="text-sm text-red-600">0.1-0.5 ms (5-15%)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 优化器等价计划 -->
+        <div class="card md:col-span-2 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-purple"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-gears text-2xl text-purple-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">优化器等价计划</h2>
+                </div>
+                <div class="flex-grow h-64">
+                    <canvas id="optimizerPlansChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 优化器工作流程 -->
+        <div class="card md:col-span-2 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-amber"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-sitemap text-2xl text-amber-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">优化器工作流程</h2>
+                </div>
+                <div class="flex-grow flex flex-col justify-around">
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl">1</div>
+                        <div class="ml-4">
+                            <div class="font-semibold text-gray-800">查询重写</div>
+                            <div class="text-sm text-gray-600">将查询转换为更高效的形式</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl">2</div>
+                        <div class="ml-4">
+                            <div class="font-semibold text-gray-800">访问路径选择</div>
+                            <div class="text-sm text-gray-600">评估各种可能的数据访问方式</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl">3</div>
+                        <div class="ml-4">
+                            <div class="font-semibold text-gray-800">成本估算</div>
+                            <div class="text-sm text-gray-600">计算每个执行方案的成本</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl">4</div>
+                        <div class="ml-4">
+                            <div class="font-semibold text-gray-800">执行计划生成</div>
+                            <div class="text-sm text-gray-600">生成最优执行计划</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 大规模执行性能瓶颈 -->
+        <div class="card md:col-span-4 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-red"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-chart-line text-2xl text-red-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">大规模执行性能瓶颈分析</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow">
+                    <div class="h-64">
+                        <canvas id="bottleneckChart"></canvas>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <h3 class="font-bold text-red-800 mb-2">首次执行瓶颈</h3>
+                            <p class="text-sm text-red-700">解析和优化阶段是主要瓶颈，占总执行时间的40-50%</p>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <h3 class="font-bold text-red-800 mb-2">后续执行瓶颈</h3>
+                            <p class="text-sm text-red-700">执行阶段成为绝对性能瓶颈，占比高达98%</p>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <h3 class="font-bold text-red-800 mb-2">10万次查询总时间</h3>
+                            <p class="text-sm text-red-700">约251.5秒（约4分11秒），主要来自执行阶段</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 查询缓存移除原因 -->
+        <div class="card md:col-span-2 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-red"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-trash-can text-2xl text-red-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">查询缓存移除原因</h2>
+                </div>
+                <div class="space-y-3 flex-grow overflow-y-auto">
+                    <div class="flex items-start">
+                        <i class="fa-solid fa-lock text-red-500 mt-1 mr-3"></i>
+                        <div>
+                            <div class="font-semibold text-gray-800">严重的全局锁争用</div>
+                            <div class="text-sm text-gray-600">任何写操作都会锁住整个缓存区</div>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <i class="fa-solid fa-bolt text-red-500 mt-1 mr-3"></i>
+                        <div>
+                            <div class="font-semibold text-gray-800">缓存失效机制低效</div>
+                            <div class="text-sm text-gray-600">表级别缓存失效导致大量缓存重建</div>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <i class="fa-solid fa-memory text-red-500 mt-1 mr-3"></i>
+                        <div>
+                            <div class="font-semibold text-gray-800">内存管理问题</div>
+                            <div class="text-sm text-gray-600">严重的内存碎片和高内存占用</div>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <i class="fa-solid fa-database text-red-500 mt-1 mr-3"></i>
+                        <div>
+                            <div class="font-semibold text-gray-800">数据一致性问题</div>
+                            <div class="text-sm text-gray-600">无法感知事务隔离级别变化</div>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <i class="fa-solid fa-cogs text-red-500 mt-1 mr-3"></i>
+                        <div>
+                            <div class="font-semibold text-gray-800">维护成本过高</div>
+                            <div class="text-sm text-gray-600">实现和维护需要大量工程资源</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 替代方案 -->
+        <div class="card md:col-span-2 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-green"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-lightbulb text-2xl text-green-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">官方替代方案</h2>
+                </div>
+                <div class="space-y-3 flex-grow overflow-y-auto">
+                    <div class="p-3 bg-green-50 rounded-lg">
+                        <div class="font-semibold text-green-800">服务器端查询重写</div>
+                        <div class="text-sm text-green-600">MySQL 8.0引入的查询重写功能</div>
+                    </div>
+                    <div class="p-3 bg-green-50 rounded-lg">
+                        <div class="font-semibold text-green-800">ProxySQL</div>
+                        <div class="text-sm text-green-600">第三方查询缓存解决方案，性能提升5.2倍</div>
+                    </div>
+                    <div class="p-3 bg-green-50 rounded-lg">
+                        <div class="font-semibold text-green-800">客户端缓存</div>
+                        <div class="text-sm text-green-600">将缓存功能移到应用层或客户端</div>
+                    </div>
+                    <div class="p-3 bg-green-50 rounded-lg">
+                        <div class="font-semibold text-green-800">执行计划缓存</div>
+                        <div class="text-sm text-green-600">MySQL 8.0自动缓存执行计划</div>
+                    </div>
+                    <div class="p-3 bg-green-50 rounded-lg">
+                        <div class="font-semibold text-green-800">InnoDB缓冲池优化</div>
+                        <div class="text-sm text-green-600">提高数据和索引的缓存命中率</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 关键结论 -->
+        <div class="card md:col-span-4 p-6 flex flex-col">
+            <div class="absolute top-0 left-0 w-full h-full highlight-gradient-blue"></div>
+            <div class="relative flex-grow flex flex-col">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-flag-checkered text-2xl text-blue-500 mr-3"></i>
+                    <h2 class="text-2xl font-bold text-gray-800">关键结论</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h3 class="font-bold text-blue-800 mb-2">查询执行阶段分析</h3>
+                        <p class="text-sm text-blue-700">执行阶段(1.5-3.0ms)是最耗时的部分，占总执行时间的60-80%，而解析(0.2-0.5ms)和优化(0.1-0.3ms)阶段相对较快。</p>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h3 class="font-bold text-blue-800 mb-2">优化器行为分析</h3>
+                        <p class="text-sm text-blue-700">优化器在处理简单主键查询时会生成多种等价计划，最终选择成本最低的const访问方式。</p>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h3 class="font-bold text-blue-800 mb-2">大规模执行瓶颈</h3>
+                        <p class="text-sm text-blue-700">执行10万次相同查询时，执行阶段是绝对的性能瓶颈，占比高达98%。</p>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h3 class="font-bold text-blue-800 mb-2">查询缓存移除原因</h3>
+                        <p class="text-sm text-blue-700">基于严重的技术缺陷，包括全局锁争用、低效的缓存失效机制、内存管理问题等。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+<script>
+  // 查询执行阶段时间图表
+  const executionPhasesCtx = document.getElementById('executionPhasesChart').getContext('2d');
+  new Chart(executionPhasesCtx, {
+    type: 'bar',
+    data: {
+      labels: ['连接', '解析', '优化', '执行', '发送结果'],
+      datasets: [{
+        label: '时间(ms)',
+        data: [0.2, 0.35, 0.2, 2.25, 0.3],
+        backgroundColor: [
+          'rgba(59, 130, 246, 0.7)',
+          'rgba(168, 85, 247, 0.7)',
+          'rgba(245, 158, 11, 0.7)',
+          'rgba(34, 197, 94, 0.7)',
+          'rgba(239, 68, 68, 0.7)'
+        ],
+        borderColor: [
+          'rgba(59, 130, 246, 1)',
+          'rgba(168, 85, 247, 1)',
+          'rgba(245, 158, 11, 1)',
+          'rgba(34, 197, 94, 1)',
+          'rgba(239, 68, 68, 1)'
+        ],
+        borderWidth: 1
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: '时间(ms)'
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.dataset.label || '';
+              const value = context.raw;
+              const percentage = ((value / 3.3) * 100).toFixed(1);
+              return `${label}: ${value}ms (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // 优化器等价计划图表
+  const optimizerPlansCtx = document.getElementById('optimizerPlansChart').getContext('2d');
+  new Chart(optimizerPlansCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['const访问(PRIMARY)', 'ref访问(PRIMARY)', '全表扫描(ALL)'],
+      datasets: [{
+        data: [0.25, 0.25, 59189],
+        backgroundColor: [
+          'rgba(34, 197, 94, 0.7)',
+          'rgba(59, 130, 246, 0.7)',
+          'rgba(239, 68, 68, 0.7)'
+        ],
+        borderColor: [
+          'rgba(34, 197, 94, 1)',
+          'rgba(59, 130, 246, 1)',
+          'rgba(239, 68, 68, 1)'
+        ],
+        borderWidth: 1
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom'
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.raw;
+              return `${label}: 成本 ${value}`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // 性能瓶颈图表
+  const bottleneckCtx = document.getElementById('bottleneckChart').getContext('2d');
+  new Chart(bottleneckCtx, {
+    type: 'bar',
+    data: {
+      labels: ['连接', '解析', '优化', '执行'],
+      datasets: [
+        {
+          label: '首次执行',
+          data: [0.2, 0.4, 0.3, 1.1],
+          backgroundColor: 'rgba(59, 130, 246, 0.7)',
+          borderColor: 'rgba(59, 130, 246, 1)',
+          borderWidth: 1
+        },
+        {
+          label: '后续执行',
+          data: [0, 0.05, 0, 2.5],
+          backgroundColor: 'rgba(34, 197, 94, 0.7)',
+          borderColor: 'rgba(34, 197, 94, 1)',
+          borderWidth: 1
+        }
+      ]
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: '时间(ms)'
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'top'
+        }
+      }
+    }
+  });
+</script>
+</html>
