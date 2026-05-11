@@ -110,95 +110,470 @@
 #### 题目1：追踪 ArrayList 扩容全过程
 编写代码向 ArrayList 依次添加 1→20 个元素，通过反射读取内部 `elementData` 数组长度，在每次扩容时打印：当前 size、扩容前容量、扩容后容量、扩容次数。验证 1.5 倍扩容公式。
 
+**✅ 标准答案**：
 ```java
-// 提示：使用反射获取 ArrayList 的 elementData 字段
-Field field = ArrayList.class.getDeclaredField("elementData");
-field.setAccessible(true);
-Object[] elementData = (Object[]) field.get(list);
-System.out.println("容量: " + elementData.length);
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+
+public class ArrayListExpansionTracker {
+    public static void main(String[] args) throws Exception {
+        ArrayList<Integer> list = new ArrayList<>();
+        Field field = ArrayList.class.getDeclaredField("elementData");
+        field.setAccessible(true);
+
+        int lastCapacity = 0;
+        int expansionCount = 0;
+
+        for (int i = 1; i <= 20; i++) {
+            list.add(i);
+            Object[] elementData = (Object[]) field.get(list);
+            int currentCapacity = elementData.length;
+
+            if (currentCapacity != lastCapacity) {
+                System.out.printf("Size: %d | 扩容前: %d | 扩容后: %d | 第 %d 次扩容\n", 
+                                  i, lastCapacity, currentCapacity, ++expansionCount);
+                lastCapacity = currentCapacity;
+            }
+        }
+    }
+}
 ```
+**运行结果示例**：
+```text
+Size: 1 | 扩容前: 0 | 扩容后: 10 | 第 1 次扩容
+Size: 11 | 扩容前: 10 | 扩容后: 15 | 第 2 次扩容
+Size: 16 | 扩容前: 15 | 扩容后: 22 | 第 3 次扩容
+```
+🔍 **深度反思**：
+- **1.5 倍的权衡**：1.5 倍（`old + old >> 1`）比 2 倍扩容更节省空间，且在多次扩容后，新申请的内存块更有可能复用之前释放的内存碎片（虽然现代 JVM 的 TLAB 和垃圾回收机制减弱了这种碎片复用的直接收益，但在数学模拟上，1.5 倍比 2 倍更具“空间友好性”）。
+- **transient 修饰**：`elementData` 用 `transient` 是因为 ArrayList 实现了自定义序列化 `writeObject/readObject`，仅序列化已有的 `size` 个元素，避免序列化数组末尾的 null 元素，节省网络/磁盘带宽。
 
-**🔍 原理反思提问**：`grow()` 方法中 `newCapacity = oldCapacity + (oldCapacity >> 1)` 为什么是 1.5 倍而不是 2 倍？`Arrays.copyOf()` 底层是 `System.arraycopy()`，它是深拷贝还是浅拷贝？`elementData` 为什么用 `transient` 修饰？
-
-**💬 面试官可能追问**：如果已知要添加 10000 个元素，如何优化？`ensureCapacity()` 和构造时指定初始容量的区别是什么？`ArrayList` 的 `subList()` 返回的列表修改后会影响原列表吗？
+💬 **追问预判**：
+- **Q**: 为什么默认初始容量是 10？
+- **A**: 这是一个经验值。过小会导致频繁扩容，过大会造成空间浪费。注意：在 JDK 1.8+ 中，`new ArrayList()` 时其实是空数组，只有在第一次 `add` 时才真正分配 10 的空间（懒加载）。
 
 ---
 
 #### 题目2：复现 fail-fast 机制
 编写代码：一个线程遍历 ArrayList，另一个线程修改 ArrayList，捕获 `ConcurrentModificationException`。打印 `modCount` 和 `expectedModCount` 的值，验证迭代器检测机制。
 
+**✅ 标准答案**：
 ```java
-// 提示：使用 Itr 迭代器，观察 checkForComodification() 方法
-// 同时尝试用 for-i 循环删除元素，观察是否抛异常
+import java.util.*;
+
+public class FailFastDemo {
+    public static void main(String[] args) {
+        List<String> list = new ArrayList<>(Arrays.asList("A", "B", "C"));
+        
+        try {
+            Iterator<String> it = list.iterator();
+            while (it.hasNext()) {
+                String val = it.next();
+                if (val.equals("A")) {
+                    list.remove("A"); // 错误操作：遍历时直接用 list 修改
+                }
+            }
+        } catch (ConcurrentModificationException e) {
+            System.err.println("捕获到异常: " + e);
+        }
+    }
+}
 ```
+🔍 **深度反思**：
+- **检测原理**：迭代器创建时会记录当前的 `modCount` 到 `expectedModCount`。每次调用 `next()` 或 `remove()` 都会检查两者是否相等。如果不相等，说明列表在迭代期间被外部修改了，立即抛出异常。
+- **线程不安全**：fail-fast 不能用于保证线程安全，它只是为了尽早发现错误。
 
-**🔍 原理反思提问**：`modCount` 为什么用 `int` 而不是 `volatile int`？fail-fast 是保证行为还是尽力而为？`CopyOnWriteArrayList` 如何解决这个问题？代价是什么？
-
-**💬 面试官可能追问**：如何在单线程中安全地删除 ArrayList 中的元素？`Iterator.remove()` 和 `ArrayList.remove()` 在遍历时有何不同？`removeIf()` 方法内部是如何实现的？
+💬 **追问预判**：
+- **Q**: 为什么 `for-each` 循环删除元素会报错，而 `Iterator.remove()` 不会？
+- **A**: `for-each` 底层就是迭代器，但它没暴露迭代器的 `remove` 方法。使用 `Iterator.remove()` 时，它内部会执行 `expectedModCount = modCount` 同步操作，从而规避检查。
 
 ---
 
-#### 题目3：ArrayList vs LinkedList 随机访问性能对比
-编写 JMH 或简易计时代码，对比 ArrayList 和 LinkedList 在 get(index)、add(尾)、add(头)、remove(中) 四种操作下，数据量从 1000 到 100000 的性能曲线。输出表格并分析原因。
+#### 题目3：ArrayList vs LinkedList 性能对比
+**✅ 标准答案**：
+(省略冗长的测试代码，直接给出结论与分析)
+- **add(尾)**: ArrayList 略快（仅涉及数组末尾赋值），LinkedList 需要创建 Node 对象。
+- **add(头)**: LinkedList 极快 (O(1))，ArrayList 极慢 (O(n)，涉及全量数组拷贝)。
+- **get(随机)**: ArrayList 极快 (O(1))，LinkedList 极慢 (O(n))。
+- **原因**: ArrayList 胜在**内存连续性（缓存友好）**和 O(1) 索引访问；LinkedList 胜在**无需扩容和移动数据**。
 
+---
+
+### 核心实现题：手写简化版 ArrayList
+
+**✅ 标准答案**：
 ```java
-// 提示：LinkedList 的 get(index) 需要遍历，复杂度 O(n/2)
-// 注意 LinkedList 实现了 Deque，头尾操作是 O(1)
-```
-
-**🔍 原理反思提问**：LinkedList 的 `get(index)` 源码中如何决定从头还是从尾遍历？`Node<E>` 内部类为什么用 `static`？LinkedList 的内存占用比 ArrayList 大多少（粗略估算一个元素的额外开销）？
-
-**💬 面试官可能追问**：什么场景下 LinkedList 的插入性能反而不如 ArrayList？`ArrayDeque` 为什么比 `LinkedList` 更适合做队列？它的内部数据结构是什么？
-
----
-
-#### 题目4：阅读 ArrayList 源码并画出 add() 调用链
-打开 JDK 源码，从 `ArrayList.add(E)` 开始，追踪到 `ensureCapacityInternal()` → `ensureExplicitCapacity()` → `grow()` → `Arrays.copyOf()` → `System.arraycopy()`。画出完整调用链，标注每个方法的核心判断条件。
-
-**🔍 原理反思提问**：`ensureCapacityInternal` 中 `calculateCapacity` 方法对空数组（`DEFAULTCAPACITY_EMPTY_ELEMENTDATA`）的特殊处理是什么？为什么默认容量是 10？`MAX_ARRAY_SIZE` 为什么是 `Integer.MAX_VALUE - 8`？
-
-**💬 面试官可能追问**：`ArrayList` 的 `toArray()` 方法返回的是新数组还是内部数组的引用？`Arrays.asList()` 返回的 List 和 `new ArrayList<>()` 有什么区别？
-
----
-
-#### 题目5（地狱级）：模拟 ArrayList 在超大容量下的 OOM
-设置 JVM 参数 `-Xmx200m`，向 ArrayList 不断添加元素直到 OOM。通过 `-XX:+HeapDumpOnOutOfMemoryError` 生成 dump 文件，用 MAT 分析内存占用。对比 `int[]` 原生数组在同样场景下的表现。
-
-```java
-// 提示：观察 ArrayList 扩容过程中旧数组和新数组同时存在时的内存峰值
-// 计算：当 elementData 长度达到多大时，扩容会触发 OOM？
-```
-
-**🔍 原理反思提问**：扩容时旧数组和新数组同时存在，内存峰值是多大？`ArrayList` 的 `trimToSize()` 方法在什么场景下有用？为什么 `ArrayList` 没有提供缩容的自动机制？
-
-**💬 面试官可能追问**：如果让你设计一个超大列表（百亿级元素），你会怎么设计？分片？内存映射文件？`FastList` 或 `Chronicle-Queue` 这类库的原理是什么？
-
----
-
-### 核心实现题
-
-**手写简化版 ArrayList**：实现 `add(E)`、`get(int)`、`remove(int)`、`size()`、`iterator()`，包含扩容逻辑（1.5 倍）和 fail-fast 机制。编写单元测试覆盖：正常添加、扩容边界、迭代中删除抛异常、空列表操作。
-
-```java
-public class MyArrayList<E> implements Iterable<E> {
+public class MyArrayList<E> {
     private Object[] elementData;
     private int size;
     private int modCount;
-    // ... 实现上述方法
+
+    public MyArrayList() { this.elementData = new Object[10]; }
+
+    public void add(E e) {
+        ensureCapacity();
+        elementData[size++] = e;
+        modCount++;
+    }
+
+    private void ensureCapacity() {
+        if (size == elementData.length) {
+            int newCap = elementData.length + (elementData.length >> 1);
+            elementData = Arrays.copyOf(elementData, newCap);
+        }
+    }
+
+    public E get(int index) {
+        if (index < 0 || index >= size) throw new IndexOutOfBoundsException();
+        return (E) elementData[index];
+    }
+    
+    // 省略 iterator 实现...
 }
 ```
 
-**🔍 原理反思提问**：你的实现中 `remove` 方法如何处理最后一个元素的置 null（帮助 GC）？泛型数组为什么不能直接 `new E[capacity]`？你的迭代器是如何检测并发修改的？
+---
 
-**💬 面试官可能追问**：如果要在你的 `MyArrayList` 中支持并发安全，你会怎么做？加 `synchronized` 还是用 `ReentrantLock`？`Collections.synchronizedList()` 的迭代器为什么还需要外部同步？
+### 🎯 今日高频面试题速览
+1. **问题**：ArrayList 是线程安全的吗？如果不安全怎么处理？
+   **答案**：不安全。可以使用 `Collections.synchronizedList()`、`CopyOnWriteArrayList` 或者在外部手动加锁。
+2. **问题**：ArrayList 扩容时，如果 `size + size >> 1` 溢出了怎么办？
+   **答案**：源码中会检查 `newCapacity - minCapacity < 0`，若溢出或小于所需最小容量，则直接取 `minCapacity` 或 `MAX_ARRAY_SIZE`。
+3. **问题**：LinkedList 为什么不适合做缓存？
+   **答案**：它的每个节点都是独立的对象且通过引用连接，内存不连续，无法利用 CPU 缓存行（Cache Line）预取特性，且额外内存开销大。
+4. **问题**：`System.arraycopy` 和 `Arrays.copyOf` 的区别？
+   **答案**：`Arrays.copyOf` 内部调用了 `System.arraycopy`。前者会创建一个新数组并返回，后者是将原数组内容拷贝到已存在的现有数组中。
+5. **问题**：什么场景下 `ArrayList` 的插入性能优于 `LinkedList`？
+   **答案**：在大批量尾部插入时，ArrayList 只需要简单的赋值，而 LinkedList 每次都要 `new Node`，分配内存的开销远大于 ArrayList 的扩容开销。
 
 ---
 
-## 第2天：HashMap 哈希与扩容深度解剖 — 覆盖原理点：[#1 哈希算法与扰动函数, #2 扩容机制]
+## 第2天：HashMap 哈希与扩容深度解剖 — 覆盖原理点：[#1, #2]
 
 ### 编码探源题
 
-#### 题目1：手写简化版 HashMap 并观察扩容
+#### 题目1：模拟 HashMap 碰撞与链表转红黑树
+通过构造特定的 Key（重写 `hashCode` 返回固定值），观察 HashMap 在相同 Bucket 下的链表增长过程。验证当链表长度达到 8 且数组长度达到 64 时触发树化。
+
+**✅ 标准答案**：
+```java
+import java.util.HashMap;
+import java.lang.reflect.Field;
+
+public class HashMapTreeifyDemo {
+    static class CollisionKey {
+        private final int val;
+        public CollisionKey(int val) { this.val = val; }
+        @Override public int hashCode() { return 1; } // 强制碰撞
+        @Override public boolean equals(Object obj) { return obj instanceof CollisionKey && ((CollisionKey)obj).val == this.val; }
+    }
+
+    public static void main(String[] args) throws Exception {
+        HashMap<CollisionKey, String> map = new HashMap<>(64); // 初始容量设为64，确保达到树化所需的数组长度条件
+        for (int i = 1; i <= 10; i++) {
+            map.put(new CollisionKey(i), "v" + i);
+            // 这里可以通过反射观察 Node 节点的类型是否变为 TreeNode
+        }
+    }
+}
+```
+🔍 **深度反思**：
+- **为什么是 8 树化？**：根据泊松分布，在哈希算法正常的情况下，同一个桶中出现 8 个节点的概率极低（千万分之六）。选择 8 是为了在极低概率事件发生时（如哈希碰撞攻击）提供性能兜底。
+- **为什么是 6 退化？**：为了防止在 8 附近频繁插入删除导致链表和红黑树频繁转换（抖动）。
+
+💬 **追问预判**：
+- **Q**: 如果数组长度只有 16，链表长度到了 8 会树化吗？
+- **A**: 不会。会优先触发扩容（resize），直到数组长度达到 `MIN_TREEIFY_CAPACITY` (64) 才会真正转红黑树。
+
+---
+
+#### 题目2：手写扰动函数验证碰撞率
+实现 `(h = key.hashCode()) ^ (h >>> 16)`，并解释为什么这样做能减少碰撞。
+
+**✅ 标准答案**：
+- **原理**：很多对象的 hashCode 只有低位有变化，高位全是 0。如果不做扰动，直接与 `(length - 1)` 取模，高位信息就丢失了。
+- **作用**：让高 16 位参与到低位的运算中，增加了随机性，使得哈希分布更均匀。
+
+---
+
+### 核心实现题：手写简化版 HashMap (含 put & resize)
+**✅ 标准答案**：
+(关键逻辑：计算索引 `(n-1) & hash`、处理冲突、扩容时的高低位拆分)
+```java
+public void resize() {
+    Node[] oldTab = table;
+    int oldCap = oldTab.length;
+    Node[] newTab = new Node[oldCap << 1];
+    for (int j = 0; j < oldCap; j++) {
+        Node e = oldTab[j];
+        if (e != null) {
+            if ((e.hash & oldCap) == 0) {
+                // 低位链表：保持原位置
+            } else {
+                // 高位链表：原位置 + oldCap
+            }
+        }
+    }
+}
+```
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：HashMap 的容量为什么必须是 2 的幂次方？
+   **答案**：为了将取模运算 `%` 优化为位运算 `&`（即 `(n-1) & hash`），提高执行效率。
+2. **问题**：JDK 1.8 对 HashMap 做了哪些优化？
+   **答案**：1. 引入红黑树。2. 扩容从头插法改为尾插法（避免死循环）。3. 优化了扰动函数。
+3. **问题**：HashMap 在多线程下会产生什么问题？
+   **答案**：1. 数据覆盖。2. 1.7 版本会产生死循环。3. size 统计不准。
+4. **问题**：为什么 TreeNode 要继承自 Node (LinkedHashMap.Entry)？
+   **答案**：为了保持链表的结构，即使树化了，依然可以通过 next 指针进行双向遍历（在 LinkedHashMap 中尤其重要）。
+5. **问题**：负载因子（Load Factor）为什么默认是 0.75？
+   **答案**：是时间和空间的折中方案。过大会增加哈希碰撞（查询慢），过小会频繁扩容（浪费空间）。
+
+---
+
+## 第3天：HashMap 树化与退化 + LinkedHashMap LRU — 覆盖原理点：[#3, #7]
+
+### 编码探源题
+
+#### 题目1：模拟链表转红黑树与退化
+编写代码持续向 HashMap 插入具有相同 `hashCode` 的 Key，通过反射观察内部 `Node` 何时变为 `TreeNode`。随后逐步删除元素，观察红黑树何时退化为链表。
+
+**✅ 标准答案**：
+- **原理验证**：当桶内链表长度 > 8 且数组总容量 >= 64 时，触发树化。当删除元素导致桶内节点数减小到 6 时，触发退化。
+- **反射观察代码**：
+```java
+// 获取 table 数组，遍历找到对应的桶，判断节点 instanceOf TreeNode
+```
+
+🔍 **深度反思**：
+- **为什么退化阈值是 6 而不是 7？**：留出一个缓冲空间，防止在 7 和 8 之间频繁插入删除导致树化/退化的剧烈性能抖动。
+
+---
+
+#### 题目2：手写 LRU 缓存（基于 LinkedHashMap）
+利用 `LinkedHashMap` 的 `accessOrder` 特性和 `removeEldestEntry` 方法，实现一个固定容量为 5 的 LRU 缓存。
+
+**✅ 标准答案**：
+```java
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+public class LRUCache<K, V> extends LinkedHashMap<K, V> {
+    private final int capacity;
+    public LRUCache(int capacity) {
+        super(capacity, 0.75f, true); // true 表示按访问顺序排序
+        this.capacity = capacity;
+    }
+    @Override
+    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+        return size() > capacity;
+    }
+}
+```
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：LinkedHashMap 是如何实现有序的？
+   **答案**：它在 HashMap 的基础上增加了一个双向链表，记录了插入顺序或访问顺序。
+2. **问题**：红黑树的查找复杂度是多少？为什么不直接用平衡二叉树（AVL）？
+   **答案**：O(log n)。AVL 追求极致平衡，旋转频繁；红黑树是弱平衡，插入删除效率更高，是性能的折中。
+3. **问题**：HashMap 树化后，Node 节点变成了什么？
+   **答案**：变成了 `TreeNode`。它不仅包含 `hash, key, value, next`，还包含了 `parent, left, right, prev, red` 等树结构属性。
+4. **问题**：为什么 HashMap 的源码中会有大量的位运算？
+   **答案**：位运算直接由 CPU 指令支持，效率远高于算术运算。例如 `hash & (n-1)` 代替取模。
+5. **问题**：LinkedHashMap 适合什么业务场景？
+   **答案**：LRU 缓存淘汰算法、需要按顺序展示的配置信息等。
+
+---
+
+## 第4天：HashSet + hashCode/equals 契约 — 覆盖原理点：[#8（部分）]
+
+### 编码探源题
+
+#### 题目1：复现 HashSet 丢失数据陷阱
+自定义一个对象，只重写 `equals` 不重写 `hashCode`。将其存入 HashSet 后，尝试通过一个属性完全相同的对象去 `contains` 检查，观察结果。
+
+**✅ 标准答案**：
+- **结论**：结果为 `false`。因为 `hashCode` 不同，即使 `equals` 返回 `true`，HashSet 也会在不同的桶里查找，导致找不到对象。
+
+🔍 **深度反思**：
+- **契约规则**：如果两个对象 `equals` 相等，它们的 `hashCode` 必须相等。反之则不一定（哈希碰撞）。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：HashSet 的底层实现是什么？
+   **答案**：底层就是 HashMap。HashSet 的值存放在 HashMap 的 Key 上，而 Value 统一使用一个名为 `PRESENT` 的虚值（Object 对象）。
+2. **问题**：为什么重写 equals 必须重写 hashCode？
+   **答案**：保证在 Hash 容器中（如 HashMap, HashSet）逻辑相等的对象能被定位到同一个桶位。
+3. **问题**：如果两个对象 hashCode 相同，它们一定相等吗？
+   **答案**：不一定，这叫哈希冲突（Collision）。
+4. **问题**：HashSet 是如何保证元素不重复的？
+   **答案**：依赖 HashMap 的 `put` 方法。如果 Key 已存在，`put` 会返回旧值，HashSet 据此判断添加失败。
+5. **问题**：TreeMap 和 TreeSet 有什么区别？
+   **答案**：TreeSet 底层是 TreeMap。它们都是基于红黑树实现的有序容器，依赖 `Comparable` 或 `Comparator` 进行排序。
+
+---
+
+## 第5天：ConcurrentHashMap 1.7 vs 1.8 锁演变 — 覆盖原理点：[#4, #5]
+
+### 编码探源题
+
+#### 题目1：复现 ConcurrentHashMap 扩容时的多线程协助
+通过大量并发 `put` 触发扩容，观察 `transfer` 过程中多个线程如何通过 `ForwardingNode` 标记桶并协助搬迁。
+
+**✅ 标准答案**：
+- **1.8 机制**：采用 CAS + `synchronized`。扩容时，第一个线程开始搬迁，会将原桶头节点改为 `ForwardingNode`。后续 `put` 线程发现是该节点，会主动调用 `helpTransfer` 加入搬迁大军。
+
+🔍 **深度反思**：
+- **为什么 1.8 舍弃了 Segment？**：Segment 锁粒度太大；1.8 的锁粒度细化到了每个桶的头节点，并发度更高。且 `synchronized` 在 JVM 层面经过了大量优化。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：ConcurrentHashMap 1.7 和 1.8 的主要区别？
+   **答案**：1.7 采用 ReentrantLock + Segment 分段锁；1.8 采用 CAS + synchronized + Node 数组 + 红黑树。
+2. **问题**：ConcurrentHashMap 的 `get` 操作需要加锁吗？为什么？
+   **答案**：不需要。它的 `Node` 的 `val` 和 `next` 指针都用了 `volatile` 修饰，保证了可见性。
+3. **问题**：ConcurrentHashMap 不允许 Key/Value 为 null，为什么？
+   **答案**：为了避免二义性。在多线程环境下，无法区分 `get` 返回 null 是因为值本身是 null 还是因为 Key 不存在（无法通过 `contains` 安全判断）。
+4. **问题**：什么是计算 size 的“延迟累加”机制（LongAdder 思想）？
+   **答案**：1.8 中不使用全局计数器，而是使用 `baseCount` 和 `CounterCell` 数组。多线程竞争时，将增量分散到不同 Cell 中，最后求和。
+5. **问题**：ConcurrentHashMap 的强一致性还是弱一致性？
+   **答案**：弱一致性（最终一致性）。例如迭代器是弱一致性的，反映的是创建迭代器时的状态，不保证反映后续修改。
+
+---
+
+## 第6天：BlockingQueue 与生产者-消费者 — 覆盖原理点：[并发集合]
+
+### 编码探源题
+
+#### 题目1：手写生产者-消费者模型（基于 ArrayBlockingQueue）
+实现一个多生产者多消费者的场景，验证 `put()` 和 `take()` 的阻塞特性。
+
+**✅ 标准答案**：
+- **核心逻辑**：`put` 在队列满时阻塞，`take` 在队列空时阻塞。内部基于 `ReentrantLock` 和两个 `Condition`（notEmpty, notFull）实现。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：ArrayBlockingQueue 和 LinkedBlockingQueue 的区别？
+   **答案**：前者是有界数组，一把锁；后者是基于链表（默认容量 Integer.MAX_VALUE），生产和消费各有一把锁，并发更高。
+2. **问题**：DelayQueue 的原理和场景？
+   **答案**：基于 PriorityQueue 实现，元素必须实现 Delayed 接口。常用于订单超时关闭、缓存失效。
+3. **问题**：SynchronousQueue 是什么？
+   **答案**：一个不存储元素的队列。每个 put 必须等待一个 take，常用于线程池 `Executors.newCachedThreadPool()`。
+4. **问题**：BlockingQueue 的四组 API 有什么区别？
+   **答案**：抛异常(add/remove)、返回特殊值(offer/poll)、阻塞(put/take)、超时(offer/poll with timeout)。
+5. **问题**：为什么线程池任务队列推荐用有界队列？
+   **答案**：防止任务积压导致 OOM，增加系统的稳定性。
+
+---
+
+## 第7天：CopyOnWriteArrayList + 并发集合总结 — 覆盖原理点：[并发集合]
+
+### 编码探源题
+
+#### 题目1：复现 CopyOnWriteArrayList 的写时复制
+观察在 `add` 过程中，原数组和新数组的引用变化，并验证“读不加锁”的特性。
+
+**✅ 标准答案**：
+- **原理**：写操作时加锁，拷贝出一份新数组，修改完后将引用指向新数组。读操作完全不加锁。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：CopyOnWriteArrayList 的缺点？
+   **答案**：1. 内存占用高（写时复制）。2. 弱一致性（读不到最新写入的数据）。
+2. **问题**：什么时候用 CopyOnWriteArrayList？
+   **答案**：读多写极少的场景，如白名单、配置列表。
+3. **问题**：ConcurrentSkipListMap 是什么？
+   **答案**：线程安全的有序 Map，基于跳表（SkipList）实现，查询效率 O(log n)。
+4. **问题**：Java 中有哪些并发集合？
+   **答案**：ConcurrentHashMap, CopyOnWriteArrayList, BlockingQueue, ConcurrentSkipListMap 等。
+5. **问题**：如何将一个普通 List 变成线程安全的？
+   **答案**：`Collections.synchronizedList(list)`。原理是装饰器模式，对所有方法加对象锁。
+
+---
+
+## 第8天：String 不可变性 + intern + 常量池 — 覆盖原理点：[#9, #10]
+
+### 编码探源题
+
+#### 题目1：破解 String.intern() 的迷思
+比较 JDK 1.6 和 1.7+ 中 `new String("a") + new String("b")` 调用 `intern()` 后的 `==` 结果。
+
+**✅ 标准答案**：
+- **结论**：1.7+ 中，如果池中没有，`intern()` 会将堆中对象的**引用**存入池中，而不再拷贝对象。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：String 为什么是不可变的？
+   **答案**：1. 安全（Hash值不变、线程安全）。2. 效率（常量池复用）。3. 源码用 `final char[]`（1.9后 `byte[]`）且不提供修改方法。
+2. **问题**：`String s = new String("abc")` 创建了几个对象？
+   **答案**：一个或两个。如果常量池没有 "abc"，则创建一个池中对象，再创建一个堆中对象；如果已有，则只创建一个堆中对象。
+3. **问题**：StringBuilder 和 StringBuffer 的区别？
+   **答案**：StringBuilder 非线程安全，性能高；StringBuffer 线程安全（方法加 `synchronized`）。
+4. **问题**：Java 9 为什么把 String 的 char[] 改成 byte[]？
+   **答案**：为了节省内存。大多数字符串只包含 Latin-1 字符，用 byte 存储减半空间占用。
+5. **问题**：字符串拼接 `+` 的底层原理？
+   **答案**：1.8 前是 StringBuilder；1.9+ 优化为 `StringConcatFactory`（动态指令调用），性能更好。
+
+---
+
+## 第9天：包装类缓存 + 自动拆装箱陷阱 — 覆盖原理点：[#11]
+
+### 编码探源题
+
+#### 题目1：Integer 缓存边界实验
+验证 `Integer i1 = 127; Integer i2 = 127;` 和 `128` 的 `==` 结果，并尝试修改 JVM 参数 `-XX:AutoBoxCacheMax`。
+
+**✅ 标准答案**：
+- **原理**：`Integer.valueOf()` 会检查 `[-128, 127]` 缓存。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：自动拆装箱的原理？
+   **答案**：编译期语法糖。装箱调用 `valueOf()`，拆箱调用 `xxxValue()`。
+2. **问题**：哪些包装类有缓存？范围是多少？
+   **答案**：Byte, Short, Integer, Long (-128~127)，Character (0~127)，Boolean (True/False)。Float/Double 没有。
+3. **问题**：`Integer` 缓存上限可以修改吗？
+   **答案**：可以，通过 `-XX:AutoBoxCacheMax` 修改 Integer 的上限，但下限 -128 固定不可变。
+4. **问题**：在循环中使用包装类进行加法运算会有什么问题？
+   **答案**：频繁拆装箱产生大量无用对象，增加 GC 压力。
+5. **问题**：`Double d1 = 1.0; Double d2 = 1.0; d1 == d2` 结果是什么？
+   **答案**：`false`。Double 没有缓存机制，每次 `valueOf` 都 `new`。
+
+---
+
+## 第10天：异常体系 + try-finally + try-with-resources — 覆盖原理点：[#12, #13]
+
+### 编码探源题
+
+#### 题目1：try-finally 里的 return 陷阱
+编写一个方法，在 `try` 中 return 1，在 `finally` 中 return 2，观察最终结果。
+
+**✅ 标准答案**：
+- **结果**：返回 2。`finally` 中的 `return` 会覆盖之前的 `return`。如果 `finally` 修改了基本类型的返回值（但没 return），`try` 中的 `return` 不受影响（返回值已入栈）。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：Error 和 Exception 的区别？
+   **答案**：Error 是不可恢复的严重问题（如 OOM, StackOverflow）；Exception 是程序可以处理的异常。
+2. **问题**：Checked Exception 和 Runtime Exception 的区别？
+   **答案**：前者编译期强制处理；后者运行期抛出，不强制捕获（通常是代码逻辑问题）。
+3. **问题**：try-with-resources 的好处？
+   **答案**：自动关闭资源，代码更简洁，且能正确处理“异常抑制”（Suppressed Exceptions）。
+4. **问题**：NoClassDefFoundError 和 ClassNotFoundException 的区别？
+   **答案**：前者是编译时有、运行时找不到类文件；后者是动态加载（如 `Class.forName`）时找不到类。
+5. **问题**：为什么不建议在 `finally` 块中抛出异常或使用 `return`？
+   **答案**：会导致 `try` 块中的异常被吞掉或返回值被篡改，增加调试难度。
 实现数组+链表结构的简化版 HashMap，在 `put` 时打印：当前数组长度、size、threshold、插入位置索引、链表长度。当 size > threshold 时触发扩容，打印扩容前后的数组长度变化。
 
 ```java
@@ -1022,6 +1397,383 @@ public class MyInteger {
 **🔍 原理反思提问**：`Throwable.fillInStackTrace()` 方法的作用是什么？为什么有些异常（如 `OutOfMemoryError`）的堆栈可能不完整？`-XX:-OmitStackTraceInFastThrow` 参数的作用是什么？
 
 **💬 面试官可能追问**：JVM 对频繁抛出的异常有优化（Fast Throw），这个优化的原理是什么？如何关闭？`NullPointerException` 在 Java 14 之后的改进（Helpful NPE）是什么？
+
+---
+
+## 第11天：泛型类型擦除与桥方法 — 覆盖原理点：[泛型原理]
+
+### 编码探源题
+
+#### 题目1：验证泛型类型擦除
+编写代码：通过反射向 `List<Integer>` 中插入一个 `String` 元素。获取该 List 运行时的 Class 信息，观察其泛型信息是否还存在。
+
+**✅ 标准答案**：
+```java
+List<Integer> list = new ArrayList<>();
+list.getClass().getMethod("add", Object.class).invoke(list, "hello");
+System.out.println(list.get(0)); // 输出 hello
+```
+🔍 **深度反思**：
+- **原理**：Java 泛型是伪泛型，只在编译期检查。编译后，`List<Integer>` 变成了 `List<Object>`（或其上限），这个过程叫**类型擦除**。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：什么是类型擦除？
+   **答案**：Java 泛型信息只存在于编译阶段，生成的字节码中不包含泛型信息。
+2. **问题**：泛型中 `<? extends T>` 和 `<? super T>` 的区别？
+   **答案**：PECS 原则（Producer Extends, Consumer Super）。extends 适合读，super 适合写。
+3. **问题**：List<String> 和 List<Object> 是父子关系吗？
+   **答案**：不是。泛型没有继承关系。但 `List<String>` 是 `Collection<String>` 的子类。
+4. **问题**：什么是泛型的“桥方法”？
+   **答案**：当一个类实现泛型接口时，编译器会自动生成一个参数为 Object 的方法（桥方法），内部调用实际的类型安全方法，以保证多态。
+5. **问题**：为什么泛型类型不能是基本类型？
+   **答案**：类型擦除后会变成 Object，而 Object 无法直接存放基本类型（需要装箱，但 Java 设计时为了性能和统一性未实现基本类型泛型）。
+
+---
+
+## 第12天：反射机制 + JDK 动态代理 — 覆盖原理点：[#14, #15]
+
+### 编码探源题
+
+#### 题目1：手写简易 JDK 动态代理
+定义一个接口 `UserService`，实现一个 `InvocationHandler`，在方法执行前后打印日志。
+
+**✅ 标准答案**：
+```java
+UserService proxy = (UserService) Proxy.newProxyInstance(
+    UserService.class.getClassLoader(),
+    new Class[]{UserService.class},
+    (p, method, args) -> {
+        System.out.println("Before...");
+        Object res = method.invoke(target, args);
+        System.out.println("After...");
+        return res;
+    }
+);
+```
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：JDK 动态代理和 CGLIB 的区别？
+   **答案**：JDK 代理基于接口，利用反射生成实现类；CGLIB 基于继承，利用 ASM 修改字节码生成子类。
+2. **问题**：反射的优缺点？
+   **答案**：优点是灵活、支持框架（如 Spring）；缺点是性能开销、破坏封装性（可访问 private）。
+3. **问题**：如何优化反射的性能？
+   **答案**：1. 缓存 `Method/Field` 对象。2. 使用 `setAccessible(true)`。3. 使用更高性能的库（如 ReflectASM）。
+4. **问题**：Spring AOP 默认用哪种代理？
+   **答案**：如果目标类实现了接口，默认用 JDK；否则用 CGLIB。
+5. **问题**：为什么 JDK 动态代理要求必须有接口？
+   **答案**：因为生成的代理类已经继承了 `Proxy` 类，而 Java 不支持多继承，所以只能通过实现接口来扩展功能。
+
+---
+
+## 第13天：类加载过程 + 双亲委派模型 — 覆盖原理点：[#18]
+
+### 🎯 今日高频面试题速览
+1. **问题**：类加载的五个阶段？
+   **答案**：加载、验证、准备、解析、初始化。
+2. **问题**：双亲委派模型是什么？
+   **答案**：类加载器收到请求后，先委托父类加载器处理，只有父类无法处理时才自己加载。
+3. **问题**：为什么要用双亲委派？
+   **答案**：安全（防止核心类被篡改）、避免类重复加载。
+4. **问题**：哪些场景破坏了双亲委派？
+   **答案**：1. SPI 机制（如 JDBC 驱动）。2. 热部署（如 OSGi）。3. Tomcat 等 Web 容器（为了隔离不同 App）。
+5. **问题**：`Class.forName` 和 `ClassLoader.loadClass` 的区别？
+   **答案**：`forName` 会执行类的初始化（运行 `static` 块）；`loadClass` 只加载类，不初始化。
+
+---
+
+## 第14天：JVM 内存结构 + 对象内存布局 — 覆盖原理点：[#19, #20]
+
+### 🎯 今日高频面试题速览
+1. **问题**：JVM 运行时内存区域划分？
+   **答案**：线程私有（栈、程序计数器、本地方法栈）、线程共享（堆、元空间/方法区）。
+2. **问题**：什么是 TLAB？
+   **答案**：Thread Local Allocation Buffer。在 Eden 区为每个线程预先分配的一块私有区域，减少多线程分配内存时的竞争（CAS 开销）。
+3. **问题**：对象头里包含什么？
+   **答案**：Mark Word（哈希码、GC分代年龄、锁状态等）和 Klass Pointer（指向类元数据的指针）。
+4. **问题**：什么是“空间分配担保”？
+   **答案**：Minor GC 前，JVM 检查老年代最大可用连续空间是否大于新生代所有对象总空间，以确保在 YGC 失败后能安全晋升到老年代。
+5. **问题**：Java 8 为什么要用元空间（Metaspace）代替永久代？
+   **答案**：永久代容易 OOM（受限于 JVM 堆大小）；元空间使用本地内存，更灵活。
+
+---
+
+## 第15天：GC 算法 + 垃圾收集器对比实验 — 覆盖原理点：[#21]
+
+### 🎯 今日高频面试题速览
+1. **问题**：如何判断一个对象可以被回收？
+   **答案**：1. 引用计数法（无法解决循环引用）。2. 可达性分析法（GCRoots）。
+2. **问题**：常见的 GC 算法有哪些？
+   **答案**：标记-清除、复制算法、标记-整理、分代收集。
+3. **问题**：CMS 和 G1 的区别？
+   **答案**：CMS 追求最短停顿，基于标记-清除（有碎片）；G1 追求可预测的停顿，将堆划分为 Region，基于标记-整理（无碎片）。
+4. **问题**：什么是 Stop The World (STW)？
+   **答案**：GC 过程中，为了保证引用关系的静态性，必须暂停所有应用线程。
+5. **问题**：什么是 ZGC？
+   **答案**：Java 11 引入的超低延迟收集器，停顿时间不超过 10ms，且不受堆大小影响。
+
+---
+
+## 第16天：volatile + JMM 内存可见性实验 — 覆盖原理点：[#22]
+
+### 编码探源题
+
+#### 题目1：复现不可见性问题
+线程 A 循环读取变量 `flag`，线程 B 修改 `flag = true`。如果不加 `volatile`，线程 A 能停止吗？
+
+**✅ 标准答案**：
+- **结论**：线程 A 不会停止。因为 A 线程将 `flag` 缓存在自己的工作内存（或寄存器/L1/L2缓存）中，感知不到主内存的修改。加 `volatile` 后，强制线程从主内存读取。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：volatile 的两大作用？
+   **答案**：1. 保证内存可见性。2. 禁止指令重排序（内存屏障）。
+2. **问题**：volatile 能保证原子性吗？
+   **答案**：不能。例如 `i++` 不是原子操作，需要用 `synchronized` 或 `AtomicInteger`。
+3. **问题**：什么是 DCL (Double Check Locking) 单例模式？为什么要加 volatile？
+   **答案**：防止 `instance = new Singleton()` 时发生指令重排，导致其他线程拿到一个尚未初始化完成的对象。
+4. **问题**：什么是 happens-before 原则？
+   **答案**：JMM 中定义的两个操作之间的偏序关系。如果 A happens-before B，则 A 的执行结果对 B 可见。
+5. **问题**：什么是内存屏障（Memory Barrier）？
+   **答案**：一种 CPU 指令，用于禁止跨屏障的重排序，并强制刷出缓存。
+
+---
+
+## 第17天：synchronized 锁升级过程追踪 — 覆盖原理点：[#23]
+
+### 🎯 今日高频面试题速览
+1. **问题**：synchronized 锁升级的过程？
+   **答案**：无锁 -> 偏向锁 -> 轻量级锁 -> 重量级锁。
+2. **问题**：synchronized 和 ReentrantLock 的区别？
+   **答案**：前者是关键字（JVM实现），后者是类（API实现）；后者支持公平锁、响应中断、超时获取。
+3. **问题**：什么是偏向锁？为什么要撤销？
+   **答案**：假设锁总是被同一个线程获取。当有第二个线程竞争时，偏向锁失效，撤销并升级为轻量级锁。
+4. **问题**：什么是锁粗化和锁消除？
+   **答案**：锁消除是 JIT 发现对象不会逃逸，直接去掉锁；锁粗化是将连续的小范围加锁合并为大范围加锁，减少加解锁开销。
+5. **问题**：synchronized 的底层原理？
+   **答案**：基于对象头里的 Monitor 监视器，由 `monitorenter` 和 `monitorexit` 指令实现。
+
+---
+
+## 第18天：AQS + ReentrantLock 源码探针 — 覆盖原理点：[#24]
+
+### 🎯 今日高频面试题速览
+1. **问题**：AQS 的核心思想？
+   **答案**：`state` 变量表示资源状态 + CLH 双向队列 management 等待线程。
+2. **问题**：ReentrantLock 的公平锁和非公平锁实现区别？
+   **答案**：非公平锁在 `lock()` 时先尝试 CAS 修改 state，失败才进队列；公平锁会先判断队列是否有前驱节点。
+3. **问题**：什么是可重入锁？
+   **答案**：同一个线程可以多次获得同一把锁，AQS 通过 `state` 累加和 `owner` 线程记录来实现。
+4. **问题**：Condition 的 `await/signal` 和 Object 的 `wait/notify` 区别？
+   **答案**：Condition 支持多条件（多个等待队列），可以定向唤醒，更灵活。
+5. **问题**：为什么 ReentrantLock 默认是非公平的？
+   **答案**：性能更好。非公平锁能充分利用 CPU 的时间片，减少线程唤醒和上下文切换的开销。
+
+---
+
+## 第19天：ThreadPoolExecutor 线程池深度实验 — 覆盖原理点：[#25]
+
+### 🎯 今日高频面试题速览
+1. **问题**：线程池的 7 个核心参数？
+   **答案**：核心线程数、最大线程数、空闲存活时间、时间单位、任务队列、线程工厂、拒绝策略。
+2. **问题**：线程池的任务执行流程？
+   **答案**：核心线程 -> 任务队列 -> 最大线程 -> 拒绝策略。
+3. **问题**：常见的四种拒绝策略？
+   **答案**：AbortPolicy（抛异常）、CallerRunsPolicy（调用者执行）、DiscardPolicy（直接丢弃）、DiscardOldestPolicy（丢弃最老任务）。
+4. **问题**：线程池如何关闭？shutdown 和 shutdownNow 的区别？
+   **答案**：`shutdown` 停止接收新任务，等待已提交任务完成；`shutdownNow` 尝试中断正在执行的任务，返回未执行任务列表。
+5. **问题**：如何合理配置线程池大小？
+   **答案**：CPU 密集型（N+1）、IO 密集型（2N）。
+
+---
+
+## 第20天：ThreadLocal 与内存泄漏复现 — 覆盖原理点：[#26]
+
+### 编码探源题
+
+#### 题目1：复现 ThreadLocal 内存泄漏
+在线程池中使用 ThreadLocal 存放 10MB 的对象，任务结束后不调用 `remove`，观察内存占用。
+
+**✅ 标准答案**：
+- **原理**：`ThreadLocalMap` 的 `Entry` 中的 `key` 是弱引用，但 `value` 是强引用。如果线程不退出，`value` 就永远不会被回收。
+
+---
+
+### 🎯 今日高频面试题速览
+1. **问题**：ThreadLocal 的原理？
+   **答案**：每个线程内部都有一个 `ThreadLocalMap`，Key 是 ThreadLocal 实例，Value 是要存的对象。
+2. **问题**：为什么 Entry 的 Key 要用弱引用？
+   **答案**：为了让 ThreadLocal 实例能被正常回收。如果是强引用，只要线程在，ThreadLocal 就永远无法回收。
+3. **问题**：ThreadLocal 常见的应用场景？
+   **答案**：数据库连接管理（Session）、用户登录上下文（UserContext）、日志链路追踪（TraceID）。
+4. **问题**：InheritableThreadLocal 是做什么用的？
+   **答案**：让子线程能继承父线程的 ThreadLocal 变量。
+5. **问题**：如何正确使用 ThreadLocal 避免内存泄漏？
+   **答案**：养成在 `finally` 块中调用 `remove()` 的好习惯。
+
+---
+
+## 第21天：CAS + AtomicInteger + LongAdder 对比 — 覆盖原理点：[#27]
+
+### 🎯 今日高频面试题速览
+1. **问题**：什么是 CAS？它的优缺点？
+   **答案**：Compare And Swap（比较并交换）。优点是无锁非阻塞；缺点是 ABA 问题、自旋开销大、只能保证一个变量的原子性。
+2. **问题**：如何解决 ABA 问题？
+   **答案**：使用版本号（`AtomicStampedReference`）或时间戳。
+3. **问题**：AtomicInteger 的底层原理？
+   **答案**：使用 `volatile` 保证可见性 + `Unsafe` 类的 CAS 操作。
+4. **问题**：LongAdder 为什么比 AtomicLong 快？
+   **答案**：分段累加（Cell 数组）。将竞争分散到多个 Cell 中，最后求和。
+5. **问题**：Unsafe 类是做什么的？
+   **答案**：提供类似 C 的指针操作，可以直接操作内存、分配内存、CAS 等，是 Java 锁机制的基石。
+
+---
+
+## 第22天：CountDownLatch/CyclicBarrier/Semaphore — 覆盖原理点：[#28]
+
+### 🎯 今日高频面试题速览
+1. **问题**：CountDownLatch 和 CyclicBarrier 的区别？
+   **答案**：前者计数器只能用一次，后者可以用 `reset()` 重用；前者是一个线程等多个线程，后者是多个线程互等。
+2. **问题**：Semaphore 的作用？
+   **答案**：限流（控制并发线程数）。
+3. **问题**：CountDownLatch 的底层原理？
+   **答案**：基于 AQS 的共享锁实现。
+4. **问题**：Exchanger 是做什么用的？
+   **答案**：两个线程之间交换数据。
+5. **问题**：Phaser 是什么？
+   **答案**：Java 7 引入的更强大的同步工具，可以分阶段（Phase）管理线程同步，支持动态调整参与者数量。
+
+---
+
+## 第23天：OOM 事故复现与 MAT 分析 — 覆盖原理点：[#19]
+
+### 🎯 今日高频面试题速览
+1. **问题**：常见的 OOM 类型？
+   **答案**：Heap Space（堆溢出）、Metaspace（元空间溢出）、Direct Buffer（直接内存溢出）、StackOverflow（栈溢出）。
+2. **问题**：如何排查 OOM？
+   **答案**：1. 使用 `-XX:+HeapDumpOnOutOfMemoryError` 生成 dump。2. 使用 MAT 或 JProfiler 分析内存快照。3. 查找占用内存最大的对象路径。
+3. **问题**：什么是 Shallow Heap 和 Retained Heap？
+   **答案**：Shallow Heap 是对象本身占用的内存；Retained Heap 是对象被回收后能释放的总内存（包含其引用的所有对象）。
+4. **问题**：内存泄漏和内存溢出的区别？
+   **答案**：内存泄漏是该回收的对象没回收；内存溢出是申请的内存超过了 JVM 最大限制。
+5. **问题**：如何防止 OOM？
+   **答案**：1. 及时释放引用（ThreadLocal）。2. 限制资源大小（有界队列、文件流关闭）。3. 调优 JVM 参数。
+
+---
+
+## 第24天：死锁复现 + jstack 诊断 — 覆盖原理点：[#24]
+
+### 🎯 今日高频面试题速览
+1. **问题**：死锁产生的四个必要条件？
+   **答案**：互斥、请求与保持、不可剥夺、循环等待。
+2. **问题**：如何定位死锁？
+   **答案**：使用 `jstack` 查看线程状态，寻找 "found one Java-level deadlock"。
+3. **问题**：如何避免死锁？
+   **答案**：1. 破坏循环等待（按顺序加锁）。2. 使用 `tryLock` 带超时时间。
+4. **问题**：什么是活锁（Livelock）？
+   **答案**：线程没阻塞，但一直在互相谦让导致无法继续执行（如两个人在狭窄过道互相避让）。
+5. **问题**：什么是饥饿（Starvation）？
+   **答案**：线程长时间拿不到锁（如优先级过低或锁一直被其他线程抢占）。
+
+---
+
+## 第25天：CPU 100% 排查 + 线程 dump 分析 — 覆盖原理点：[#25]
+
+### 🎯 今日高频面试题速览
+1. **问题**：CPU 100% 的排查步骤？
+   **答案**：1. `top` 找进程。2. `top -Hp pid` 找最耗 CPU 的线程。3. `printf "%x\n" tid` 转十六进制。4. `jstack pid | grep nid` 定位代码。
+2. **问题**：导致 CPU 100% 的常见原因？
+   **答案**：1. 死循环。2. 频繁 Full GC。3. 大量的计算逻辑。4. 锁竞争导致的频繁上下文切换。
+3. **问题**：jstack 里的线程状态有哪些？
+   **答案**：RUNNABLE、WAITING、TIMED_WAITING、BLOCKED。
+4. **问题**：什么是“安全点”（Safepoint）？
+   **答案**：JVM 能够暂停所有线程并执行 GC 等操作的特定代码位置。
+5. **问题**：上下文切换（Context Switch）为什么开销大？
+   **答案**：需要保存/恢复寄存器、程序计数器、栈信息，且会导致 CPU 缓存失效。
+
+---
+
+## 第26天：ThreadLocal 内存泄漏复现与修复 — 覆盖原理点：[#26]
+
+### 🎯 今日高频面试题速览
+1. **问题**：为什么在线程池中使用 ThreadLocal 要格外小心？
+   **答案**：线程池中的线程是复用的，如果上一个任务存了值没 remove，下一个任务可能会读取到脏数据，且导致内存泄漏。
+2. **问题**：FastThreadLocal 为什么快？
+   **答案**：Netty 实现。使用数组索引访问代替哈希映射，避免了哈希碰撞。
+3. **问题**：ThreadLocalMap 是如何解决哈希冲突的？
+   **答案**：线性探测法（寻找下一个空位），而不是链表。
+4. **问题**：ThreadLocalMap 的清理机制？
+   **答案**：启发式清理（Heuristic Scanning）。在 `set` 和 `get` 时顺便清理一些过期（Key 为 null）的 Entry。
+5. **问题**：如何监控 ThreadLocal 的泄漏？
+   **答案**：使用内存分析工具，查看 `ThreadLocalMap$Entry` 实例的数量是否异常增长。
+
+---
+
+## 第27天：HashMap 1.7 死循环复现（地狱级） — 覆盖原理点：[#2]
+
+### 🎯 今日高频面试题速览
+1. **问题**：1.7 HashMap 死循环的根源？
+   **答案**：多线程并发扩容时，头插法会反转链表，导致两个线程之间形成环形引用。
+2. **问题**：1.8 如何解决这个死循环？
+   **答案**：改为尾插法，保持扩容前后的元素相对顺序不变。
+3. **问题**：1.8 HashMap 虽然没死循环，但还是不安全，为什么？
+   **答案**：还是会出现数据覆盖（两个线程同时计算出相同的索引位置并覆盖）。
+4. **问题**：为什么 HashMap 1.7 的扩容代码如此晦涩？
+   **答案**：它是为了追求极致性能，但在多线程下完全没有防范机制。
+5. **问题**：除了 ConcurrentHashMap，还有什么线程安全的 Map？
+   **答案**：`Collections.synchronizedMap`、`Hashtable`。
+
+---
+
+## 第28天：Full GC 频繁 + JVM 调优实战 — 覆盖原理点：[#21]
+
+### 🎯 今日高频面试题速览
+1. **问题**：Full GC 频繁的原因？
+   **答案**：1. 老年代空间不足。2. 元空间不足。3. `System.gc()` 调用。4. 堆外内存泄漏。
+2. **问题**：JVM 调优的目标？
+   **答案**：低延迟（减少 STW）和高吞吐（减少 GC 总时间）。
+3. **问题**：常用的 JVM 调优参数？
+   **答案**：`-Xms`, `-Xmx`, `-Xmn`, `-XX:SurvivorRatio`, `-XX:MaxTenuringThreshold`, `-XX:+UseG1GC`。
+4. **问题**：什么是“动态年龄判断”？
+   **答案**：如果 Survivor 区中相同年龄的对象总和大于其容量的一半，则大于等于该年龄的对象直接进入老年代。
+5. **问题**：如何开启 GC 日志？
+   **答案**：Java 8: `-XX:+PrintGCDetails`；Java 9+: `-Xlog:gc*`。
+
+---
+
+## 第29天：微型 RPC 框架骨架设计 — 覆盖原理点：[综合]
+
+### 🎯 今日高频面试题速览
+1. **问题**：RPC 的核心组件有哪些？
+   **答案**：客户端（Stub）、服务端（Skeleton）、序列化、网络传输、注册中心。
+2. **问题**：RPC 为什么要用动态代理？
+   **答案**：为了让客户端调用远程服务像调用本地方法一样透明。
+3. **问题**：常见的 RPC 协议？
+   **答案**：gRPC (HTTP/2 + Protobuf)、Dubbo、Thrift。
+4. **问题**：序列化协议如何选型？
+   **答案**：考虑性能、大小、跨语言支持、可扩展性（如 JSON, Protobuf, Hessian）。
+5. **问题**：注册中心的作用？
+   **答案**：服务发现、负载均衡、健康检查（如 Zookeeper, Nacos, Consul）。
+
+---
+
+## 第30天：微型 RPC 框架实现 + 压测 + 调优报告 — 覆盖原理点：[综合]
+
+### 🎯 今日高频面试题速览
+1. **问题**：Netty 在 RPC 中的作用？
+   **答案**：提供高性能、非阻塞的网络传输。
+2. **问题**：RPC 框架中如何处理异常？
+   **答案**：需要将服务端异常序列化并传回客户端抛出。
+3. **问题**：如何实现 RPC 的负载均衡？
+   **答案**：轮询、随机、加权轮询、一致性哈希。
+4. **问题**：RPC 的超时机制如何实现？
+   **答案**：客户端使用 `Future.get(timeout)` 或 Netty 的 `IdleStateHandler`。
+5. **问题**：总结一下这 30 天的学习收获？
+   **答案**：从基础集合源码到 JVM 调优，从并发工具到分布式设计，构建了从微观代码到宏观系统的知识图谱。
 
 ---
 
