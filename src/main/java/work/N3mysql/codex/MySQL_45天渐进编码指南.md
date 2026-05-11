@@ -2540,7 +2540,7 @@ EXPLAIN FORMAT=JSON SELECT * FROM d18_users WHERE city='北京' AND age=30;
 
 ### 🏢 大厂面试场景实战
 
-**场景**：线上接口 P99 从 50ms 升到 2s，数据库疑似慢查询。给出排查步骤。
+ 
 
 ```sql
 SHOW FULL PROCESSLIST;
@@ -2806,6 +2806,58 @@ SELECT * FROM information_schema.INNODB_TRX\G
 **🔍 反思**：MVCC 的代价是维护历史版本，长事务会拖住清理。
 
 **💬 追问**：如何在线发现长事务？
+
+```sq
+-- 查看所有事务、运行时长、SQL、事务状态
+SELECT
+  trx_id,
+  trx_state,
+  trx_started,
+  NOW() - trx_started AS trx_run_sec,
+  trx_query,
+  trx_rows_locked,
+  trx_rows_modified,
+  trx_isolation_level
+FROM information_schema.innodb_trx
+ORDER BY trx_run_sec DESC;
+
+-- 运行时间大于10秒的
+SELECT * 
+FROM information_schema.innodb_trx 
+WHERE TIMESTAMPDIFF(SECOND, trx_started, NOW()) > 10
+ORDER BY trx_started;
+
+-- 通过 inforamtion_schema.innodb_trx 和 information_schema.processlist 关联进程 ID，找到连接、可 Kill
+
+SELECT
+  t.trx_id,
+  t.trx_started,
+  TIMESTAMPDIFF(SECOND, t.trx_started, NOW()) AS run_sec,
+  p.id AS process_id,
+  p.user,
+  p.host,
+  p.db,
+  p.command,
+  p.time,
+  t.trx_query
+FROM information_schema.innodb_trx t
+JOIN information_schema.processlist p 
+  ON t.trx_mysql_thread_id = p.id
+ORDER BY run_sec DESC;
+
+-- 但是看不到已经执行完成的sql，如果只是事务没提交，那只会看到null
+SELECT
+  trx_id,
+  trx_started,
+  TIMESTAMPDIFF(SECOND,trx_started,NOW()) AS run_sec,
+  trx_query AS 当前执行SQL,
+  trx_state,
+  trx_mysql_thread_id AS 线程ID
+FROM information_schema.innodb_trx
+ORDER BY run_sec DESC;
+```
+
+
 
 ### 🔷 原理剖析题
 
