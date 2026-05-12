@@ -2883,3 +2883,493 @@ public String getLocation(String ip) {
 >
 > - **读多写少**（如静态词典）：选 AVL 树；  
 > - **写操作频繁**（如实时系统）：**红黑树是工程最优解**，因其在  与 **低动态调整成本** 间取得了最佳平衡。
+
+
+
+
+
+# 第 6 天：ConcurrentHashMap 源码探针（1.8）
+本日掌握：深入 JDK 1.8 ConcurrentHashMap 的核心设计，手写一个简化版的并发哈希表，理解 CAS、synchronized、sizeCtl 与多线程协助扩容  
+覆盖原理点：4 (ConcurrentHashMap 1.7 vs 1.8)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能画出 ConcurrentHashMap 1.8 的数组+链表/红黑树结构，并解释与 HashMap 的根本不同。
+- 能使用 CAS + synchronized 实现一个支持并发 put 的简化版 CHM。
+- 能解释 `sizeCtl` 字段的多重含义（初始化门槛、扩容阈值、扩容线程数）。
+- 能通过源码探针或日志观察多线程下协助扩容（helpTransfer）的行为。
+- 能手写一个多线程安全计数，对比 `size()` 在 CHM 中的实现（baseCount + CounterCell）。
+
+---
+
+## 📝 练习1：基础用法——创建并观察 ConcurrentHashMap 行为（必做）
+
+### 业务场景
+我们需要一个线程安全的全局配置容器，多个线程可能同时读取和更新配置项。你决定使用 `ConcurrentHashMap` 而不是 `Hashtable`，并需要验证其并发性能优于 `Collections.synchronizedMap`。
+
+### 你的任务
+1. 创建一个 `ConcurrentHashMap<String, String>` 对象，用 10 个线程并发写入 10000 条数据（key 为 “key” + i）。
+2. 同样用 `Collections.synchronizedMap(new HashMap<>())` 做相同操作，记录两个版本的写入耗时。
+3. 验证所有 key 是否写入成功（`size()` 是否为 10000）。
+4. 尝试在遍历 `ConcurrentHashMap` 的过程中修改它（如删除元素），观察迭代器是否抛出 `ConcurrentModificationException`，并与 HashMap 比较。
+5. 使用 `searchEntries` 或 `forEach` 等方法进行并行查找，体验 JDK 8 提供的函数式操作。
+
+### ⚡ 关键提示
+- `ConcurrentHashMap` 的迭代器是 **弱一致性** 的，它遍历的是某个时间点的快照或部分视图，可能不会反映最新的修改，也**不会抛出 ConcurrentModificationException**。这与 HashMap 的 fail-fast 不同。
+- 进行并发写测试时，使用 `CountDownLatch` 或 `CyclicBarrier` 同时起跑，避免线程启动耗时偏差。
+- 使用 `System.nanoTime()` 计时。
+- 静态方法 `ConcurrentHashMap.newKeySet()` 可以创建一个并发集合，但今天我们聚焦 Map。
+
+### ✍️ 动手写代码
+```java
+ConcurrentHashMap<String, String> map = new ConcurrentHashMap<>();
+// 启动10个线程，每个线程插入1000条
+CountDownLatch latch = new CountDownLatch(10);
+long start = System.nanoTime();
+for (int t = 0; t < 10; t++) {
+    final int threadId = t;
+    new Thread(() -> {
+        for (int i = 0; i < 1000; i++) {
+            map.put("key" + threadId + "_" + i, "val");
+        }
+        latch.countDown();
+    }).start();
+}
+latch.await();
+long end = System.nanoTime();
+System.out.println("CHM time: " + (end - start) / 1_000_000 + "ms, size=" + map.size());
+```
+
+### ✅ 自我检查
+- [ ] CHM 和 synchronizedMap 的写入耗时是否有明显差异？
+- [ ] 遍历 CHM 时删除元素，迭代器是否还继续正常？
+- [ ] 多个线程同时 `get` 和 `put` 时，会不会出现读到脏数据或 null 的情况？（通常不会，但需要理解弱一致性的语义）
+- [ ] `size()` 返回的值是否精确？它是如何做到的？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.*;
+import java.util.concurrent.*;
+
+public class CHMBasicTest {
+    public static void main(String[] args) throws InterruptedException {
+        // 准备两个Map
+        ConcurrentHashMap<String, String> chm = new ConcurrentHashMap<>();
+        Map<String, String> syncMap = Collections.synchronizedMap(new HashMap<>());
+
+        // 测试写入性能
+        long chmTime = concurrentWrite(chm, 10, 1000);
+        long syncTime = concurrentWrite(syncMap, 10, 1000);
+        System.out.println("ConcurrentHashMap time: " + chmTime + "ms, size=" + chm.size());
+        System.out.println("SynchronizedMap time: " + syncTime + "ms, size=" + syncMap.size());
+
+        // 测试弱一致性迭代
+        System.out.println("\n--- 弱一致性迭代测试 ---");
+        chm.clear();
+        for (int i = 0; i < 5; i++) chm.put("key" + i, "val");
+        for (String key : chm.keySet()) {
+            if (key.equals("key2")) {
+                chm.put("key_new", "new_val"); // 迭代过程中修改
+                chm.remove("key3");
+            }
+            System.out.println("Iterating: " + key);
+        }
+        System.out.println("After iteration: " + chm.keySet());
+        // 与 HashMap 对比：HashMap 会抛 ConcurrentModificationException
+        // 这里不会抛异常，且可能遍历到或遍历不到新插入的 key_new
+    }
+
+    private static long concurrentWrite(Map<String, String> map, int threads, int perThread)
+            throws InterruptedException {
+        CountDownLatch startSignal = new CountDownLatch(1);
+        CountDownLatch doneSignal = new CountDownLatch(threads);
+        Thread[] workers = new Thread[threads];
+        for (int i = 0; i < threads; i++) {
+            final int t = i;
+            workers[i] = new Thread(() -> {
+                try { startSignal.await(); } catch (InterruptedException ignored) {}
+                for (int j = 0; j < perThread; j++) {
+                    map.put("t" + t + "_k" + j, "v");
+                }
+                doneSignal.countDown();
+            });
+            workers[i].start();
+        }
+        long start = System.currentTimeMillis();
+        startSignal.countDown();
+        doneSignal.await();
+        return System.currentTimeMillis() - start;
+    }
+}
+```
+
+**设计思路**  
+- `concurrentWrite` 里通过 `CountDownLatch` 保证所有线程同时开始，准确测试并发写入性能。  
+- 弱一致性迭代演示了 CHM 允许在遍历过程中修改，不会抛出异常，这是牺牲强一致性换取高并发。  
+- 你可能会发现输出中 `key_new` 有时出现有时不出现，这就是弱一致性的体现。
+
+### 🐞 常见错误预警
+- **误以为 CHM 所有操作都是无锁的**：实际上 `put` 在发生桶冲突时会用 `synchronized` 锁住桶头节点。所以无锁不代表零锁。
+- **误以为 CHM 是完全强一致的**：`get` 可能读不到刚刚 `put` 的值，因为 `get` 不加锁。这需要根据业务判断是否可接受。
+- **混淆 `size()` 的实现**：它并非直接返回 `size` 字段，而是基于分段计数器，因此较慢。不要频繁调用。
+
+---
+
+## 📝 练习2：中级用法——手写简易并发哈希表（CAS + synchronized）
+
+### 业务场景
+为了真正掌握 CHM 的内部原理，你需要在不使用 `ConcurrentHashMap` 的情况下，自己写一个支持并发的 `MiniConcurrentHashMap`，要求准确使用 CAS 来无锁化读和部分写，并处理扩容时的并发迁移。
+
+### 你的任务
+实现 `MiniConcurrentHashMap<K,V>`：
+- 使用 `volatile Node<K,V>[] table` 保证数组引用的可见性。
+- `Node` 包含 hash, key, value, next。value 和 next 都用 `volatile` 修饰。
+- `put` 操作流程：
+  1. 计算 hash，若 table 未初始化，则 CAS 初始化数组（借鉴 `sizeCtl` 思路，用一个 `volatile int sizeCtl` 控制，-1 代表正在初始化）。
+  2. 若桶为空，直接用 `Unsafe.compareAndSwapObject`（或 `AtomicReferenceArray`）尝试将新节点设为桶头。失败则循环重试。
+  3. 若桶不为空且头节点的 hash 不等于 MOVED（表示正在扩容），则 `synchronized(head)` 锁住该桶，进行链表插入（或覆盖），同 HashMap。
+  4. 简化版可先不处理树化和扩容。
+- `get` 操作不加锁，直接读 volatile 字段。
+- 加入简化的 `sizeCtl` 机制：初始化时 CAS 将其设为 -1；扩容阈值设为 `table.length * 0.75`，当元素数超过阈值时触发 `resize`（可只保留框架，迁移用单线程）。
+
+### ⚡ 关键提示
+- 使用 `VarHandle` 或 `Unsafe` 进行 CAS 操作，但为了简化，可以用 `AtomicReferenceArray<Node<K,V>>` 存储桶，它的 `compareAndSet` 可直接使用。
+- `synchronized(head)` 是 JDK 1.8 CHM 的真实做法，注意 synchronized 持有的是桶的第一个节点。
+- 必须确保 `table` 的 **volatile** 修改对所有线程立即可见。
+- 初始化过程要避免多个线程同时初始化，可以采用 `sizeCtl` 的竞态标记。
+
+### ✍️ 动手写代码
+```java
+public class MiniConcurrentHashMap<K, V> {
+    static class Node<K, V> {
+        final int hash;
+        final K key;
+        volatile V value;
+        volatile Node<K, V> next;
+        Node(int hash, K key, V value, Node<K, V> next) {
+            this.hash = hash; this.key = key; this.value = value; this.next = next;
+        }
+    }
+    private volatile Node<K, V>[] table;
+    private volatile int sizeCtl;
+    // ... initTable, put, get
+}
+```
+
+### ✅ 自我检查
+- [ ] 多个线程同时 `put` 不同 key 时，桶头为 null 的桶能否通过 CAS 成功竞争而不阻塞？
+- [ ] 桶头不为 null 时，`synchronized` 锁住头节点，其它线程是等待还是能操作其他桶？
+- [ ] `get` 方法能否在 `put` 尚未释放锁时读到部分修改？(这是弱一致性的来源)
+- [ ] 初始化时 `sizeCtl` 是否成功阻止多个线程初始化，且只初始化一次？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.atomic.AtomicReferenceArray;
+
+public class MiniConcurrentHashMap<K, V> {
+    private static final int DEFAULT_CAPACITY = 16;
+    private static final float LOAD_FACTOR = 0.75f;
+    private volatile AtomicReferenceArray<Node<K,V>> table;
+    private volatile int sizeCtl;
+
+    static class Node<K, V> {
+        final int hash;
+        final K key;
+        volatile V value;
+        volatile Node<K, V> next;
+        Node(int h, K k, V v, Node<K,V> n) { hash=h; key=k; value=v; next=n; }
+    }
+
+    public MiniConcurrentHashMap() {
+        sizeCtl = DEFAULT_CAPACITY;
+    }
+
+    private final AtomicReferenceArray<Node<K,V>> initTable() {
+        AtomicReferenceArray<Node<K,V>> tab;
+        while ((tab = table) == null) {
+            if (sizeCtl < 0) { // 有其他线程在初始化
+                Thread.yield();
+                continue;
+            }
+            // CAS 抢初始化权
+            if (U.compareAndSwapInt(this, SIZECTL, sizeCtl, -1)) {
+                try {
+                    if ((tab = table) == null) {
+                        tab = new AtomicReferenceArray<>(DEFAULT_CAPACITY);
+                        table = tab;
+                        sizeCtl = (int)(DEFAULT_CAPACITY * LOAD_FACTOR); // 阈值
+                    }
+                    return tab;
+                } finally {
+                    // 不需要复原，sizeCtl 已变成阈值
+                }
+            }
+        }
+        return tab;
+    }
+
+    public V put(K key, V value) {
+        int hash = key.hashCode();
+        AtomicReferenceArray<Node<K,V>> tab = table;
+        if (tab == null) tab = initTable();
+        int n = tab.length();
+        int index = hash & (n - 1);
+        
+        while (true) {
+            Node<K,V> f = tab.get(index);
+            if (f == null) {
+                Node<K,V> newNode = new Node<>(hash, key, value, null);
+                if (tab.compareAndSet(index, null, newNode)) {
+                    // 成功插入，待处理计数和扩容
+                    break;
+                }
+                // 失败则重试
+                continue;
+            }
+            // 桶不空，锁住头节点
+            synchronized (f) {
+                if (tab.get(index) == f) { // 检查头节点未变
+                    // 查找是否存在相同key
+                    Node<K,V> e = f;
+                    boolean exists = false;
+                    while (e != null) {
+                        if (e.hash == hash && (e.key == key || key.equals(e.key))) {
+                            e.value = value; // volatile 写
+                            exists = true;
+                            break;
+                        }
+                        e = e.next;
+                    }
+                    if (!exists) {
+                        Node<K,V> tail = f;
+                        while (tail.next != null) tail = tail.next;
+                        tail.next = new Node<>(hash, key, value, null);
+                    }
+                    break;
+                }
+            }
+        }
+        // 简化：忽略扩容协助
+        return null;
+    }
+
+    public V get(K key) {
+        int hash = key.hashCode();
+        AtomicReferenceArray<Node<K,V>> tab = table;
+        if (tab == null) return null;
+        int index = hash & (tab.length() - 1);
+        Node<K,V> e = tab.get(index);
+        while (e != null) {
+            if (e.hash == hash && (e.key == key || key.equals(e.key)))
+                return e.value;
+            e = e.next;
+        }
+        return null;
+    }
+
+    // Unsafe 相关
+    private static final sun.misc.Unsafe U;
+    private static final long SIZECTL;
+    static {
+        try {
+            java.lang.reflect.Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            U = (sun.misc.Unsafe) f.get(null);
+            SIZECTL = U.objectFieldOffset(MiniConcurrentHashMap.class.getDeclaredField("sizeCtl"));
+        } catch (Exception e) { throw new Error(e); }
+    }
+}
+```
+
+**设计思路**  
+- 使用 `AtomicReferenceArray` 替代 `volatile Node[]` 以获得 CAS 支持，避免引入 `Unsafe` 操作数组元素。  
+- 初始化时通过 `sizeCtl` 的 CAS 保证只有一个线程创建数组。  
+- `put` 中桶为空用 CAS 原子设置，桶不空用 `synchronized` 锁头节点，保证同一个桶内串行。  
+- `get` 无锁，依赖 `volatile` 保证可见性，所以可能读到较旧的值。  
+- 这个版本缺少树的转换、扩容迁移、多线程协助，但这些作为原理篇的部分可留到第16天后。
+
+### 🐞 常见错误预警
+- **CAS 失败后忘记重试**：`put` 中如果 `compareAndSet` 返回 false，必须循环重新获取桶头，不能直接丢掉操作。
+- **锁头节点后未检查头节点是否被其他线程修改**：在 `synchronized` 之前可能发生扩容移动了头节点，所以拿到锁后需再次判断 `tab.get(index) == f`。
+- **`sizeCtl` 管理不当**：初始化后应设为阈值，而不是保持 -1。
+
+---
+
+## 📝 练习3：高级/探索用法——探究 sizeCtl 与协助扩容
+
+### 业务场景
+你需要在你的迷你版中加入简单的计数（模仿 `baseCount + CounterCell` 避免 CAS 竞争严重），并实现多线程协助扩容，即当线程发现 `size > threshold` 时，不自己完成整个扩容，而是将数据分块，每个线程领取一段进行迁移。
+
+### 你的任务
+1. 在 `MiniConcurrentHashMap` 中加入 `volatile int sizeCtl` 的扩容控制：当 `put` 后检查元素数超过阈值，调用 `transfer`。在 `transfer` 中，将 `sizeCtl` 设置为 `(n << 1) - (n >>> 1)` 这样的负值表示正在扩容，并记录线程数。
+2. 实现简化的 `transfer`：步长 stride 为桶数 / CPU 核数。每个线程从尾部开始，通过 CAS 领取一段桶（`transferIndex`），然后对每个桶加锁迁移。
+3. `helpTransfer`：其他线程 `put` 时若发现头节点的 hash 为特殊值比如 -1（代表 ForwardingNode），则加入协助扩容。
+4. 测试：多个线程同时插入大量数据，观察扩容是否由多线程协作完成，可用打印语句证实。
+
+### ⚡ 关键提示
+- ForwardingNode 是一个特殊的占位节点，hash 设为 MOVED = -1。它表示该桶已完成迁移，查找时需要转发到新数组。
+- `transferIndex` 用 `volatile` 控制，并用 CAS 让线程争抢处理区间。
+- 协助扩容是 JDK 1.8 CHM 的最大亮点，有效利用 CPU 并行迁移。
+
+### ✍️ 动手写代码
+```java
+// 在 MiniConcurrentHashMap 中增加 ForwardingNode、transfer 方法、helpTransfer 等
+```
+
+### ✅ 自我检查
+- [ ] 插入过程中，使用 debug 打印转移日志，能看到多个线程参与 `transfer` 吗？
+- [ ] 扩容完成后，所有数据在新表中都能通过 `get` 获取吗？
+- [ ] 扩容期间的插入是否正确？（可先锁住整个表简化）
+
+### 📖 参考实现（核心框架）
+由于完整代码过长，这里只展示关键部分的设计模式：
+
+```java
+static final int MOVED = -1;
+static class ForwardingNode<K,V> extends Node<K,V> {
+    final AtomicReferenceArray<Node<K,V>> nextTable;
+    ForwardingNode(AtomicReferenceArray<Node<K,V>> nt) {
+        super(MOVED, null, null, null);
+        nextTable = nt;
+    }
+}
+
+private void transfer(AtomicReferenceArray<Node<K,V>> tab, AtomicReferenceArray<Node<K,V>> nextTab) {
+    int stride = Math.max(tab.length() >> 3, 1); // 步长
+    int n = tab.length();
+    int i = n; // 从尾部开始
+    boolean advance = true;
+    while (i >= 0) {
+        // CAS 争抢区间
+        // ...
+        synchronized (tab.get(i)) {
+            // 迁移该桶
+        }
+    }
+    table = nextTab;
+    sizeCtl = (int)(n * 2 * 0.75);
+}
+```
+
+**设计思路**  
+- `ForwardingNode` 指向新数组，`get` 发现 hash == MOVED 就会去新表查找。  
+- `transferIndex` 是全局共享的，通过 CAS 减少，每个线程抢到一个步长的桶进行迁移，并行加速。  
+- 全部迁移完后，`nextTable` 晋升为 `table`。
+
+---
+
+## 🏢 大厂场景实战：实时黑名单过滤服务
+
+### 场景描述
+一个反欺诈系统需要维护一个**全局黑名单集合**，用于过滤交易请求。黑名单包含数百万个用户 ID，更新频繁（每秒可能有数十次增删），并要求读取性能极高（每次交易都要查询），同时需要支持范围查询（如拉黑时间超过7天的 ID 清理）。
+
+### 约束条件
+- 内存占用尽量低
+- 查询 QPS 可达 50000+
+- 写入 QPS 约 50
+- 需要定期清理过期黑名单条目
+
+### 你的设计任务
+基于今天学习的 `ConcurrentHashMap`，设计黑名单存储结构，并写出关键操作（添加、查询、定期清理）的伪代码。考虑是否需要在 CHM 基础上包装过期时间。
+
+### 设计决策点
+- CHM 本身无法自动过期，需要为此如何包装？
+- 清理过期数据时，需要遍历整个 CHM，这会阻塞写吗？
+- 是否需要结合 `DelayQueue` 或后台线程定期扫描？
+
+### 常见方案参考及其取舍分析（直接展示）
+
+**方案：CHM + 后台线程**  
+```java
+ConcurrentHashMap<String, Long> blacklist = new ConcurrentHashMap<>(); // ID -> 过期时间戳
+// 添加: blacklist.put(userId, System.currentTimeMillis() + 7*86400000L);
+// 查询: Long expire = blacklist.get(userId); if (expire != null && expire > now) return true; else if (expire != null) blacklist.remove(userId); return false;
+// 后台线程：每隔一段时间遍历 entrySet，移除已过期的。遍历使用弱一致性迭代器，不影响并发写。
+```
+- **优点**：可以直接利用 CHM 的高并发读；惰性清除 + 定期清除保证内存不胀。  
+- **缺点**：惰性删除可能导致已过期用户多活一小段时间；遍历时通过弱一致性，不影响写入性能。  
+- **另一种方案**：使用 `Caffeine` 或 `Cache2k` 等专业缓存，但本题旨在于理解 CHM 基础上扩展。  
+- **扩展**：如果还需要按加入时间排序，可在 CHM 外维护一个 `ConcurrentSkipListMap<Long, String>`（时间->ID），方便范围取出最早过期的。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：ConcurrentHashMap 1.7 和 1.8 在实现上最大的区别是什么？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **核心区别**：JDK 1.7 使用 **分段锁（Segment）**，继承 `ReentrantLock`，每段锁住一定范围的桶。JDK 1.8 放弃了分段锁，改为 **CAS + synchronized** 直接锁住桶的第一个节点。
+- **工作流程**：
+  - 1.7：整个哈希表被分成多个 Segment，每个 Segment 是一个小的 HashMap，并发度等于 Segment 数量（默认 16）。put 时先经过一次哈希找到 Segment，再在该 Segment 内部加锁进行第二次哈希。
+  - 1.8：引入红黑树和协助扩容。put 时通过 CAS 尝试插入桶头，若桶已存在则 synchronized 锁住头节点进行链表/树操作。扩容时多线程协作迁移，效率大幅提升。
+- **性能与内存对比**：1.8 在并发度上更灵活（不再是固定的段数），锁粒度更细，且 tree bin 避免了碰撞攻击。内存上 1.8 省去了 Segment 的开销，但增加了 ForwardingNode 和 TreeNode。
+- **常见追问**：“为什么 1.8 不用分段锁而用 synchronized？”  
+  → JDK 1.6 后 synchronized 大幅优化（偏向锁、轻量锁、重量锁），性能与 Lock 接近，且更简洁。且 CAS 失败后只能 synchronized 一个桶，开销可控。分段锁在低并发时反而会浪费内存和增加复杂度。
+- **易错提醒**：有些人认为 1.8 之后完全没有锁，其实 synchronized 依旧存在，只是用在了桶级别。
+- **自我反思**：能否画出 1.7 和 1.8 两次哈希的流程对比？是否理解 1.7 的并发度是如何限制最大并发线程数的？
+
+---
+
+### 面试题2：ConcurrentHashMap 的 size() 方法是如何实现线程安全的？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **核心概念**：CHM 的 size() 并不维护一个全局的计数变量，因为多个线程同时修改时 CAS 竞争激烈。它使用**分段计数**：`baseCount`（无竞争时 CAS 更新）+ `CounterCell[]` 数组（竞争时分散计数）。
+- **工作流程**：
+  - 增加计数：`addCount` 首先 CAS 更新 `baseCount`，如果失败说明有竞争，则随机选择一个 CounterCell，对其 `value` 做 CAS 加法。
+  - 获取总数：`size()`（实际上是 `mappingCount()` 返回 long）对 `baseCount` 和所有 CounterCell 求和。
+- **关键点**：`CounterCell` 通过 `@sun.misc.Contended` 避免伪共享。扩容时也会更新计数，避免死锁。
+- **常见追问**：“为什么不用 `AtomicLong`？” → 因为高并发下大量 CAS 自旋消耗 CPU。分散热点到多个 Cell 后，单个 CAS 竞争减少，类似 `LongAdder`。
+- **易错提醒**：`size()` 返回值是 int（最大 Integer.MAX_VALUE），若超过要用 `mappingCount()` 返回 long。
+- **自我反思**：这个模式其实与 `LongAdder` 同源。能解释 `LongAdder` 和 `AtomicLong` 的区别吗？
+
+---
+
+### 面试题3：ConcurrentHashMap 的 get 方法为什么不需要加锁？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **核心原因**：Node 的 `val` 和 `next` 字段都声明为 `volatile`，保证了内存可见性。数组引用 `table` 也是 `volatile`，任何线程都能看到最新的数组。因此读操作可以无锁进行，但可能读到的是稍旧的值（弱一致性）。
+- **特殊情况**：当发生扩容时，桶可能被替换为 `ForwardingNode`，其 `find` 方法会去新数组查找，所以读也不会阻塞。
+- **可见性保证**：`put` 中的 volatile 写 happens-before `get` 中的 volatile 读，因此至少能保证对同一个 key 的修改最终可见。
+- **常见追问**：“get 是否会读到一半的修改？” → 不会，因为 volatile 保证了引用的原子性。即使是红黑树节点，查找期间可能进行平衡，但由于 TreeNode 的 `left`、`right` 也是 volatile，读取不会出现断裂指针。
+- **易错提醒**：`get` 虽然不加锁，但不能保证读到的一定是最新值（另一个线程刚 put，可能因为 volatile 写未刷新到主存），所以是弱一致性的。
+- **自我反思**：为什么 `HashMap` 的 `get` 可能出现死循环（Java 7 并发下），而 `CHM` 不会？因为 CHM 的写有锁和 CAS 保护，不会形成环。
+
+---
+
+### 面试题4：什么情况下 ConcurrentHashMap 会出现扩容？多线程如何协助扩容？
+**难度**：⭐️⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **触发条件**：当 `put` 后发现 size 超过阈值（`sizeCtl > 0` 时为阈值），或者链表长度 ≥8 且数组长度 < 64 时（优先扩容而非树化）。
+- **多线程协助**：
+  1. 第一个触发扩容的线程会通过 CAS 将 `sizeCtl` 设为负值，表示正在扩容，并创建一个新数组（大小为原2倍）。
+  2. 该线程从原数组尾部向前逐步迁移桶，使用 `transferIndex` 全局变量和 CAS 让每个线程领取迁移区间（stride）。
+  3. 其他线程在 `put` 或 `get` 时，若发现某个桶已经是 `ForwardingNode`（hash==MOVED），说明正在扩容，它们会调用 `helpTransfer` 加入迁移工作。
+  4. 迁移完成的桶被标记为 ForwardingNode，指向新数组。
+- **关键点**：迁移过程中，写操作仍然可以进行：若目标桶未迁移，则锁住桶后插入；若已迁移，则在 newTable 上插入。这保证了扩容期间服务不阻塞。
+- **常见追问**：“如果迁移过程中来了新的 put 请求且正好命中未迁移的桶，是否需要等待？” → 需要，因为该桶被迁移线程锁住，put 线程会在 `synchronized` 处阻塞，但迁移很快完成，阻塞时间短。
+- **易错提醒**：协助扩容不是必选项，但在高并发插入时可以极大加速，把多线程的压力转化为迁移动力。
+- **自我反思**：如果由你来设计，你会如何避免迁移过程中所有线程都试图抢同一个区间导致的 CAS 竞争？JDK 的 `transferIndex` 是如何做到比较平均的？
+
+---
+
+### 面试题5：ConcurrentHashMap 和 Hashtable 性能差距体现在哪些地方？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **锁粒度**：Hashtable 锁住整个表（在方法上加 `synchronized`），任何操作都互斥。ConcurrentHashMap 1.8 锁住单个桶，读取无锁，并发度高达桶数。
+- **迭代**：Hashtable 的迭代器是 fail-fast 的（要求整个迭代期间不能修改），且全程锁表。CHM 是弱一致性的，迭代不需要锁，也不会抛出 `ConcurrentModificationException`。
+- **扩容**：Hashtable 扩容时，所有读写都阻塞，单线程迁移。CHM 多线程协助扩容，写操作仍可进行。
+- **细节实现**：Hashtable 不允许 null 键值，CHM 也不允许（因为它使用 null 作为特殊标记）。Hashtable 继承 Dictionary 类，较老；CHM 实现 `ConcurrentMap` 接口，提供丰富原子方法（`computeIfAbsent` 等）。
+- **常见追问**：“`Collections.synchronizedMap` 和 Hashtable 哪个更快？” → 差不多，都是全表锁。但前者可以包装任何 Map。
+- **易错提醒**：即使 CHM 性能高，但它的 `size()` 是近似值吗？不是，它也是精确值（只是计算开销比普通 HashMap 稍高）。
+- **自我反思**：在只需要一次性的批量加载，之后只读的场景，用 `Collections.unmodifiableMap` 比 CHM 更省内存，你能想到吗？
+
+---
+
+> 今天你将 CAS 和 synchronized 完美融合，真正触摸到了工业级并发的艺术。明天我们将更进一步，用 JOL 观察 synchronized 的锁升级过程，亲眼看到对象头的变化。这是理解 JVM 层面并发的关键一步！
