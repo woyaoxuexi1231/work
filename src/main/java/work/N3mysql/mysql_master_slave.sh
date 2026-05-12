@@ -23,7 +23,7 @@
 #   SLAVE_PORT          - 从库端口 (默认: 3307)
 #   MASTER_DATA_ROOT    - 主库数据目录 (默认: /root/mysql-master)
 #   SLAVE_DATA_ROOT     - 从库数据目录 (默认: /root/mysql-slave)
-#   MYSQL_VERSION       - MySQL 版本 (默认: 8.1)
+#   MYSQL_VERSION       - MySQL 版本 (默认: 8.0.35)
 #
 # 端口说明:
 #   3306 - 主库 MySQL 默认端口
@@ -53,7 +53,7 @@ MASTER_PORT="${MASTER_PORT:-3306}"
 SLAVE_PORT="${SLAVE_PORT:-3307}"
 MASTER_CONTAINER_NAME="${MASTER_CONTAINER_NAME:-mysql-master}"
 SLAVE_CONTAINER_NAME="${SLAVE_CONTAINER_NAME:-mysql-slave}"
-MYSQL_VERSION="${MYSQL_VERSION:-8.1}"
+MYSQL_VERSION="${MYSQL_VERSION:-8.0.35}"
 LOG_FILE="${LOG_FILE:-${DATA_ROOT}/install_mysql_master_slave.log}"
 
 MASTER_DATA_ROOT="${DATA_ROOT}/master"
@@ -442,10 +442,10 @@ SLAVE_READY=false
 SLAVE_MAX_RETRIES=90
 
 while [[ $RETRY_COUNT -lt $SLAVE_MAX_RETRIES ]]; do
-  # 使用 root 用户和密码测试连接
-  if docker exec "${SLAVE_CONTAINER_NAME}" mysqladmin ping -h localhost -P 3307 -uroot -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+  # 从库容器内部 MySQL 监听 3306 端口（不是映射的 3307）
+  if docker exec "${SLAVE_CONTAINER_NAME}" mysqladmin ping -h localhost -uroot -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
     # 额外验证：尝试执行一个简单查询
-    if docker exec "${SLAVE_CONTAINER_NAME}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -P 3307 -e "SELECT 1" >/dev/null 2>&1; then
+    if docker exec "${SLAVE_CONTAINER_NAME}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
       SLAVE_READY=true
       log_info "从库 MySQL 服务已就绪"
       break
