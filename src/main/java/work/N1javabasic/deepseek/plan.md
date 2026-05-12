@@ -2183,3 +2183,572 @@ public class CaffeineCacheDemo {
 - 运行每个类的 `main` 方法即可观察缓存行为，控制台会输出加载过程、命中情况及统计信息。
 - 三个示例分别展示了从“基础工具硬套”到“标准化缓存”再到“高性能现代缓存”的演进，可对比代码复杂度和功能丰富度。
 
+
+
+# 第 5 天：TreeMap 与红黑树排序探究
+本日掌握：彻底搞懂 TreeMap 的排序机制，手写 Comparator，复现 `compareTo` 不一致引发的诡异 bug，并初步触摸红黑树自平衡过程  
+覆盖原理点：7 (TreeMap 红黑树排序)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能利用 `TreeMap` 自然排序与自定义 `Comparator` 实现任意维度的排序。
+- 能解释 `TreeMap` 底层使用的红黑树性质，并说明为什么它不需要哈希。
+- 能复现因 `compareTo` 与 `equals` 不一致导致的“丢失元素”或“多元素重复”故障。
+- 能手写红黑树的左旋、右旋代码，并理解插入修正的核心流程。
+- 能回答面试中关于 `TreeMap` 时间复杂度、key 约束、与 `HashMap` 对比的所有追问。
+
+---
+
+## 📝 练习1：基础用法——自然排序与比较器排序（必做）
+
+### 业务场景
+某交易系统需要存储每笔订单的 ID 到金额的映射，并支持**按金额升序**批量遍历订单，以及**按订单 ID 字母序**浏览。我们不需要哈希，因为需要顺序。
+
+### 你的任务
+1. 创建一个 `TreeMap<String, Double>`，以订单 ID 为 key（自然升序）。插入 5 条记录，打印整个 map（验证 key 有序）。
+2. 创建一个 `TreeMap<String, Double>`，但通过自定义 `Comparator` 改为按 **金额升序，金额相同时按 ID 降序**。插入记录后打印，验证顺序。
+   - 注意：key 仍然是 ID，但 Comparator 需要访问 value。由于 `TreeMap` 的 Comparator 只能比较 key，所以这次我们把 `value` 也放在 key 里：创建类 `OrderKey` 包含 ID 和金额，实现 `Comparable` 或传入 `Comparator`。
+3. 使用 `firstEntry()`、`lastEntry()`、`subMap()`、`tailMap()` 体验区间查询。
+
+### ⚡ 关键提示
+- `TreeMap` 的 `Comparator`/`Comparable` 只作用于 key。如果排序依据包含 value，需要将排序所需字段合并到 key 中。
+- `subMap` 返回视图，对它的修改会影响原 map，反之亦然；需要注意边界是否包含（可提供 `boolean` 参数：`subMap(fromKey, true, toKey, false)`）。
+- `Comparator` 的 `compare(o1, o2)` 应返回负数、0、正数。若返回 0，TreeMap 视为相同 key，会覆盖旧值。
+- 所有 key 不能为 null（除非 Comparator 支持 null 比较），但 value 可以为 null。
+
+### ✍️ 动手写代码
+```java
+// 练习1.1 自然排序
+TreeMap<String, Double> ordersById = new TreeMap<>();
+ordersById.put("D0001", 150.0);
+ordersById.put("A0002", 200.0);
+ordersById.put("C0003", 150.0);
+ordersById.put("B0004", 300.0);
+System.out.println(ordersById);  // 验证输出顺序
+
+// 练习1.2 按金额排序 - 定义 OrderKey
+class OrderKey implements Comparable<OrderKey> {
+    String id;
+    double amount;
+    // 构造、getter
+    public int compareTo(OrderKey other) {
+        int cmp = Double.compare(this.amount, other.amount);
+        if (cmp != 0) return cmp;
+        return other.id.compareTo(this.id); // 金额相同，ID降序
+    }
+}
+TreeMap<OrderKey, String> ordersByAmount = new TreeMap<>();
+// 使用 id 当作 value 存
+ordersByAmount.put(new OrderKey("D0001", 150.0), "D0001");
+ordersByAmount.put(new OrderKey("A0002", 200.0), "A0002");
+ordersByAmount.put(new OrderKey("C0003", 150.0), "C0003");
+System.out.println(ordersByAmount.keySet()); // 检查顺序
+```
+
+### ✅ 自我检查
+- [ ] 自然排序时，key 的遍历顺序是否按 String 自然序（字典序）？
+- [ ] 自定义排序时，金额相同的订单是否按 ID 降序正确放置？
+- [ ] 使用 `firstKey()` 得到的最小 key 是否符合预期？
+- [ ] `subMap` 的范围是否准确包含了边界（或不包含）？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.*;
+
+public class TreeMapDemo {
+    public static void main(String[] args) {
+        // 1. 自然排序
+        TreeMap<String, Double> natural = new TreeMap<>();
+        natural.put("D", 150.0);
+        natural.put("A", 200.0);
+        natural.put("C", 150.0);
+        natural.put("B", 300.0);
+        System.out.println("自然顺序: " + natural.keySet()); // [A, B, C, D]
+
+        // 2. 自定义排序
+        TreeMap<OrderKey, String> custom = new TreeMap<>();
+        custom.put(new OrderKey("D", 150.0), "D");
+        custom.put(new OrderKey("A", 200.0), "A");
+        custom.put(new OrderKey("C", 150.0), "C");
+        custom.put(new OrderKey("B", 300.0), "B");
+        System.out.print("自定义排序: ");
+        for (OrderKey k : custom.keySet()) {
+            System.out.print(k + " ");
+        }
+        // 预期: [C:150.0, D:150.0, A:200.0, B:300.0]  金额升序，同金额 ID 降序
+
+        // 3. 区间操作
+        System.out.println("\nfirstEntry: " + custom.firstEntry().getKey());
+        System.out.println("lastEntry: " + custom.lastEntry().getKey());
+        // 金额在 [150, 200) 的订单（不含200）
+        NavigableMap<OrderKey, String> sub = custom.subMap(
+            new OrderKey("", 150.0), true,
+            new OrderKey("", 200.0), false
+        );
+        System.out.println("区间 [150,200): " + sub.keySet());
+    }
+}
+
+class OrderKey implements Comparable<OrderKey> {
+    String id;
+    double amount;
+    OrderKey(String id, double amount) { this.id = id; this.amount = amount; }
+    public int compareTo(OrderKey o) {
+        int cmp = Double.compare(amount, o.amount);
+        if (cmp != 0) return cmp;
+        return o.id.compareTo(id); // 金额相同，ID降序
+    }
+    public String toString() { return id + ":" + amount; }
+}
+```
+
+**设计思路**  
+- `OrderKey.compareTo` 实现了复合排序：先金额升序，再 ID 降序。`Double.compare` 避免了 `==` 浮点精度问题。  
+- `subMap` 使用 `OrderKey("", 150.0)` 作为边界时，因为排序先看金额，ID 空串不影响比较，故能涵盖所有金额 150.0 的订单。  
+- 区间范围利用 `boolean` 参数精确控制开闭，这是 `TreeMap` 比 `SortedMap` 进步的地方。
+
+### 🐞 常见错误预警
+- **错误**：`Comparator` 实现时忘记处理相等情况，直接返回 `1` 或 `-1`，导致 TreeMap 认为所有 key 都不等，无法覆盖旧值。  
+  → **发现**：`put` 同一个 ID 两次，`size()` 增加了，而不是替换。检查 `compare` 是否返回 0。
+- **错误**：`subMap` 修改了原 map 但没有重新获取视图，导致遍历微妙的并发修改异常（单线程修改也会影响视图）。  
+  → **排查**：始终在操作视图前确认原始 map 不变，或先复制视图：`new TreeMap<>(subMap)`。
+- **错误**：key 为 null 时，自然排序直接 NPE。如果必须支持 null，可提供 `Comparator.nullsFirst()` 包装。
+
+---
+
+## 📝 练习2：中级用法——`compareTo` 与 `equals` 不一致的陷阱（必做）
+
+### 业务场景
+你设计了一个 `Person` 类作为 key，按名字长度排序。两个人名字长度相同但内容不同，`compareTo` 返回 0，但 `equals` 返回 false。这会导致 TreeMap 视作同一个人，丢失数据。
+
+### 你的任务
+1. 定义 `Person` 类：`name` 字段，`compareTo` 只比较 `name.length()`；当长度相等时返回 0。`equals` 按标准重写（比较名字内容）。
+2. 创建 `TreeMap<Person, String>`，插入两个名字长度相同但名字不同的人（如 "Alice" 和 "Bobbi"），观察结果。查询其中一个，打印 size，看是否只有一个元素。
+3. 修改 `compareTo`，使其长度相同时继续比较字符串内容，使一致性问题消失，验证结果。
+
+### ⚡ 关键提示
+- `TreeMap` 只依赖 `compareTo`/`Comparator` 判断 key 的唯一性。若 `compareTo` 返回 0，则视为同一 key，会替换旧值，即使 `equals` 认为不同。
+- 正确实现要求：`(compareTo(a, b) == 0) == (a.equals(b))`，否则将违反 `SortedMap` 规范。
+- 如果业务上不能保证严格一致，可考虑使用 `HashMap` 并用 `List` 维护顺序，或编写包装器。
+
+### ✍️ 动手写代码
+```java
+class Person implements Comparable<Person> {
+    String name;
+    Person(String name) { this.name = name; }
+    @Override
+    public int compareTo(Person o) {
+        // 错误实现：仅比长度
+        return Integer.compare(this.name.length(), o.name.length());
+    }
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Person)) return false;
+        Person person = (Person) o;
+        return name.equals(person.name);
+    }
+    @Override
+    public int hashCode() { return name.hashCode(); }
+    @Override
+    public String toString() { return name; }
+}
+// 测试
+TreeMap<Person, String> map = new TreeMap<>();
+map.put(new Person("Alice"), "A");
+map.put(new Person("Bobbi"), "B"); // 长度同5，compareTo返回0
+System.out.println(map.size());    // 期望：2（实际：1，因为失去一个）
+System.out.println(map.get(new Person("Alice"))); // 可能返回 "B"
+```
+
+### ✅ 自我检查
+- [ ] 插入两个姓名长度相同的 Person，`size()` 是不是 1？
+- [ ] 如果 `compareTo` 修正为长度相同再比较 `name`，`size()` 是否变 2？
+- [ ] HashMap 能正常区分这两个 key 吗？（能，因为 hashcode/equals 不同）
+- [ ] 你是否理解了为何 TreeMap 不应使用与 equals 不一致的比较器？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.*;
+
+public class CompareToEqualsIssue {
+    static class Person implements Comparable<Person> {
+        String name;
+        Person(String n) { name = n; }
+
+        // 错误版：仅比长度
+        @Override
+        public int compareTo(Person o) {
+            return Integer.compare(name.length(), o.name.length());
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Person)) return false;
+            return name.equals(((Person)o).name);
+        }
+        @Override public int hashCode() { return name.hashCode(); }
+        @Override public String toString() { return name; }
+    }
+
+    public static void main(String[] args) {
+        TreeMap<Person, String> tree = new TreeMap<>();
+        tree.put(new Person("Alice"), "A");
+        tree.put(new Person("Bobbi"), "B"); // 长度5，compareTo=0
+        System.out.println("TreeMap size: " + tree.size()); // 1，Bobbi 覆盖了 Alice
+        System.out.println("Value for 'Alice': " + tree.get(new Person("Alice"))); // 输出 B
+
+        // 修正版：长度相同时比较字符串
+        TreeMap<Person, String> fixed = new TreeMap<>((a, b) -> {
+            int cmp = Integer.compare(a.name.length(), b.name.length());
+            return cmp != 0 ? cmp : a.name.compareTo(b.name);
+        });
+        fixed.put(new Person("Alice"), "A");
+        fixed.put(new Person("Bobbi"), "B");
+        System.out.println("Fixed size: " + fixed.size()); // 2
+    }
+}
+```
+
+**设计思路**  
+- 通过故意错误实现，直观展现 TreeMap 使用 `compareTo` 判断唯一性的后果。  
+- 修正版 Comparator 保证了与 `equals` 的一致性，即 `compare == 0` 当且仅当 `name` 相等。  
+- 这是面试中常考的陷阱，理解它有助于在业务代码中正确使用 `SortedSet`/`SortedMap`。
+
+### 🐞 常见错误预警
+- 即使 `compareTo` 正确，但如果你在排序中使用 `hashCode` 或随机元素，也会导致 `compare` 不一致，可能引起无法预测的行为。
+- 在自定义对象时，务必同步调整 `compareTo`、`equals` 和 `hashCode`，除非对象专门用于 TreeMap 且不用于 HashMap，但这很危险。
+
+---
+
+## 📝 练习3：高级/探索用法——模拟红黑树插入平衡（左旋、右旋）
+
+### 业务场景
+为了彻底理解 TreeMap 的插入为什么是 O(log n)，你需要模拟红黑树的旋转与颜色变换过程，这样可以自信地回答“红黑树如何维持平衡”的面试题。
+
+### 你的任务
+1. 创建一个简化红黑树类 `SimpleRBTree<K,V>`，节点包含 `parent, left, right, color(RED/BLACK)`。
+2. 实现 **左旋** `rotateLeft(Entry<K,V> p)` 和 **右旋** `rotateRight(Entry<K,V> p)` 方法，调用后正确调整父子指针和根节点。
+3. 实现插入方法 `put(K key, V value)` 仅完成 BST 插入部分。
+4. 在 BST 插入之后，**加入红黑树修正逻辑** `fixAfterInsertion(Entry<K,V> x)`，至少处理叔叔节点为红色的情况，其余情况可作框架但先不实现（可留空，但整体结构要对）。
+5. 写一个简单的可视化：打印树结构（横版或竖版缩进）以及颜色。
+
+### ⚡ 关键提示
+- 红黑树性质：根必黑、红节点子必黑、任一节点到叶子路径黑节点数相同。
+- 插入节点默认红色，然后向上修正。
+- 左旋：以某节点为支点，其右子变父，左旋后原支点变右子的左子。
+- 右旋同理。
+- 可参考 `java.util.TreeMap.Entry` 结构，或用独立类。
+- 可视化打印可先不完美，用递归缩进即可。
+
+### ✍️ 动手写代码
+```java
+class RBEntry<K, V> {
+    K key; V value; RBEntry<K,V> left, right, parent;
+    boolean color; // true=RED, false=BLACK
+    // 构造、toString
+}
+class SimpleRBTree<K extends Comparable<K>, V> {
+    private RBEntry<K,V> root;
+    // 左旋
+    void rotateLeft(RBEntry<K,V> p) { ... }
+    // 右旋
+    void rotateRight(RBEntry<K,V> p) { ... }
+    // BST插入
+    void put(K key, V value) { ... }
+    // 修正
+    void fixAfterInsertion(RBEntry<K,V> x) { ... }
+    // 打印
+    void print() { ... }
+}
+```
+
+### ✅ 自我检查
+- [ ] 左旋后树的中序遍历顺序是否保持不变？
+- [ ] 插入连续递增的键（如1,2,3,4,5），是否触发了旋转？树的高度是否远小于5？
+- [ ] 根节点颜色始终为黑色吗？
+- [ ] 是否存在两个连续的红节点？
+
+### 📖 参考实现（直接展示）
+
+```java
+public class SimpleRBTree<K extends Comparable<K>, V> {
+    private static final boolean RED = true;
+    private static final boolean BLACK = false;
+
+    static class Entry<K, V> {
+        K key;
+        V value;
+        Entry<K, V> left, right, parent;
+        boolean color = RED;
+        Entry(K key, V value, Entry<K, V> parent) {
+            this.key = key;
+            this.value = value;
+            this.parent = parent;
+        }
+    }
+
+    private Entry<K, V> root;
+
+    public void put(K key, V value) {
+        Entry<K, V> t = root;
+        if (t == null) {
+            root = new Entry<>(key, value, null);
+            root.color = BLACK;
+            return;
+        }
+        int cmp;
+        Entry<K, V> parent;
+        do {
+            parent = t;
+            cmp = key.compareTo(t.key);
+            if (cmp < 0) t = t.left;
+            else if (cmp > 0) t = t.right;
+            else { t.value = value; return; }
+        } while (t != null);
+
+        Entry<K, V> e = new Entry<>(key, value, parent);
+        if (cmp < 0) parent.left = e;
+        else parent.right = e;
+        fixAfterInsertion(e);
+    }
+
+    // 左旋
+    private void rotateLeft(Entry<K, V> p) {
+        if (p == null) return;
+        Entry<K, V> r = p.right;
+        p.right = r.left;
+        if (r.left != null) r.left.parent = p;
+        r.parent = p.parent;
+        if (p.parent == null) root = r;
+        else if (p.parent.left == p) p.parent.left = r;
+        else p.parent.right = r;
+        r.left = p;
+        p.parent = r;
+    }
+
+    // 右旋
+    private void rotateRight(Entry<K, V> p) {
+        if (p == null) return;
+        Entry<K, V> l = p.left;
+        p.left = l.right;
+        if (l.right != null) l.right.parent = p;
+        l.parent = p.parent;
+        if (p.parent == null) root = l;
+        else if (p.parent.right == p) p.parent.right = l;
+        else p.parent.left = l;
+        l.right = p;
+        p.parent = l;
+    }
+
+    // 插入修正（核心）
+    private void fixAfterInsertion(Entry<K, V> x) {
+        x.color = RED;
+        while (x != null && x != root && x.parent.color == RED) {
+            if (x.parent == x.parent.parent.left) {
+                Entry<K, V> uncle = x.parent.parent.right;
+                if (uncle != null && uncle.color == RED) {
+                    // 情况1：叔叔红
+                    x.parent.color = BLACK;
+                    uncle.color = BLACK;
+                    x.parent.parent.color = RED;
+                    x = x.parent.parent;
+                } else {
+                    if (x == x.parent.right) {
+                        // 情况2：LR，先左旋
+                        x = x.parent;
+                        rotateLeft(x);
+                    }
+                    // 情况3：LL，右旋染色
+                    x.parent.color = BLACK;
+                    x.parent.parent.color = RED;
+                    rotateRight(x.parent.parent);
+                }
+            } else { // 对称
+                Entry<K, V> uncle = x.parent.parent.left;
+                if (uncle != null && uncle.color == RED) {
+                    x.parent.color = BLACK;
+                    uncle.color = BLACK;
+                    x.parent.parent.color = RED;
+                    x = x.parent.parent;
+                } else {
+                    if (x == x.parent.left) {
+                        x = x.parent;
+                        rotateRight(x);
+                    }
+                    x.parent.color = BLACK;
+                    x.parent.parent.color = RED;
+                    rotateLeft(x.parent.parent);
+                }
+            }
+        }
+        root.color = BLACK;
+    }
+
+    // 简单打印
+    public void printTree() {
+        print(root, "", true);
+    }
+    private void print(Entry<K, V> node, String indent, boolean last) {
+        if (node != null) {
+            System.out.print(indent);
+            System.out.print(last ? "└── " : "├── ");
+            System.out.println((node.color ? "R " : "B ") + node.key);
+            indent += last ? "    " : "│   ";
+            print(node.left, indent, node.right == null);
+            print(node.right, indent, true);
+        }
+    }
+
+    public static void main(String[] args) {
+        SimpleRBTree<Integer, String> tree = new SimpleRBTree<>();
+        int[] nums = {10, 5, 15, 3, 7, 13, 18, 1, 20};
+        for (int n : nums) tree.put(n, "");
+        tree.printTree();
+    }
+}
+```
+
+**设计思路**  
+- 旋转操作直接参考 TreeMap 源码，但去除了泛型噪音，保留了核心指针重连。  
+- `fixAfterInsertion` 实现了最经典的几种情况，未包含删除修正，但插入修正是面试必问。  
+- 打印函数方便肉眼验证红黑树性质（根黑、无连续红、大致平衡）。  
+- 如果时间有限，至少实现框架和旋转，其余用注释标注思路，表明你懂流程。
+
+### 🐞 常见错误预警
+- 旋转后忘记更新 `parent` 指针，导致子节点指向孤儿。尤其要处理当前节点是根的情况。
+- 修正循环中，`x = x.parent.parent` 可能上溯到 null，要加 null 判断。
+- 颜色常量定义为 boolean 容易混淆，可定义静态常量 `RED/BLACK`。
+
+---
+
+## 🏢 大厂场景实战：IP 地理位置查询系统
+
+### 场景描述
+某网络安全系统需要根据外部 IP 快速判断所在地区（如“北京市”“上海市”），类似 GeoIP。拥有约 50 万条 IP 段记录，包含起始 IP、结束 IP、地理位置。每次请求一个 IP，需要返回对应区域，若未匹配返回“未知”。
+
+### 约束条件
+- 请求 QPS 峰值 10000
+- 内存占用尽量小
+- 数据集更新频率低（每天一次），可以在内存中重建索引
+
+### 你的设计任务
+使用 TreeMap 作为核心数据结构，设计 IP 查询引擎。写出关键类/方法伪代码，并说明时间复杂度。
+
+### 设计决策点（引导思考）
+- IP 地址如何转为可比较的键？`String` 比较行吗？需要转换为整数或 `long`。
+- 如何存储 IP 段？用 TreeMap 保存**每个起始 IP** 到 `(结束IP, 地理信息)` 的映射。查询时，使用 `floorEntry(IP)` 找到最后一个起始 IP ≤ 查询 IP 的段，然后判断该段的结束 IP 是否 >= 查询 IP。
+- 如果使用 `subMap` 呢？可以更快？不一定，`floorEntry` 是 O(log n)。
+- 内存优化：IPv4 可以用 `int`，IPv6 可以用 `BigInteger` 或自定义 128 位结构。
+
+### 常见方案参考及其取舍分析（直接展示）
+
+**方案：TreeMap + floorEntry**  
+```java
+TreeMap<Integer, IPRange> ranges = new TreeMap<>();
+// IPRange 包含 int endIp, String location
+ranges.put(startIp1, new IPRange(endIp1, "北京"));
+ranges.put(startIp2, new IPRange(endIp2, "上海"));
+
+public String getLocation(String ip) {
+    int intIp = ipToInt(ip);
+    Map.Entry<Integer, IPRange> entry = ranges.floorEntry(intIp);
+    if (entry != null && intIp <= entry.getValue().endIp) {
+        return entry.getValue().location;
+    }
+    return "未知";
+}
+```
+- **优点**：O(log N) 查询，实现简单，无需外部依赖，50 万条内存占用约几十 MB（每个条目约几十字节）。  
+- **缺点**：更新时需重建整个 TreeMap（每日一次可接受）。  
+- **对比**：若用二分查找数组，占用内存更小，但更新需重排；TreeMap 代码更简洁。对于纯 IPv4，`int` 范围完全满足，`TreeMap` 是极佳选择。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：TreeMap 底层数据结构是什么？为什么不用 AVL 树？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **核心概念**：TreeMap 基于**红黑树**，一种自平衡二叉搜索树。红黑树在插入/删除时的旋转操作比AVL树少，统计性能更优。
+- **工作流程**：每次插入/删除后，通过变色和树旋转（左旋/右旋）来保证五个性质，从而确保最长路径不超过最短路径的2倍，高度 O(log n)。
+- **关键点**：红黑树在频繁插入/删除的场景下，旋转次数少（最多3次），而 AVL 树由于要求更严格的平衡（高度差 ≤1），旋转可能更多，导致写性能稍弱。但 AVL 读操作稍快（更平衡）。Java 官方选择红黑树是基于实际测试：大多数 Map 操作读多写少，但红黑树的综合性能最优。
+- **常见追问**：“那 HashMap 用了红黑树为什么还用链表？”  
+  → 回答：链表转红黑树是为了防止哈希碰撞攻击导致 O(n)；常态下表小数据少时，红黑树维护成本高于链表，所以需要阈值控制。
+- **易错提醒**：很多人以为红黑树和 AVL 一样严格平衡，实则红黑树是“黑色完美平衡”，允许局部不平衡。记住它通过染色控制黑高度，而 AVL 通过高度差。
+- **自我反思**：我可以清晰地画出红黑树的五个性质吗？能否口头描述插入导致连续红节点时的三种修复情形？
+
+---
+
+### 面试题2：TreeMap 是如何保证 key 有序的？时间复杂度是多少？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **核心概念**：TreeMap 通过在插入时比较 key 的 `compareTo`（或 Comparator）结果，将其放到二叉搜索树的合适位置，并调整平衡。中序遍历树得到有序序列。
+- **工作流程**：`put` 从根开始比较，小则左走，大则右走，找到合适叶子插入，之后自底向上修复平衡。`get`、`containsKey` 类似二分查找。`subMap` 寻找边界后，中序遍历中间节点。
+- **时间复杂度**：`get`、`put`、`remove`、`containsKey` 均为 O(log n)。`firstKey`、`lastKey` 也是 O(log n)（需要找到最左或最右叶子，但通常有指针优化）。遍历整个 Map 是 O(n)，因为中序遍历每个节点。
+- **关键点**：如果 Comparator 不满足自反、对称、传递性，树会混乱，可能导致元素丢失或死循环。
+- **常见追问**：“遍历时修改 TreeMap 会怎样？” → 如果通过非迭代器方式修改结构，迭代器会 fail-fast，抛出 `ConcurrentModificationException`。即便是同一个线程，在遍历过程中 `put` 或 `remove` 也是不安全的，应使用迭代器的 `remove` 方法。
+- **易错提醒**：有人把 TreeMap 的遍历复杂度误认为 O(n log n)，实则每个节点只访问一次，所以是 O(n)。
+- **自我反思**：能否自己实现一个简单的二分查找在有序数组上，对比 TreeMap 的 get 源码？理解为什么数组查找 O(log n) 但插入 O(n)，而 TreeMap 插入 O(log n)。
+
+---
+
+### 面试题3：在 TreeMap 中使用自定义对象作为 key，必须满足什么条件？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **核心概念**：必须实现 `Comparable` 接口或向 TreeMap 构造器提供一个 `Comparator`。且 `compareTo`/`compare` 必须与 `equals` 保持一致，同时满足 Comparator 的约定（自反性、对称性、传递性）。
+- **工作流程**：如果 `compare` 返回 0，TreeMap 认为 key 相等，会覆盖旧值。如果与 `equals` 不一致，一个 key 在逻辑上不同但 `compare` 返回 0，就会在 map 里互相覆盖。此外，如果 Comparator 不满足传递性，可能破坏树的搜索结构，导致查找错误。
+- **关键点**：很多 bug 源于 `compareTo` 只比较部分字段，而 `equals` 比较所有字段。建议使用 `Comparator.comparing` 或 `Guava` 的 `ComparisonChain` 构建完整比较，确保 `compare == 0` 等价于 `equals`。
+- **常见追问**：“如果我想按多个属性排序，比如先年龄再姓名，怎么写？” → 可使用 `Comparator.comparing(Person::getAge).thenComparing(Person::getName)`。
+- **易错提醒**：`compareTo` 中使用减法可能导致整数溢出。应用 `Integer.compare` 或 `Long.compare`。
+- **自我反思**：是否检查过自己项目中所有 TreeMap 的 key 是否满足一致性？有没有可能在 compareTo 中使用 `hashCode` 或随机值导致返回 0 的情况？
+
+---
+
+### 面试题4：HashMap 和 TreeMap 的区别？什么时候用 TreeMap？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **核心区别**：
+  - 数据结构：HashMap 数组+链表/红黑树；TreeMap 红黑树。
+  - 顺序：HashMap 无序；TreeMap 按键有序。
+  - 时间复杂度：HashMap 平均 O(1)（发生碰撞或扩容时退化）；TreeMap 严格 O(log n)。
+  - 对 key 的要求：HashMap 的 key 需要正确实现 `hashCode` 和 `equals`；TreeMap 的 key 需要实现 `Comparable` 或提供 `Comparator`。
+  - 内存占用：TreeMap 每个节点要存储左右父母和颜色指针，占用更大。
+- **使用场景**：
+  - 需要按键的排序遍历 → TreeMap。
+  - 需要范围查询（如价格区间） → TreeMap 的 `subMap` 极快 O(log n + k)，HashMap 需要遍历全表 O(n)。
+  - 需要顺序处理一批数据 → TreeMap。
+  - 否则默认用 HashMap 即可。
+- **常见追问**：“如果我只需要恒定时间的读，但偶尔需要范围查找，怎么办？” → 可以同时维护 HashMap 和 TreeMap，但双倍内存；或者用并发跳表 `ConcurrentSkipListMap`。
+- **易错提醒**：有些人误以为 TreeMap 的迭代顺序是插入顺序，实际上它是 key 的排序顺序。插入顺序是 LinkedHashMap 的特色。
+- **自我反思**：如果项目中有大量按时间顺序查找的日志，用 TreeMap 存 `Long timestamp` 作为 key 是否合适？考虑用 `TreeMap` 的 `tailMap` 快速获取某时间点之后的日志。
+
+---
+
+### 面试题5：请解释红黑树的五个性质，并说明插入一个新节点为什么是红色
+**难度**：⭐️⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **五个性质**：
+  1. 节点是红色或黑色。
+  2. 根节点是黑色。
+  3. 所有叶子（NIL）都是黑色。
+  4. 每个红色节点的两个子节点都是黑色。
+  5. 从任一节点到其每个叶子的简单路径上包含相同数目的黑色节点。
+- **插入红色原因**：
+  插入红色节点不会违反性质5（黑色高度不变），但可能违反性质4（红红相连）。相比插入黑色节点必然违反性质5（导致整棵树黑高度不一致且难以修复），修正红红相连更简单（变色或旋转），代价更小。因此选择插入红色，然后通过 `fixAfterInsertion` 消除可能的红红冲突。
+- **关键点**：修正过程可能出现“叔叔节点是红色”情况，此时只需变色上溯；而“叔叔是黑色”则依靠旋转一次解决。最多旋转两次即可恢复平衡，效率极高。
+- **常见追问**：“插入后修正的循环什么时候停止？” → 当 x 是根节点或 x 的父节点是黑色时停止。最后强制根节点为黑。
+- **易错提醒**：很多人认为红黑树插入修正最坏 O(log n) 旋转，实际上通过删除连续红节点最多只需 O(log n) 次颜色变换和最多 2 次旋转（插入情况）。这是面试常考细节。
+- **自我反思**：我能不看书在纸上画出插入 1,2,3,4,5 的红黑树构建过程吗？如果卡住，就回去再写一遍。
+
+---
+
+> 今天你动手体验了 TreeMap 的排序力量，又亲手触碰到红黑树的平衡之美。明天我们将迎来重量级嘉宾：ConcurrentHashMap，揭开 JDK 1.8 的 CAS 与 synchronized 协奏。继续保持手感，你的集合框架模块即将结束。
