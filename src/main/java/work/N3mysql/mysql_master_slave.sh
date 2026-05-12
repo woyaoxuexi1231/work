@@ -147,6 +147,9 @@ default-character-set=utf8mb4
 user=mysql
 port=3306
 server-id=1
+
+# MySQL 8.x 认证插件配置（兼容旧版客户端）
+default-authentication-plugin=mysql_native_password
 character-set-server=utf8mb4
 collation_server=utf8mb4_bin
 max_connections=4000
@@ -233,6 +236,9 @@ default-character-set=utf8mb4
 user=mysql
 port=3307
 server-id=2
+
+# MySQL 8.x 认证插件配置（兼容旧版客户端）
+default-authentication-plugin=mysql_native_password
 character-set-server=utf8mb4
 collation_server=utf8mb4_bin
 max_connections=4000
@@ -363,21 +369,25 @@ sleep 10
 
 # 7. 等待主库 MySQL 服务就绪
 log_info "等待主库 MySQL 服务就绪..."
-MAX_RETRIES=60
+MAX_RETRIES=90
 RETRY_COUNT=0
 MASTER_READY=false
 
 while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
-  if docker exec "${MASTER_CONTAINER_NAME}" mysqladmin ping -h localhost --silent 2>/dev/null; then
-    MASTER_READY=true
-    log_info "主库 MySQL 服务已就绪"
-    break
+  # 使用 root 用户和密码测试连接，同时检查服务状态
+  if docker exec "${MASTER_CONTAINER_NAME}" mysqladmin ping -h localhost -uroot -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+    # 额外验证：尝试执行一个简单查询
+    if docker exec "${MASTER_CONTAINER_NAME}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
+      MASTER_READY=true
+      log_info "主库 MySQL 服务已就绪"
+      break
+    fi
   fi
   RETRY_COUNT=$((RETRY_COUNT + 1))
   if [[ $((RETRY_COUNT % 10)) -eq 0 ]]; then
     log_info "等待主库 MySQL 服务启动中... (${RETRY_COUNT}/${MAX_RETRIES})"
   fi
-  sleep 2
+  sleep 3
 done
 
 if [[ "${MASTER_READY}" != "true" ]]; then
@@ -429,24 +439,33 @@ sleep 10
 log_info "等待从库 MySQL 服务就绪..."
 RETRY_COUNT=0
 SLAVE_READY=false
+SLAVE_MAX_RETRIES=90
 
-while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
-  if docker exec "${SLAVE_CONTAINER_NAME}" mysqladmin ping -h localhost -P 3307 --silent 2>/dev/null; then
-    SLAVE_READY=true
-    log_info "从库 MySQL 服务已就绪"
-    break
+while [[ $RETRY_COUNT -lt $SLAVE_MAX_RETRIES ]]; do
+  # 使用 root 用户和密码测试连接
+  if docker exec "${SLAVE_CONTAINER_NAME}" mysqladmin ping -h localhost -P 3307 -uroot -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+    # 额外验证：尝试执行一个简单查询
+    if docker exec "${SLAVE_CONTAINER_NAME}" mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -P 3307 -e "SELECT 1" >/dev/null 2>&1; then
+      SLAVE_READY=true
+      log_info "从库 MySQL 服务已就绪"
+      break
+    fi
   fi
   RETRY_COUNT=$((RETRY_COUNT + 1))
   if [[ $((RETRY_COUNT % 10)) -eq 0 ]]; then
-    log_info "等待从库 MySQL 服务启动中... (${RETRY_COUNT}/${MAX_RETRIES})"
+    log_info "等待从库 MySQL 服务启动中... (${RETRY_COUNT}/${SLAVE_MAX_RETRIES})"
   fi
-  sleep 2
+  sleep 3
 done
 
 if [[ "${SLAVE_READY}" != "true" ]]; then
   log_error "从库 MySQL 服务在预期时间内未就绪，请检查日志：docker logs ${SLAVE_CONTAINER_NAME}"
   exit 1
 fi
+
+# 额外等待确保从库完全初始化
+log_info "等待从库完全初始化..."
+sleep 5
 
 # 12. 配置从库复制
 log_info "配置从库复制连接主库..."
