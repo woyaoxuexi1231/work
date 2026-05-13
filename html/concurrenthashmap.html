@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ConcurrentHashMap · 深度可视化 | 链表 · 红黑树 · 锁 · 扩容</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --lock-bg: #fef3c7;
+            --lock-border: #f59e0b;
+            --forward-bg: #e0e7ff;
+            --forward-border: #6366f1;
+            --bucket-empty: #f1f5f9;
+            --bucket-list: #bfdbfe;
+            --bucket-tree: #fecaca;
+            --node-list-fill: #dbeafe;
+            --node-list-stroke: #3b82f6;
+            --node-tree-red-fill: #fee2e2;
+            --node-tree-red-stroke: #ef4444;
+            --node-tree-black-fill: #e2e8f0;
+            --node-tree-black-stroke: #1e293b;
+        }
+
+        @keyframes pulse-lock {
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 20px 8px rgba(245, 158, 11, 0.3);
+            }
+        }
+        @keyframes expand-glow {
+            0% {
+                filter: brightness(1);
+                transform: scale(1);
+            }
+            50% {
+                filter: brightness(1.5);
+                transform: scale(1.03);
+            }
+            100% {
+                filter: brightness(1);
+                transform: scale(1);
+            }
+        }
+        @keyframes treeify-flash {
+            0% {
+                background: #fee2e2;
+                transform: scale(1);
+            }
+            50% {
+                background: #ef4444;
+                transform: scale(1.05);
+            }
+            100% {
+                background: #fecaca;
+                transform: scale(1);
+            }
+        }
+        @keyframes untreeify-flash {
+            0% {
+                background: #dbeafe;
+                transform: scale(1);
+            }
+            50% {
+                background: #3b82f6;
+                transform: scale(1.05);
+            }
+            100% {
+                background: #bfdbfe;
+                transform: scale(1);
+            }
+        }
+        .bucket-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .bucket-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+            z-index: 10;
+        }
+        .locked-bucket {
+            animation: pulse-lock 0.8s infinite;
+            border: 3px solid #f59e0b !important;
+        }
+        .forwarding-bucket {
+            background: linear-gradient(135deg, #c7d2fe, #a5b4fc) !important;
+            border: 2px dashed #4f46e5 !important;
+        }
+        .svg-node {
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .toast {
+            animation: slideIn 0.4s ease-out, fadeOut 0.4s ease-in 1.6s forwards;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateY(-30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+        }
+        .thread-indicator {
+            transition: all 0.3s;
+        }
+        .thread-waiting {
+            background: #fee2e2 !important;
+            border-color: #ef4444 !important;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-gray-100 to-slate-200 min-h-screen font-sans antialiased">
+
+<!-- Toast Container -->
+<div id="toast-container" class="fixed top-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
+
+<div class="max-w-7xl mx-auto px-4 py-6 lg:px-8">
+    <!-- 头部 -->
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl lg:text-4xl font-extrabold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 bg-clip-text text-transparent">
+                ConcurrentHashMap <span class="text-lg font-medium text-gray-500">(JDK8+)</span>
+            </h1>
+            <p class="text-sm text-gray-500 mt-1">CAS + synchronized · 链表 ↔ 红黑树 · 多线程扩容 · ForwardingNode</p>
+        </div>
+        <div class="flex flex-wrap gap-3 text-sm font-semibold">
+            <span class="px-4 py-2 rounded-full bg-indigo-100 text-indigo-700">📦 容量 <span id="capacity-display">16</span></span>
+            <span class="px-4 py-2 rounded-full bg-emerald-100 text-emerald-700">📊 大小 <span id="size-display">0</span></span>
+            <span class="px-4 py-2 rounded-full bg-amber-100 text-amber-700">⚖️ 阈值 <span id="threshold-display">12</span></span>
+            <span class="px-4 py-2 rounded-full bg-purple-100 text-purple-700">🔄 扩容次数 <span id="expand-count-display">0</span></span>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 桶数组视图 -->
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-gray-800">🗂️ 桶数组 (Buckets)</h2>
+                <span class="text-xs text-gray-400">点击桶查看内部结构 · 锁状态实时显示</span>
+            </div>
+            <div id="buckets-grid" class="grid grid-cols-8 sm:grid-cols-8 md:grid-cols-10 gap-2 min-h-[200px]">
+                <!-- 动态生成 -->
+            </div>
+            <div class="mt-3 text-xs text-gray-400 text-center">索引 0 ~ <span id="max-index">15</span></div>
+        </div>
+
+        <!-- 操作面板 -->
+        <div class="bg-white rounded-2xl shadow-lg p-5 border border-gray-100 flex flex-col gap-5">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800 mb-3">🔧 操作</h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="number" id="put-key" placeholder="Key" value="1" class="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 outline-none">
+                    <input type="text" id="put-value" placeholder="Value" value="A" class="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 outline-none">
+                    <button id="btn-put" class="col-span-2 bg-indigo-600 text-white rounded-lg py-2.5 font-semibold text-sm hover:bg-indigo-700 active:scale-95 transition shadow">PUT (插入/更新)</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <input type="number" id="get-key" placeholder="Key" value="1" class="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-400 outline-none">
+                    <button id="btn-get" class="bg-emerald-500 text-white rounded-lg py-2.5 font-semibold text-sm hover:bg-emerald-600 active:scale-95 transition shadow">GET (读取)</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <input type="number" id="remove-key" placeholder="Key" value="1" class="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-400 outline-none">
+                    <button id="btn-remove" class="bg-red-500 text-white rounded-lg py-2.5 font-semibold text-sm hover:bg-red-600 active:scale-95 transition shadow">REMOVE (删除)</button>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-sm font-bold text-gray-700 mb-2">⚡ 快捷操作</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button id="btn-fill-bucket-0" class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-200 transition">桶0连续插入8个</button>
+                    <button id="btn-expand" class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-xs font-semibold hover:bg-purple-200 transition">手动扩容</button>
+                    <button id="btn-reset" class="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-300 transition">重置</button>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-sm font-bold text-gray-700 mb-2">🧵 并发模拟 (锁竞争)</h3>
+                <div class="flex gap-2 mb-2">
+                    <button id="btn-start-threads" class="flex-1 bg-amber-500 text-white rounded-lg py-2 text-sm font-semibold hover:bg-amber-600 transition">启动并发线程</button>
+                    <button id="btn-stop-threads" class="flex-1 bg-gray-400 text-white rounded-lg py-2 text-sm font-semibold hover:bg-gray-500 transition">停止</button>
+                </div>
+                <div id="threads-container" class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto text-xs">
+                    <span class="text-gray-400 italic">未启动</span>
+                </div>
+            </div>
+
+            <div class="mt-auto bg-gray-50 rounded-xl p-3 text-xs space-y-1">
+                <div class="flex justify-between"><span>链表桶数:</span><span id="stat-list-buckets" class="font-bold text-blue-600">0</span></div>
+                <div class="flex justify-between"><span>红黑树桶数:</span><span id="stat-tree-buckets" class="font-bold text-red-600">0</span></div>
+                <div class="flex justify-between"><span>空桶数:</span><span id="stat-empty-buckets" class="font-bold text-gray-500">16</span></div>
+                <div class="flex justify-between"><span>ForwardingNode:</span><span id="stat-forward-buckets" class="font-bold text-indigo-600">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 内部结构详情面板 -->
+    <div id="detail-panel" class="mt-6 bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-bold text-gray-800" id="detail-title">🔍 桶 #0 内部结构</h2>
+            <span id="detail-type-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-gray-200 text-gray-600">空桶</span>
+        </div>
+        <div id="detail-svg-container" class="bg-gray-50 rounded-xl border border-gray-200 overflow-auto flex items-center justify-center" style="min-height: 320px; max-height: 500px;">
+            <svg id="detail-svg" class="w-full h-full" viewBox="0 0 700 320" preserveAspectRatio="xMidYMid meet">
+                <text x="350" y="160" text-anchor="middle" fill="#cbd5e1" font-size="16">点击上方桶查看结构</text>
+            </svg>
+        </div>
+        <div id="detail-meta" class="mt-2 text-xs text-gray-500 text-center"></div>
+    </div>
+</div>
+
+<script>
+  (() => {
+    // -------------------- 常量 --------------------
+    const LOAD_FACTOR = 0.75;
+    const TREEIFY_THRESHOLD = 8;
+    const UNTREEIFY_THRESHOLD = 6;
+    const MIN_TREEIFY_CAPACITY = 64;
+    const MOVED = -1; // 标记ForwardingNode的hash值
+
+    // -------------------- 数据结构 --------------------
+    class Node {
+      constructor(key, value, hash) {
+        this.key = key;
+        this.value = value;
+        this.hash = hash;
+        this.next = null;
+      }
+    }
+
+    class TreeNode extends Node {
+      constructor(key, value, hash) {
+        super(key, value, hash);
+        this.left = null;
+        this.right = null;
+        this.parent = null;
+        this.color = 'red'; // 新节点默认红色
+      }
+    }
+
+    class ForwardingNode extends Node {
+      constructor(nextTable) {
+        super(null, null, MOVED);
+        this.nextTable = nextTable;
+      }
+    }
+
+    // 桶的锁对象 (模拟synchronized)
+    class BucketLock {
+      constructor() {
+        this.locked = false;
+        this.queue = []; // 等待队列
+      }
+      async acquire() {
+        if (!this.locked) {
+          this.locked = true;
+          return;
+        }
+        return new Promise(resolve => {
+          this.queue.push(resolve);
+        });
+      }
+      release() {
+        if (this.queue.length > 0) {
+          const next = this.queue.shift();
+          next();
+        } else {
+          this.locked = false;
+        }
+      }
+    }
+
+    // -------------------- 全局状态 --------------------
+    let capacity = 16;
+    let table = new Array(capacity).fill(null).map(() => ({ type: 'list', head: null, lock: new BucketLock() }));
+    let size = 0;
+    let expandCount = 0;
+    let selectedBucketIdx = 0;
+    let forwardCount = 0; // 迁移中的ForwardingNode数量
+    let migrating = false; // 是否正在扩容迁移中
+    let nextTable = null; // 扩容时的新数组
+    let transferIndex = 0; // 迁移进度
+
+    // 并发模拟线程
+    let threadInterval = null;
+    let threads = [];
+
+    // -------------------- 工具函数 --------------------
+    function hash(key) {
+      if (typeof key === 'number') return key;
+      let h = 0;
+      const s = String(key);
+      for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i) | 0;
+      return Math.abs(h);
+    }
+
+    function bucketIndex(h) {
+      return Math.abs(h) % capacity;
+    }
+
+    function getBucket(idx) {
+      if (idx < 0 || idx >= capacity) throw new Error('Index out of bounds');
+      return table[idx];
+    }
+
+    function bucketSize(bucket) {
+      if (!bucket || !bucket.head) return 0;
+      if (bucket.head instanceof ForwardingNode) return 0;
+      if (bucket.type === 'tree') {
+        return countTreeNodes(bucket.head);
+      } else {
+        let count = 0;
+        let node = bucket.head;
+        while (node) { count++; node = node.next; }
+        return count;
+      }
+    }
+
+    function countTreeNodes(root) {
+      if (!root) return 0;
+      return 1 + countTreeNodes(root.left) + countTreeNodes(root.right);
+    }
+
+    function totalSize() {
+      let s = 0;
+      for (let b of table) s += bucketSize(b);
+      return s;
+    }
+
+    function expansionThreshold() {
+      return Math.floor(capacity * LOAD_FACTOR);
+    }
+
+    // -------------------- 红黑树操作 (简化但保持性质) --------------------
+    function rotateLeft(root, node) {
+      const right = node.right;
+      node.right = right.left;
+      if (right.left) right.left.parent = node;
+      right.parent = node.parent;
+      if (!node.parent) root = right;
+      else if (node === node.parent.left) node.parent.left = right;
+      else node.parent.right = right;
+      right.left = node;
+      node.parent = right;
+      return root;
+    }
+
+    function rotateRight(root, node) {
+      const left = node.left;
+      node.left = left.right;
+      if (left.right) left.right.parent = node;
+      left.parent = node.parent;
+      if (!node.parent) root = left;
+      else if (node === node.parent.right) node.parent.right = left;
+      else node.parent.left = left;
+      left.right = node;
+      node.parent = left;
+      return root;
+    }
+
+    function fixAfterInsertion(root, node) {
+      node.color = 'red';
+      while (node && node !== root && node.parent.color === 'red') {
+        if (node.parent === node.parent.parent.left) {
+          const uncle = node.parent.parent.right;
+          if (uncle && uncle.color === 'red') {
+            node.parent.color = 'black';
+            uncle.color = 'black';
+            node.parent.parent.color = 'red';
+            node = node.parent.parent;
+          } else {
+            if (node === node.parent.right) {
+              node = node.parent;
+              root = rotateLeft(root, node);
+            }
+            node.parent.color = 'black';
+            node.parent.parent.color = 'red';
+            root = rotateRight(root, node.parent.parent);
+          }
+        } else {
+          const uncle = node.parent.parent.left;
+          if (uncle && uncle.color === 'red') {
+            node.parent.color = 'black';
+            uncle.color = 'black';
+            node.parent.parent.color = 'red';
+            node = node.parent.parent;
+          } else {
+            if (node === node.parent.left) {
+              node = node.parent;
+              root = rotateRight(root, node);
+            }
+            node.parent.color = 'black';
+            node.parent.parent.color = 'red';
+            root = rotateLeft(root, node.parent.parent);
+          }
+        }
+      }
+      root.color = 'black';
+      return root;
+    }
+
+    function insertTreeNode(root, newNode) {
+      let parent = null;
+      let curr = root;
+      while (curr) {
+        parent = curr;
+        if (newNode.key < curr.key) curr = curr.left;
+        else if (newNode.key > curr.key) curr = curr.right;
+        else {
+          curr.value = newNode.value;
+          return root;
+        }
+      }
+      newNode.parent = parent;
+      if (!parent) root = newNode;
+      else if (newNode.key < parent.key) parent.left = newNode;
+      else parent.right = newNode;
+      return fixAfterInsertion(root, newNode);
+    }
+
+    function findTreeNode(root, key) {
+      let curr = root;
+      while (curr) {
+        if (key < curr.key) curr = curr.left;
+        else if (key > curr.key) curr = curr.right;
+        else return curr;
+      }
+      return null;
+    }
+
+    function removeTreeNode(root, key) {
+      // 简化删除：收集所有节点，重建平衡BST并重新着色（保证演示可用）
+      if (!root) return null;
+      const nodes = [];
+      const collect = (node) => {
+        if (!node) return;
+        collect(node.left);
+        nodes.push(node);
+        collect(node.right);
+      };
+      collect(root);
+      const filtered = nodes.filter(n => n.key !== key);
+      if (filtered.length === 0) return null;
+      // 重建平衡BST
+      const buildBalanced = (arr, parent = null) => {
+        if (arr.length === 0) return null;
+        const mid = Math.floor(arr.length / 2);
+        const node = arr[mid];
+        node.parent = parent;
+        node.left = buildBalanced(arr.slice(0, mid), node);
+        node.right = buildBalanced(arr.slice(mid + 1), node);
+        return node;
+      };
+      const newRoot = buildBalanced(filtered);
+      // 着色：根黑，交替
+      const colorTree = (node, isRed = false) => {
+        if (!node) return;
+        node.color = isRed ? 'red' : 'black';
+        colorTree(node.left, !isRed);
+        colorTree(node.right, !isRed);
+      };
+      colorTree(newRoot, false);
+      return newRoot;
+    }
+
+    // -------------------- 树化 / 链表化 --------------------
+    function treeifyBucket(bucket) {
+      if (!bucket || bucket.type !== 'list') return;
+      let head = bucket.head;
+      const nodes = [];
+      while (head) {
+        nodes.push(new TreeNode(head.key, head.value, head.hash));
+        head = head.next;
+      }
+      nodes.sort((a, b) => a.key - b.key);
+      let root = null;
+      for (const n of nodes) root = insertTreeNode(root, n);
+      bucket.type = 'tree';
+      bucket.head = root;
+    }
+
+    function untreeifyBucket(bucket) {
+      if (!bucket || bucket.type !== 'tree') return;
+      const root = bucket.head;
+      const nodes = [];
+      const collect = (node) => { if (!node) return; collect(node.left); nodes.push(node); collect(node.right); };
+      collect(root);
+      nodes.sort((a, b) => a.key - b.key);
+      let head = null, tail = null;
+      for (const n of nodes) {
+        const newNode = new Node(n.key, n.value, n.hash);
+        if (!head) head = tail = newNode;
+        else { tail.next = newNode; tail = newNode; }
+      }
+      bucket.type = 'list';
+      bucket.head = head;
+    }
+
+    // -------------------- 扩容迁移逻辑 --------------------
+    async function startExpansion() {
+      if (migrating || nextTable) return;
+      const oldCapacity = capacity;
+      const newCapacity = oldCapacity * 2;
+      nextTable = new Array(newCapacity).fill(null).map(() => ({ type: 'list', head: null, lock: new BucketLock() }));
+      transferIndex = 0;
+      migrating = true;
+      showToast('expand', `🚀 开始扩容: ${oldCapacity} → ${newCapacity}`);
+      // 逐步迁移每个桶
+      for (let i = 0; i < oldCapacity; i++) {
+        await migrateBucket(i);
+        transferIndex = i + 1;
+      }
+      // 完成扩容
+      capacity = newCapacity;
+      table = nextTable;
+      nextTable = null;
+      migrating = false;
+      expandCount++;
+      forwardCount = 0;
+      updateAllViews();
+      showToast('expand', `✅ 扩容完成，当前容量 ${capacity}`);
+    }
+
+    async function migrateBucket(idx) {
+      const bucket = table[idx];
+      if (!bucket || bucket.head instanceof ForwardingNode) return;
+      // 获取桶锁，模拟迁移过程
+      await bucket.lock.acquire();
+      try {
+        if (bucket.head instanceof ForwardingNode) return; // 已被其他线程迁移
+        const nodes = [];
+        if (bucket.type === 'list') {
+          let node = bucket.head;
+          while (node) { nodes.push(new Node(node.key, node.value, node.hash)); node = node.next; }
+        } else {
+          const collect = (node) => { if (!node) return; collect(node.left); nodes.push(new Node(node.key, node.value, node.hash)); collect(node.right); };
+          collect(bucket.head);
+        }
+        // 放置ForwardingNode
+        bucket.head = new ForwardingNode(nextTable);
+        forwardCount++;
+        // 重新分配到新数组
+        for (const n of nodes) {
+          const newIdx = Math.abs(n.hash) % capacity;
+          const newBucket = nextTable[newIdx];
+          if (newBucket.type === 'list') {
+            n.next = newBucket.head;
+            newBucket.head = n;
+          } else {
+            const tn = new TreeNode(n.key, n.value, n.hash);
+            newBucket.head = insertTreeNode(newBucket.head, tn);
+          }
+        }
+        // 检查新桶是否需要树化
+        for (let i = 0; i < capacity; i++) {
+          const nb = nextTable[i];
+          if (nb.type === 'list' && nb.head) {
+            let count = 0, node = nb.head;
+            while (node) { count++; node = node.next; }
+            if (count >= TREEIFY_THRESHOLD && capacity >= MIN_TREEIFY_CAPACITY) {
+              treeifyBucket(nb);
+            }
+          }
+        }
+      } finally {
+        bucket.lock.release();
+        updateAllViews();
+      }
+    }
+
+    // -------------------- 核心操作 (put/get/remove) --------------------
+    async function put(key, value) {
+      const h = hash(key);
+      let idx = bucketIndex(h);
+      if (migrating) {
+        // 如果正在扩容，帮助迁移或等待
+        if (table[idx] && table[idx].head instanceof ForwardingNode) {
+          // 直接到新数组操作
+          return putIntoTable(nextTable, key, value, h);
+        } else {
+          // 帮助迁移当前桶
+          await migrateBucket(idx);
+          return putIntoTable(nextTable || table, key, value, h);
+        }
+      }
+      return putIntoTable(table, key, value, h);
+    }
+
+    async function putIntoTable(tab, key, value, h) {
+      const idx = Math.abs(h) % tab.length;
+      const bucket = tab[idx];
+      await bucket.lock.acquire();
+      try {
+        if (bucket.head instanceof ForwardingNode) {
+          // 再次检查
+          return putIntoTable(bucket.head.nextTable, key, value, h);
+        }
+        if (bucket.type === 'list') {
+          if (!bucket.head) {
+            bucket.head = new Node(key, value, h);
+            size++;
+          } else {
+            let node = bucket.head, prev = null;
+            while (node) {
+              if (node.key === key) { node.value = value; return; }
+              prev = node;
+              node = node.next;
+            }
+            prev.next = new Node(key, value, h);
+            size++;
+            // 检查树化
+            let count = 0; node = bucket.head;
+            while (node) { count++; node = node.next; }
+            if (count >= TREEIFY_THRESHOLD) {
+              if (capacity < MIN_TREEIFY_CAPACITY && !migrating) {
+                // 优先扩容
+                showToast('warning', `链表长度${count}，容量不足64，优先扩容`);
+                startExpansion();
+              } else if (capacity >= MIN_TREEIFY_CAPACITY) {
+                treeifyBucket(bucket);
+                showToast('treeify', `🌲 桶#${idx} 链表→红黑树`);
+              }
+            }
+          }
+        } else if (bucket.type === 'tree') {
+          const found = findTreeNode(bucket.head, key);
+          if (found) { found.value = value; return; }
+          const newNode = new TreeNode(key, value, h);
+          bucket.head = insertTreeNode(bucket.head, newNode);
+          size++;
+        }
+        // 检查扩容
+        if (size > expansionThreshold() && !migrating && capacity < (1 << 30)) {
+          startExpansion();
+        }
+      } finally {
+        bucket.lock.release();
+        updateAllViews();
+      }
+    }
+
+    async function get(key) {
+      const h = hash(key);
+      let tab = table;
+      let idx = bucketIndex(h);
+      while (true) {
+        const bucket = tab[idx];
+        if (!bucket || !bucket.head) return null;
+        if (bucket.head instanceof ForwardingNode) {
+          tab = bucket.head.nextTable;
+          idx = Math.abs(h) % tab.length;
+          continue;
+        }
+        // 无锁读取 (volatile模拟，JS中直接读)
+        if (bucket.type === 'list') {
+          let node = bucket.head;
+          while (node) {
+            if (node.key === key) return node.value;
+            node = node.next;
+          }
+        } else {
+          const found = findTreeNode(bucket.head, key);
+          return found ? found.value : null;
+        }
+        return null;
+      }
+    }
+
+    async function remove(key) {
+      const h = hash(key);
+      let idx = bucketIndex(h);
+      if (migrating && table[idx] && table[idx].head instanceof ForwardingNode) {
+        return removeFromTable(nextTable, key, h);
+      }
+      return removeFromTable(table, key, h);
+    }
+
+    async function removeFromTable(tab, key, h) {
+      const idx = Math.abs(h) % tab.length;
+      const bucket = tab[idx];
+      await bucket.lock.acquire();
+      try {
+        if (bucket.head instanceof ForwardingNode) {
+          return removeFromTable(bucket.head.nextTable, key, h);
+        }
+        if (bucket.type === 'list') {
+          let node = bucket.head, prev = null;
+          while (node) {
+            if (node.key === key) {
+              if (prev) prev.next = node.next;
+              else bucket.head = node.next;
+              size--;
+              return;
+            }
+            prev = node;
+            node = node.next;
+          }
+        } else {
+          const newRoot = removeTreeNode(bucket.head, key);
+          if (newRoot === null) {
+            bucket.head = null;
+            bucket.type = 'list';
+            size--;
+          } else if (newRoot !== bucket.head) {
+            bucket.head = newRoot;
+            size--;
+            const count = countTreeNodes(newRoot);
+            if (count <= UNTREEIFY_THRESHOLD) {
+              untreeifyBucket(bucket);
+              showToast('untreeify', `🌿 桶#${idx} 红黑树→链表`);
+            }
+          }
+        }
+      } finally {
+        bucket.lock.release();
+        updateAllViews();
+      }
+    }
+
+    // -------------------- UI 渲染 --------------------
+    function updateAllViews() {
+      renderBuckets();
+      renderDetail();
+      updateStats();
+      updateGlobalDisplays();
+    }
+
+    function renderBuckets() {
+      const grid = document.getElementById('buckets-grid');
+      const cols = capacity <= 16 ? 8 : 10;
+      grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+      let html = '';
+      for (let i = 0; i < capacity; i++) {
+        const b = table[i];
+        const size = bucketSize(b);
+        let bg = 'bg-gray-100 text-gray-500';
+        let icon = '';
+        let extraClass = '';
+        if (b.head instanceof ForwardingNode) {
+          bg = 'bg-indigo-100 text-indigo-700 border-dashed border-2 border-indigo-400';
+          icon = '➡️';
+          extraClass = 'forwarding-bucket';
+        } else if (size > 0 && b.type === 'tree') {
+          bg = 'bg-red-100 text-red-800';
+          icon = '🌲';
+        } else if (size > 0 && b.type === 'list') {
+          const intensity = Math.min(size / TREEIFY_THRESHOLD, 1);
+          bg = intensity > 0.7 ? 'bg-blue-300 text-blue-900' : 'bg-blue-100 text-blue-800';
+          icon = '🔗';
+        } else {
+          icon = '';
+        }
+        if (b.lock.locked) extraClass += ' locked-bucket';
+        if (i === selectedBucketIdx) extraClass += ' ring-4 ring-amber-400 ring-offset-2 scale-105 z-10';
+        html += `
+            <div class="bucket-card rounded-xl flex flex-col items-center justify-center p-2 min-h-[50px] ${bg} ${extraClass} cursor-pointer"
+                 data-index="${i}" title="桶#${i}: ${size}个元素 ${b.lock.locked ? '(🔒锁定)' : ''}">
+              <span class="text-[10px] font-mono">#${i}</span>
+              <span class="text-sm font-bold leading-tight">${size > 0 ? size : ''}</span>
+              <span class="text-xs">${icon}</span>
+            </div>`;
+      }
+      grid.innerHTML = html;
+      document.querySelectorAll('.bucket-card').forEach(card => {
+        card.addEventListener('click', () => {
+          selectedBucketIdx = parseInt(card.dataset.index);
+          updateAllViews();
+        });
+      });
+      document.getElementById('max-index').textContent = capacity - 1;
+    }
+
+    function renderDetail() {
+      const svg = document.getElementById('detail-svg');
+      const title = document.getElementById('detail-title');
+      const badge = document.getElementById('detail-type-badge');
+      const meta = document.getElementById('detail-meta');
+      const container = document.getElementById('detail-svg-container');
+      if (selectedBucketIdx < 0 || selectedBucketIdx >= capacity) return;
+      const bucket = table[selectedBucketIdx];
+      const size = bucketSize(bucket);
+      title.textContent = `🔍 桶 #${selectedBucketIdx} 内部结构`;
+      meta.textContent = `元素数: ${size} | 锁状态: ${bucket.lock.locked ? '🔒 锁定中' : '🔓 空闲'}`;
+      if (bucket.head instanceof ForwardingNode) {
+        badge.textContent = 'ForwardingNode ➡️';
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700';
+        svg.innerHTML = `<text x="350" y="160" text-anchor="middle" fill="#6366f1" font-size="18" font-weight="bold">已迁移至新数组 (容量 ${bucket.head.nextTable.length})</text>`;
+        container.style.minHeight = '320px';
+        return;
+      }
+      if (!bucket.head) {
+        badge.textContent = '空桶';
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-gray-200 text-gray-600';
+        svg.innerHTML = '<text x="350" y="160" text-anchor="middle" fill="#cbd5e1" font-size="16">空桶</text>';
+        container.style.minHeight = '320px';
+        return;
+      }
+      if (bucket.type === 'list') {
+        badge.textContent = `链表 (${size}节点)`;
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700';
+        renderListSVG(bucket.head, svg, container);
+      } else {
+        badge.textContent = `红黑树 (${size}节点)`;
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700';
+        renderTreeSVG(bucket.head, svg, container);
+      }
+    }
+
+    function renderListSVG(head, svg, container) {
+      const nodes = [];
+      let node = head;
+      while (node) { nodes.push(node); node = node.next; }
+      const count = nodes.length;
+      const spacing = Math.min(80, Math.max(45, 650 / (count + 1)));
+      const totalWidth = (count - 1) * spacing + 100;
+      const viewW = Math.max(totalWidth, 500);
+      const viewH = 220;
+      svg.setAttribute('viewBox', `0 0 ${viewW} ${viewH}`);
+      container.style.minHeight = Math.min(viewH + 20, 400) + 'px';
+      let html = `<defs><marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/></marker></defs>`;
+      const startX = (viewW - (count - 1) * spacing) / 2;
+      const y = viewH / 2;
+      for (let i = 0; i < count - 1; i++) {
+        html += `<line x1="${startX + i*spacing + 26}" y1="${y}" x2="${startX + (i+1)*spacing - 26}" y2="${y}" stroke="#94a3b8" stroke-width="2.5" marker-end="url(#arrow)"/>`;
+      }
+      for (let i = 0; i < count; i++) {
+        const cx = startX + i * spacing;
+        html += `
+            <g class="svg-node" transform="translate(${cx},${y})">
+              <circle r="22" fill="#dbeafe" stroke="#3b82f6" stroke-width="3"/>
+              <text y="5" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="bold">${nodes[i].key}</text>
+              <text y="32" text-anchor="middle" fill="#64748b" font-size="9">${escapeHtml(String(nodes[i].value))}</text>
+            </g>`;
+      }
+      html += `<text x="${viewW/2}" y="${y+55}" text-anchor="middle" fill="#94a3b8" font-size="12">链表 · 每个节点指向下一个</text>`;
+      svg.innerHTML = html;
+    }
+
+    function renderTreeSVG(root, svg, container) {
+      const counter = { val: 0 };
+      const depthMap = new Map();
+      function layout(node, depth = 0) {
+        if (!node) return;
+        layout(node.left, depth + 1);
+        node._x = counter.val * 60 + 35;
+        node._y = depth * 75 + 45;
+        counter.val++;
+        depthMap.set(node, depth);
+        layout(node.right, depth + 1);
+      }
+      layout(root);
+      const maxX = counter.val * 60 + 50;
+      const maxDepth = Math.max(...Array.from(depthMap.values()), 0);
+      const viewW = Math.max(maxX, 500);
+      const viewH = Math.max(maxDepth * 75 + 90, 320);
+      svg.setAttribute('viewBox', `0 0 ${viewW} ${viewH}`);
+      container.style.minHeight = Math.min(viewH + 20, 520) + 'px';
+      let html = '';
+      function drawEdges(node) {
+        if (!node) return '';
+        let e = '';
+        if (node.left) e += `<line x1="${node._x}" y1="${node._y}" x2="${node.left._x}" y2="${node.left._y}" stroke="#cbd5e1" stroke-width="2"/>`;
+        if (node.right) e += `<line x1="${node._x}" y1="${node._y}" x2="${node.right._x}" y2="${node.right._y}" stroke="#cbd5e1" stroke-width="2"/>`;
+        return e + drawEdges(node.left) + drawEdges(node.right);
+      }
+      html += drawEdges(root);
+      function drawNodes(node) {
+        if (!node) return '';
+        const isRed = node.color === 'red';
+        const fill = isRed ? '#fee2e2' : '#e2e8f0';
+        const stroke = isRed ? '#ef4444' : '#1e293b';
+        const textColor = isRed ? '#b91c1c' : '#0f172a';
+        let n = `<g class="svg-node" transform="translate(${node._x},${node._y})">
+            <circle r="23" fill="${fill}" stroke="${stroke}" stroke-width="3"/>
+            <text y="5" text-anchor="middle" fill="${textColor}" font-size="13" font-weight="bold">${node.key}</text>
+            <text y="33" text-anchor="middle" fill="#64748b" font-size="9">${escapeHtml(String(node.value))}</text>
+            <circle cx="18" cy="-16" r="7" fill="${isRed ? '#ef4444' : '#1e293b'}" stroke="white" stroke-width="2"/>
+            <text x="18" y="-13" text-anchor="middle" fill="white" font-size="7" font-weight="bold">${isRed ? 'R' : 'B'}</text>
+          </g>`;
+        return n + drawNodes(node.left) + drawNodes(node.right);
+      }
+      html += drawNodes(root);
+      html += `<text x="${viewW/2}" y="${viewH-20}" text-anchor="middle" fill="#94a3b8" font-size="11">红黑树 · 中序有序 · 根黑</text>`;
+      svg.innerHTML = html;
+    }
+
+    function updateStats() {
+      let listBuckets = 0, treeBuckets = 0, emptyBuckets = 0, forwardBuckets = 0;
+      for (let b of table) {
+        if (b.head instanceof ForwardingNode) forwardBuckets++;
+        else if (!b.head) emptyBuckets++;
+        else if (b.type === 'tree') treeBuckets++;
+        else listBuckets++;
+      }
+      document.getElementById('stat-list-buckets').textContent = listBuckets;
+      document.getElementById('stat-tree-buckets').textContent = treeBuckets;
+      document.getElementById('stat-empty-buckets').textContent = emptyBuckets;
+      document.getElementById('stat-forward-buckets').textContent = forwardBuckets;
+      size = totalSize();
+    }
+
+    function updateGlobalDisplays() {
+      document.getElementById('capacity-display').textContent = capacity;
+      document.getElementById('size-display').textContent = size;
+      document.getElementById('threshold-display').textContent = expansionThreshold();
+      document.getElementById('expand-count-display').textContent = expandCount;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function showToast(type, msg) {
+      const container = document.getElementById('toast-container');
+      const colors = {
+        success: 'bg-emerald-500', error: 'bg-red-500', warning: 'bg-amber-500',
+        info: 'bg-blue-500', treeify: 'bg-red-600', untreeify: 'bg-blue-600', expand: 'bg-purple-600'
+      };
+      const toast = document.createElement('div');
+      toast.className = `toast px-4 py-2 rounded-xl shadow-lg text-white text-sm font-semibold ${colors[type] || 'bg-gray-700'}`;
+      toast.textContent = msg;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 2000);
+    }
+
+    // -------------------- 并发模拟 --------------------
+    function startThreads() {
+      if (threadInterval) return;
+      const count = 3;
+      threads = Array.from({ length: count }, (_, i) => ({ id: i, status: 'idle', targetBucket: null }));
+      renderThreads();
+      threadInterval = setInterval(async () => {
+        for (let t of threads) {
+          if (t.status === 'waiting') continue;
+          const key = Math.floor(Math.random() * 100);
+          const value = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+          const idx = Math.abs(hash(key)) % capacity;
+          t.status = 'acquiring';
+          t.targetBucket = idx;
+          renderThreads();
+          try {
+            await put(key, value);
+            t.status = 'done';
+          } catch (e) {
+            t.status = 'error';
+          }
+          renderThreads();
+          await sleep(200 + Math.random() * 400);
+        }
+      }, 1500);
+    }
+
+    function stopThreads() {
+      clearInterval(threadInterval);
+      threadInterval = null;
+      threads = [];
+      renderThreads();
+    }
+
+    function renderThreads() {
+      const container = document.getElementById('threads-container');
+      if (!threads.length) {
+        container.innerHTML = '<span class="text-gray-400 italic">未启动</span>';
+        return;
+      }
+      container.innerHTML = threads.map(t => {
+        let bg = 'bg-gray-100';
+        if (t.status === 'acquiring' || t.status === 'waiting') bg = 'bg-red-100 border-red-400';
+        else if (t.status === 'done') bg = 'bg-green-100';
+        return `<span class="px-2 py-1 rounded-lg text-xs font-mono border ${bg}">🧵T${t.id} ${t.status === 'acquiring' ? '🔒获取锁' : t.status}</span>`;
+      }).join('');
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // -------------------- 事件绑定 --------------------
+    document.getElementById('btn-put').addEventListener('click', async () => {
+      const key = parseInt(document.getElementById('put-key').value);
+      const val = document.getElementById('put-value').value || 'V';
+      if (isNaN(key)) return showToast('error', 'Key必须是数字');
+      await put(key, val);
+      selectedBucketIdx = Math.abs(hash(key)) % capacity;
+      updateAllViews();
+    });
+    document.getElementById('btn-get').addEventListener('click', async () => {
+      const key = parseInt(document.getElementById('get-key').value);
+      if (isNaN(key)) return showToast('error', 'Key无效');
+      const val = await get(key);
+      showToast(val !== null ? 'success' : 'error', val !== null ? `GET ${key} → ${val}` : `Key ${key} 不存在`);
+    });
+    document.getElementById('btn-remove').addEventListener('click', async () => {
+      const key = parseInt(document.getElementById('remove-key').value);
+      if (isNaN(key)) return showToast('error', 'Key无效');
+      await remove(key);
+      selectedBucketIdx = Math.abs(hash(key)) % capacity;
+      updateAllViews();
+    });
+    document.getElementById('btn-fill-bucket-0').addEventListener('click', async () => {
+      for (let i = 0; i < 8; i++) {
+        const key = i * capacity; // 都映射到桶0
+        await put(key, String.fromCharCode(65 + i));
+      }
+      selectedBucketIdx = 0;
+      updateAllViews();
+    });
+    document.getElementById('btn-expand').addEventListener('click', () => {
+      if (!migrating && size > expansionThreshold()) startExpansion();
+      else showToast('warning', '未达到扩容阈值或正在扩容');
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      stopThreads();
+      capacity = 16;
+      table = new Array(16).fill(null).map(() => ({ type: 'list', head: null, lock: new BucketLock() }));
+      size = 0; expandCount = 0; selectedBucketIdx = 0; migrating = false; nextTable = null;
+      updateAllViews();
+      showToast('info', '已重置');
+    });
+    document.getElementById('btn-start-threads').addEventListener('click', startThreads);
+    document.getElementById('btn-stop-threads').addEventListener('click', stopThreads);
+
+    // 初始化
+    updateAllViews();
+    showToast('info', '👋 ConcurrentHashMap 深度演示就绪，请尝试 PUT/GET/REMOVE 或启动并发线程');
+  })();
+</script>
+</body>
+</html>

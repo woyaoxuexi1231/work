@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AQS 状态机动画演示</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #0a0e1a;
+    color: #e2e8f0;
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+/* 背景网格 */
+.bg-grid {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: 
+        linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+/* 舞台区域 */
+.stage {
+    position: relative;
+    height: 520px;
+    border-radius: 16px;
+    background: rgba(15,23,42,0.6);
+    border: 1px solid rgba(148,163,184,0.08);
+    overflow: hidden;
+}
+
+/* 中心锁 */
+.lock-center {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 120px; height: 120px;
+    border-radius: 24px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 20;
+}
+.lock-center.locked {
+    background: rgba(239,68,68,0.15);
+    border: 2px solid rgba(239,68,68,0.4);
+    box-shadow: 0 0 60px rgba(239,68,68,0.2), inset 0 0 30px rgba(239,68,68,0.05);
+}
+.lock-center.unlocked {
+    background: rgba(16,185,129,0.15);
+    border: 2px solid rgba(16,185,129,0.4);
+    box-shadow: 0 0 60px rgba(16,185,129,0.2), inset 0 0 30px rgba(16,185,129,0.05);
+}
+.lock-center.shared {
+    background: rgba(139,92,246,0.15);
+    border: 2px solid rgba(139,92,246,0.4);
+    box-shadow: 0 0 60px rgba(139,92,246,0.2);
+}
+
+.lock-icon {
+    width: 48px; height: 48px;
+    transition: all 0.5s ease;
+}
+.lock-center.locked .lock-icon { color: #ef4444; }
+.lock-center.unlocked .lock-icon { color: #10b981; }
+.lock-center.shared .lock-icon { color: #a78bfa; }
+
+.lock-state-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    margin-top: 6px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+/* 状态数字 */
+.state-bubble {
+    position: absolute;
+    right: -50px; top: -20px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(30,41,59,0.9);
+    border: 2px solid rgba(59,130,246,0.5);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px; font-weight: 700;
+    color: #60a5fa;
+    box-shadow: 0 0 20px rgba(59,130,246,0.3);
+    transition: all 0.3s ease;
+}
+
+/* 线程节点 */
+.thread-node {
+    position: absolute;
+    width: 72px;
+    padding: 8px 6px;
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-align: center;
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    cursor: default;
+    user-select: none;
+    z-index: 10;
+    border: 1.5px solid transparent;
+}
+.thread-node .t-name { font-weight: 600; font-size: 11px; }
+.thread-node .t-status { font-size: 9px; opacity: 0.7; margin-top: 2px; }
+
+.thread-node.exclusive {
+    background: rgba(59,130,246,0.15);
+    border-color: rgba(59,130,246,0.4);
+    color: #93c5fd;
+    box-shadow: 0 4px 20px rgba(59,130,246,0.15);
+}
+.thread-node.shared {
+    background: rgba(139,92,246,0.15);
+    border-color: rgba(139,92,246,0.4);
+    color: #c4b5fd;
+    box-shadow: 0 4px 20px rgba(139,92,246,0.15);
+}
+.thread-node.cancelled {
+    background: rgba(245,158,11,0.15);
+    border-color: rgba(245,158,11,0.4);
+    color: #fcd34d;
+    box-shadow: 0 4px 20px rgba(245,158,11,0.15);
+}
+.thread-node.condition {
+    background: rgba(236,72,153,0.15);
+    border-color: rgba(236,72,153,0.4);
+    color: #f9a8d4;
+    box-shadow: 0 4px 20px rgba(236,72,153,0.15);
+}
+.thread-node.running {
+    animation: nodePulse 2s ease-in-out infinite;
+}
+
+@keyframes nodePulse {
+    0%, 100% { box-shadow: 0 0 5px currentColor; }
+    50% { box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
+}
+
+/* 线程池区域 */
+.pool-area {
+    position: absolute;
+    left: 20px; top: 50%;
+    transform: translateY(-50%);
+    width: 100px;
+    text-align: center;
+}
+.pool-label {
+    font-size: 10px;
+    color: #64748b;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+.pool-slot {
+    width: 64px; height: 64px;
+    margin: 8px auto;
+    border-radius: 12px;
+    border: 2px dashed rgba(100,116,139,0.3);
+    display: flex; align-items: center; justify-content: center;
+    color: #475569;
+    font-size: 20px;
+    transition: all 0.3s ease;
+}
+
+/* Sync Queue 轨道 */
+.queue-track {
+    position: absolute;
+    left: 160px; right: 160px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 80px;
+    border-radius: 12px;
+    background: rgba(30,41,59,0.4);
+    border: 1px solid rgba(148,163,184,0.06);
+}
+.queue-track-label {
+    position: absolute;
+    left: 12px; top: -22px;
+    font-size: 10px;
+    color: #475569;
+    font-family: 'JetBrains Mono', monospace;
+}
+.queue-head-marker {
+    position: absolute;
+    left: -30px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    color: #10b981;
+    font-family: 'JetBrains Mono', monospace;
+    writing-mode: vertical-rl;
+}
+.queue-tail-marker {
+    position: absolute;
+    right: -30px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    color: #ef4444;
+    font-family: 'JetBrains Mono', monospace;
+    writing-mode: vertical-rl;
+}
+
+/* Condition Queue 轨道 */
+.condition-track {
+    position: absolute;
+    left: 160px; right: 160px;
+    bottom: 40px;
+    height: 60px;
+    border-radius: 10px;
+    background: rgba(236,72,153,0.05);
+    border: 1px dashed rgba(236,72,153,0.15);
+}
+.condition-track-label {
+    position: absolute;
+    left: 12px; top: -20px;
+    font-size: 10px;
+    color: rgba(236,72,153,0.5);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* 飞行粒子 */
+.particle {
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 30;
+}
+
+/* 连接线 */
+.flow-line {
+    position: absolute;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent);
+    border-radius: 1px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 5;
+}
+.flow-line.active {
+    opacity: 1;
+    animation: flowMove 1s linear infinite;
+}
+@keyframes flowMove {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 0; }
+}
+
+/* 信号波纹 */
+.signal-ripple {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid rgba(16,185,129,0.6);
+    animation: ripple 1s ease-out forwards;
+    pointer-events: none;
+    z-index: 25;
+}
+@keyframes ripple {
+    0% { width: 0; height: 0; opacity: 1; }
+    100% { width: 200px; height: 200px; opacity: 0; }
+}
+
+/* 控制面板 */
+.control-btn {
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid rgba(148,163,184,0.15);
+    background: rgba(30,41,59,0.6);
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.control-btn:hover {
+    background: rgba(51,65,85,0.8);
+    border-color: rgba(148,163,184,0.3);
+    transform: translateY(-1px);
+}
+.control-btn:active { transform: translateY(0) scale(0.98); }
+.control-btn.primary {
+    background: rgba(59,130,246,0.2);
+    border-color: rgba(59,130,246,0.4);
+    color: #93c5fd;
+}
+.control-btn.primary:hover { background: rgba(59,130,246,0.3); }
+.control-btn.success {
+    background: rgba(16,185,129,0.2);
+    border-color: rgba(16,185,129,0.4);
+    color: #6ee7b7;
+}
+.control-btn.danger {
+    background: rgba(239,68,68,0.2);
+    border-color: rgba(239,68,68,0.4);
+    color: #fca5a5;
+}
+.control-btn.accent {
+    background: rgba(139,92,246,0.2);
+    border-color: rgba(139,92,246,0.4);
+    color: #c4b5fd;
+}
+
+/* 信息浮层 */
+.info-float {
+    position: absolute;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgba(15,23,42,0.95);
+    border: 1px solid rgba(148,163,184,0.15);
+    font-size: 11px;
+    color: #94a3b8;
+    font-family: 'JetBrains Mono', monospace;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 50;
+    white-space: nowrap;
+}
+.info-float.show { opacity: 1; }
+
+/* 代码片段区 */
+.code-panel {
+    background: rgba(15,23,42,0.8);
+    border: 1px solid rgba(148,163,184,0.08);
+    border-radius: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    overflow: hidden;
+}
+.code-line {
+    padding: 2px 16px;
+    transition: background 0.3s;
+}
+.code-line.highlight {
+    background: rgba(59,130,246,0.1);
+    border-left: 2px solid #3b82f6;
+}
+.code-kw { color: #c084fc; }
+.code-fn { color: #60a5fa; }
+.code-var { color: #f472b6; }
+.code-str { color: #86efac; }
+.code-cmt { color: #64748b; }
+
+/* 速度滑块 */
+input[type=range] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(100,116,139,0.3);
+    outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #60a5fa;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(59,130,246,0.5);
+}
+
+.glass {
+    background: rgba(15,23,42,0.5);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(148,163,184,0.08);
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+
+<div class="relative z-10 max-w-7xl mx-auto p-4 md:p-6">
+    <!-- Header -->
+    <header class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                AQS <span class="text-blue-400">State Machine</span> Visualizer
+            </h1>
+            <p class="text-slate-500 text-sm mt-1">AbstractQueuedSynchronizer 状态流转动画演示</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="glass rounded-lg px-3 py-1.5 text-xs font-mono text-slate-400">
+                Mode: <span id="modeDisplay" class="text-blue-400 font-bold">EXCLUSIVE</span>
+            </div>
+            <button onclick="toggleMode()" class="control-btn text-xs">切换模式</button>
+        </div>
+    </header>
+
+    <!-- 主舞台 -->
+    <div class="stage mb-6" id="mainStage">
+        <!-- 线程池 -->
+        <div class="pool-area" id="poolArea">
+            <div class="pool-label">Thread Pool</div>
+            <div class="pool-slot" id="poolSlot">+</div>
+        </div>
+
+        <!-- Sync Queue 轨道 -->
+        <div class="queue-track" id="syncTrack">
+            <div class="queue-track-label">Sync Queue (CLH Variant)</div>
+            <div class="queue-head-marker">HEAD</div>
+            <div class="queue-tail-marker">TAIL</div>
+        </div>
+
+        <!-- Condition Queue 轨道 -->
+        <div class="condition-track" id="condTrack">
+            <div class="condition-track-label">Condition Queue</div>
+        </div>
+
+        <!-- 中心锁 -->
+        <div class="lock-center unlocked" id="lockCenter">
+            <svg class="lock-icon" id="lockIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+            <div class="lock-state-text" id="lockText">UNLOCKED</div>
+            <div class="state-bubble" id="stateBubble">0</div>
+        </div>
+
+        <!-- 信息浮层 -->
+        <div class="info-float" id="infoFloat"></div>
+    </div>
+
+    <!-- 控制栏 -->
+    <div class="glass rounded-xl p-4 mb-6 flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 mr-4">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Manual</span>
+        </div>
+        <button onclick="manualAcquire()" class="control-btn primary">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+            acquire()
+        </button>
+        <button onclick="manualRelease()" class="control-btn success">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+            release()
+        </button>
+        <button onclick="manualAwait()" class="control-btn accent">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            await()
+        </button>
+        <button onclick="manualSignal()" class="control-btn" style="color:#f472b6;border-color:rgba(244,114,182,0.4);background:rgba(244,114,182,0.1);">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>
+            signal()
+        </button>
+        <div class="w-px h-6 bg-slate-700 mx-1"></div>
+        <div class="flex items-center gap-2 mr-4">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Auto</span>
+        </div>
+        <button onclick="playScenario('contention')" class="control-btn">锁竞争</button>
+        <button onclick="playScenario('shared')" class="control-btn">共享锁</button>
+        <button onclick="playScenario('condition')" class="control-btn">Condition</button>
+        <button onclick="playScenario('cancel')" class="control-btn danger">中断取消</button>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-500">速度</span>
+            <input type="range" id="speedRange" min="0.3" max="2" step="0.1" value="1" onchange="updateSpeed()">
+            <button onclick="resetAll()" class="control-btn danger text-xs">重置</button>
+        </div>
+    </div>
+
+    <!-- 下方信息区 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- 代码高亮 -->
+        <div class="code-panel p-4">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-xs text-slate-500 uppercase tracking-wider">Current Operation</span>
+                <span id="opName" class="text-xs font-mono text-blue-400">idle</span>
+            </div>
+            <div id="codeDisplay">
+                <div class="code-line"><span class="code-cmt">// 等待操作...</span></div>
+            </div>
+        </div>
+
+        <!-- 状态说明 -->
+        <div class="glass rounded-xl p-4">
+            <div class="text-xs text-slate-500 uppercase tracking-wider mb-3">Legend</div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                    <div class="w-3 h-3 rounded bg-blue-500/30 border border-blue-400"></div>
+                    <span class="text-slate-300">EXCLUSIVE 节点</span>
+                </div>
+                <div class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                    <div class="w-3 h-3 rounded bg-purple-500/30 border border-purple-400"></div>
+                    <span class="text-slate-300">SHARED 节点</span>
+                </div>
+                <div class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                    <div class="w-3 h-3 rounded bg-pink-500/30 border border-pink-400"></div>
+                    <span class="text-slate-300">CONDITION 状态</span>
+                </div>
+                <div class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                    <div class="w-3 h-3 rounded bg-amber-500/30 border border-amber-400"></div>
+                    <span class="text-slate-300">CANCELLED 状态</span>
+                </div>
+                <div class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                    <div class="w-3 h-3 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50"></div>
+                    <span class="text-slate-300">锁已释放/可用</span>
+                </div>
+                <div class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                    <div class="w-3 h-3 rounded-full bg-red-400 shadow-lg shadow-red-400/50"></div>
+                    <span class="text-slate-300">锁被持有</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===================== 核心状态 =====================
+let state = 0;
+let mode = 'EXCLUSIVE'; // EXCLUSIVE | SHARED
+let owner = null; // 当前持有锁的线程节点
+let syncQueue = []; // {id, name, mode, status, el, x, y}
+let condQueue = [];
+let threadId = 0;
+let animSpeed = 1;
+let isPlaying = false;
+
+const stage = document.getElementById('mainStage');
+const lockCenter = document.getElementById('lockCenter');
+const lockIcon = document.getElementById('lockIcon');
+const lockText = document.getElementById('lockText');
+const stateBubble = document.getElementById('stateBubble');
+const infoFloat = document.getElementById('infoFloat');
+const codeDisplay = document.getElementById('codeDisplay');
+const opName = document.getElementById('opName');
+
+// 位置常量
+const POS = {
+    pool: { x: 52, y: 260 },
+    lock: { x: stage.clientWidth/2 - 60, y: 200 }, // 会在resize时更新
+    syncQueueStart: { x: 180, y: 240 },
+    syncQueueStep: 90,
+    condQueueStart: { x: 180, y: 440 },
+    condQueueStep: 90,
+};
+
+function updatePos() {
+    const rect = stage.getBoundingClientRect();
+    POS.lock.x = rect.width/2 - 60;
+    POS.lock.y = rect.height/2 - 60;
+}
+updatePos();
+window.addEventListener('resize', updatePos);
+
+function delay(ms) {
+    return new Promise(r => setTimeout(r, ms / animSpeed));
+}
+
+function showInfo(text, x, y) {
+    infoFloat.textContent = text;
+    infoFloat.style.left = x + 'px';
+    infoFloat.style.top = y + 'px';
+    infoFloat.classList.add('show');
+    setTimeout(() => infoFloat.classList.remove('show'), 1500 / animSpeed);
+}
+
+function setCode(lines, highlightIdx = -1) {
+    codeDisplay.innerHTML = lines.map((line, i) => 
+        `<div class="code-line ${i === highlightIdx ? 'highlight' : ''}">${line}</div>`
+    ).join('');
+}
+
+function setOp(name) {
+    opName.textContent = name;
+}
+
+// ===================== 线程节点 =====================
+function createThreadNode(name, modeType, status = 'INIT') {
+    threadId++;
+    const el = document.createElement('div');
+    el.className = `thread-node ${modeType.toLowerCase()}`;
+    el.innerHTML = `<div class="t-name">${name}</div><div class="t-status">${status}</div>`;
+    el.style.left = POS.pool.x + 'px';
+    el.style.top = POS.pool.y + 'px';
+    el.style.opacity = '0';
+    el.style.transform = 'scale(0.5)';
+    stage.appendChild(el);
+
+    // 出现动画
+    requestAnimationFrame(() => {
+        el.style.opacity = '1';
+        el.style.transform = 'scale(1)';
+    });
+
+    return {
+        id: threadId,
+        name: name,
+        mode: modeType,
+        status: status,
+        el: el,
+        inCond: false,
+    };
+}
+
+function moveNode(node, x, y, duration = 500) {
+    return new Promise(resolve => {
+        node.el.style.transition = `all ${duration/animSpeed}ms cubic-bezier(0.34, 1.56, 0.64, 1)`;
+        node.el.style.left = x + 'px';
+        node.el.style.top = y + 'px';
+        setTimeout(resolve, duration / animSpeed);
+    });
+}
+
+function removeNode(node) {
+    node.el.style.opacity = '0';
+    node.el.style.transform = 'scale(0.3)';
+    setTimeout(() => node.el.remove(), 300);
+}
+
+function updateNodeStatus(node, status) {
+    node.status = status;
+    node.el.querySelector('.t-status').textContent = status;
+    // 闪烁效果
+    node.el.style.transform = 'scale(1.15)';
+    setTimeout(() => node.el.style.transform = 'scale(1)', 200);
+}
+
+function updateLockVisual() {
+    stateBubble.textContent = state;
+    if (mode === 'EXCLUSIVE') {
+        if (owner) {
+            lockCenter.className = 'lock-center locked';
+            lockText.textContent = owner.name;
+            lockIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />';
+        } else {
+            lockCenter.className = 'lock-center unlocked';
+            lockText.textContent = 'UNLOCKED';
+            lockIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />';
+        }
+    } else {
+        if (state > 0) {
+            lockCenter.className = 'lock-center shared';
+            lockText.textContent = `SHARED (${state})`;
+            lockIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />';
+        } else {
+            lockCenter.className = 'lock-center unlocked';
+            lockText.textContent = 'UNLOCKED';
+        }
+    }
+}
+
+function createRipple(x, y) {
+    const ripple = document.createElement('div');
+    ripple.className = 'signal-ripple';
+    ripple.style.left = (x - 100) + 'px';
+    ripple.style.top = (y - 100) + 'px';
+    stage.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 1000);
+}
+
+// ===================== 手动操作 =====================
+
+async function manualAcquire() {
+    if (isPlaying) return;
+    isPlaying = true;
+    setOp('acquire()');
+
+    const tName = `T-${++threadId}`;
+    const node = createThreadNode(tName, mode, 'RUNNABLE');
+
+    if (mode === 'EXCLUSIVE') {
+        setCode([
+            '<span class="code-kw">final</span> <span class="code-kw">void</span> <span class="code-fn">acquire</span>(<span class="code-kw">int</span> arg) {',
+            '    <span class="code-kw">if</span> (!<span class="code-fn">tryAcquire</span>(arg) &&',
+            '        <span class="code-fn">acquireQueued</span>(<span class="code-fn">addWaiter</span>(Node.EXCLUSIVE), arg))',
+            '        <span class="code-fn">selfInterrupt</span>();',
+            '}',
+        ], 1);
+
+        await delay(400);
+
+        if (!owner) {
+            // tryAcquire success
+            showInfo('tryAcquire → true', POS.lock.x + 60, POS.lock.y - 30);
+            await moveNode(node, POS.lock.x + 24, POS.lock.y + 30, 600);
+            owner = node;
+            state = 1;
+            updateNodeStatus(node, 'OWNER');
+            node.el.classList.add('running');
+            updateLockVisual();
+            setCode([
+                '<span class="code-kw">final</span> <span class="code-kw">void</span> <span class="code-fn">acquire</span>(<span class="code-kw">int</span> arg) {',
+            '    <span class="code-kw">if</span> (!<span class="code-fn">tryAcquire</span>(arg) && <span class="code-cmt">// ← 成功获取锁</span>',
+            '        <span class="code-fn">acquireQueued</span>(...))',
+            '        <span class="code-fn">selfInterrupt</span>();',
+            '}',
+            ], 1);
+        } else {
+            // tryAcquire fail, enter queue
+            showInfo('tryAcquire → false', POS.lock.x + 60, POS.lock.y - 30);
+            await delay(300);
+
+            setCode([
+                '<span class="code-kw">final</span> <span class="code-kw">void</span> <span class="code-fn">acquire</span>(<span class="code-kw">int</span> arg) {',
+                '    <span class="code-kw">if</span> (!<span class="code-fn">tryAcquire</span>(arg) && <span class="code-cmt">// ← 失败</span>',
+            '        <span class="code-fn">acquireQueued</span>(<span class="code-fn">addWaiter</span>(Node.EXCLUSIVE), arg)) <span class="code-cmt">// ← 入队</span>',
+                '        <span class="code-fn">selfInterrupt</span>();',
+                '}',
+            ], 2);
+
+            syncQueue.push(node);
+            const idx = syncQueue.length;
+            const tx = POS.syncQueueStart.x + (idx - 1) * POS.syncQueueStep;
+            await moveNode(node, tx, POS.syncQueueStart.y, 700);
+            updateNodeStatus(node, 'WAITING');
+
+            // 如果是第一个等待节点，设置前驱为 SIGNAL
+            if (syncQueue.length >= 2) {
+                await delay(200);
+                updateNodeStatus(syncQueue[syncQueue.length - 2], 'SIGNAL');
+            }
+        }
+    } else {
+        // SHARED mode
+        setCode([
+            '<span class="code-kw">final</span> <span class="code-kw">void</span> <span class="code-fn">acquireShared</span>(<span class="code-kw">int</span> arg) {',
+            '    <span class="code-kw">if</span> (<span class="code-fn">tryAcquireShared</span>(arg) < 0)',
+            '        <span class="code-fn">doAcquireShared</span>(arg);',
+            '}',
+        ], 1);
+
+        await delay(400);
+
+        if (state < 3) {
+            showInfo(`tryAcquireShared → ${state+1}/3`, POS.lock.x + 60, POS.lock.y - 30);
+            await moveNode(node, POS.lock.x + 24 + (state * 20), POS.lock.y + 40 + (state * 10), 500);
+            state++;
+            updateNodeStatus(node, 'SHARED');
+            node.el.classList.add('running');
+            updateLockVisual();
+            // 把节点标记为在锁区，但不作为单一 owner
+            node.inLock = true;
+        } else {
+            showInfo('tryAcquireShared → 失败', POS.lock.x + 60, POS.lock.y - 30);
+            await delay(300);
+            syncQueue.push(node);
+            const idx = syncQueue.length;
+            const tx = POS.syncQueueStart.x + (idx - 1) * POS.syncQueueStep;
+            await moveNode(node, tx, POS.syncQueueStart.y, 700);
+            updateNodeStatus(node, 'WAITING');
+        }
+    }
+
+    isPlaying = false;
+}
+
+async function manualRelease() {
+    if (isPlaying) return;
+    if (mode === 'EXCLUSIVE' && !owner) {
+        showInfo('没有线程持有锁', POS.lock.x, POS.lock.y + 140);
+        return;
+    }
+    if (mode === 'SHARED' && state === 0) {
+        showInfo('state 已为 0', POS.lock.x, POS.lock.y + 140);
+        return;
+    }
+
+    isPlaying = true;
+    setOp('release()');
+
+    if (mode === 'EXCLUSIVE') {
+        setCode([
+            '<span class="code-kw">public final</span> <span class="code-kw">boolean</span> <span class="code-fn">release</span>(<span class="code-kw">int</span> arg) {',
+            '    <span class="code-kw">if</span> (<span class="code-fn">tryRelease</span>(arg)) {',
+            '        Node h = head;',
+            '        <span class="code-kw">if</span> (h != <span class="code-kw">null</span> && h.waitStatus != 0)',
+            '            <span class="code-fn">unparkSuccessor</span>(h); <span class="code-cmt">// ← 唤醒后继</span>',
+            '        <span class="code-kw">return true</span>;',
+            '    }',
+            '    <span class="code-kw">return false</span>;',
+            '}',
+        ], 4);
+
+        const released = owner;
+        owner = null;
+        state = 0;
+        released.el.classList.remove('running');
+
+        // 锁打开动画
+        updateLockVisual();
+        createRipple(POS.lock.x + 60, POS.lock.y + 60);
+        await delay(300);
+
+        // 释放的线程飞走
+        showInfo('release() 成功', POS.lock.x + 60, POS.lock.y + 140);
+        await moveNode(released, POS.pool.x, POS.pool.y - 80, 500);
+        removeNode(released);
+        await delay(200);
+
+        // 唤醒后继
+        if (syncQueue.length > 0) {
+            const next = syncQueue.shift();
+            showInfo('unparkSuccessor()', POS.syncQueueStart.x, POS.syncQueueStart.y - 40);
+
+            // 队列前移
+            for (let i = 0; i < syncQueue.length; i++) {
+                const nx = POS.syncQueueStart.x + i * POS.syncQueueStep;
+                moveNode(syncQueue[i], nx, POS.syncQueueStart.y, 400);
+            }
+
+            await delay(300);
+            await moveNode(next, POS.lock.x + 24, POS.lock.y + 30, 600);
+            owner = next;
+            state = 1;
+            updateNodeStatus(next, 'OWNER');
+            next.el.classList.add('running');
+            updateLockVisual();
+            createRipple(POS.lock.x + 60, POS.lock.y + 60);
+        }
+    } else {
+        // SHARED release
+        setCode([
+            '<span class="code-kw">public final</span> <span class="code-kw">boolean</span> <span class="code-fn">releaseShared</span>(<span class="code-kw">int</span> arg) {',
+            '    <span class="code-kw">if</span> (<span class="code-fn">tryReleaseShared</span>(arg)) {',
+            '        <span class="code-fn">doReleaseShared</span>(); <span class="code-cmt">// ← 级联唤醒</span>',
+            '        <span class="code-kw">return true</span>;',
+            '    }',
+            '    <span class="code-kw">return false</span>;',
+            '}',
+        ], 2);
+
+        // 找一个在锁区的共享节点释放
+        const inLockNodes = [...syncQueue.filter(n => n.inLock), ...condQueue.filter(n => n.inLock)];
+        // 简化：直接减 state
+        state--;
+        updateLockVisual();
+        createRipple(POS.lock.x + 60, POS.lock.y + 60);
+        showInfo(`releaseShared() state=${state}`, POS.lock.x + 60, POS.lock.y + 140);
+        await delay(400);
+
+        if (syncQueue.length > 0 && state < 3) {
+            const next = syncQueue.shift();
+            for (let i = 0; i < syncQueue.length; i++) {
+                const nx = POS.syncQueueStart.x + i * POS.syncQueueStep;
+                moveNode(syncQueue[i], nx, POS.syncQueueStart.y, 400);
+            }
+            await moveNode(next, POS.lock.x + 24 + (state * 20), POS.lock.y + 40 + (state * 10), 500);
+            state++;
+            updateNodeStatus(next, 'SHARED');
+            next.el.classList.add('running');
+            next.inLock = true;
+            updateLockVisual();
+        }
+    }
+
+    isPlaying = false;
+}
+
+async function manualAwait() {
+    if (isPlaying) return;
+    if (!owner) {
+        showInfo('没有线程持有锁', POS.lock.x, POS.lock.y + 140);
+        return;
+    }
+    if (mode !== 'EXCLUSIVE') {
+        showInfo('await() 仅在独占模式', POS.lock.x, POS.lock.y + 140);
+        return;
+    }
+
+    isPlaying = true;
+    setOp('await()');
+    setCode([
+        '<span class="code-kw">public final</span> <span class="code-kw">void</span> <span class="code-fn">await</span>() <span class="code-kw">throws</span> InterruptedException {',
+        '    Node node = <span class="code-fn">addConditionWaiter</span>(); <span class="code-cmt">// ← 加入Condition队列</span>',
+        '    <span class="code-kw">int</span> savedState = <span class="code-fn">fullyRelease</span>(node); <span class="code-cmt">// ← 完全释放锁</span>',
+        '    ...',
+        '    <span class="code-fn">acquireQueued</span>(node, savedState); <span class="code-cmt">// ← 唤醒后重新竞争</span>',
+        '}',
+    ], 1);
+
+    const t = owner;
+    owner = null;
+    state = 0;
+    t.el.classList.remove('running');
+    updateLockVisual();
+    createRipple(POS.lock.x + 60, POS.lock.y + 60);
+
+    await delay(400);
+
+    // 移入 Condition Queue
+    t.inCond = true;
+    t.el.classList.remove('exclusive');
+    t.el.classList.add('condition');
+    condQueue.push(t);
+    const tx = POS.condQueueStart.x + (condQueue.length - 1) * POS.condQueueStep;
+    await moveNode(t, tx, POS.condQueueStart.y, 700);
+    updateNodeStatus(t, 'CONDITION');
+
+    // 唤醒 sync queue 中的下一个
+    if (syncQueue.length > 0) {
+        await delay(300);
+        const next = syncQueue.shift();
+        for (let i = 0; i < syncQueue.length; i++) {
+            const nx = POS.syncQueueStart.x + i * POS.syncQueueStep;
+            moveNode(syncQueue[i], nx, POS.syncQueueStart.y, 400);
+        }
+        await moveNode(next, POS.lock.x + 24, POS.lock.y + 30, 600);
+        owner = next;
+        state = 1;
+        updateNodeStatus(next, 'OWNER');
+        next.el.classList.add('running');
+        updateLockVisual();
+    }
+
+    isPlaying = false;
+}
+
+async function manualSignal() {
+    if (isPlaying) return;
+    if (condQueue.length === 0) {
+        showInfo('Condition 队列为空', POS.lock.x, POS.lock.y + 140);
+        return;
+    }
+
+    isPlaying = true;
+    setOp('signal()');
+    setCode([
+        '<span class="code-kw">public final</span> <span class="code-kw">void</span> <span class="code-fn">signal</span>() {',
+        '    <span class="code-kw">if</span> (!<span class="code-fn">isHeldExclusively</span>())',
+        '        <span class="code-kw">throw new</span> IllegalMonitorStateException();',
+        '    Node first = firstWaiter;',
+        '    <span class="code-kw">if</span> (first != <span class="code-kw">null</span>)',
+        '        <span class="code-fn">doSignal</span>(first); <span class="code-cmt">// ← 转移到 Sync Queue</span>',
+        '}',
+    ], 5);
+
+    const node = condQueue.shift();
+    node.inCond = false;
+
+    // 队列前移
+    for (let i = 0; i < condQueue.length; i++) {
+        const nx = POS.condQueueStart.x + i * POS.condQueueStep;
+        moveNode(condQueue[i], nx, POS.condQueueStart.y, 400);
+    }
+
+    await delay(300);
+
+    // 移回 Sync Queue
+    node.el.classList.remove('condition');
+    node.el.classList.add('exclusive');
+    syncQueue.push(node);
+    const tx = POS.syncQueueStart.x + (syncQueue.length - 1) * POS.syncQueueStep;
+    await moveNode(node, tx, POS.syncQueueStart.y, 700);
+    updateNodeStatus(node, 'SIGNAL');
+
+    showInfo('doSignal: 移回 Sync Queue', tx, POS.syncQueueStart.y - 40);
+
+    isPlaying = false;
+}
+
+// ===================== 场景播放 =====================
+
+async function playScenario(type) {
+    if (isPlaying) return;
+    resetAll();
+    isPlaying = true;
+
+    if (type === 'contention') {
+        setOp('Scenario: 3-Thread Contention');
+        // T1 acquire
+        await manualAcquire(); 
+        await delay(600);
+        // T2 acquire (wait)
+        await manualAcquire();
+        await delay(600);
+        // T3 acquire (wait)
+        await manualAcquire();
+        await delay(800);
+        // T1 release -> T2 gets lock
+        await manualRelease();
+        await delay(800);
+        // T2 release -> T3 gets lock
+        await manualRelease();
+        await delay(800);
+        // T3 release
+        await manualRelease();
+    }
+    else if (type === 'shared') {
+        setOp('Scenario: Semaphore(3)');
+        toggleMode();
+        await delay(300);
+        await manualAcquire();
+        await delay(400);
+        await manualAcquire();
+        await delay(400);
+        await manualAcquire();
+        await delay(400);
+        await manualAcquire(); // should wait
+        await delay(600);
+        await manualRelease(); // T1 leaves, T4 enters
+        await delay(600);
+        await manualRelease();
+        await delay(400);
+        await manualRelease();
+        await delay(400);
+        await manualRelease();
+    }
+    else if (type === 'condition') {
+        setOp('Scenario: Condition await/signal');
+        await manualAcquire(); // T1 gets lock
+        await delay(600);
+        await manualAcquire(); // T2 waits
+        await delay(600);
+        await manualAwait(); // T1 -> condition, T2 gets lock
+        await delay(800);
+        await manualSignal(); // T1 back to sync queue
+        await delay(600);
+        await manualRelease(); // T2 release, T1 gets lock
+        await delay(600);
+        await manualRelease(); // T1 release
+    }
+    else if (type === 'cancel') {
+        setOp('Scenario: Interrupt & Cancel');
+        await manualAcquire(); // T1
+        await delay(500);
+        await manualAcquire(); // T2 waits
+        await delay(500);
+        await manualAcquire(); // T3 waits
+        await delay(500);
+        // Cancel T3
+        if (syncQueue.length >= 2) {
+            const t3 = syncQueue[1];
+            updateNodeStatus(t3, 'CANCELLED');
+            t3.el.classList.remove('exclusive');
+            t3.el.classList.add('cancelled');
+            showInfo('T3: cancelAcquire()', parseInt(t3.el.style.left), parseInt(t3.el.style.top) - 30);
+            await delay(500);
+            syncQueue.splice(1, 1);
+            removeNode(t3);
+            // T2前移
+            for (let i = 0; i < syncQueue.length; i++) {
+                const nx = POS.syncQueueStart.x + i * POS.syncQueueStep;
+                moveNode(syncQueue[i], nx, POS.syncQueueStart.y, 400);
+            }
+        }
+        await delay(600);
+        await manualRelease(); // T1 release, T2 gets lock
+        await delay(600);
+        await manualRelease();
+    }
+
+    isPlaying = false;
+    setOp('idle');
+}
+
+// ===================== 工具 =====================
+
+function toggleMode() {
+    mode = mode === 'EXCLUSIVE' ? 'SHARED' : 'EXCLUSIVE';
+    document.getElementById('modeDisplay').textContent = mode;
+    document.getElementById('modeDisplay').className = mode === 'SHARED' ? 'text-purple-400 font-bold' : 'text-blue-400 font-bold';
+    updateLockVisual();
+    showInfo(`切换为 ${mode} 模式`, POS.lock.x + 60, POS.lock.y - 50);
+}
+
+function updateSpeed() {
+    animSpeed = parseFloat(document.getElementById('speedRange').value);
+}
+
+function resetAll() {
+    // 移除所有线程节点
+    document.querySelectorAll('.thread-node').forEach(el => el.remove());
+    state = 0;
+    owner = null;
+    syncQueue = [];
+    condQueue = [];
+    threadId = 0;
+    isPlaying = false;
+    updateLockVisual();
+    setOp('idle');
+    setCode(['<span class="code-cmt">// 等待操作...</span>']);
+    if (mode === 'SHARED') toggleMode();
+}
+
+// 初始化
+updateLockVisual();
+setCode(['<span class="code-cmt">// 点击上方按钮开始演示 AQS 状态流转</span>']);
+</script>
+</body>
+</html>

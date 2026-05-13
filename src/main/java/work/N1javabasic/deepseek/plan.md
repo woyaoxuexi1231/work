@@ -1,113 +1,3 @@
-> 请将以下完整内容保存为 `Java基础_30天编码指南.md`。
-
-# Java 基础 · 30天编码驱动面试探源指南
-
-**面试官导师寄语**：这不是一本八股文集，而是一张把 HashMap 扩容、synchronized 锁升级、GC 全过程写进代码里的作战地图。30天后，你不仅能回答“为什么”，还能掏出可运行的源码证明：“我写过，我压测过，我对比过不同版本的行为。”
-
-***
-
-## 面试必考原理清单（共 28 项，按模块分组）
-
-### 一、集合框架（8 项）
-
-1. **HashMap 1.8 数据结构与哈希扰动**：数组+链表+红黑树；`hash()` 扰动函数高16位异或。
-2. **HashMap 扩容机制**：`resize()` 触发条件（size > threshold）、负载因子0.75、链表分裂与迁移。
-3. **HashMap 树化与退树化**：链表长度≥8且数组长度≥64时树化；节点数≤6时退化为链表。
-4. **ConcurrentHashMap 1.7 vs 1.8**：分段锁 vs CAS+synchronized；`sizeCtl` 含义；多线程协助扩容（`helpTransfer`）。
-5. **ArrayList 扩容与 fail-fast**：`grow()`（约1.5倍扩容）；`modCount` 与 `ConcurrentModificationException`。
-6. **LinkedList 与 ArrayDeque**：链表 vs 循环数组；头尾插入性能；队列/双端队列接口。
-7. **TreeMap 红黑树排序**：红黑树性质；自然排序与比较器；`compareTo` 一致性。
-8. **LinkedHashMap 与 LRU 实现**：双向链表维护顺序；`accessOrder=true` 实现LRU缓存淘汰。
-
-### 二、并发基础与工具（8 项）
-
-1. **synchronized 锁升级过程**：偏向锁→轻量级锁→重量级锁；对象头 Mark Word 变化；自适应自旋。
-2. **volatile 可见性与禁止重排**：内存屏障 Happens-Before；MESI 嗅探；DCL 中 volatile 作用。
-3. **AQS 框架原理**：CLH 队列变体；`state` 与 `acquire/release`；ReentrantLock 公平/非公平实现。
-4. **ReentrantLock 与 Condition**：可重入实现；等待/通知机制；与 synchronized wait/notify 对比。
-5. **线程池核心参数与流程**：corePoolSize、maximumPoolSize、keepAliveTime；`ctl` 线程状态位；四种拒绝策略。
-6. **ThreadLocal 与内存泄漏**：`ThreadLocalMap` 的 WeakReference Key；`InheritableThreadLocal` 作用。
-7. **CAS 与 ABA 问题**：`Unsafe.compareAndSwap` 底层；`AtomicStampedReference` 解决方案。
-8. **CountDownLatch/CyclicBarrier/Semaphore**：底层均依赖 AQS；`state` 与共享/独占模式。
-
-### 三、JVM 内存与 GC（6 项）
-
-1. **JVM 内存结构**：堆、栈、方法区/元空间、程序计数器；HotSpot 对象分配过程（指针碰撞/空闲列表）。
-2. **对象存活判定与引用类型**：可达性分析；强/软/弱/虚引用及 `ReferenceQueue` 使用。
-3. **分代回收与算法**：标记-清除、标记-整理、复制；新生代 Eden/Survivor 比例。
-4. **CMS 垃圾收集器**：初始标记、并发标记、重新标记、并发清除；优缺点及浮动垃圾。
-5. **G1 垃圾收集器**：Region 划分、Mixed GC、SATB、Remembered Set；`-XX:MaxGCPauseMillis`。
-6. **GC 日志解读与调参**：`-Xlog:gc*`（Java9+）或 `-XX:+PrintGCDetails`；`jstat` 实时查看。
-
-### 四、IO/NIO 模型（3 项）
-
-1. **BIO/NIO/AIO 模型与使用**：面向流 vs 面向缓冲；Selector 多路复用；`epoll` 的 LT/ET。
-2. **NIO Buffer 与 Channel**：`ByteBuffer` 的 position/limit/capacity/flip；FileChannel 与内存映射。
-3. **零拷贝实现**：`FileChannel.transferTo`（`sendfile`）与 `MappedByteBuffer`（`mmap`）的区别与局限性。
-
-### 五、反射、代理与类加载（4 项）
-
-1. **反射机制与开销**：`Class` 获取方式；`Method.invoke` 的 JNI 调用与 `setAccessible(true)`；新版 `MethodHandle`。
-2. **JDK 动态代理与 CGLIB**：`Proxy.newProxyInstance` 与 `InvocationHandler`；CGLIB 基于 ASM 生成子类；final 方法限制。
-3. **类加载与双亲委派**：`ClassLoader.loadClass()` 流程；破坏双亲委派的 SPI（`Thread Context ClassLoader`）；Tomcat 类加载隔离。
-
-### 六、基础语法糖与异常（2 项，按需增添）
-
-1. **自动装箱与拆箱缓存陷阱**：`Integer.valueOf()` 缓存 -128\~127；`==` 与 `equals` 引发的问题。
-2. **异常体系与 finally 执行顺序**：checked/unchecked；`try-catch-finally` 中包含 return 时的执行与返回值。
-
-> 以上 28 项严格映射到后续 30 天的每日覆盖中。每一天开篇都会标注当天的覆盖原理点。
-
-***
-
-## 30天原理覆盖映射表
-
-| 天  | 主题                            | 覆盖原理编号         |
-| -- | ----------------------------- | -------------- |
-| 1  | 手写动态数组与 fail-fast             | 5, 29          |
-| 2  | 手写 HashMap 基本版（数组+链表）         | 1, 2           |
-| 3  | HashMap 树化与退化完整实现             | 3, 1           |
-| 4  | LinkedHashMap 与 LRU 缓存        | 8              |
-| 5  | TreeMap 与红黑树平衡探究              | 7              |
-| 6  | ConcurrentHashMap 源码探针（1.8）   | 4              |
-| 7  | ArrayList 源码攻防与扩容微基准          | 5, 29          |
-| 8  | synchronized 锁升级实验（JOL 观察对象头） | 9              |
-| 9  | volatile 与 DCL 正确/错误版本对比      | 10             |
-| 10 | AQS 自实现与 ReentrantLock 探针     | 11, 12         |
-| 11 | 线程池源码级实验 + 自定义拒绝策略            | 13             |
-| 12 | ThreadLocal 内存泄漏复现与分析         | 14             |
-| 13 | CAS 实战：无锁栈 + ABA 复现与解决        | 15             |
-| 14 | 三大并发工具 CountDownLatch 等底层追踪   | 16             |
-| 15 | JVM 内存结构实验：堆/栈/元空间溢出          | 17, 22         |
-| 16 | 引用类型实验：软引用缓存、WeakHashMap      | 18             |
-| 17 | GC 算法对比实验：不同收集器下日志分析          | 19, 20, 21, 22 |
-| 18 | BIO/NIO 模型对比与小型聊天室            | 23             |
-| 19 | NIO Buffer 与零拷贝性能对比           | 24, 25         |
-| 20 | 反射方法调用与 MethodHandle 基准       | 26             |
-| 21 | JDK 动态代理 vs CGLIB 源码生成剖析      | 27             |
-| 22 | 自定义 ClassLoader 打破双亲委派        | 28             |
-| 23 | 堆外内存泄漏与直接内存 OOM 复现            | 17, 22         |
-| 24 | 死锁检测与 JStack 分析实战             | 11, 22         |
-| 25 | CPU 100% 定位（死循环 + 线程转储）       | 9, 10, 22      |
-| 26 | HashMap 并发死循环复现（Java7）与修复对比   | 2, 4           |
-| 27 | 伪共享问题与 `@Contended` 实验        | 10, 15         |
-| 28 | 故障注入：模拟长 GC 与线程阻塞             | 21, 13         |
-| 29 | 微型 RPC 框架骨架（Day1）             | 全综合            |
-| 30 | 微型 RPC 框架骨架（Day2）与压力面试        | 全综合            |
-
-***
-
-## 你将产出的面试项目清单
-
-完成本计划后，你的 GitHub 上将多出以下可直接放在简历上的项目/组件：
-
-1. **简化版 HashMap**：支持扩容、树化、LRU 淘汰。
-2. **手写 AQS 与 ReentrantLock**：支持公平锁、Condition。
-3. **手写线程池**：支持核心/最大线程、任务队列、拒绝策略。
-4. **NIO 多路复用聊天室**：Selector + 非阻塞 IO。
-5. **自定义类加载器与隔离容器**：打破双亲委派，加载同名类。
-6. **微型 RPC 框架**：含动态代理、序列化、注册中心（Mock）、负载均衡、服务熔断。
-
 ***
 
 # 第 1 天：手写动态数组与 fail-fast
@@ -5502,3 +5392,2518 @@ public class SecKillSystem {
 > 🔥 **最终建议**：日常开发 **99%用非公平锁 + Condition**，只有金融/排队场景才用公平锁。
 
 把上面的代码复制跑一遍，比看10篇文章都管用 💪
+
+
+
+
+
+
+
+# 第 11 天：线程池源码级实验 + 自定义拒绝策略
+本日掌握：彻底搞懂线程池的核心参数、ctl 状态位、工作流程，并能手写一个带拒绝策略的简易线程池  
+覆盖原理点：13 (线程池核心参数与流程)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能解释 `ThreadPoolExecutor` 每个构造参数的含义，以及它们如何协作。
+- 能通过源码分析 `ctl` 的高 3 位存状态、低 29 位存工作线程数的设计。
+- 能实现一个自定义拒绝策略，并应用到线程池中观察效果。
+- 能手写一个简化版线程池，包含核心线程、最大线程、工作队列、拒绝策略。
+- 能自信应对面试中关于线程池的连环追问：核心线程回收、`allowCoreThreadTimeOut`、四种拒绝策略差异、动态调整。
+
+---
+
+## 📝 练习1：基础用法——分析线程池参数与执行流程（必做）
+
+### 业务场景
+你维护的一个后端服务需要批量处理用户请求，为了控制资源，你使用 `ThreadPoolExecutor` 手动创建线程池，而不是 `Executors`。你需要完全掌握每个参数对行为的影响，并打印出线程池的内部状态（如核心线程数、活动线程数、队列大小）来验证流程。
+
+### 你的任务
+1. 创建一个 `ThreadPoolExecutor`，参数为：
+   - 核心线程数：2
+   - 最大线程数：4
+   - 保活时间：10 秒
+   - 工作队列：`LinkedBlockingQueue`（容量 2）
+   - 拒绝策略：`AbortPolicy`（默认）
+2. 提交 7 个任务（每个任务打印当前线程名并 sleep 2 秒），在提交前、中、后打印线程池的 `getPoolSize()`、`getActiveCount()`、`getQueue().size()`、`getCompletedTaskCount()`。
+3. 观察任务执行顺序：是否前 2 个任务直接运行？随后 2 个进入队列？再创建 2 个新线程（达到最大）？最后一个被拒绝？
+4. 改变队列容量为 `SynchronousQueue`，再次观察：是否会立即创建非核心线程直到达到最大？并体会 `SynchronousQueue` 不存储任务的特性。
+
+### ⚡ 关键提示
+- `execute()` 提交任务后，适当 sleep 等待线程池状态变化便于观察。
+- `LinkedBlockingQueue` 若不指定容量，默认 `Integer.MAX_VALUE`，会导致最大线程数几乎不生效（队列极大）。
+- `SynchronousQueue` 是容量为 0 的队列，每个插入操作必须等待一个相应的删除操作，否则会尝试创建新线程，直到达到最大线程数，然后执行拒绝策略。
+- 使用 `Thread.sleep` 在任务内模拟耗时操作，延长任务时间以便观察并发情况。
+
+### ✍️ 动手写代码
+```java
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    2, 4, 10, TimeUnit.SECONDS,
+    new LinkedBlockingQueue<>(2),
+    new ThreadPoolExecutor.AbortPolicy()
+);
+for (int i = 0; i < 7; i++) {
+    final int n = i;
+    try {
+        executor.execute(() -> {
+            System.out.println(Thread.currentThread().getName() + " 执行任务 " + n);
+            try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        });
+    } catch (RejectedExecutionException e) {
+        System.out.println("任务 " + n + " 被拒绝");
+    }
+    // 打印状态
+}
+```
+
+### ✅ 自我检查
+- [ ] 观察打印日志，确认前 2 个任务立即执行，第 3、4 个进入队列，第 5、6 个创建新线程执行，第 7 个被拒绝。
+- [ ] 任务完成数是否递增？
+- [ ] 使用 `SynchronousQueue` 替换后，是否没有任务排队，直接创建线程直到最大，然后拒绝？
+- [ ] 你能在脑海中画出线程池处理任务的流程图吗？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.*;
+
+public class ThreadPoolParamDemo {
+    public static void main(String[] args) throws InterruptedException {
+        // 改为 SynchronousQueue 以观察差异，这里先用 LinkedBlockingQueue
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(
+                2, 4, 10, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(2),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+        printStatus(pool, "初始化");
+        for (int i = 0; i < 7; i++) {
+            final int n = i;
+            try {
+                pool.execute(() -> {
+                    System.out.println(Thread.currentThread().getName() + " exec task " + n);
+                    try { Thread.sleep(2000); } catch (InterruptedException e) {}
+                });
+                System.out.println("提交任务 " + n + " 成功");
+            } catch (RejectedExecutionException e) {
+                System.out.println("任务 " + n + " 被拒绝！");
+            }
+            Thread.sleep(100); // 等待任务分配
+            printStatus(pool, "提交第 " + (i + 1) + " 个任务后");
+        }
+        Thread.sleep(5000);
+        printStatus(pool, "最终状态");
+        pool.shutdown();
+    }
+
+    private static void printStatus(ThreadPoolExecutor pool, String tag) {
+        System.out.printf("%s: poolSize=%d, active=%d, queueSize=%d, completed=%d%n",
+                tag, pool.getPoolSize(), pool.getActiveCount(),
+                pool.getQueue().size(), pool.getCompletedTaskCount());
+    }
+}
+```
+
+**设计思路**  
+- 核心线程 2，最大 4，队列容量 2。根据线程池逻辑：
+  1. 任务 1、2：创建核心线程立即执行。
+  2. 任务 3、4：核心线程忙，放入队列。
+  3. 任务 5、6：队列满，创建新线程（非核心）直到达到最大 4。
+  4. 任务 7：线程数已最大，队列满，触发拒绝策略。
+- 使用 `printStatus` 实时查看内部计数器，验证与预期一致。
+- 更换为 `SynchronousQueue`，所有任务在核心线程满后直接创建新线程，无缓冲，经常导致拒绝。
+
+### 🐞 常见错误预警
+- 忘记 `shutdown` 或 `shutdownNow`，导致线程池无法退出，JVM 一直运行。
+- 误认为核心线程创建后始终存活，其实核心线程默认不被回收，除非设置 `allowCoreThreadTimeOut(true)`。
+- `getPoolSize()` 是在池中当前线程数（包括核心和临时线程），`getActiveCount()` 是正在执行任务的大致数量，不精确。
+
+---
+
+## 📝 练习2：中级用法——自定义线程池与拒绝策略
+
+### 业务场景
+你的应用里，当线程池满载时，不能直接丢弃任务，而是需要把任务持久化到数据库或重试队列，再或者由调用线程自己执行。你必须实现一个自定义的 `RejectedExecutionHandler`。
+
+### 你的任务
+1. 实现一个 `LogAndRetryPolicy`，当任务被拒绝时：
+   - 记录日志（含任务信息）。
+   - 将该任务塞入一个重试队列（可用另一个线程池定期重试，简写即可）。
+2. 另一种策略：实现 `CallerRunsPolicy` 的增强版，让调用者线程执行任务但限制执行时间，超时则放弃。
+3. 测试你的自定义策略，提交大量任务，观察拒绝时触发的逻辑。
+4. 在自定义策略中统计被拒绝次数，并通过 JMX 或简单原子变量暴露出来。
+
+### ⚡ 关键提示
+- 实现 `RejectedExecutionHandler` 接口，重写 `rejectedExecution(Runnable r, ThreadPoolExecutor executor)` 方法。
+- 在方法内可获取到被拒绝的任务 `r`，可以记录、存储、或者使用 `r.run()` 直接在当前线程运行（注意这会让提交任务的线程阻塞）。
+- 如果要做重试，可以使用一个单独的队列和单线程池定期消费。
+- 可以用 `AtomicInteger` 统计拒绝次数。
+
+### ✍️ 动手写代码
+```java
+class LogAndRetryPolicy implements RejectedExecutionHandler {
+    private final BlockingQueue<Runnable> retryQueue = new LinkedBlockingQueue<>();
+    private final ThreadPoolExecutor retryExecutor = ...;
+
+    @Override
+    public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+        retryQueue.offer(r);
+        System.out.println("任务被拒绝，加入重试队列，当前队列长度: " + retryQueue.size());
+        // 定期重试逻辑省略
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 当线程池满后，自定义策略是否被触发？日志是否打印？
+- [ ] 重试队列中的任务是否最终被执行？
+- [ ] 调用者运行策略下，提交任务的线程是否阻塞？超时是否处理？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class CustomRejectionDemo {
+    public static void main(String[] args) {
+        AtomicInteger rejectCount = new AtomicInteger();
+
+        RejectedExecutionHandler handler = (r, executor) -> {
+            rejectCount.incrementAndGet();
+            System.err.println("任务 " + r + " 被拒绝，当前拒绝次数: " + rejectCount.get());
+            // 执行“调用者运行”策略：由提交线程运行
+            if (!executor.isShutdown()) {
+                r.run();
+            }
+        };
+
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(
+                1, 1, 0, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(1),
+                handler
+        );
+
+        for (int i = 0; i < 5; i++) {
+            final int n = i;
+            pool.execute(() -> {
+                System.out.println(Thread.currentThread().getName() + " executing " + n);
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+            });
+        }
+        pool.shutdown();
+    }
+}
+```
+
+**设计思路**  
+- 使用 Lambda 表达式简化自定义策略：统计拒绝次数并让提交任务的线程自己执行。  
+- 这种策略适合让用户线程承担部分压力，避免丢弃任务。  
+- 如果任务需要持久化，可替换为写入重试表或 MQ。
+
+### 🐞 常见错误预警
+- 在拒绝策略中调用 `executor.execute(r)` 会导致无限递归，因为此时线程池仍满，会再次拒绝。
+- 如果使用调用者运行策略，且该线程本身在锁内，可能产生死锁。
+- 重试队列需要定期消费，否则内存泄漏。
+
+---
+
+## 📝 练习3：高级/探索用法——探究 ctl 与线程池状态转换，模拟核心逻辑
+
+### 业务场景
+为了彻底理解 `ThreadPoolExecutor` 的精密控制，你要手写一个 `MiniThreadPool`，模拟：
+- 用一个 `AtomicInteger ctl` 同时存储运行状态和线程数。
+- 核心线程、最大线程、工作队列的交互流程。
+- 线程的 `addWorker` 和 `runWorker` 循环取任务。
+
+### 你的任务
+1. 实现 `MiniThreadPool` 类，字段 `ctl`（`AtomicInteger`）高 3 位存状态（RUNNING、SHUTDOWN、STOP、TIDYING、TERMINATED），低 29 位存 `workerCount`。
+2. 实现 `execute(Runnable command)`：
+   - 若 workerCount < corePoolSize，则直接 `addWorker`。
+   - 否则尝试 `workQueue.offer(command)`，成功后仍需要二次检查线程池状态。
+   - 如果入队失败，尝试 `addWorker`，失败则执行拒绝策略。
+3. `addWorker` 创建一个新线程（包装成 Worker，Worker 实现 Runnable），启动它。Worker 循环从队列取任务（`getTask`），并执行它。
+4. `getTask` 从队列取任务，可能因为超时或状态改变而返回 null 使 worker 退出。
+5. 提供简化的拒绝策略接口。
+6. 编写测试，验证与标准线程池行为相似。
+
+### ⚡ 关键提示
+- 状态常量：`RUNNING = -1 << COUNT_BITS`（`COUNT_BITS = Integer.SIZE - 3`）等，类似 JDK 源码。
+- `ctl.get()` & `~CAPACITY` 得到状态，`ctl.get() & CAPACITY` 得到 workerCount。
+- CAS 更新 ctl，失败重试。
+- 使用 `ReentrantLock` 和 `Condition` 控制线程的生产消费，但为了简单可直接使用 `BlockingQueue`。
+- Worker 必须持有线程引用，并在内部循环获取任务，当 `getTask` 返回 null 时，worker 退出循环并线程结束。
+
+### ✍️ 动手写代码
+```java
+public class MiniThreadPool {
+    private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
+    private static final int COUNT_BITS = Integer.SIZE - 3;
+    private static final int CAPACITY = (1 << COUNT_BITS) - 1;
+    private static final int RUNNING = -1 << COUNT_BITS;
+    // ...其他状态
+    // execute, addWorker, getTask, etc.
+}
+```
+
+### ✅ 自我检查
+- [ ] 能否正确计算状态和 workerCount 的打包拆包？
+- [ ] 核心线程数达到后，新任务是否入队？
+- [ ] 队列满后，是否创建非核心线程直到最大线程数，然后拒绝？
+- [ ] `shutdown` 后线程池是否不再接受新任务，但执行完队列中的任务？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class MiniThreadPool {
+    private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
+    private static final int COUNT_BITS = Integer.SIZE - 3;
+    private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
+    private static final int RUNNING    = -1 << COUNT_BITS;
+    private static final int SHUTDOWN   =  0 << COUNT_BITS;
+    private static final int STOP       =  1 << COUNT_BITS;
+    private static final int TIDYING    =  2 << COUNT_BITS;
+    private static final int TERMINATED =  3 << COUNT_BITS;
+
+    private static int ctlOf(int rs, int wc) { return rs | wc; }
+    private static int runStateOf(int c)     { return c & ~CAPACITY; }
+    private static int workerCountOf(int c)  { return c & CAPACITY; }
+
+    private final BlockingQueue<Runnable> workQueue;
+    private final int corePoolSize, maxPoolSize;
+    private final RejectedExecutionHandler handler;
+    private final ReentrantLock mainLock = new ReentrantLock();
+
+    public MiniThreadPool(int core, int max, BlockingQueue<Runnable> queue, RejectedExecutionHandler handler) {
+        this.corePoolSize = core;
+        this.maxPoolSize = max;
+        this.workQueue = queue;
+        this.handler = handler;
+    }
+
+    public void execute(Runnable command) {
+        int c = ctl.get();
+        if (workerCountOf(c) < corePoolSize) {
+            if (addWorker(command, true)) return;
+            c = ctl.get();
+        }
+        if (isRunning(c) && workQueue.offer(command)) {
+            int recheck = ctl.get();
+            if (!isRunning(recheck) && remove(command))
+                reject(command);
+            else if (workerCountOf(recheck) == 0)
+                addWorker(null, false);
+        } else if (!addWorker(command, false)) {
+            reject(command);
+        }
+    }
+
+    private boolean addWorker(Runnable firstTask, boolean core) {
+        retry:
+        for (;;) {
+            int c = ctl.get();
+            int rs = runStateOf(c);
+            if (rs >= SHUTDOWN && !(rs == SHUTDOWN && firstTask == null && !workQueue.isEmpty()))
+                return false;
+            for (;;) {
+                int wc = workerCountOf(c);
+                if (wc >= CAPACITY || wc >= (core ? corePoolSize : maxPoolSize))
+                    return false;
+                if (compareAndIncrementWorkerCount(c))
+                    break retry;
+                c = ctl.get();
+                if (runStateOf(c) != rs) continue retry;
+            }
+        }
+        boolean workerStarted = false;
+        try {
+            Worker w = new Worker(firstTask);
+            final Thread t = w.thread;
+            if (t != null) {
+                mainLock.lock();
+                try {
+                    int c = ctl.get();
+                    int rs = runStateOf(c);
+                    if (rs == RUNNING || (rs == SHUTDOWN && firstTask == null)) {
+                        workers.add(w);
+                        t.start();
+                        workerStarted = true;
+                    }
+                } finally {
+                    mainLock.unlock();
+                }
+            }
+        } finally {
+            if (!workerStarted) {
+                decrementWorkerCount();
+            }
+        }
+        return workerStarted;
+    }
+
+    private void runWorker(Worker w) {
+        Runnable task = w.firstTask;
+        w.firstTask = null;
+        while (task != null || (task = getTask()) != null) {
+            try { task.run(); } finally { task = null; }
+        }
+    }
+
+    private Runnable getTask() {
+        boolean timedOut = false;
+        for (;;) {
+            int c = ctl.get();
+            int rs = runStateOf(c);
+            if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
+                decrementWorkerCount();
+                return null;
+            }
+            int wc = workerCountOf(c);
+            boolean timed = wc > corePoolSize;
+            try {
+                Runnable r = timed ?
+                    workQueue.poll(1, TimeUnit.SECONDS) :
+                    workQueue.take();
+                if (r != null) return r;
+                timedOut = true;
+            } catch (InterruptedException retry) {
+                timedOut = false;
+            }
+        }
+    }
+
+    private void reject(Runnable command) {
+        handler.rejectedExecution(command, null);
+    }
+    // 其他辅助方法省略（workers 容器、cas 操作等）
+}
+```
+
+**设计思路**  
+- 借鉴 JDK 源码，使用 `ctl` 原子变量打包状态和计数，通过位操作分离，保证一致性。  
+- `addWorker` 通过双层循环 CAS 增加计数，并加锁启动线程。  
+- `getTask` 根据是否超过核心线程数决定是 `poll` 还是 `take`，实现核心线程保活、非核心超时回收。  
+- 这是一次对线程池源码的深度还原，完成后你对 ctl 的理解会极其深刻。
+
+### 🐞 常见错误预警
+- CAS 更新 ctl 时忘记处理状态变化，可能导致 `addWorker` 在 SHUTDOWN 后仍添加。
+- Worker 线程启动后若 worker 未从 workers 集合移除，会导致内存泄漏。
+- 在 `getTask` 中 `decrementWorkerCount` 的时机必须正确，否则 workerCount 和实际线程数不一致。
+
+---
+
+## 🏢 大厂场景实战：动态线程池监控与调优
+
+### 场景描述
+生产环境有一个异步处理线程池（核心 10，最大 20，队列长度 200），在高峰时经常触发拒绝策略。需要设计一个动态调整线程池大小的方案，并实时监控队列长度和拒绝次数。
+
+### 约束条件
+- 不能重启服务。
+- 需提供 HTTP 接口查看线程池状态，并支持动态修改核心线程和最大线程。
+- 必须保证调整的安全性（不能大于最大容量等）。
+
+### 你的设计任务
+1. 封装一个 `DynamicThreadPool` 继承 `ThreadPoolExecutor`，提供 `setCorePoolSize`、`setMaximumPoolSize` 同步调整。
+2. 提供 REST 端点（如 Spring Actuator + JMX）打印线程池指标。
+3. 实现告警：当队列使用率超过 80% 或拒绝次数超过阈值时，打印日志或发钉钉消息。
+
+### 常见方案参考
+- 直接使用 `ThreadPoolExecutor` 自带的 `setCorePoolSize` 和 `setMaximumPoolSize`，它们是安全的。
+- 监控：通过 `getQueue().size()` 和自定义的拒绝策略里累加计数。
+- 调优策略：先调大最大线程，再视情况调大核心线程，避免频繁创建销毁线程。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：ThreadPoolExecutor 的 `ctl` 字段是如何设计的？为什么要这样设计？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **设计**：`ctl` 是一个 `AtomicInteger`，高 3 位表示线程池运行状态（RUNNING、SHUTDOWN、STOP、TIDYING、TERMINATED），低 29 位表示有效工作线程数量。
+- **打包/拆包**：`ctlOf(rs, wc) = rs | wc`，取状态用 `ctl & ~CAPACITY`，取数量用 `ctl & CAPACITY`。
+- **原因**：为了用 CAS 原子地同时更新状态和线程数，避免竞态条件。例如，从 RUNNING 变为 SHUTDOWN 同时需要保证线程数正确。这种复合操作需要放在一个原子变量中。
+- **常见追问**：“29 位够用吗？” 2^29-1 ≈ 5.3 亿，远超单机线程数量极限，所以够用。
+- **易错提醒**：有人在代码中直接拼接整型，忘记使用 `CAPACITY` 掩码，导致状态被污染。
+- **自我反思**：如果让你为另一个同步器设计类似的复合状态，你会用 `AtomicLong` 还是 `AtomicInteger` + 分割？
+
+---
+
+### 面试题2：线程池的工作流程（从 execute 提交到任务执行的整个路径）？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+1. 检查当前工作线程数 < 核心线程数？是则创建新核心线程执行任务（addWorker）。
+2. 如果核心线程满了，尝试将任务放入工作队列 `workQueue.offer(command)`。
+3. 入队成功，还需二次检查线程池状态（可能已 shutdown），以及如果工作线程数为0，添加一个空任务的线程。
+4. 入队失败，尝试创建非核心线程执行（addWorker）。
+5. 如果达到最大线程数且队列满，执行拒绝策略。
+- **关键参数**：核心线程数、最大线程数、空闲线程存活时间、工作队列类型（有界/无界/同步）。
+- **常见追问**：“核心线程会被回收吗？” 默认不会，但设置了 `allowCoreThreadTimeOut(true)` 后，核心线程空闲超时可以回收。
+- **易错提醒**：使用无界队列时，最大线程数参数相当于失效，因为任务永远入队成功。
+- **自我反思**：当队列选择 `SynchronousQueue` 时，流程有何不同？会跳过入队，直接尝试创建非核心线程，直到最大。
+
+---
+
+### 面试题3：四种拒绝策略分别是什么？如何选择？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+1. `AbortPolicy`：直接抛 `RejectedExecutionException`，默认。
+2. `CallerRunsPolicy`：由提交任务的线程自己执行，减缓提交速度。
+3. `DiscardPolicy`：静默丢弃，不抛异常。
+4. `DiscardOldestPolicy`：丢弃队列中最老的任务（队头），然后尝试重新提交当前任务。
+- **选择原则**：
+  - 绝不能丢：`CallerRunsPolicy` 或自定义重试。
+  - 允许丢失且通知：`AbortPolicy`。
+  - 可以丢且不需通知：`DiscardPolicy`。
+  - 优先保证新数据：`DiscardOldestPolicy`。
+- **常见追问**：“有哪个策略会导致死锁？” `CallerRunsPolicy` 如果提交线程持有锁，而执行的任务又需要该锁，可能死锁。
+- **易错提醒**：`DiscardOldestPolicy` 并不丢弃当前任务，而是丢弃队伍最前面的任务，这可能造成旧任务的丢失。
+- **自我反思**：你的应用中有没有自定义拒绝策略的必要？比如结合 MQ 异步重试。
+
+---
+
+### 面试题4：如何监控线程池的运行状态？你通常会关注哪些指标？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+
+- **指标**：核心线程数、最大线程数、当前活动线程数、历史最大线程数、队列当前大小、队列剩余容量、完成任务总数、拒绝次数。
+- **获取方式**：`ThreadPoolExecutor` 提供了 `getPoolSize()`、`getActiveCount()`、`getLargestPoolSize()`、`getQueue().size()`、`getCompletedTaskCount()` 等方法。
+- **监控工具**：JMX（`ThreadPoolExecutor` 自动注册 MBean）、Spring Actuator、Micrometer、自定义定时任务打印或推送到监控系统。
+- **告警**：队列使用率 > 80% 或拒绝次数增长时预警。
+- **常见追问**：“为什么 `getActiveCount()` 是一个近似值？” 因为它是非同步的，在统计时可能有线程刚启动/结束。
+- **易错提醒**：`getQueue().size()` 如果队列是 `DelayQueue` 等复杂实现，性能可能不佳。
+- **自我反思**：能否写出一个简单的自定义健康检查端点，输出线程池的核心指标？
+
+---
+
+### 面试题5：为什么不推荐使用 `Executors` 创建线程池，而要使用 `ThreadPoolExecutor` 构造？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- `Executors.newFixedThreadPool(n)` / `newCachedThreadPool()` 等内部使用了无界队列（`LinkedBlockingQueue` 默认容量 `Integer.MAX_VALUE`）或 `SynchronousQueue`，容易因无界队列导致 OOM（任务堆积），或因为不限制线程数导致 OOM（`Cached` 最大线程为 `Integer.MAX_VALUE`）。
+- `ThreadPoolExecutor` 手动构造可以明确设置队列容量、拒绝策略、线程工厂（命名），更贴近资源管控。
+- **阿里巴巴规范** 明确要求手动创建线程池，以便让开发者清晰掌握资源限制和拒绝策略。
+- **常见追问**：“`ScheduledThreadPoolExecutor` 呢？” 它最大线程也是 `Integer.MAX_VALUE`，也存在 OOM 风险，建议用 `ScheduledExecutorService` 包装并设置合理大小。
+- **易错提醒**：使用 `Executors` 返回的线程池默认未被监控和调优，更容易在极端情况下崩溃。
+- **自我反思**：你是否已经在自己项目中用 `ThreadPoolExecutor` 替换了所有 `Executors`？
+
+---
+
+> 今天你深入了线程池的核心，从参数、状态到源码级别的 ctl 都已掌握。线程池是并发编程中最常用的基建，务必反复练习。明天我们将揭密 ThreadLocal 的内存泄漏与最佳实践。
+
+
+
+
+
+
+
+# 第 12 天：ThreadLocal 内存泄漏复现与分析
+本日掌握：亲手复现 ThreadLocal 内存泄漏，理解 `ThreadLocalMap` 的 WeakReference 设计，掌握 `InheritableThreadLocal` 使用场景  
+覆盖原理点：14 (ThreadLocal 与内存泄漏)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能清晰画出 `Thread`、`ThreadLocalMap`、`Entry`（WeakReference）之间的引用链。
+- 能通过代码故意制造内存泄漏并使用 `jmap`/`jconsole` 观察堆内存增长。
+- 能解释为什么 `ThreadLocal` 的 Entry 的 key 是弱引用，value 是强引用，以及这样设计的意图和副作用。
+- 能使用 `InheritableThreadLocal` 在线程池中正确传递上下文，并了解其局限性。
+- 能自信回答面试中“ThreadLocal 使用后为什么要 remove”等高频追问。
+
+---
+
+## 📝 练习1：基础用法——正确与错误使用 ThreadLocal（必做）
+
+### 业务场景
+在 Web 项目中，你使用 `ThreadLocal` 存储当前请求的用户信息（如用户 ID），以方便 DAO 层获取。但如果忘记在请求结束时清理，可能会导致严重的问题。
+
+### 你的任务
+1. 创建一个 `UserContext` 类，包含 `ThreadLocal<Long> currentUserId`。
+2. 在一个线程中设置用户 ID，模拟处理请求，然后（正确做法）调用 `remove()` 清除。
+3. 不使用 `remove()` 的情况，线程结束后（但线程可能在线程池中复用），查看效果。
+4. 使用 `ThreadLocal.withInitial(...)` 支持默认值。
+5. 解释 `ThreadLocalMap` 是存储在 `Thread` 对象里的，同一个 `ThreadLocal` 实例可以在不同线程中存储不同的值。
+
+### ⚡ 关键提示
+- `ThreadLocal.get()` 若之前未设置值且未提供初始值，返回 `null`。
+- 每个线程持有一个 `ThreadLocalMap`，其中 Entry 的 key 是 `ThreadLocal` 弱引用，value 是强引用。所以如果 `ThreadLocal` 对象失去强引用，key 可能被 GC，但 value 依然存在 -> 内存泄漏。
+- `remove()` 会彻底清除 key 为 null 的 Entry，以及当前 key 对应的 Entry。
+- 在 Tomcat 等线程池环境中，线程复用，如果不 `remove()`，该线程再次处理其他请求时会看到旧值（脏数据）。
+
+### ✍️ 动手写代码
+```java
+public class UserContext {
+    public static final ThreadLocal<Long> userId = new ThreadLocal<>();
+
+    // 使用：
+    public static void set(Long id) { userId.set(id); }
+    public static Long get() { return userId.get(); }
+    public static void clear() { userId.remove(); }
+}
+
+// 模拟请求处理
+public void handleRequest(long userId) {
+    UserContext.set(userId);
+    try {
+        // 业务逻辑...
+        System.out.println("当前用户: " + UserContext.get());
+    } finally {
+        UserContext.clear(); // 必须清理
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 忘记 `remove()` 的线程，在下次请求是否会读到旧值？
+- [ ] 线程被回收后，`ThreadLocalMap` 中的 Entry 还在吗？
+- [ ] `withInitial` 是否避免了 NPE？
+
+### 📖 参考实现（直接展示）
+
+```java
+public class ThreadLocalDemo {
+    static final ThreadLocal<String> CONTEXT = ThreadLocal.withInitial(() -> "default");
+
+    public static void main(String[] args) throws InterruptedException {
+        Runnable task = () -> {
+            System.out.println(Thread.currentThread().getName() + " 初始值: " + CONTEXT.get());
+            CONTEXT.set("Hello");
+            System.out.println(Thread.currentThread().getName() + " 设置后: " + CONTEXT.get());
+            // 故意不 remove
+        };
+        Thread t1 = new Thread(task);
+        t1.start();
+        t1.join(); // 线程结束，但如果是线程池，线程不会死
+
+        // 主线程
+        System.out.println("主线程: " + CONTEXT.get()); // 仍然 default，不受影响
+        CONTEXT.set("World");
+        System.out.println("主线程修改后: " + CONTEXT.get());
+        CONTEXT.remove();
+    }
+}
+```
+
+**设计思路**  
+- `ThreadLocal.withInitial` 确保即使没有 `set`，`get` 也不会返回 null，提供了默认工厂。  
+- 每个线程对同一个 `ThreadLocal` 实例操作互不干扰，因为值存在线程自身的 `ThreadLocalMap` 里。  
+- 如果线程来自线程池且未调用 `remove()`，则该线程下次执行其他任务时将保留上次设置的值，产生脏数据。  
+- 所以 `remove()` 是必须的良好实践。
+
+### 🐞 常见错误预警
+- 误以为 `ThreadLocal` 是全局变量：实际上它只是 key，数据存在线程内部。
+- 用 `InheritableThreadLocal` 传递上下文到子线程，但子线程修改不会影响父线程。
+- 在线程池线程复用时，`InheritableThreadLocal` 只在线程创建时传递一次，后续复用不会再传递，需要改用阿里 `TransmittableThreadLocal` 或手动 copy。
+
+---
+
+## 📝 练习2：中级用法——故意制造内存泄漏并观察
+
+### 业务场景
+在线程池环境下，`ThreadLocal` 实例本身不再被引用（比如类卸载），但线程由于复用一直存在，会导致 entry 中的 value 无法被 GC，造成内存泄漏。你将在测试中复现并亲眼看到堆内存上升。
+
+### 你的任务
+1. 创建一个线程池（固定大小 1）。
+2. 定义一个较大的对象（如 `byte[10 * 1024 * 1024]`）作为 value。
+3. 每次往线程池提交任务时，使用一个新的 `ThreadLocal` 实例设置这个大对象，并记下引用，但很快失去对 `ThreadLocal` 实例的强引用（比如局部变量结束）。
+4. 在任务内**不调用 `remove()`**。
+5. 持续提交多次，使用 `jstat -gc` 或 `jmap -histo:live` 观察老年代/堆使用不断上升，最终 OOM 或 GC 频繁。
+6. 验证：如果在线程池任务最后调用 `remove()`，堆使用量保持稳定。
+
+### ⚡ 关键提示
+- 因为 `ThreadLocal` 实例失去强引用（变成 WeakReference 且可能被 GC），但线程的 Map 中 value 仍然是强引用，所以无法回收。
+- 可以使用 `-Xmx100M` 限制堆大小以便快速复现。
+- 另一个观察方法：调用 `System.gc()` 后查看 `ThreadLocalMap` 中是否存在 key 为 null 的 Entry（通过反射查看 `Thread.threadLocals`）。
+- 为了触发清理，可在每次提交后手工调用 `System.gc()`（仅试验，生产勿用），但也不会清理 value，除非调用 `ThreadLocal` 的 `expungeStaleEntry` 系列方法，而这些方法只在 `get`/`set`/`remove` 中惰性触发。
+
+### ✍️ 动手写代码
+```java
+ExecutorService pool = Executors.newFixedThreadPool(1);
+for (int i = 0; i < 100; i++) {
+    // 每次创建新的 ThreadLocal，并失去引用
+    ThreadLocal<byte[]> tl = new ThreadLocal<>();
+    tl.set(new byte[10 * 1024 * 1024]); // 10MB
+    pool.execute(() -> {
+        // 使用 tl，但不 remove
+        System.out.println("task done");
+    });
+}
+// 不断提交...
+```
+
+### ✅ 自我检查
+- [ ] 不加 `remove()` 时，堆内存是否持续上涨？
+- [ ] 调用 `System.gc()` 后，Entry key 弱引用被清理，但 value 是否仍然存在？
+- [ ] `get()` 或 `set()` 是否有时能清理部分脏 Entry？为什么还是在泄漏？
+- [ ] 如果主动 `remove()` 后，是否立即释放内存？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.*;
+
+public class ThreadLocalLeak {
+    public static void main(String[] args) throws InterruptedException {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(
+                1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>()
+        );
+        // 限制堆大小: -Xmx64M
+        for (int i = 0; i < 1000; i++) {
+            int finalI = i;
+            // 每次循环创建新的 ThreadLocal 实例，使用后即丢失强引用
+            ThreadLocal<byte[]> tl = new ThreadLocal<>();
+            tl.set(new byte[5 * 1024 * 1024]); // 5 MB 对象
+            pool.execute(() -> {
+                System.out.println("任务 " + finalI + " 执行, 值大小: " + tl.get().length);
+                // 故意不调用 tl.remove()
+            });
+            Thread.sleep(20); // 给 GC 一点时间
+        }
+        System.out.println("任务提交完毕，观察堆内存...");
+        // 此时你会发现 OOM 或频繁 GC
+        pool.shutdown();
+    }
+}
+```
+
+**设计思路**  
+- 每个任务内使用一个全新 `ThreadLocal` 实例，这样 `ThreadLocalMap` 中会不断累积 key 为 null 的 Entry，但 value 仍被线程强引用。  
+- 因为没有调用 `remove`，也没有后续对该 `ThreadLocal` 的 `get`/`set` 操作（这些操作可能触发惰性清理），所以脏 Entry 越积越多，最终内存泄露。  
+- 实际项目中如果 `ThreadLocal` 是静态变量，key 永远不会被回收，则不会出现 key null 的 entry，但如果忘记 remove，value 依然会像强引用一样存在直到线程结束。
+
+### 🐞 常见错误预警
+- 认为 `ThreadLocal` 使用后会自己清理：不是，必须显式 `remove()` 或线程死亡。
+- 把大对象放进 ThreadLocal 且永不清理，导致内存浪费。
+- 复杂的继承关系中，子线程复制了父线程的 InheritableThreadLocal 值，但未在自己的 finally 中清理。
+
+---
+
+## 📝 练习3：高级/探索用法——InheritableThreadLocal 与线程池上下文丢失问题
+
+### 业务场景
+你的服务在接收到请求后，主线程将 traceId 放入 `InheritableThreadLocal`，然后异步线程（线程池）需要打印相同的 traceId。但你发现线程池里的线程往往拿到的是旧的 traceId 或者 null。需要理解其原因并给出解决方案。
+
+### 你的任务
+1. 使用 `InheritableThreadLocal` 存储 traceId，主线程设置，然后提交任务给线程池。观察子线程是否能获取到（第一次创建线程时可以，但线程复用后可能获取的是旧值）。
+2. 演示问题：主线程多次设置不同 traceId，线程池线程复用时却读到上一个请求的 traceId。
+3. 给出解决方案：使用阿里巴巴开源的 `TransmittableThreadLocal`（TTL）或自己写包装器在线程池提交时复制上下文。
+4. 实现一个简化版的 `TransmittableThreadLocal`，核心思路：在 `execute` 时捕获当前上下文，并在任务执行前设置、执行后清理。
+
+### ⚡ 关键提示
+- `InheritableThreadLocal` 原理：在线程创建时，子线程会将父线程的 `inheritableThreadLocals` 全部复制一份。但如果线程复用，只在首次创建时复制。
+- 利用装饰器模式包装 `Runnable`：在执行前将父线程的 `ThreadLocal` 值 set 到子线程，执行后 `remove`。
+- 实际推荐直接用 TTL，而不要自己造。
+
+### ✍️ 动手写代码
+```java
+public class InheritableThreadLocalIssue {
+    static InheritableThreadLocal<String> traceId = new InheritableThreadLocal<>();
+
+    public static void main(String[] args) {
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        for (int i = 0; i < 3; i++) {
+            String trace = "trace-" + i;
+            traceId.set(trace);
+            pool.execute(() -> {
+                System.out.println("子线程获取 traceId: " + traceId.get());
+            });
+            // 期望子线程输出 trace-0, trace-1, trace-2
+            // 实际输出可能都是 trace-0（因为线程复用，复制只在第一次发生）
+        }
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 线程池下 `InheritableThreadLocal` 传递是否正确？为什么？
+- [ ] 自己实现的包装器是否在线程池的每次任务中都正确捕获了上下文？
+- [ ] 是否理解 TTL 比 `InheritableThreadLocal` 强在哪里？
+
+### 📖 参考实现：自定义上下文传递包装器（直接展示）
+
+```java
+import java.util.Map;
+import java.util.concurrent.*;
+
+public class ContextCopyingDecorator {
+    // 保存 ThreadLocal 实例，这里演示一个
+    static InheritableThreadLocal<String> tl = new InheritableThreadLocal<>();
+
+    static class ContextRunnable implements Runnable {
+        private final Runnable task;
+        private final String contextValue; // 也可以捕获多个
+        ContextRunnable(Runnable task) {
+            this.task = task;
+            this.contextValue = tl.get(); // 在提交线程中捕获
+        }
+        @Override
+        public void run() {
+            tl.set(contextValue); // 设置到执行线程
+            try {
+                task.run();
+            } finally {
+                tl.remove(); // 清理
+            }
+        }
+    }
+
+    public static ExecutorService wrap(ExecutorService pool) {
+        return new AbstractExecutorService() {
+            // ... 委托所有方法，并在 execute 时包装
+            @Override
+            public void execute(Runnable command) {
+                pool.execute(new ContextRunnable(command));
+            }
+            // 省略其他方法
+        };
+    }
+}
+```
+
+**设计思路**  
+- 在提交任务时捕获父线程的 `InheritableThreadLocal` 值，序列化到任务对象中。  
+- 任务执行时先恢复到当前线程的 `ThreadLocal`，执行结束清除，避免脏数据。  
+- 这样即使线程池线程复用，每次任务也都能获得正确的上下文。  
+- 生产环境建议使用成熟的 TTL 库，它会更完善地处理 `Callable`、`Timer` 等。
+
+### 🐞 常见错误预警
+- 忘记在 finally 中 remove，导致子线程的 ThreadLocal 污染。
+- 捕获上下文时使用了浅拷贝，如果存的是对象引用，仍可能被修改，需要深拷贝或不可变对象。
+- 对原生 `ExecutorService` 包装时，要注意覆盖所有提交方法（`submit`, `invokeAll` 等）。
+
+---
+
+## 🏢 大厂场景实战：全链路跟踪系统中 ThreadLocal 的设计
+
+### 场景描述
+你的公司要做一个全链路追踪系统，每个请求进入网关时生成全局 `traceId`，并在调用的所有下游服务、数据库、缓存、线程池中传递。要求：
+- 在 HTTP 请求处理、MQ 消费、定时任务等不同入口处设置。
+- 线程池异步任务中必须能够获取到正确的 `traceId`。
+- 不能对业务代码侵入太强。
+
+### 约束条件
+- 框架：Spring Boot + 自定义 Starter
+- 线程池：多个业务线程池
+- 需要自动传递，不可要求开发者手动设置。
+
+### 你的设计任务
+请给出设计方案，包括核心类、过滤器/拦截器、线程池装饰器的实现思路。
+
+### 常见方案参考（直接展示）
+- 统一 `TraceContext` 类持有 `ThreadLocal` 或者用 TTL。
+- 在 Web 层使用 `Filter` 或 `Interceptor` 提取请求头的 `traceId` 并设置。
+- 在 `@Async` 或自定义线程池处，通过 `TaskDecorator` 或者包装 `Executor` 复制上下文。
+- 在 RPC 框架（Feign/Dubbo）的过滤器中将 `traceId` 透传。
+- 日志框架（Logback/Log4j2）中配置 `%traceId` 占位符，通过 MDC 或自定义 Converter 读取。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：为什么 ThreadLocal 的 Entry 的 key 设计成 WeakReference？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+
+- **原因**：如果 key 是强引用，一旦外部的 `ThreadLocal` 实例不再使用（没有强引用），由于 `ThreadLocalMap` 还持有该 key 的强引用，会导致 `ThreadLocal` 对象无法被 GC，因而 Entry 整个无法回收，造成内存泄漏。
+- **使用弱引用**：外部的 `ThreadLocal` 没有强引用后，GC 会回收它，使 Entry 的 key 变为 null。这样在后续对 `ThreadLocal` 的 `get`/`set`/`remove` 操作中，可以惰性检测到 key 为 null 的 Entry 并清除它们。
+- **副作用**：value 仍是强引用，所以如果线程不死且不调用上述方法，value 依然泄漏。这就是为什么必须手动 `remove()`。
+- **常见追问**：“那 value 为什么不用弱引用？” 因为 value 是业务数据，没有其他强引用，如果 value 是弱引用，很可能在 get 之前就被 GC 了，业务无法正常使用。
+- **易错提醒**：很多人以为弱引用 key 就万事大吉，忽略了惰性清理的条件。
+- **自我反思**：你是否在项目中每次使用 ThreadLocal 都在 finally 块中 remove？如果有一个工具能自动检测，会减少多少隐患？
+
+---
+
+### 面试题2：在线程池环境中使用 ThreadLocal 为什么需要 remove？具体会引发什么问题？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **脏数据**：线程池的线程处理完一个任务后，如果不清除 ThreadLocal，该线程处理下一个任务时仍会看到上一个任务设置的值，导致数据错乱（比如用户 A 看到了用户 B 的信息）。
+- **内存泄漏**：线程生命周期长，ThreadLocalMap 中的 Entry 会随任务不断增加，导致内存持续上升（尤其是 value 是大对象时）。
+- **清理时机**：必须在每个任务的 `finally` 块中显式 `remove()`。
+- **常见追问**：“如果 ThreadLocal 是 static 的，remove 能解决问题吗？” 完全可以，remove 会将当前线程对应的 Entry 彻底清除，key 仍然是 static 的，下次 set 会重新创建 Entry。
+- **易错提醒**：有些开发者用 ThreadLocal 的 `set(null)` 代替 `remove()`，这不清洁 entry，key 仍存在，只是 value 为 null，不算彻底清除。
+- **自我反思**：阿里规约强制要求线程池中的 ThreadLocal 必须 remove，你所在项目是否能通过静态检查保证？
+
+---
+
+### 面试题3：`InheritableThreadLocal` 的实现原理？在线程池下有什么缺陷？如何解决？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+
+- **原理**：`Thread` 对象还有一个 `inheritableThreadLocals` 字段。当创建新线程时，`Thread.init()` 方法中会将父线程的 `inheritableThreadLocals` 深拷贝一份给子线程。具体可见 `ThreadLocal.createInheritedMap`。
+- **缺陷**：拷贝时机是在线程**创建**时。线程池的线程是复用的，只在首次创建时拷贝一次父线程的上下文，之后线程再复用时不会重新拷贝，导致上下文不是最新。
+- **解决方案**：
+  1. 阿里的 `TransmittableThreadLocal` (TTL)，在使用线程池时结合 `TtlRunnable` 包装，能在每次任务执行前捕获并设置上下文。
+  2. 自定义 `TaskDecorator` 或装饰器模式包装 `Runnable`，在提交时捕获，执行时恢复。
+- **常见追问**：“如果不用 TTL，怎么手动做到类似效果？” → 在 `Runnable` 中获得当前 traceId，然后在线程中重新设置。
+- **易错提醒**：不能依赖 `InheritableThreadLocal` 在 Executors 中传递上下文，这是一个经典错误。
+- **自我反思**：全链路追踪系统中，你是直接用了 Sleuth 还是自己实现了 TraceContext？它如何跨线程池传递？
+
+---
+
+### 面试题4：如何定位和排查 ThreadLocal 内存泄漏问题？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+
+- **排查方法**：
+  1. 通过 `jmap -histo:live <pid> | grep` 找到大对象或者业务可疑类的实例数。
+  2. `jstack <pid>` 寻找长时间存活的线程（如线程池）。
+  3. 对怀疑的 ThreadLocal 类，通过反射查看线程的 `ThreadLocalMap` 内容。可以写一段工具代码 dump 所有线程的 ThreadLocal 值。
+  4. Heap dump 后用 MAT (Memory Analyzer Tool) 查看 Path to GC Roots，看是否有线程 → ThreadLocalMap → Entry → value 的引用链。
+- **关键特征**：Entry 的 `referent` (key) 为 null，但 value 不为 null，且线程存活。
+- **预防**：代码规范强约束，使用 Sonar 或 IDE 插件提醒 remove。
+- **常见追问**：“有没有办法自动清理？” Java 会在 `ThreadLocal.get/set/remove` 时惰性清理一部分 null key entry，但如果永远不调用这些方法就无效。
+- **易错提醒**：使用 `System.gc()` 可以加速弱引用回收用于测试，但生产环境不能依赖。
+- **自我反思**：你的项目是否有监控线程池的 ThreadLocal 泄漏？比如利用字节码增强或 JMX 指标。
+
+---
+
+### 面试题5：ThreadLocal 在 Spring 框架中有哪些典型应用？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- `RequestContextHolder`：基于 ThreadLocal 保存当前 HTTP 请求的 `RequestAttributes`。
+- `TransactionSynchronizationManager`：使用 ThreadLocal 存储当前事务的资源和同步器，如 DB 连接持有者 (`ConnectionHolder`)。
+- `LocaleContextHolder`：保存当前线程的 `LocaleContext`。
+- `SecurityContextHolder`（Spring Security）：存储当前认证信息，默认策略是 ThreadLocal。
+- `DateTimeContextHolder`：Joda-Time 等时间上下文。
+- **共同特点**：都提供了 `reset` 或 `remove` 方法，并在请求完成时由过滤器自动清理。
+- **常见追问**：“为什么 Spring 能用 ThreadLocal 而不怕泄漏？” 因为它们有严格的清理机制，通常通过 `OncePerRequestFilter` 在 request 结束的 finally 中强制清除。
+- **易错提醒**：如果你在 Spring 管理的线程池 @Async 任务中依赖这些 Holder，可能取不到值，因为上下文未传递。需要使用 `DelegatingSecurityContextAsyncTaskExecutor` 等包装。
+- **自我反思**：是否清楚项目中 Spring 的 ThreadLocal 清理是在哪个 Filter 做的？如果自定义了 Filter 顺序，是否有清理遗漏风险？
+
+---
+
+> 今天你亲手制造并分析了 ThreadLocal 的内存泄漏，这是无数生产事故的根源。把 `remove()` 刻入肌肉记忆，从此你的并发代码将再无泄漏之忧。明天我们将转向 CAS 实战，自己写一个无锁栈并出击 ABA 问题。
+
+
+
+
+
+# 第 13 天：CAS 实战：无锁栈 + ABA 复现与解决
+本日掌握：用 `Unsafe` 或 `AtomicReference` 实现一个线程安全的无锁栈，亲手制造 ABA 问题并用 `AtomicStampedReference` 解决  
+覆盖原理点：15 (CAS 与 ABA 问题)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能手写一个基于 CAS 的无锁并发栈（Treiber Stack），并测试其线程安全性。
+- 能构造一个业务场景，故意制造 ABA 问题，并观察到数据错误或丢失。
+- 能使用 `AtomicStampedReference`（或 `AtomicMarkableReference`）解决 ABA 问题，并验证修复后的正确性。
+- 能解释 `Unsafe.compareAndSwapInt` 底层（CMPXCHG 指令）以及与 `AtomicInteger` 的关系。
+- 能应对面试中关于 CAS 的三大问题：ABA、自旋开销、只能保证一个共享变量的原子性。
+
+---
+
+## 📝 练习1：基础用法——手写基于 CAS 的无锁栈（必做）
+
+### 业务场景
+你需要一个高性能的线程安全栈，不允许使用锁（如 `synchronized` 或 `ReentrantLock`），而是依靠 CAS 指令实现无锁并发。它将用于缓存空闲连接池，需要频繁出栈入栈。
+
+### 你的任务
+实现一个 `ConcurrentStack<T>` 类，支持 `push(T item)` 和 `T pop()`，满足：
+- 使用单向链表存储节点（Node 包含 value 和 next）。
+- 使用 `AtomicReference<Node<T>>` 作为栈顶引用 `top`。
+- `push`：创建新节点，CAS 将 top 设置为新节点，同时新节点 next 指向当前 top。
+- `pop`：获取当前 top，若为空返回 null，否则 CAS 将 top 设为 top.next。
+- CAS 操作需要自旋直到成功。
+- 线程安全：多个线程并发 push/pop，数据不丢失，无重复或空值错误。
+- 不允许使用锁或 `synchronized`。
+
+### ⚡ 关键提示
+- `java.util.concurrent.atomic.AtomicReference` 提供 CAS 操作：`compareAndSet(expect, update)`。
+- 无锁栈经典算法：Treiber Stack。
+- CAS 可能因 ABA 问题出错，但现在先不考虑 ABA，后续练习会专门涉及。
+- Node 类可以定义为内部静态类，要有 `final T value` 和 `Node<T> next`。
+- 场景：连接池回收，pop 获取空闲连接，push 归还连接。
+
+### ✍️ 动手写代码
+```java
+import java.util.concurrent.atomic.AtomicReference;
+
+public class ConcurrentStack<T> {
+    private static class Node<T> {
+        final T value;
+        Node<T> next;
+        Node(T value) { this.value = value; }
+    }
+    private final AtomicReference<Node<T>> top = new AtomicReference<>();
+
+    public void push(T item) {
+        Node<T> newNode = new Node<>(item);
+        Node<T> oldTop;
+        do {
+            oldTop = top.get();
+            newNode.next = oldTop;
+        } while (!top.compareAndSet(oldTop, newNode));
+    }
+
+    public T pop() {
+        Node<T> oldTop;
+        Node<T> newTop;
+        do {
+            oldTop = top.get();
+            if (oldTop == null) return null;
+            newTop = oldTop.next;
+        } while (!top.compareAndSet(oldTop, newTop));
+        return oldTop.value;
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 多个线程同时 push 1000 个元素，最后 pop 出的总数是否等于总 push 数？
+- [ ] pop 空栈是否返回 null 而不是抛出异常？
+- [ ] 并发 pop 时，是否可能出现两个线程 pop 到同一个元素？
+- [ ] 执行期间没有使用任何锁，CPU 自旋是否可控？
+
+### 📖 参考实现（直接展示）
+
+完整的可运行测试：
+
+```java
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
+
+public class TreiberStack<T> {
+    static final class Node<T> {
+        final T value;
+        Node<T> next;
+        Node(T value) { this.value = value; }
+    }
+
+    private final AtomicReference<Node<T>> top = new AtomicReference<>();
+
+    public void push(T value) {
+        Node<T> node = new Node<>(value);
+        Node<T> oldTop;
+        do {
+            oldTop = top.get();
+            node.next = oldTop;
+        } while (!top.compareAndSet(oldTop, node));
+    }
+
+    public T pop() {
+        Node<T> oldTop, newTop;
+        do {
+            oldTop = top.get();
+            if (oldTop == null) return null;
+            newTop = oldTop.next;
+        } while (!top.compareAndSet(oldTop, newTop));
+        return oldTop.value;
+    }
+
+    public boolean isEmpty() {
+        return top.get() == null;
+    }
+
+    // 测试
+    public static void main(String[] args) throws InterruptedException {
+        TreiberStack<Integer> stack = new TreiberStack<>();
+        int threads = 4;
+        int perThread = 10000;
+        CountDownLatch latch = new CountDownLatch(threads);
+        // 并发push
+        for (int t = 0; t < threads; t++) {
+            final int start = t * perThread;
+            new Thread(() -> {
+                for (int i = 0; i < perThread; i++) {
+                    stack.push(start + i);
+                }
+                latch.countDown();
+            }).start();
+        }
+        latch.await();
+        // 统计 pop 的数量
+        int count = 0;
+        Integer v;
+        while ((v = stack.pop()) != null) count++;
+        System.out.println("Total pushed: " + (threads * perThread) + ", popped: " + count);
+    }
+}
+```
+
+**设计思路**  
+- `push` 和 `pop` 都使用典型的 CAS 自旋模式：获取当前快照，构造期望的新值，CAS 尝试更新，失败则重试。  
+- `AtomicReference` 扮演了 `volatile` + CAS 的角色，保障可见性和原子更新。  
+- 注意 `node.next = oldTop` 在 CAS 之前设定，如果 CAS 失败，`node` 会被丢弃，这是安全的，因为它是线程局部对象。  
+- 这种无锁栈在低到中竞争时性能极佳，但高竞争时自旋可能会消耗 CPU，此时 `LongAdder` 之类的优化或等待策略需要考虑。
+
+### 🐞 常见错误预警
+- **错误**：`pop` 中先 `top.get()` 再 `top.compareAndSet`，期间栈可能已经被其他线程更改（可能有元素被 push 或 pop），但 CAS 会检查到 `oldTop` 与当前 top 不同而重试。这是正确的。但如果 pop 拿到 `oldTop` 后，读取 `oldTop.next` 前，该节点可能被其他线程 pop 并复用（内存重用），这就会产生 ABA 问题。今天的栈暂不处理 ABA。
+- **错误**：`push` 中 `newNode.next = oldTop` 后，CAS 失败，但 newNode 仍被丢弃，下一次重试会用新的 `newNode`（因为 `oldTop` 变了），所以旧 newNode 只是被 GC 回收，不会影响栈。这是正确的。
+- **错误**：忘记 `pop` 判空，在并发下 `top.get()` 可能在判空后变为非空，或者反之。CAS 会正确处理，因为 CAS 期望值就是 `oldTop`，如果 `oldTop` 被修改，CAS 失败重试。
+
+---
+
+## 📝 练习2：中级用法——构造 ABA 问题并复现
+
+### 业务场景
+你的无锁栈在高并发下运行良好，但某天运维反馈弹出了重复的节点（同一个对象出现两次）。经过日志分析，怀疑是 ABA 问题。你需要复现这个经典问题。
+
+### 你的任务
+1. 在无锁栈中故意制造 ABA 场景：线程 1 准备 pop 节点 A，但在 CAS 之前被挂起。线程 2 在此期间将 A pop 出来，然后又 push 了一个新的 B，接着再次修改某个指针或复用节点 A 的内存（例如将 A 的 value 改变后重新 push）。线程 1 醒来后继续 CAS，它看到的 top 依然是 A（因为 A 又被 push 了回来），CAS 成功，但此时 A 的 next 可能已经被更改，导致栈结构破坏。
+2. 使用 `AtomicStampedReference` 或 `AtomicMarkableReference` 保证不仅检查引用，还检查版本号（时间戳），来解决 ABA。
+3. 修改栈实现，用 `AtomicStampedReference<Node<T>>` 替换 `AtomicReference`，push 和 pop 时携带时间戳，每次修改 CAS 时都要求时间戳匹配并同时更新。
+4. 编写测试，使用多线程和人为的延时（如 `Thread.sleep` 或 `CountDownLatch` 控制时序）来复现 ABA 问题，并展示未加版本号时出现错误，加入版本号后正确。
+
+### ⚡ 关键提示
+- ABA 问题：CAS 只比较当前值与期望值是否相等，但一个值从 A 变为 B 再变回 A 的过程，CAS 无法察觉。这在涉及链表等动态内存重用的结构中尤其危险。
+- `AtomicStampedReference` 内部维护 `pair` (reference, int stamp)。`compareAndSet(V expectedReference, V newReference, int expectedStamp, int newStamp)`。
+- 要复现 ABA，需要精确控制线程调度，通常在线程内部设置 `Thread.sleep` 或在安全点用锁（违背无锁初衷，仅用于测试）制造窗口。可以设计如下场景：
+  - 初始栈：A -> B
+  - 线程1 读 top = A，next = B，准备 CAS 替换 top 为 B，但在 CAS 前暂停。
+  - 线程2 pop A，pop B，然后 push A 回来（值可能是新对象或原 A），此时栈顶又是 A，但 next 可能已变（原来 A.next 是 B，现在 A.next 是 null 或别的）。
+  - 线程1 CAS 将 top 从 A 改为 B（`oldTop=A, newTop=B`），成功！因为 top 依然是 A。但此时栈中实际上不存在 B（B 已被线程2 pop 并丢弃），导致 B 又被错误地压回栈，且 B 的 next 可能是旧值等，引发错误。
+- 用 `AtomicStampedReference`，每次修改 stamp 加 1，这样线程1 看到的 top 虽然等于 A，但 stamp 已经变了，CAS 检查 stamp 不匹配而失败。
+
+### ✍️ 动手写代码
+```java
+// 使用 AtomicStampedReference 实现栈
+public class ABAFreeStack<T> {
+    private static class Node<T> {
+        final T value;
+        Node<T> next;
+        Node(T value) { this.value = value; }
+    }
+    private final AtomicStampedReference<Node<T>> top = new AtomicStampedReference<>(null, 0);
+
+    public void push(T value) {
+        Node<T> node = new Node<>(value);
+        int[] stampHolder = new int[1];
+        Node<T> oldTop;
+        do {
+            oldTop = top.get(stampHolder);
+            node.next = oldTop;
+        } while (!top.compareAndSet(oldTop, node, stampHolder[0], stampHolder[0] + 1));
+    }
+
+    public T pop() {
+        int[] stampHolder = new int[1];
+        Node<T> oldTop, newTop;
+        do {
+            oldTop = top.get(stampHolder);
+            if (oldTop == null) return null;
+            newTop = oldTop.next;
+        } while (!top.compareAndSet(oldTop, newTop, stampHolder[0], stampHolder[0] + 1));
+        return oldTop.value;
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 使用普通 `AtomicReference` 栈，在复现场景下是否出现了数据不一致或弹出预期外的元素？
+- [ ] 使用 `AtomicStampedReference` 后，同样场景是否不会出现错误？
+- [ ] 版本号是否每次 push/pop 都正确递增？
+- [ ] 能否画出 ABA 问题的详细时序图？
+
+### 📖 参考实现与复现场景（直接展示）
+
+**复现 ABA 的测试**（可能需要 JDK8 特定环境，主要是理解概念）：
+
+```java
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicStampedReference;
+
+public class ABADemo {
+    static class Node {
+        int value;
+        Node next;
+        Node(int v) { value = v; }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        // 使用标准栈（无版本号）
+        TreiberStack<Node> stack = new TreiberStack<>();
+        Node a = new Node(1);
+        Node b = new Node(2);
+        stack.push(b);
+        stack.push(a); // 栈顶 a -> b
+
+        Thread t1 = new Thread(() -> {
+            Node top = stack.top.get(); // a
+            Node next = top.next;       // b
+            // 暂停，让线程2操作
+            try { Thread.sleep(100); } catch (InterruptedException e) {}
+            // 此时 top 可能还是 a（因为线程2把 a 又 push 回来了）
+            boolean ok = stack.top.compareAndSet(top, next); // 期望 a，改为 b
+            System.out.println("Thread1 CAS result: " + ok);
+        });
+        Thread t2 = new Thread(() -> {
+            Node popped1 = stack.pop(); // 弹出 a
+            Node popped2 = stack.pop(); // 弹出 b
+            stack.push(popped1);        // 重新 push a （此时栈顶 a，next 为 null）
+            // 栈顶变为 a -> null
+        });
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+        // 打印栈内容
+        System.out.print("Stack: ");
+        Node cur = stack.top.get();
+        while (cur != null) {
+            System.out.print(cur.value + " ");
+            cur = cur.next;
+        }
+        // 可能看到错误的内容，比如包含 b，但 b 已经被 pop 掉
+    }
+}
+```
+
+之后将 `TreiberStack` 的 `AtomicReference` 替换成 `AtomicStampedReference`，并增加 stamp 操作，再次运行，会看到 CAS 失败，栈结构保持正确。
+
+**设计思路**  
+- 人为制造延时让线程2有机会执行，复现经典ABA。  
+- 带版本的 CAS 通过 stamp 捕捉到状态变化，使 CAS 失败，避免错误更新。  
+- 实际上 JDK 的 `ConcurrentLinkedQueue` 等都没有使用 `AtomicStampedReference`，而是通过其他方法避免ABA（如使用不断新增节点，不重用对象）。因为 `AtomicStampedReference` 需要额外存储 stamp，且 CAS 更复杂。
+
+### 🐞 常见错误预警
+- 在复现 ABA 时，直接用相同对象 a 重新 push，使得 top 引用又变回 a。注意栈里之前 a 的 next 可能已经改变（例如 a.next 原为 b，线程2 pop b 后没有改变 a.next 仍然指向 b）。但线程2在 push a 时，`node.next = oldTop`，如果 oldTop 是 null，则 a.next 被设置为 null，覆盖了原来的 b 引用。这样 a 的 next 就变了，这就是产生的隐患。
+- 使用 `AtomicStampedReference` 时，每次 CAS 都需要提供期望的时间戳，而时间戳需要从当前 `top` 获取，通过 `get(stampHolder)` 方法同时返回引用和时间戳。
+
+---
+
+## 📝 练习3：高级/探索用法——CAS 的自旋性能与 `LongAdder` 对比
+
+### 业务场景
+你已经理解了 CAS 和 ABA。现在需要探究 CAS 在高竞争下的自旋开销，并对比使用 `AtomicLong` 和 `LongAdder` 在递增计数器时的吞吐量。
+
+### 你的任务
+1. 编写一个基准测试：多个线程对一个 `AtomicLong` 进行 `incrementAndGet`，记录总耗时。
+2. 同样使用 `LongAdder` 进行 `increment`，记录耗时并最后调用 `sum()`。
+3. 在不同线程数（1, 2, 4, 8, 16）下测试，用 `CountDownLatch` 控制同时开始，比较吞吐量。
+4. 解释为什么 `LongAdder` 在高竞争下更快（热点分散）。
+5. 思考 CAS 自旋在什么情况下会成为瓶颈，以及如何优化（如使用 `Unsafe` 结合 `yield` 或 `sleep`）。
+
+### ⚡ 关键提示
+- `AtomicLong` 单一变量，所有线程 CAS 竞争同一个内存地址，失败频繁。
+- `LongAdder` 内部有一个 base 和 Cell 数组，每个线程映射到不同的 Cell 进行 CAS 加法，极大减少竞争。
+- 测试时务必确保线程同时运行，使用 `CyclicBarrier` 或 `CountDownLatch`。
+- 如果想看自旋，可以读取 `AtomicLong` 失败次数（需自定义工具），但简单对比耗时即可。
+
+### ✍️ 动手写代码
+```java
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+
+public class CASPerformance {
+    public static void main(String[] args) throws Exception {
+        for (int threads : new int[]{1, 2, 4, 8, 16}) {
+            testAtomicLong(threads, 1_000_000);
+            testLongAdder(threads, 1_000_000);
+        }
+    }
+
+    private static void testAtomicLong(int nThreads, int iterations) throws InterruptedException {
+        AtomicLong counter = new AtomicLong();
+        ExecutorService pool = Executors.newFixedThreadPool(nThreads);
+        CountDownLatch latch = new CountDownLatch(nThreads);
+        long start = System.nanoTime();
+        for (int i = 0; i < nThreads; i++) {
+            pool.execute(() -> {
+                for (int j = 0; j < iterations; j++) counter.incrementAndGet();
+                latch.countDown();
+            });
+        }
+        latch.await();
+        long end = System.nanoTime();
+        System.out.printf("AtomicLong (%2d threads): %10d ops in %6d ms%n", nThreads, nThreads * iterations, (end - start) / 1_000_000);
+        pool.shutdown();
+    }
+
+    private static void testLongAdder(int nThreads, int iterations) throws InterruptedException {
+        LongAdder adder = new LongAdder();
+        ExecutorService pool = Executors.newFixedThreadPool(nThreads);
+        CountDownLatch latch = new CountDownLatch(nThreads);
+        long start = System.nanoTime();
+        for (int i = 0; i < nThreads; i++) {
+            pool.execute(() -> {
+                for (int j = 0; j < iterations; j++) adder.increment();
+                latch.countDown();
+            });
+        }
+        latch.await();
+        long end = System.nanoTime();
+        System.out.printf("LongAdder  (%2d threads): %10d ops in %6d ms, sum=%d%n", nThreads, nThreads * iterations, (end - start) / 1_000_000, adder.sum());
+        pool.shutdown();
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 是否随着线程数增加，`AtomicLong` 的耗时大幅增长？
+- [ ] `LongAdder` 在高线程下是否保持较低耗时？
+- [ ] `LongAdder` 的 `sum()` 是否返回正确总和？
+- [ ] 你能否解释 `LongAdder` 是如何通过 cell 分散热点的？
+
+---
+
+## 🏢 大厂场景实战：无锁队列实现
+
+### 场景描述
+一个金融交易系统，订单撮合需要极低延迟的无锁队列。使用 CAS 实现一个简单的无锁有界循环队列（数组+头尾指针 CAS）。线程安全，不能使用锁。
+
+### 约束条件
+- 队列容量固定（如 1024）。
+- 支持入队、出队，并发线程数可能为 4。
+- 不允许使用 `BlockingQueue`，必须基于 CAS 自旋。
+
+### 你的设计任务
+写出核心数据结构 `ConcurrentArrayQueue<T>`，包含 `offer(T)` 和 `poll()`，使用 `AtomicInteger` 或 `AtomicLong` 作为头尾指针，并处理满和空的情况。
+
+### 常见方案参考
+- 使用两个 `AtomicInteger`：`head` 和 `tail`。
+- CAS 自旋：`offer` 时获取当前 tail，如果 (tail - head) == capacity，则队列满返回 false；否则 CAS 设置 tail+1，成功后将元素放入 slot[tail % capacity]。
+- 注意指令重排序，需要变量可见性，可使用 `AtomicIntegerArray` 存储元素引用，或者使用 `volatile` 数组 + `Unsafe`。
+- 一种简化实现：基于 `AtomicReferenceArray` 存储，元素存取用 `get`/`set`（volatile），头尾指针 CAS。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：什么是 CAS？它的底层原理是什么？有哪些缺点？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **CAS (Compare-And-Swap)**：一条原子指令，包含三个操作数：内存位置 V、预期的旧值 A、新值 B。如果 V 处的值等于 A，则将该位置的值更新为 B，否则不做任何操作。无论是否成功，都会返回 V 的旧值。
+- **底层原理**：在 x86 CPU 上对应 `cmpxchg` 指令。JVM 通过 `Unsafe.compareAndSwapInt()` 等方法提供，这些方法直接调用 native 代码，映射到 CPU 原子指令。对于对象引用有 `compareAndSwapObject`。
+- **缺点**：
+  1. **ABA 问题**：值从 A 变成 B 再变回 A，CAS 无法感知。
+  2. **自旋开销**：CAS 失败时通常自旋重试，高竞争下会消耗 CPU。
+  3. **只能保证一个共享变量的原子操作**：不能同时 CAS 多个变量（除非用 `AtomicReference` 包装对象或使用锁）。
+- **常见追问**：“Java 的 `synchronized` 底层也用到 CAS 吗？” 是的，轻量级锁和偏向锁的撤销/膨胀过程使用 CAS 操作对象头。
+- **自我反思**：能否手写一段汇编伪代码展示 CAS 的流程？
+
+### 面试题2：什么是 ABA 问题？Java 中如何解决？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **ABA 问题**：线程 1 读取变量 A，在计算新值前，线程 2 将 A 改为 B，然后又改回 A。线程 1 执行 CAS 时发现值仍为 A，CAS 成功。但状态实际上经过了 B，可能导致不一致。
+- **解决**：使用版本号或时间戳。`AtomicStampedReference` 同时维护引用和整数 stamp；`AtomicMarkableReference` 维护一个布尔标志。CAS 更新时同时比较引用和 stamp，避免 ABA。
+- **常见追问**：“为什么 `ConcurrentLinkedQueue` 没有用 `AtomicStampedReference`？” 因为它通过**节点生命周期管理**避免 ABA：节点一旦被踢出队列则会被 GC 或永不重用，因此不会出现 A 被重用的情况。
+- **易错提醒**：在某些内存管理自行处理的语言（如 C++）中，ABA 可能会导致指针悬空等严重后果；Java 的 GC 避免了部分 ABA，但如果逻辑上重用对象（如内存池），则必须考虑 ABA。
+- **自我反思**：你能否写一个 ABA 问题的实际 bug 案例，并演示修复？
+
+### 面试题3：`AtomicInteger` 和 `LongAdder` 的区别？分别适用于什么场景？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **区别**：`AtomicInteger` 所有操作基于单个 `volatile int` 字段和 CAS，高并发时大量 CAS 自旋失败，性能下降。`LongAdder` 内部使用 base + Cell 数组，将热点分散到多个 cell 上，多个线程并发更新时映射到不同 cell 进行 CAS 或简单的加法（如 `Unsafe` 直接加），仅在获取值 `sum()` 时才合并，因此写吞吐量高。
+- **适用**：`AtomicInteger` 适合低并发或需要精确瞬时值的场景（如序列号生成器）。`LongAdder` 适合高并发统计计数（如 QPS 计数器、访问量统计），但对实时精确值要求不高（`sum()` 是合并的快照）。
+- **常见追问**：“`LongAccumulator` 呢？” 它是更通用的累加器，可以自定义累加函数。
+- **易错提醒**：`LongAdder` 的 `sum()` 在进行累加时不会有并发锁，所以返回的值可能不是精确的当前值。
+- **自我反思**：在你的项目中，那些使用 `AtomicInteger` 的地方是否可以用 `LongAdder` 优化？
+
+### 面试题4：CAS 自旋失败过多会有什么影响？如何优化？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **影响**：自旋过多导致 CPU 空转，浪费处理器时间，可能拖慢其他线程，系统吞吐量下降。在严重竞争下，甚至引发“总线风暴”。
+- **优化手段**：
+  1. **减少竞争**：使用分散热点（如 `LongAdder` 的分段思想）。
+  2. **自适应自旋**：JVM 的 synchronized 轻量级锁采取自适应自旋，根据历史成功概率动态决定自旋次数。
+  3. **退避策略**：在 CAS 循环中加入 `Thread.yield()` 或短暂的 `LockSupport.parkNanos()`，避免空耗 CPU。
+  4. **改用其他同步机制**：对于复杂数据结构，无锁实现复杂度太高时，可以考虑细粒度锁。
+- **常见追问**：“JDK 的 `StampedLock` 有使用 CAS 吗？” 是的，它内部用 CAS 更新状态，但同时也结合了排队机制，避免了纯粹自旋。
+- **自我反思**：如果让你为轻量级的自旋锁设计一个退避策略，你会怎么做？指数退避、随机退避？
+
+### 面试题5：能否用 CAS 实现一个线程安全的链表？需要注意什么？
+**难度**：⭐️⭐️⭐️⭐️⭐️
+
+**参考答案**：
+
+- **可行**：典型的无锁链表如 `ConcurrentLinkedQueue` 使用 CAS 实现。插入和删除的核心是 Cas 操作节点的 `next` 指针或 `item` 字段。
+- **注意点**：
+  1. **ABA**：如果节点被删除后又可能被重用（如内存池），需要版本号或不重用。Java 的 GC 允许我们通过不再重用已删除节点来规避 ABA。
+  2. **多步更新**：链表操作往往需要同时更新两个指针（如删除节点要同时更新前驱的 next 和被删除节点的指针），单个 CAS 无能为力。这时需要使用 `AtomicMarkableReference` 或逻辑删除标记（如 `ConcurrentLinkedQueue` 先将节点 item 置 null，再 CAS 更新 next）。
+  3. **迭代器弱一致性**：无锁链表的迭代器一般是弱一致性的，遍历时可能看到不一致的快照。
+  4. **内存屏障**：需要保证对节点内部的写入不会被重排到 CAS 发布之后，通常 `volatile` 或 `VarHandle` 提供屏障。
+- **常见追问**：“`ConcurrentLinkedQueue` 是如何防止 ABA 的？” 它使用 `AtomicReference` 更新 next 指针，但节点一旦从队列中删除，就不会再被重新链接回队列，因此不会出现同一个引用被再利用的 ABA 问题。
+- **自我反思**：尝试阅读 `ConcurrentLinkedQueue.offer()` 源码，是否能理解其两阶段 CAS（设置 next，然后推进 tail）？
+
+---
+
+> 今天你亲手经历了一场 CAS 的极限挑战：从搭建无锁栈，到亲手触发 ABA 幽灵，再到用版本号驱散它。CAS 是构建高性能并发的原子砖块，你已经掌握了它的脾气。明天我们将用 CountDownLatch / CyclicBarrier / Semaphore 来一场多线程协作的实战演习。
+
+
+
+
+
+# 第 14 天：三大并发工具 CountDownLatch 等底层追踪
+本日掌握：彻底搞懂 CountDownLatch、CyclicBarrier、Semaphore 的用法与底层 AQS 联系，能根据场景选择合适的同步工具  
+覆盖原理点：16 (CountDownLatch/CyclicBarrier/Semaphore)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能使用 `CountDownLatch` 实现一等多、多等一的线程协作。
+- 能使用 `CyclicBarrier` 实现分阶段并行任务，并解释其 `barrier` 打破和重置机制。
+- 能使用 `Semaphore` 实现流量控制，并解释公平模式与非公平模式。
+- 能画出这三个工具内部的 AQS `state` 语义（CountDownLatch 的 state 代表计数，CyclicBarrier 内部使用 ReentrantLock + Condition，Semaphore 直接实现 AQS 共享模式）。
+- 能回答面试中关于它们的区别、底层以及可能出问题的追问。
+
+---
+
+## 📝 练习1：基础用法——CountDownLatch 实现并发起跑与等待（必做）
+
+### 业务场景
+在性能测试中，你需要让多个工作线程同时开始执行，并且主线程要等待所有工作线程都完成后再统计结果。`CountDownLatch` 恰好可以一次性地完成这两个需求。
+
+### 你的任务
+1. 创建一个 `CountDownLatch startSignal = new CountDownLatch(1);` 作为发令枪。
+2. 创建一个 `CountDownLatch doneSignal = new CountDownLatch(N);` N 为工作线程数。
+3. 每个工作线程启动后调用 `startSignal.await()` 等待起跑信号，执行任务后调用 `doneSignal.countDown()`。
+4. 主线程初始化所有线程后，调用 `startSignal.countDown()` 唤醒所有工作线程，然后 `doneSignal.await()` 等待全部完成。
+5. 写一段代码模拟这个流程，确保所有线程几乎同时开始，主线程最后统计耗时。
+
+### ⚡ 关键提示
+- CountDownLatch 是一次性的，计数器减到0后不能重置，再次 await 直接通过。
+- `countDown()` 不会阻塞，`await()` 会阻塞直到计数器归零。
+- 注意异常处理：如果某个工作线程中途异常，必须在 finally 中 `countDown()`，否则主线程可能永远等待。
+- 底层基于 AQS 共享模式，state 初始化为 count 值，`countDown` 调用 `releaseShared(1)` 减少 state，`await` 调用 `acquireSharedInterruptibly(1)` 等待 state 为 0。
+
+### ✍️ 动手写代码
+```java
+int N = 5;
+CountDownLatch startSignal = new CountDownLatch(1);
+CountDownLatch doneSignal = new CountDownLatch(N);
+for (int i = 0; i < N; i++) {
+    new Thread(() -> {
+        try {
+            startSignal.await(); // 等待起跑
+            // 执行任务
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            doneSignal.countDown();
+        }
+    }).start();
+}
+// 主线程发令
+startSignal.countDown();
+doneSignal.await();
+```
+
+### ✅ 自我检查
+- [ ] 所有工作线程是否在 `startSignal.countDown()` 后几乎同时开始？
+- [ ] 如果某个工作线程抛异常，主线程能否终止等待？（需在 finally 中 countDown）
+- [ ] `startSignal` 的计数初始值为 1，能否在其他场景设为更大值？
+- [ ] `doneSignal` 的 `await` 返回后，计数器是否变成了 0？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.CountDownLatch;
+
+public class CountDownLatchDemo {
+    public static void main(String[] args) throws InterruptedException {
+        int workerCount = 5;
+        CountDownLatch startGate = new CountDownLatch(1);
+        CountDownLatch doneGate = new CountDownLatch(workerCount);
+
+        for (int i = 0; i < workerCount; i++) {
+            final int id = i;
+            new Thread(() -> {
+                try {
+                    startGate.await();          // 等待起跑
+                    System.out.println("Worker " + id + " started");
+                    Thread.sleep((long)(Math.random() * 1000));
+                    System.out.println("Worker " + id + " finished");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    doneGate.countDown();       // 通知完成
+                }
+            }).start();
+        }
+
+        System.out.println("All threads ready, starting...");
+        long start = System.currentTimeMillis();
+        startGate.countDown();                 // 发令
+        doneGate.await();                       // 等待全部完成
+        long end = System.currentTimeMillis();
+        System.out.println("All workers done in " + (end - start) + " ms");
+    }
+}
+```
+
+**设计思路**  
+- 两个 CountDownLatch：一个用于“起跑”，一个用于“等待完成”。经典的“发令枪”模式。  
+- `startGate` 计数 1，主线程调用 `countDown()` 后所有工作线程瞬间同时通过 `await()`，实现同时开始。  
+- `doneGate` 计数等于线程数，每个线程结束后 `countDown`，主线程 `await` 确保全完成。  
+- `finally` 中的 `countDown()` 保证即使异常也不会导致主线程死等。
+
+### 🐞 常见错误预警
+- **忘记在 finally 中 countDown**：线程异常可能导致计数器永远不为零，主线程死锁。
+- **计数器初始值设错**：如果 `startGate` 初始值大于 1，则需要多次 `countDown` 才能让等待线程通过，导致启动不齐。
+- **重用 CountDownLatch**：计数器归零后不能重置，如果业务需要重复使用，考虑 `CyclicBarrier`。
+
+---
+
+## 📝 练习2：中级用法——CyclicBarrier 与 CountDownLatch 对比（必做）
+
+### 业务场景
+你有一个并行计算任务，需要将一个大数组分成几段，每个线程计算一段，所有线程计算完毕后，汇总结果进入下一阶段（如再分段排序）。这个过程需要多次同步，且每次同步后计数器自动重置。
+
+### 你的任务
+1. 使用 `CyclicBarrier` 实现：N 个线程，每个线程执行部分计算，调用 `barrier.await()` 等待所有线程到达，然后所有线程同时进入下一阶段。
+2. 构造一个需要两阶段聚合的例子：
+   - 阶段1：各个线程生成一个随机数，在 barrier 处等待，随后由一个线程计算总和（可在 `barrier` 的回调 `Runnable` 中完成）。
+   - 阶段2：各个线程根据总和调整自己的数据，再次 barrier 等待。
+3. 对比 `CyclicBarrier` 和 `CountDownLatch`：
+   - CountDownLatch：一次性，不可重置，主线程等待其他线程。
+   - CyclicBarrier：可循环使用，参与者互相等待，支持回调。
+4. 故意让某个线程异常退出，观察 `barrier` 是否被打破，其他线程是否抛出 `BrokenBarrierException`。
+
+### ⚡ 关键提示
+- `CyclicBarrier` 构造可传入 `parties` 和可选的 `barrierAction`（到达屏障时执行的动作，由最后一个到达的线程执行）。
+- `await()` 会阻塞直到所有 parties 都调用该方法，或超时，或被中断，或 barrier 被打破。
+- 如果某个线程因异常离开，barrier 会被打破，其他线程抛出 `BrokenBarrierException`。
+- 底层实现：`CyclicBarrier` 内部使用 `ReentrantLock` 和 `Condition`，维护一个 count 计数。每次 `await` 减少计数，当减到 0 时执行 `barrierAction` 并更新 generation 以重置屏障。
+
+### ✍️ 动手写代码
+```java
+int parties = 3;
+CyclicBarrier barrier = new CyclicBarrier(parties, () -> {
+    System.out.println("所有线程到达屏障，执行回调...");
+});
+for (int i = 0; i < parties; i++) {
+    new Thread(() -> {
+        try {
+            // 阶段1
+            System.out.println(Thread.currentThread().getName() + " 完成阶段1");
+            barrier.await();
+            // 阶段2
+            System.out.println(Thread.currentThread().getName() + " 完成阶段2");
+            barrier.await();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }).start();
+}
+```
+
+### ✅ 自我检查
+- [ ] 是否所有线程在阶段1后都打印了回调信息，然后才进入阶段2？
+- [ ] 如果某个线程在阶段1中抛异常，其他线程是否收到 `BrokenBarrierException`？
+- [ ] `CyclicBarrier` 是否可以重用？在本例中第二阶段的 `await` 是否无需重新创建？
+- [ ] 你能说出 `CyclicBarrier` 和 `CountDownLatch` 在底层 AQS 使用上的不同吗？（CyclicBarrier 使用 Lock 和 Condition，CountDownLatch 内部使用 AQS 共享模式）
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.BrokenBarrierException;
+
+public class CyclicBarrierDemo {
+    public static void main(String[] args) {
+        int parties = 3;
+        CyclicBarrier barrier = new CyclicBarrier(parties, () -> {
+            // 最后一个到达的线程执行此回调
+            System.out.println("汇总: 所有线程完成本阶段");
+        });
+
+        for (int i = 0; i < parties; i++) {
+            final int id = i;
+            new Thread(() -> {
+                try {
+                    // 阶段1
+                    int val = (int)(Math.random() * 100);
+                    System.out.println("Thread " + id + " 阶段1 值=" + val);
+                    Thread.sleep(val);
+                    barrier.await(); // 等待其他线程完成阶段1
+
+                    // 阶段2
+                    System.out.println("Thread " + id + " 阶段2 开始");
+                    barrier.await(); // 等待其他线程完成阶段2
+                    System.out.println("Thread " + id + " 完成全部");
+                } catch (InterruptedException | BrokenBarrierException e) {
+                    System.out.println("Thread " + id + " 被中断或屏障打破");
+                }
+            }).start();
+        }
+    }
+}
+```
+
+**设计思路**  
+- `CyclicBarrier` 的 `parties` 设置为 3，每个线程两次 `await`，彼此等待，满足同步需要。  
+- 回调 `barrierAction` 由最后到达屏障的线程执行，适合做汇总或初始化下一阶段状态。  
+- 底层使用 `ReentrantLock` 加 `Condition` 管理等待，一个 `generation` 标记屏障状态，打破后重置新 generation。
+
+### 🐞 常见错误预警
+- **忘记重置**：如果某线程离开时未通知 barrier，将会打破屏障，其他线程抛出 `BrokenBarrierException`。确保每个线程正确调用 `await`。
+- **屏障回调中抛异常**：如果 `barrierAction` 抛出异常，屏障会被打破，所有等待线程收到异常。
+- **重用时的线程数量**：必须与初始 `parties` 一致，否则永远等待。若想支持可变数量，需在 `barrierAction` 中重新初始化或使用 `Phaser`。
+
+---
+
+## 📝 练习3：高级/探索用法——Semaphore 限流与公平性分析
+
+### 业务场景
+一个数据库连接池，最多允许 5 个线程同时获取连接。当连接用完时，其他线程必须等待。你决定使用 `Semaphore` 来实现这一控制。
+
+### 你的任务
+1. 创建一个 `Semaphore`，许可数为 5。
+2. 模拟 10 个线程竞争连接，每个线程 `acquire()` 获取许可，处理后 `release()`。
+3. 测试公平模式和非公平模式的区别：
+   - 非公平模式（默认）：可能导致某些线程饥饿。
+   - 公平模式（`new Semaphore(permits, true)`）：按 FIFO 分配许可。
+4. 编写一个简单统计：记录每个线程的等待时间，看在公平模式下是否更均衡。
+5. 观察 Semaphore 的 `availablePermits`、`queueLength` 等方法了解内部状态。
+6. 分析底层 AQS 共享模式：`state` 表示剩余许可数，`acquire` 调用 `acquireSharedInterruptibly(1)`，`release` 调用 `releaseShared(1)`；公平与非公平的 `tryAcquireShared` 实现不同。
+
+### ⚡ 关键提示
+- `acquire()` 会获取一个许可，若无可用许可则阻塞；`release()` 归还许可。
+- `Semaphore` 内部实现了 AQS 同步器（Sync），分 FairSync 和 NonfairSync。
+- 公平模式下，`tryAcquireShared` 会先检查队列中是否有等待线程。
+- 为了观察等待时间，可以在 `acquire` 前后计时。
+- 注意 `release` 可以由任何线程调用，没有持有者概念，因此也容易因 `release` 过多而 state 超过初始值。
+
+### ✍️ 动手写代码
+```java
+Semaphore semaphore = new Semaphore(5, true); // 公平模式
+for (int i = 0; i < 10; i++) {
+    final int id = i;
+    new Thread(() -> {
+        try {
+            long start = System.nanoTime();
+            semaphore.acquire();
+            long waitTime = System.nanoTime() - start;
+            System.out.printf("Thread %2d 获取许可, 等待 %d ms%n", id, waitTime / 1_000_000);
+            Thread.sleep(500); // 模拟处理
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            semaphore.release();
+        }
+    }).start();
+}
+```
+
+### ✅ 自我检查
+- [ ] 同时最多有多少线程在处理？是否永远不超过 5？
+- [ ] 公平模式下，先等待的线程是否优先获取许可？
+- [ ] 如果某线程忘记 `release`，后续线程是否会永远阻塞？
+- [ ] `availablePermits()` 返回的是瞬时值吗？
+
+### 📖 参考实现（直接展示）
+
+```java
+import java.util.concurrent.Semaphore;
+
+public class SemaphoreDemo {
+    public static void main(String[] args) throws InterruptedException {
+        // 公平模式 vs 非公平模式：修改 true/false 对比等待时间分布
+        Semaphore sem = new Semaphore(5, true);
+
+        for (int i = 0; i < 10; i++) {
+            final int id = i;
+            new Thread(() -> {
+                try {
+                    long t0 = System.nanoTime();
+                    sem.acquire();
+                    long waited = System.nanoTime() - t0;
+                    System.out.printf("Thread %2d 获取许可, 等待 %d ms%n", id, waited / 1_000_000);
+                    Thread.sleep(200 + (long)(Math.random() * 300));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    sem.release();
+                }
+            }).start();
+            Thread.sleep(50); // 错开启动，方便观察公平性
+        }
+    }
+}
+```
+
+**设计思路**  
+- `Semaphore` 是典型的共享模式 AQS 实现。公平模式确保先进先出，非公平模式许可可能被“插队”。  
+- 通过记录等待时间，可以观察到在公平模式下，线程获取许可的顺序与启动顺序大致相同，等待时间相对均衡。  
+- 信号量非常适合实现连接池、限流器等资源控制场景。
+
+### 🐞 常见错误预警
+- **许可数超发**：错误地多次 `release` 可能让许可数大于初始值，导致后续不阻塞。应在 `release` 前确保确实持有许可。
+- **异常后未释放**：在 `acquire` 后如果发生异常，必须在 finally 中 `release`。
+- **死锁**：需要多个许可时，使用 `acquire(n)` 可能因许可不足而长期阻塞，而此时其他线程也阻塞，形成死锁。可以考虑 `tryAcquire` 超时机制。
+
+---
+
+## 🏢 大厂场景实战：数据迁移中的多阶段并行
+
+### 场景描述
+你需要将 1000 万条订单数据从 MySQL 迁移到 Elasticsearch。采用分批读取、多线程转换、多线程写入。设计一个多阶段同步方案：
+- 阶段1：多个线程并行读取 MySQL 分页数据，汇总到一个共享列表中。
+- 阶段2：多个线程并行转换格式。
+- 阶段3：多个线程并行批量写入 ES。
+- 要求所有线程完成上一阶段后，才能开始下一阶段；读取阶段需要等所有线程数据准备好。
+
+### 约束条件
+- 不能使用复杂的流式框架（如 Storm）。
+- 数据量不能一次性全部载入内存，需分小批执行（如每批 1 万条）。
+
+### 你的设计任务
+基于今天学习的工具，设计一个 `CyclicBarrier` 或 `CountDownLatch` + `Semaphore` 的方案，控制批内阶段同步和同时写 ES 的并发数。
+
+### 常见方案参考（直接展示）
+```java
+int batchSize = 10000;
+int readerThreads = 4;
+int writerThreads = 3;
+Semaphore writePermits = new Semaphore(writerThreads); // 限制写入并发
+// 对每个批次：
+CountDownLatch readDone = new CountDownLatch(readerThreads);
+// 读取线程完成后 countDown
+// 主线程 await，然后启动一批转换线程，再用另一个 latch 等待转换完成
+// 最后写入线程并发执行，许可控制并发
+```
+
+这样可以清晰控制阶段并发与同步。对于复杂的动态阶段，`Phaser` 更合适。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：CountDownLatch 和 CyclicBarrier 有什么区别？分别适用于什么样的场景？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+
+- **区别**：
+  - CountDownLatch：计数器不可重置，只能使用一次；一般是一个线程或多个线程 `await`，其他线程 `countDown`；底层基于 AQS 共享模式，state 表示计数。
+  - CyclicBarrier：计数器可循环使用，自动重置；所有参与线程互相等待，当全部线程到达屏障时一起继续执行；可以注册一个 `Runnable` 在屏障打开时执行；底层使用 `ReentrantLock` + `Condition` 实现，不是直接 AQS。
+- **场景**：
+  - CountDownLatch：主线程等待多个工作线程完成（如服务启动等待依赖资源就绪），或一个线程阻塞等待外部事件并发起。
+  - CyclicBarrier：多线程分阶段并行处理，在阶段点需要同步（如并行排序的归并阶段、并行计算的分段汇总）。
+- **常见追问**：“为什么 CyclicBarrier 不使用 AQS 共享模式？” 因为它需要可重置和屏障回调，AQS 的共享模式一旦 state 为 0 全部通过，不容易重置，而使用 Lock + Condition 可以方便地重置 generation。
+- **自我反思**：如果我要设计一个可重置的 CountDownLatch，可以用 CyclicBarrier 封装吗？或者自己实现 AQS 子类并管理重置逻辑。
+
+---
+
+### 面试题2：Semaphore 的公平模式与非公平模式是如何实现的？与 ReentrantLock 的公平锁有何异同？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+
+- **实现**：Semaphore 内部有 FairSync 和 NonfairSync 两个 AQS 子类。
+  - 非公平模式：`tryAcquireShared` 直接 CAS 减少 state，不检查队列。
+  - 公平模式：`tryAcquireShared` 会先调用 `hasQueuedPredecessors()` 查看是否有等待更久的线程，若有则返回 -1，排队。
+- **与 ReentrantLock 公平锁相同**：都是通过检查同步队列中是否有前驱节点来决定是否插队。二者都依赖于 AQS 的队列。
+- **不同点**：
+  - ReentrantLock 是独占模式，state 表示持有锁的重入次数；Semaphore 是共享模式，state 表示剩余许可数。
+  - ReentrantLock 公平锁的 `tryAcquire` 不仅检查队列，还要考虑如果当前线程已经持有锁则可重入，无需排队；Semaphore 公平锁没有可重入概念。
+- **常见追问**：“Semaphore 释放许可时可以不被谁限制，为什么不会出错？” 因为它不记录持有者，任何线程都可以释放许可，设计如此。这需要使用者自行保证业务逻辑的正确性。
+- **自我反思**：如果信号量被某个线程 `acquire` 后，忘记 `release`，其他线程可能永远阻塞。如何用 try-with-resources 模式简化？
+
+---
+
+### 面试题3：请解释 CountDownLatch 内部的 AQS 共享模式是如何工作的？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **AQS 共享模式**：`state` 初始化为 count。`await()` 调用 `acquireSharedInterruptibly(1)`，内部调用 `tryAcquireShared`（由 CountDownLatch.Sync 实现），如果 state 不为 0 则返回 -1，进入等待队列。`countDown()` 调用 `releaseShared(1)`，其中 `tryReleaseShared` 自旋 CAS 减少 state，当 state 减为 0 时返回 true，触发 `doReleaseShared` 唤醒所有等待中的线程。
+- **关键点**：共享模式的传播唤醒：当 state 变为 0 时，不仅唤醒第一个等待节点，还会依次传播唤醒后续节点，确保所有等待线程都通过。
+- **常见追问**：“如果 CountDownLatch 的 state 已经为 0，再调用 `await` 会怎样？” 直接通过，因为 `tryAcquireShared` 返回 1（成功）。
+- **易错提醒**：`countDown` 是无阻塞的，不会因为计数器已经为 0 而抛异常；`await` 是阻塞的，直到计数为 0 或被中断。
+- **自我反思**：如果让你扩展 CountDownLatch 支持重置，你会怎么做？可能需要添加版本号，并在重置时生成新的 generation，类似 CyclicBarrier。
+
+---
+
+### 面试题4：如何在多线程环境中保证 `SimpleDateFormat` 的线程安全？可以用 `ThreadLocal`，也可以用 `Semaphore`？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+
+- **ThreadLocal**：每个线程持有一个 `SimpleDateFormat` 实例，彻底避免共享，但线程数多时可能创建大量对象，且需要显式清理。
+- **Semaphore**：共享一个实例，通过信号量许可控制同时访问的线程数为 1（或 N 个副本）。例如 `new Semaphore(1)`，`acquire` 后使用，`release` 后归还。这其实退化成了锁，不如直接用 `synchronized`。
+- **推荐**：JDK 8 + `DateTimeFormatter` 已经是线程安全的，无需额外处理。若必须用 `SimpleDateFormat`，ThreadLocal 或同步块均可。
+- **常见追问**：“既然 Semaphore 可以做锁，为什么还需要 ReentrantLock？” 因为 Semaphore 不能记录持有者，不可重入，也无法提供条件变量，因此需要互斥锁场景下 ReentrantLock 更合适。
+- **自我反思**：考虑一个场景：有 10 个文件需要并发解析，但单线程解析内存很大，限制最多 3 个并发。用 Semaphore 管理许可数就是完美的流量控制。
+
+---
+
+### 面试题5：用 Semaphore 实现一个简单的连接池，需要考虑哪些点？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **基本结构**：Semaphore 控制连接数上限，用一个并发安全的集合（如 `BlockingQueue`）存储空闲连接。
+- **获取连接**：`semaphore.acquire()` 获取许可，然后从队列取连接；如果队列为空（可能是并发误取），需要循环等待或创建新连接（但受限于许可数）。
+- **归还连接**：将连接放回队列，然后 `semaphore.release()`。
+- **考虑点**：
+  1. **异常处理**：如果连接在任务中损坏（如网络断），不应放回队列，而应关闭并释放许可时需小心许可数（需补 `release` 或 `reducePermits`）。
+  2. **超时等待**：`tryAcquire(timeout)` 防止死等。
+  3. **公平性**：根据业务选择公平或非公平等待。
+  4. **动态调整**：连接池大小通常固定，如需动态调整，需要修改 `Semaphore` 许可数，但 `Semaphore` 没有直接减少许可的线程安全方法，可以用 `reducePermits()`（protected）或重新创建。
+- **常见追问**：“如果数据库连接的真实最大数小于信号量许可数，会导致什么？” 会导致线程获取连接失败，需要业务层捕获异常并释放许可，否则许可会被浪费。
+- **自我反思**：你在项目中是否自己用 Semaphore 实现过连接池？与使用现成的 HikariCP 等相比，自己实现更容易出 bug，生产环境建议使用成熟连接池。
+
+---
+
+> 今天你掌握了并发协作的三大利器，并且看到了它们大同小异的 AQS 内核。明天我们将进入 JVM 内存结构实验，亲自动手让堆、栈、元空间溢出，从此对内存区域的划分烂熟于心。
+
+
+
+
+
+# 第 15 天：JVM 内存结构实验：堆/栈/元空间溢出
+本日掌握：亲手触发堆、栈、元空间/方法区的 OOM，并通过 jstat/jmap 分析内存分布，理解 HotSpot 对象分配过程  
+覆盖原理点：17 (JVM 内存结构), 22 (GC 日志解读与调参)  
+阶段：使用期
+
+## 🎯 今日目标
+- 能通过代码故意制造堆内存溢出、栈内存溢出、元空间溢出，并观察 JVM 报错信息和 dump 文件。
+- 能使用 `jstat`、`jmap`、`jstack` 实时查看堆各区使用量、线程堆栈和内存泄漏情况。
+- 能解释新生代 Eden + Survivor 的分代结构，以及指针碰撞与空闲列表的对象分配方式。
+- 能读懂简单的 GC 日志，并基于日志调整 `-Xmx`、`-Xss`、`-XX:MaxMetaspaceSize` 等参数。
+- 能应对面试中关于 JVM 内存模型、OOM 排查与对象分配流程的追问。
+
+---
+
+## 📝 练习1：基础用法——故意制造堆溢出（Heap OOM）并观察（必做）
+
+### 业务场景
+你的线上服务偶尔出现 `java.lang.OutOfMemoryError: Java heap space`，你需要复现并学会分析 dump 文件来定位大对象。今天我们就在本地做一次。
+
+### 你的任务
+1. 编写一个程序，不断创建对象并持有引用（例如不停的 `list.add(new byte[1024*1024])`），直到堆溢出。
+2. 启动时添加 JVM 参数：
+   - `-Xmx128m`（最大堆 128M）
+   - `-XX:+HeapDumpOnOutOfMemoryError`（OOM 时自动生成 dump）
+   - `-XX:HeapDumpPath=./heapdump.hprof`（指定 dump 路径）
+   - `-XX:+PrintGCDetails` 或 Java 9+ 的 `-Xlog:gc*:file=gc.log`（记录 GC 日志）
+3. 运行程序，观察控制台报错，检查生成的 `heapdump.hprof` 文件是否存在。
+4. 使用 `jstat -gcutil <pid> 1000` 在运行过程中监控堆各个区域的使用百分比和 GC 次数。
+5. （可选）用 MAT 或 jhat 打开 dump 文件，查找最大的对象。
+
+### ⚡ 关键提示
+- 可以使用 `jps` 先获取 Java 进程的 PID，再使用 `jstat -gc <pid> 1000` 实时查看 E（Eden）、S（Survivor）、O（Old）、M（Metaspace）等。
+- OOM 时日志会出现 `java.lang.OutOfMemoryError: Java heap space`。
+- 注意区分堆 OOM 和 GC overhead limit exceeded（GC 占用太多时间但仍回收很少内存）。
+- 如果堆设置的过大，可能很久才溢出，可以适当调小 `-Xmx`。
+
+### ✍️ 动手写代码
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class HeapOOM {
+    public static void main(String[] args) {
+        List<byte[]> list = new ArrayList<>();
+        while (true) {
+            list.add(new byte[10 * 1024 * 1024]); // 每次分配10MB
+        }
+    }
+}
+```
+**运行**：`java -Xmx128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump.hprof HeapOOM`
+
+### ✅ 自我检查
+- [ ] 程序是否抛出 `OutOfMemoryError: Java heap space`？
+- [ ] 是否在当前目录生成了 `heapdump.hprof`？
+- [ ] `jstat -gcutil` 是否能看到老年代（O）逐渐填满，并发生多次 Full GC？
+- [ ] 如果改变 `-Xmx256m`，溢出时间明显延长吗？
+
+### 📖 参考实现与日志分析（直接展示）
+
+```java
+// HeapOOM.java 同上
+```
+
+**运行并观察 GC 日志**（以 Java 11+ 为例）：
+```bash
+java -Xmx128m -XX:+UseG1GC -Xlog:gc*:file=gc.log:time,uptime,level,tags HeapOOM
+```
+打开 `gc.log` 可看到类似：
+```
+[1234.567ms] GC(10) Pause Young (Normal) (G1 Evacuation Pause) ...
+[5678.901ms] GC(38) Pause Full (G1 Evacuation Pause) ...
+...
+[8901.234ms] java.lang.OutOfMemoryError: Java heap space
+```
+通过日志能看出年轻代 GC 和老年代 GC 的频率。
+
+**设计思路**  
+- 通过死循环快速塞满老年代，迫使 Full GC 后依旧无法分配，触发 OOM。  
+- 启动参数确保了 dump 文件生成，这是事故后最重要的排查入口。  
+- `jstat` 实时监控让我们看到 Eden 区的快速更替和老年代的逐步上升。
+
+### 🐞 常见错误预警
+- **错误**：只配置了 `-Xms` 而没有 `-Xmx`，导致堆会扩大，难于溢出。
+- **错误**：使用 `System.gc()` 强制触发 GC 可能会减缓 OOM 的出现，尽量不主动调用。
+- **错误**：未设置 `-XX:+HeapDumpOnOutOfMemoryError`，导致事故后无法分析内存快照。
+
+---
+
+## 📝 练习2：中级用法——栈溢出与元空间溢出（必做）
+
+### 业务场景
+线程调用栈过深（如无限递归）会导致 `StackOverflowError`；而动态生成大量类（如 CGLib 代理）会导致元空间 `OutOfMemoryError: Metaspace`。你需要分别复现这两种溢出。
+
+### 你的任务
+1. **栈溢出**：编写一个递归方法 `stackLeak()`，递归次数极大（例如 50000 次），每次递归分配一些局部变量。JVM 参数设置 `-Xss256k`（线程栈大小 256k）来更快溢出。
+2. **元空间溢出**：使用 CGLIB 或 Javassist 动态生成大量类，并加载它们。JVM 参数设置 `-XX:MaxMetaspaceSize=64m`（元空间上限 64M）以触发溢出。如不想引入第三方库，也可以用 `java.lang.reflect.Proxy` 创建大量代理类。
+3. 观察各自的错误信息：`StackOverflowError` 和 `OutOfMemoryError: Metaspace`。
+4. 使用 `jstack <pid>` 查看栈溢出时的线程堆栈，可以看到非常深的递归调用栈。
+5. 使用 `jstat -gc <pid>` 观察元空间溢出时 MC 列的增长。
+
+### ⚡ 关键提示
+- 栈溢出是线程请求分配栈帧超过栈深度限制，通常是递归太深或大量局部变量。每个线程的栈空间由 `-Xss` 决定。
+- 元空间保存类的元数据，当动态类加载过多且类加载器未被回收时，会导致元空间溢出。注意元空间在 JDK 8+ 替代了永久代。
+- 对于元空间溢出，可以使用 `-XX:+TraceClassLoading` 和 `-XX:+TraceClassUnloading` 观察类加载卸载过程，并配合 `-XX:MaxMetaspaceSize=64m` 限制。
+
+### ✍️ 动手写代码
+```java
+// 栈溢出
+public class StackSOF {
+    private int depth = 0;
+    public void method() {
+        depth++;
+        method();
+    }
+    public static void main(String[] args) {
+        StackSOF sof = new StackSOF();
+        try {
+            sof.method();
+        } catch (StackOverflowError e) {
+            System.out.println("递归深度: " + sof.depth);
+            throw e;
+        }
+    }
+}
+```
+
+```java
+// 元空间溢出（使用 CGLIB）
+import net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.MethodInterceptor;
+
+public class MetaspaceOOM {
+    public static void main(String[] args) {
+        while (true) {
+            Enhancer enhancer = new Enhancer();
+            enhancer.setSuperclass(OOMObject.class);
+            enhancer.setUseCache(false);
+            enhancer.setCallback((MethodInterceptor) (obj, method, args1, proxy) -> proxy.invokeSuper(obj, args1));
+            enhancer.create();
+        }
+    }
+    static class OOMObject {}
+}
+```
+
+### ✅ 自我检查
+- [ ] 栈溢出时，控制台是否打印 `StackOverflowError`？递归深度是否在几千到几万？
+- [ ] 元空间溢出时，是否抛出 `OutOfMemoryError: Metaspace`？
+- [ ] 使用 `jstack` 查看栈溢出线程的堆栈，是否有大量重复的调用帧？
+- [ ] `jstat -gc` 中 `MC`（Metaspace Capacity）/ `MU`（Metaspace Used）是否接近设置的上限？
+
+### 📖 参考实现与运行命令（直接展示）
+
+**栈溢出运行**：
+```bash
+java -Xss256k StackSOF
+```
+
+**元空间溢出运行**（需引 CGLIB 包）：
+```bash
+java -XX:MaxMetaspaceSize=64m -cp .:cglib-3.3.0.jar MetaspaceOOM
+```
+如果无 CGLIB，也可用 JDK 动态代理大量生成类，但效果稍慢。
+
+**设计思路**  
+- 栈溢出通过无出口递归实现，设置较小栈空间快速复现，方便观察栈深度与 `-Xss` 的关系。  
+- 元空间溢出通过不断生成新类并阻止类卸载（通过持有类引用或使用不同类加载器）实现，模拟了 CGLIB 代理大量 Bean 时的典型泄漏。  
+- `jstack` 分析栈溢出，`jstat` 分析元空间上升，都是线上故障排查的标准动作。
+
+### 🐞 常见错误预警
+- 栈溢出实验时，递归方法内若有大量局部变量且栈空间不小，可能需要较深递归，建议调小 `-Xss` （如128k）或直接在方法内定义很多 `long` 变量。
+- 元空间溢出需要类加载器无法卸载类，若使用相同类加载器重复加载同一个类会复用，需使用不同类加载器或增强器禁用缓存。
+- 确保 `-XX:MaxMetaspaceSize` 设置足够小以快速溢出，否则可能把机器内存耗尽。
+
+---
+
+## 📝 练习3：高级/探索用法——使用 jhsdb / MAT 分析内存泄漏
+
+### 业务场景
+生产环境出现缓慢内存泄漏，你需要在测试环境复现，并用 `jmap` 导出 dump，用 MAT 分析大对象引用链。
+
+### 你的任务
+1. 模拟一个内存泄漏：静态 Map 不断添加对象但不清理。
+2. 运行一段时间后，用 `jmap -dump:live,format=b,file=leak.hprof <pid>` 导出 dump。
+3. 下载 Eclipse MAT (Memory Analyzer Tool)，打开 dump 文件，找到内存泄漏的嫌疑对象，分析 GC Root 引用链。
+4. 使用 `jmap -histo:live <pid>` 查看堆中对象直方图，快速找到异常多的对象类型。
+5. 结合监控工具如 `jconsole` 或 `JVisualVM`，观察堆内存曲线。
+
+### ⚡ 关键提示
+- `jmap -histo:live <pid>` 输出存活对象的数量与占用空间，能快速排查是哪个类的实例膨胀。
+- `MAT` 中 Leak Suspects Report 可自动分析可疑泄漏对象，并给出引用链。
+- 模拟泄漏：`static Map<Integer, byte[]> map = new HashMap<>();` 不断 put 新对象。
+- 生产环境 dump 时注意应用暂停，`-F` 参数强制 dump 可能导致数据不完整。
+
+### ✍️ 动手写代码
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class MemoryLeak {
+    static Map<Integer, byte[]> leakMap = new HashMap<>();
+    public static void main(String[] args) throws InterruptedException {
+        int i = 0;
+        while (true) {
+            leakMap.put(i++, new byte[1024 * 1024]); // 1MB each
+            Thread.sleep(200);
+        }
+    }
+}
+```
+运行后通过 `jps` 获得 PID，然后 `jmap -dump:live,format=b,file=leak.hprof <PID>`。
+
+### ✅ 自我检查
+- [ ] `jmap -histo:live` 是否显示 `byte[]` 或 `HashMap$Node` 实例数持续上升？
+- [ ] MAT 打开的 dump 中，能否找到 `leakMap` 的引用链？
+- [ ] 如果加上 `-XX:+HeapDumpOnOutOfMemoryError`，是否在 OOM 时自动生成 dump？
+
+### 📖 参考排查流程（直接展示）
+1. `jps -l` 找到进程。
+2. `jstat -gcutil <pid> 1000` 监控各代使用百分比，关注 O 列持续上升。
+3. `jmap -histo:live <pid> | head -20` 查对象直方图。
+4. `jmap -dump:live,format=b,file=/tmp/leak.hprof <pid>` 导出。
+5. MAT 打开，点击 "Open Dominator Tree"，找到大对象，右键 "Path To GC Roots" -> "exclude all phantom/weak/soft references"，看出谁在持有。
+
+**设计思路**  
+- 内存泄漏排查是每个 Java 程序员必须会的硬技能。掌握 jstat/jmap 和 dump 分析是整个职业生涯都会受益的。
+
+---
+
+## 🔷 原理探究：堆对象分配的“指针碰撞”与“空闲列表”
+
+### 探究问题
+HotSpot 在新生代使用“指针碰撞”（Bump the Pointer）分配对象，而在老年代（CMS/G1）可能使用“空闲列表”（Free List）。这是什么意思？如何区分？
+
+### 验证方法
+观察不同的 GC 策略下的分配行为，并查阅 Java 白皮书或源码注释。
+
+### 引导性问题
+- 为什么新生代用指针碰撞更快？
+- 碎片化怎么影响分配方式？
+
+### 原理解读（直接展示）
+- **指针碰撞**：堆内存是规整的连续空间，分配时只需将指针向后移动对象大小。要求内存绝对规整，无碎片。用于 Serial、ParNew 等年轻代收集器（搭配 Mark-Compact 或 Copy 算法）。
+- **空闲列表**：堆内存中空闲空间可能不连续，JVM 维护一个空闲块列表，分配时查找合适大小的块。用于 CMS 老年代并发收集等会产生碎片的老年代。
+- 这决定了 GC 算法选择：标记-清除会产生碎片，只能用空闲列表；标记-整理和复制算法保持规整，能用指针碰撞。
+
+---
+
+## 🏢 大厂场景实战：线上频繁 Full GC 导致超时
+
+### 场景描述
+一个订单服务晚高峰频繁出现超时，业务日志没有明显异常，监控显示服务 Stop-The-World 时间较长，CPU 毛刺高。通过 GC 日志发现老年代频繁增长并触发 Full GC 但回收效果差。
+
+### 约束条件
+- 堆大小 4G（`-Xmx4096m`）
+- 当前使用 CMS 收集器
+- 环境 JDK 8
+- 需要快速止血并给出合理参数调优方案
+
+### 你的设计任务
+1. 分析 Full GC 可能的原因（大对象直接进入老年代、元空间不足、内存泄漏、CMS concurrent mode failure 等）。
+2. 写出如何查看 GC 日志、堆 dump、元空间的命令。
+3. 给出调优的建议参数（如适当调大新生代、设置 `-XX:CMSInitiatingOccupancyFraction`、调整 `-XX:MaxMetaspaceSize` 等）。
+
+### 常见方案参考（直接展示）
+- 紧急止血：`jmap -dump` 分析是否内存泄漏；如果泄漏，先重启；若非泄漏，则调优。
+- 参数调优：
+  - 若 YGC 频繁且对象很多早逝，增大新生代 `-Xmn`。
+  - 若 CMS concurrent mode failure 频繁，降低 `-XX:CMSInitiatingOccupancyFraction=70`（提早启动并发收集），或换用 G1。
+  - 若元空间不足，调大 `-XX:MaxMetaspaceSize`。
+  - 检查代码中是否有 `System.gc()` 触发 Full GC。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：JVM 堆内存是如何划分的？JDK 8 与之前有什么不同？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **堆划分**：逻辑上分为新生代（Young Generation）和老年代（Old Generation）。新生代又分为 Eden 区和两个 Survivor 区（S0, S1），默认比例为 8:1:1。物理上，内存可以是连续的，也可以不连续。
+- **JDK 8 改变**：移除了永久代（PermGen），引入了元空间（Metaspace）。元空间使用本地内存（Native Memory），不再受限于 `-XX:MaxPermSize`，默认无限增长直到系统可用内存，可用 `-XX:MaxMetaspaceSize` 限制。
+- **常见追问**：“为什么移除永久代？” 主要因为永久代难以调优（大小难定）、字符串常量池移入堆、类元数据加载卸载复杂等。使用本地内存更灵活。
+- **自我反思**：画出堆的分代结构图，并标注默认比例和常用参数（`-Xms`, `-Xmx`, `-Xmn`, `-XX:SurvivorRatio` 等）。
+
+---
+
+### 面试题2：StackOverflowError 和 OutOfMemoryError: Java heap space 的根本区别是什么？什么情况会同时出现？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **StackOverflowError**：线程请求栈深度超过虚拟机允许的最大深度（递归层次太深），或者线程栈帧太大，超过了单个线程栈容量（`-Xss` 设置）。内存总量可能还很充裕。
+- **OOM Java heap space**：堆内存不足，无法分配对象，且经过 Full GC 后仍然空间不够。堆内存耗尽。
+- **同时出现场景**：创建大量线程同时分配堆对象，每个线程栈都要占用内存，可能导致堆还没满但本地内存不足，报 `unable to create new native thread` 或栈+堆的混合 OOM。或者无限递归并每次创建大对象。
+- **常见追问**：“`-Xss` 设置过小会怎样？” 容易栈溢出；但设置过大可能导致能创建的线程数减少（因为每个线程栈占用内存）。
+- **自我反思**：为何在递归算法中，用尾递归优化可以减少栈溢出？Java 不支持尾递归优化。
+
+---
+
+### 面试题3：对象从创建到进入老年代的过程是怎样的？大对象直接分配在哪里？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+1. **优先分配 Eden**：大多数对象在新生代 Eden 区分配。
+2. **Eden 满时触发 Minor GC**：存活对象进入 Survivor 区（From），并标记年龄 1。
+3. **经历 Minor GC**：在 Survivor 区每熬过一次 Minor GC，年龄 +1，直到达到指定年龄（默认 15，`-XX:MaxTenuringThreshold`），晋升老年代。
+4. **动态年龄判定**：若 Survivor 空间中相同年龄所有对象大小总和 > Survivor 空间的一半，年龄 >= 该年龄的对象直接进入老年代。
+5. **大对象直接进老年代**：可以通过 `-XX:PretenureSizeThreshold` 设置超过一定大小的对象直接在老年代分配（仅对 Serial 和 ParNew 有效）。这是为了避免大对象在 Eden 和 Survivor 之间来回复制。
+- **常见追问**：“长期存活对象一定到 15 岁才晋升吗？” 不一定，动态年龄规则可能提前晋升。
+- **易错提醒**：大对象直接进入老年代可能加速老年代占满和 Full GC。
+- **自我反思**：可以用 `-XX:+PrintTenuringDistribution` 观察晋升年龄。
+
+---
+
+### 面试题4：元空间（Metaspace）什么时候会发生 OOM？如何排查和解决？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **发生场景**：加载的类数量太多（如大量动态代理、Groovy/CGLib 生成类），且类加载器未释放，导致元空间不断增长直到本地内存不足，或达到 `-XX:MaxMetaspaceSize` 限制。
+- **排查**：`jstat -gc <pid>` 观察 `MU` 和 `MC` 列不断上升；`jmap -clstats <pid>` 查看类加载器统计；dump 后用 MAT 查看 Duplicate Classes；GC 日志中会有 “Full GC (Metadata GC Threshold)” 。
+- **解决**：增大 `-XX:MaxMetaspaceSize`；检查代码中是否有不必要的动态类生成或类加载器泄漏；升级到 JDK 8 高版本，有些版本对 Metaspace 回收策略有改进。
+- **常见追问**：“类加载器泄漏是什么？” 如自定义类加载器加载了类后，类加载器仍被引用，其所加载的类无法被卸载，占着元空间不放。
+- **自我反思**：Spring Boot 应用常见“Metadata GC threshold”告警，通常是因为内嵌 Tomcat 频繁创建 JSP 的类，优化 JSP 编译或调大元空间。
+
+---
+
+### 面试题5：如何通过 GC 日志判断是堆溢出还是内存泄漏？
+**难度**：⭐️⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **内存泄漏**：GC 日志中老年代使用量持续线性或单调上升，每次 Full GC 后回收的内存很少，最终 OOM。`jmap -histo:live` 显示某类对象数量异常多。
+- **堆溢出（容量不足）**：GC 日志中老年代曲线有起伏，但总体使用量趋向满，且每次 Full GC 能回收较多内存（但很快又填满）。可能是并发量突然增大或请求对象较大，需要扩大堆。
+- **关键指标**：Full GC 后老年代的使用百分比（OU），如果每次都回落到很低但很快又上升，通常是正常业务高峰；如果每次都很高且逐步攀升，泄漏可能性大。
+- **常见追问**：“如何用 `jstat` 快速判断？” 观察 `O` 列（Old 使用百分比），在 Full GC 发生后，即 `FGCT` 计数增加且 `OU` 瞬间下降，看下降幅度。若经常触发 Full GC 且 `OU` 居高不下，趋向泄漏。
+- **自我反思**：有没有在项目中遇到过由于 ThreadLocal 存放大对象未 remove 导致的内存泄漏？这与堆泄漏还是堆溢出更相关？显然是泄漏。
+
+---
+
+> 今天你亲自导演了三场 OOM 大戏，并发掘了定位这些事故的工具链。从此以后，你对 JVM 内存的各个区域不再陌生，能从容面对生产环境的内存故障。明天我们将继续深入引用类型和 WeakHashMap，探索软/弱/虚引用在缓存及内存敏感场景的应用。
+
+# 第 16 天：引用类型实验：软引用缓存、WeakHashMap
+本日掌握：亲手实现基于软引用的内存敏感缓存，写出 WeakHashMap 的自动清理逻辑，理解虚引用与 ReferenceQueue 的监控能力  
+覆盖原理点：18 (对象存活判定与引用类型)  
+阶段：原理期
+
+## 🎯 今日目标
+- 能使用 `SoftReference` 实现一个内存敏感的 LRU 缓存，在 OOM 之前自动释放缓存。
+- 能解释 `WeakHashMap` 的工作原理：如何在 key 不再被强引用时自动删除条目，并写实验验证。
+- 能利用 `PhantomReference` + `ReferenceQueue` 监控对象的濒死时刻，理解其用于资源释放的机制。
+- 能对比强、软、弱、虚四种引用的特性、GC 时机和用途，回答面试连环追问。
+
+---
+
+## 📝 练习1：基础用法——实现基于 SoftReference 的内存敏感缓存（必做）
+
+### 业务场景
+一个图片服务需要在内存中缓存最近加载的图片，但又不希望在堆内存紧张时导致 OOM。你选择使用 `SoftReference` 实现一个内存敏感的缓存：当内存充足时，缓存可以一直存在；当即将 OOM 时，GC 会自动清理软引用，释放内存。
+
+### 你的任务
+1. 创建一个简易缓存 `SoftCache<K, V>`，内部使用 `HashMap<K, SoftReference<V>>` 存储。
+2. 提供 `put(K key, V value)` 和 `get(K key)` 方法。
+3. `get` 时检查软引用是否为 null 或引用对象是否被回收，若已回收则返回 null。
+4. 故意在缓存中放入大量大对象，然后通过 `-Xmx` 限制堆大小并申请新的大对象，触发 GC 后观察缓存中的软引用是否被自动清理。
+5. 对比如果换成 `HashMap<K, V>` 强引用，能否在 OOM 前自动释放。
+
+### ⚡ 关键提示
+- `SoftReference` 在内存不足时会被 GC 回收，但具体时机由 JVM 决定。可以设置 `-XX:SoftRefLRUPolicyMSPerMB=1000`（每 MB 堆空间的软引用存活时间）来控制行为。
+- 缓存中可能残留 key 对应引用对象为 null 的 entry，需要惰性清理或定期清理。
+- 测试时限制堆大小 `-Xmx128m`，并在缓存中放入几十 MB 的对象，然后尝试分配一个比剩余堆大的硬引用数组，触发 GC 并观察软引用缓存是否被清空。
+
+### ✍️ 动手写代码
+```java
+public class SoftCache<K, V> {
+    private final Map<K, SoftReference<V>> cache = new HashMap<>();
+
+    public void put(K key, V value) {
+        cache.put(key, new SoftReference<>(value));
+    }
+
+    public V get(K key) {
+        SoftReference<V> ref = cache.get(key);
+        return (ref != null) ? ref.get() : null;
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 放入缓存的对象在内存紧张时是否被回收，`get` 返回 null？
+- [ ] 如果没有额外触发 OOM，缓存是否一直存在？（软引用的正常行为）
+- [ ] 缓存中 key 对应的 `SoftReference` 仍然存在，但 `get()` 返回 null 时，是否需要清理 entry？
+- [ ] 强引用缓存是否会直接抛出 OOM？（换成普通 HashMap 对照）
+
+### 📖 参考实现与测试（直接展示）
+
+```java
+import java.lang.ref.SoftReference;
+import java.util.HashMap;
+import java.util.Map;
+
+public class SoftReferenceDemo {
+    static class SoftCache<K, V> {
+        private final Map<K, SoftReference<V>> map = new HashMap<>();
+        public void put(K k, V v) { map.put(k, new SoftReference<>(v)); }
+        public V get(K k) {
+            SoftReference<V> ref = map.get(k);
+            return ref == null ? null : ref.get();
+        }
+    }
+
+    public static void main(String[] args) {
+        SoftCache<String, byte[]> cache = new SoftCache<>();
+        // -Xmx128m
+        for (int i = 0; i < 10; i++) {
+            cache.put("img" + i, new byte[10 * 1024 * 1024]); // 10MB each
+        }
+        // 此时可能已经发生 GC，一些软引用被清除
+        for (int i = 0; i < 10; i++) {
+            byte[] img = cache.get("img" + i);
+            System.out.println("img" + i + " : " + (img != null ? "存活" : "被回收"));
+        }
+        // 尝试分配一个强引用大数组，触发 OOM
+        try {
+            byte[] huge = new byte[100 * 1024 * 1024]; // 100MB
+        } catch (OutOfMemoryError e) {
+            System.out.println("OOM，软引用缓存应该被清理干净");
+            for (int i = 0; i < 10; i++) {
+                System.out.println("After OOM img" + i + " : " + (cache.get("img" + i) != null));
+            }
+        }
+    }
+}
+```
+
+**设计思路**  
+- 通过循环向缓存中添加大对象，并很快超过堆容量，触发 GC，观察软引用是否被清理。  
+- 最终主动分配一个超大强引用数组触发 OOM，确保所有软引用都会被果断回收。  
+- 实际开发中，`SoftCache` 常配合 `ReferenceQueue` 异步清理被回收的 entry，避免 map 无限膨胀。
+
+### 🐞 常见错误预警
+- **忘记检查 ref 为 null**：`SoftReference.get()` 可能返回 null，直接使用会 NPE。
+- **缓存不清理已清除的 entry**：key 还会残留在 map 中，时间长了 map 膨胀，可以结合 `ReferenceQueue` 定时清理。
+- **误认为软引用会立即回收**：只有在内存不够时才会被回收，平时和强引用无区别。
+
+---
+
+## 📝 练习2：中级用法——WeakHashMap 自动清理验证
+
+### 业务场景
+你需要一个缓存，当 key 对象不再被业务代码引用时，对应的缓存条目自动删除，避免内存泄漏。`WeakHashMap` 正好满足这一特性，它通过弱引用的 key 实现自动清理。
+
+### 你的任务
+1. 创建一个 `WeakHashMap<Key, String>`，Key 是一个自定义类（必须正确实现 `equals` 和 `hashCode`）。
+2. 放入三个 key-value 对，然后立即调用 `System.gc()`（或故意让 key 失去强引用），观察 map 大小是否自动减小。
+3. 对比 `HashMap`：key 失去引用后，map 中的条目是否还在。
+4. 探究 `WeakHashMap` 内部是如何实现自动清理的（它使用 `WeakReference` 和 `ReferenceQueue`，在每次 `get/put/size` 时惰性清理）。
+5. 写一个循环证明：如果只通过 `System.gc()` 而不调用 map 任何方法，`WeakHashMap` 的大小不会立刻改变，因为清理发生在惰性操作时。只有调用 `size()` 等方法时才会 expunge。
+
+### ⚡ 关键提示
+- `WeakHashMap` 的 key 是弱引用，当没有强引用指向 key 时，GC 会回收 key，然后 `WeakHashMap` 会在后续操作中清理相应的 entry。
+- `ReferenceQueue`：`WeakHashMap` 内部有一个 `ReferenceQueue`，当 key 被 GC 回收时，弱引用会被放入该队列，地图在访问时据此清理。
+- 测试时务必移除 key 的强引用（如设为 null），并调用 `System.gc()` 建议 GC，但不要依赖它一定立即发生。可以多次请求 GC。
+
+### ✍️ 动手写代码
+```java
+Map<Key, String> weakMap = new WeakHashMap<>();
+Key k1 = new Key(1);
+Key k2 = new Key(2);
+Key k3 = new Key(3);
+weakMap.put(k1, "first");
+weakMap.put(k2, "second");
+weakMap.put(k3, "third");
+System.out.println("初始大小: " + weakMap.size()); // 3
+
+k1 = null; // 移除强引用
+System.gc(); // 建议回收
+Thread.sleep(500);
+System.out.println("GC后大小: " + weakMap.size()); // 可能变为2，因为k1的entry被惰性清理
+```
+
+### ✅ 自我检查
+- [ ] key 置 null 并 GC 后，`WeakHashMap.size()` 是否最终减少？（需要调用 map 方法来触发清理）
+- [ ] 如果使用普通的 `HashMap`，`size()` 是否不变？
+- [ ] `WeakHashMap` 的 value 如果也持有 key 的强引用，会阻止 key 被回收吗？（是的）
+
+### 📖 参考实现与内部机制说明（直接展示）
+
+```java
+import java.util.Map;
+import java.util.WeakHashMap;
+
+public class WeakHashMapDemo {
+    static class Key {
+        int id;
+        Key(int id) { this.id = id; }
+        @Override public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Key)) return false;
+            return id == ((Key)o).id;
+        }
+        @Override public int hashCode() { return id; }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Map<Key, String> weakMap = new WeakHashMap<>();
+        Key k1 = new Key(1);
+        Key k2 = new Key(2);
+        Key k3 = new Key(3);
+        weakMap.put(k1, "A");
+        weakMap.put(k2, "B");
+        weakMap.put(k3, "C");
+        System.out.println("Before GC, size=" + weakMap.size()); // 3
+
+        k1 = null;
+        System.gc();
+        Thread.sleep(200);
+
+        // 注意：必须调用 weakMap 的方法才触发清理
+        System.out.println("After GC, before get/put size=" + weakMap.size()); // 这里就可能触发清理，输出2或3
+        // 强制触发清理：调用任何方法
+        weakMap.get(new Key(2));
+        System.out.println("After get, size=" + weakMap.size()); // 2
+    }
+}
+```
+
+**设计思路**  
+- `WeakHashMap` 内部 Entry 继承 `WeakReference<Object>`，构造时将 key 作为弱引用，并注册到 `ReferenceQueue`。  
+- GC 回收 key 后，弱引用进入队列，后续在 `get/put/size` 等操作中，`expungeStaleEntries` 方法会清除这些 entry。  
+- 因此，依赖 `WeakHashMap` 的对象清理由访问方法触发，若不访问方法，内存可能残留，但线程安全。
+
+### 🐞 常见错误预警
+- `WeakHashMap` 的 value 强引用 key，导致 key 无法回收。比如 value 持有 key 的引用。
+- `WeakHashMap` 的 key 使用字符串常量池或 Integer 缓存，导致这些 key 永远有强引用，无法自动回收。
+- 忘了 `GC` 并非即时，实验需多次尝试或给 GC 时间。
+
+---
+
+## 📝 练习3：高级/探索用法——PhantomReference 监控对象最终化
+
+### 业务场景
+你需要精确知道一个大对象何时被 GC 真正回收（finalize 之后），并执行额外的资源清理（如释放堆外内存）。使用 `PhantomReference` + `ReferenceQueue` 实现这一监控。
+
+### 你的任务
+1. 创建一个自定义类 `Resource`，持有堆外内存模拟（如 `ByteBuffer.allocateDirect`），并在 `finalize` 或清理方法中释放资源。
+2. 使用 `PhantomReference` 包装该对象，并注册到 `ReferenceQueue`。
+3. 启动一个守护线程，从队列中取出 `PhantomReference`，调用其 `clear()` 并执行自定义清理（如释放直接缓冲区）。
+4. 验证：当强引用置 null 并 GC 后，守护线程是否很快从 queue 中取出该 PhantomReference，并执行清理。
+5. 解释为什么 `PhantomReference.get()` 永远返回 null，它与 `SoftReference`/`WeakReference` 的本质区别。
+
+### ⚡ 关键提示
+- `PhantomReference` 构造时必须传入 `ReferenceQueue`，否则无意义。它不用于访问对象，而用于接收对象被回收的通知。
+- 对象真正被 GC 内存回收前，`PhantomReference` 会被加入队列。这发生在 finalize 之后。
+- 实际开发中常由 `Cleaner`（基于虚引用）管理释放，如 NIO 的 `DirectByteBuffer` 就是使用 `Cleaner` 释放堆外内存。
+- 守护线程需要一直轮询队列，`remove()` 会阻塞直到有对象进入队列。
+
+### ✍️ 动手写代码
+```java
+import java.lang.ref.PhantomReference;
+import java.lang.ref.Reference;
+import java.lang.ref.ReferenceQueue;
+
+public class PhantomDemo {
+    static class Resource {
+        long[] data = new long[100000];
+        @Override
+        protected void finalize() throws Throwable {
+            System.out.println("Resource finalized");
+            super.finalize();
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        ReferenceQueue<Resource> queue = new ReferenceQueue<>();
+        Resource resource = new Resource();
+        PhantomReference<Resource> phantomRef = new PhantomReference<>(resource, queue);
+        resource = null;
+
+        // 守护线程不断从队列中取
+        Thread cleaner = new Thread(() -> {
+            try {
+                Reference<?> ref;
+                while ((ref = queue.remove()) != null) {
+                    System.out.println("Cleaning resource...");
+                    ref.clear();
+                    // 执行释放堆外内存等操作
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        cleaner.setDaemon(true);
+        cleaner.start();
+
+        System.gc(); // 触发 GC 和 finalize
+        Thread.sleep(1000);
+        System.out.println("End of main");
+    }
+}
+```
+
+### ✅ 自我检查
+- [ ] 虚引用队列是否在 GC 后收到了对象？
+- [ ] `phantomRef.get()` 是否始终返回 null？
+- [ ] `finalize` 是否比虚引用通知更早执行？
+- [ ] 如果没有 `reference.clear()`，虚引用对象本身是否被回收？
+
+### 📖 参考实现与说明（直接展示）
+
+虚引用主要用于更精细的资源释放，其 `get` 永远返回 null，只是作为一个通知机制。在本实验中，GC 触发后，虚引用对象从队列取出，代表堆内存即将被回收，我们可以在此刻安全释放关联的外部资源。`Cleaner` 类封装了此模式，在 NIO 中被广泛使用。
+
+---
+
+## ⚙️ 性能实验：对比 HashMap 与 WeakHashMap 在长期运行中的内存占用
+
+### 实验目标
+对比 HashMap 强引用存储和 WeakHashMap 存储在长期运行服务中，当 key 不再需要后的内存占用差异。
+
+### 引导步骤
+1. 准备两个 Map，一个 `HashMap<Key, byte[]>`，一个 `WeakHashMap<Key, byte[]>`。
+2. 每个 map 放入 10000 个键值对，value 都是 1KB 的 byte 数组。
+3. 对 HashMap 的所有 key 解除强引用（置为 null），对 WeakHashMap 同样处理。
+4. 多次调用 `System.gc()` 并检查两个 map 的 `size()` 和实际存活对象（通过 `jmap -histo` 对比 `byte[]` 数量）。
+5. 记录内存占用变化，观察 HashMap 是否仍占用大量内存，而 WeakHashMap 最终被清空。
+
+### 预期现象和解释（直接展示）
+- **HashMap**：即便 key 已无外部强引用，但由于 HashMap 内部 Entry 持有强引用，key 和 value 都不会被回收，`size()` 不变，`byte[]` 仍占大量内存，导致内存泄漏。
+- **WeakHashMap**：GC 回收 key 后，在后续 map 操作方法下会清理条目，最终 `size()` 变为 0，内存释放。说明弱引用适合实现缓存，当 key 不再使用时自动清理。
+
+---
+
+## 🔷 原理探究
+
+### 探究问题
+`WeakHashMap` 的惰性清理机制会带来什么问题？为什么高并发下通常用 `ConcurrentHashMap` 加弱引用包装而不是直接使用 `WeakHashMap`？
+
+### 验证方法
+写一个多线程测试，不断往 `WeakHashMap` 中添加并移除 key，同时另一个线程循环的 `size()`，观察可能出现并发修改异常或不一致。
+
+### 引导性问题
+- `WeakHashMap` 是非线程安全的，为何？
+- 在清理过程中如果修改了 Map，会导致什么异常？
+
+### 原理解读（直接展示）
+`WeakHashMap` 在每次公共方法内都会调用 `expungeStaleEntries`，该方法遍历 ReferenceQueue 并删除对应 entry，同时修改桶链表。这一过程没有同步，如果在迭代或与其他修改操作并发执行，可能导致 `ConcurrentModificationException` 或数据丢失。因此，在多线程环境需要手动同步包装，或使用支持并发的缓存库（如 Guava Cache）。
+
+---
+
+## 🏢 大厂场景实战：本地缓存设计
+
+### 场景描述
+一个接口需要查询用户权限，权限数据较稳定但可能不定期变更，每次访问数据库压力大。要求设计一个本地缓存，既要保证数据不经常查询数据库，又要在堆内存紧张时自动清理最不常用的权限数据，且支持权限变更时主动失效。
+
+### 约束条件
+- 数据量约 10 万用户
+- 单个用户权限对象约 2KB
+- 堆内存总大小 2GB，分给缓存的最大 200MB
+- 缓存命中率期望 95%以上
+
+### 你的设计任务
+利用今天的知识，设计缓存框架。可以结合 `SoftReference` 和 `WeakHashMap` 特性，或采用更成熟的 Guava/Caffeine。请描述如何实现内存敏感淘汰。
+
+### 常见方案参考及其取舍分析（直接展示）
+**方案A：纯 SoftReference 缓存**  
+- 用 `ConcurrentHashMap<String, SoftReference<UserPermissions>>`。
+- 内存充足时保留所有；紧张时 GC 自动清理部分。
+- **优点**：实现简单，自适应内存。  
+- **缺点**：淘汰不可控，可能清掉热点数据；不能设置最大容量。
+
+**方案B：Caffeine 配置软引用值**  
+- 使用 Caffeine 缓存，设置 `softValues()` 和最大权重。  
+- **优点**：可配置容量、过期时间、淘汰策略（如 W-TinyLFU）。  
+- **缺点**：引入外部依赖。
+
+**方案C：LRU + SoftReference**  
+- 自己实现 LRU 缓存，内部存储 `SoftReference`，超过容量淘汰链表尾部。  
+- **优点**：能控制容量和内存敏感双重保障。  
+- **缺点**：实现稍复杂。
+
+推荐生产使用 Caffeine，它已成熟且高效。
+
+---
+
+## 🏆 大厂面试题
+
+### 面试题1：Java 中四种引用分别是什么？各自什么时候被回收？主要用途是什么？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **强引用 (Strong)**：最常见的引用，`Object o = new Object()`。只要强引用存在，对象永不回收。
+- **软引用 (Soft)**：通过 `SoftReference` 创建。在内存充足时不会被回收，只有在堆内存即将溢出时，GC 才回收软引用指向的对象。适用于实现内存敏感缓存。
+- **弱引用 (Weak)**：通过 `WeakReference` 创建。只要发生 GC，无论内存是否充足，弱引用指向的对象都会被回收。适用于实现 `WeakHashMap` 等映射表，key 不使用时自动删除。
+- **虚引用 (Phantom)**：通过 `PhantomReference` 创建。它的 `get` 始终返回 null，仅用于在对象被回收后收到一个系统通知，用于精细的资源释放（如释放堆外内存）。必须与 `ReferenceQueue` 联合使用。
+- **常见追问**：“软引用回收时机与内存的关系？” 可以调节 `-XX:SoftRefLRUPolicyMSPerMB` 参数控制软引用的存活时间占空堆的每 MB 值。
+- **易错提醒**：SoftReference 在内存不够时回收，不是内存一少就立即回收，具体由 JVM 策略决定。
+- **自我反思**：列举项目中实际使用到了哪种引用？如果没有，是否有潜在的优化场景？
+
+---
+
+### 面试题2：WeakHashMap 是如何工作的？它和 HashMap 的最大区别是什么？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **原理**：WeakHashMap 内部 Entry 继承 `WeakReference`，其构造将 key 包装为弱引用并注册到内部的 `ReferenceQueue`。当 key 失去外部强引用且 GC 发生后，该弱引用进入队列。WeakHashMap 在后续的 `get`、`put`、`size` 等操作中调用 `expungeStaleEntries` 检查队列，移除对应的 entry，从而使得 key 和 value 都能被 GC 回收。
+- **区别**：HashMap 的 Entry 对 key 和 value 都是强引用，只要 Map 在，key 和 value 就永远不会被回收，容易造成内存泄漏。WeakHashMap 可以自动回收无用 key 的条目。
+- **关键限制**：value 不能强引用 key，否则 key 无法回收；WeakHashMap 非线程安全；其清理是惰性的，不访问可能不清理。
+- **常见追问**：“为什么 value 会被回收？” 因为 WeakHashMap 的清理方法不仅移除 key 对应的 Entry，同时也使 value 失去强引用（只要没有其他强引用），从而 value 也可被 GC。
+- **易错提醒**：如果 key 是字符串常量或整数缓存值，它们终生存在，WeakHashMap 也就退化成了普通 HashMap。
+- **自我反思**：是否在项目中遇到过由于缓存没有清理导致 OOM？WeakHashMap 或 Guava Cache 是否可以帮助优化？
+
+---
+
+### 面试题3：虚引用和弱引用有什么区别？各有什么应用场景？
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **区别**：
+  - **弱引用**：可以拿到关联的对象 (`ref.get()`)，用于实现缓存，当对象仅被弱引用可达时，GC 会回收它；回收时引用进入队列。
+  - **虚引用**：`get()` 永远返回 null，不能通过它访问对象；仅用于在对象被回收后获得通知。它在 finalize 之后内存即将回收前进入队列。
+- **应用场景**：
+  - 弱引用：`WeakHashMap`、`ThreadLocal.ThreadLocalMap` 中 key 的弱引用(防止 `ThreadLocal` 实例无法 GC)。
+  - 虚引用：监控大对象的回收时间、管理直接内存 (`Cleaner` 基于虚引用释放 NIO DirectByteBuffer 的堆外内存)。
+- **常见追问**：“`ThreadLocal` 内部为什么用弱引用而不是虚引用？” 因为它需要在 `ThreadLocal` 失去强引用后，执行惰性清理旧 entry，`get` 的时候可能还需要读取值，不能像虚引用那样完全拿不到。
+- **自我反思**：是否用过或听说过 `Cleaner`？了解一下 `ByteBuffer.allocateDirect()` 的释放原理。
+
+---
+
+### 面试题4：ThreadLocalMap 的 Entry 为什么 key 是弱引用？如果改成强引用会怎样？
+**难度**：⭐️⭐️⭐️⭐️
+
+**参考答案**：
+- **原因**：ThreadLocalMap 的 key 是 ThreadLocal 实例。如果 key 是强引用，当业务代码不再持有 ThreadLocal 的强引用时，由于 Map 还有强引用，ThreadLocal 永远不会被 GC，导致内存泄漏。改为弱引用后，ThreadLocal 可以被回收，然后 Entry 的 key 变为 null，后续有机会惰性清理。
+- **后果**：虽然 key 被回收，value 仍然是强引用，所以如果不手动 `remove()`，value 依旧泄漏。因此弱引用只是缓解，配合 `remove()` 才是安全。
+- **常见追问**：“为什么 value 不改弱引用？” 因为 value 是业务数据，如果改成弱引用，在没有其他强引用时可能随时被 GC，导致取到 null 丢失数据。
+- **自我反思**：写一段代码复现 ThreadLocal 泄漏并分析 Entry 状态，之前第 12 天已经做过，再回顾一下。
+
+---
+
+### 面试题5：使用 `ReferenceQueue` 能够实现什么？请举例
+**难度**：⭐️⭐️⭐️
+
+**参考答案**：
+- **作用**：当引用（软/弱/虚）所指向的对象被 GC 回收时，这个引用对象本身会被放入与之关联的 `ReferenceQueue`。我们可以从队列中获取这些引用，进行资源清理或统计。
+- **例子**：
+  - `WeakHashMap`：内部使用 `ReferenceQueue` 存储 key 被回收的 Entry，并在方法调用时 expunge。
+  - 自定义缓存清理线程：为软引用缓存关联队列，守护线程轮询，一旦获取到引用就清除缓存中的对应条目。
+  - `Cleaner`（虚引用）：对象被回收后，从队列中取出虚引用，释放关联的堆外资源。
+  - 内存泄漏监控：为关键对象创建弱引用并注册队列，当队列收到引用时记录日志，表明对象已被回收。
+- **常见追问**：“`remove()` 和 `poll()` 区别？” `remove()` 阻塞直到有可用元素，`poll()` 非阻塞立即返回。
+- **自我反思**：你能为昨天写的简单连接池加上利用虚引用追踪连接泄漏吗？
+
+---
+
+> 今天你掌握了 Java 引用体系的全部招式，从软引用缓存到虚引用资源管理，构筑了内存安全的铜墙铁壁。明天我们将进入 GC 算法的世界，亲自对比不同垃圾收集器的行为与日志。
