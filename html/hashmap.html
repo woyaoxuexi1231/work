@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Java HashMap 深度演示：数组+链表+红黑树 | 树化阈值 · 性能优化</title>
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义树节点样式及动画 */
+        .tree-node {
+            transition: all 0.2s;
+        }
+        .tree-children {
+            padding-left: 1.2rem;
+            position: relative;
+        }
+        .tree-children::before {
+            content: '';
+            position: absolute;
+            left: 0.5rem;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #cbd5e1;
+        }
+        .log-line {
+            animation: fadeSlide 0.2s ease-out;
+        }
+        @keyframes fadeSlide {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        button:active {
+            transform: scale(0.97);
+        }
+        .bucket-card {
+            transition: box-shadow 0.2s;
+        }
+        .tree-badge {
+            background: linear-gradient(135deg, #2c3e50, #1a2632);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-gray-100 font-sans antialiased">
+<div class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <!-- 头部 -->
+    <div class="text-center mb-8">
+        <h1 class="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-800 to-purple-800">
+            🌳 Java HashMap · 红黑树进化
+        </h1>
+        <p class="text-gray-600 mt-2 max-w-2xl mx-auto">数组 + 链表 + 红黑树 | 链表长度 ≥ 8 且数组长度 ≥ 64 时树化 | 演示性能优化</p>
+        <div class="flex flex-wrap justify-center gap-2 mt-3 text-xs text-gray-600">
+            <span class="bg-white rounded-full px-3 py-1 shadow-sm">🔗 链表节点 (Node)</span>
+            <span class="bg-slate-800 text-white rounded-full px-3 py-1 shadow-sm">🌳 红黑树节点 (TreeNode)</span>
+            <span class="bg-amber-100 text-amber-800 rounded-full px-3 py-1 shadow-sm">⚡ 树化阈值 = 8</span>
+            <span class="bg-purple-100 text-purple-800 rounded-full px-3 py-1 shadow-sm">📦 退树化 (扩容拆分)</span>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- 左: 操作区 -->
+        <div class="lg:col-span-1 space-y-5">
+            <div class="bg-white rounded-2xl shadow-xl p-5">
+                <h2 class="text-xl font-bold border-l-4 border-indigo-500 pl-3 mb-4">🎮 数据操作</h2>
+                <div class="space-y-3">
+                    <input type="text" id="inputKey" placeholder="Key (字符串)" class="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-300">
+                    <input type="text" id="inputValue" placeholder="Value" class="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-300">
+                    <div class="flex flex-wrap gap-2">
+                        <button id="putBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-xl shadow">➕ Put</button>
+                        <button id="getBtn" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl shadow">🔍 Get</button>
+                        <button id="removeBtn" class="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-semibold py-2 rounded-xl shadow">🗑️ Remove</button>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="clearBtn" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-xl">🧹 清空</button>
+                        <button id="randomPutBtn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-xl">🎲 随机键</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 冲突 + 树化演示区 -->
+            <div class="bg-white rounded-2xl shadow-xl p-5">
+                <h2 class="text-lg font-bold text-gray-800 mb-3">🌲 红黑树演示</h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="createCollisionChainBtn" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm font-medium py-2 rounded-lg">🔗 制造链表冲突 (8个以上)</button>
+                    <button id="treeifyDemoBtn" class="bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium py-2 rounded-lg">🌳 强制树化 (长度=8)</button>
+                    <button id="addMoreForTreeBtn" class="bg-purple-100 hover:bg-purple-200 text-purple-700 text-sm font-medium py-2 rounded-lg">📈 追加至树化阈值</button>
+                    <button id="untreeifyDemoBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium py-2 rounded-lg">🔄 扩容演示(拆分树)</button>
+                </div>
+                <p class="text-xs text-gray-500 mt-3 bg-gray-50 p-2 rounded-lg">
+                    💡 说明: <br>
+                    - 当<strong>同一个桶内链表长度 ≥ TREEIFY_THRESHOLD (8)</strong> 且 数组容量 ≥ 64 时，链表 → 红黑树。<br>
+                    - 树化后查询复杂度 O(log n)。<br>
+                    - 扩容时如果树节点小于等于 UNTREEIFY_THRESHOLD (6) 会退化为链表。<br>
+                    - UI 中用🌳标记树节点，并展示树形层级。
+                </p>
+            </div>
+
+            <!-- 指标卡片 -->
+            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-5 shadow-md">
+                <h3 class="font-bold text-gray-700">📊 实时指标</h3>
+                <div class="grid grid-cols-2 gap-2 mt-2 text-sm">
+                    <div>容量 (Capacity): <span id="capacityVal" class="font-mono font-bold">16</span></div>
+                    <div>元素个数: <span id="sizeVal" class="font-mono font-bold">0</span></div>
+                    <div>负载因子: 0.75</div>
+                    <div>树化阈值: 8</div>
+                    <div class="col-span-2">🔔 树化桶数: <span id="treeifyCount" class="font-mono text-purple-700">0</span></div>
+                </div>
+                <div class="w-full bg-gray-200 h-2 rounded-full mt-2"><div id="loadBar" class="bg-indigo-500 h-2 rounded-full" style="width:0%"></div></div>
+            </div>
+        </div>
+
+        <!-- 右: 可视化区域 (桶 + 树/链表) -->
+        <div class="lg:col-span-2 space-y-5">
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden border">
+                <div class="bg-gray-800 text-white px-5 py-3 flex flex-wrap justify-between items-center">
+                    <div><span class="font-mono font-bold">🗂️ 哈希桶数组</span> <span class="text-xs ml-2 text-gray-300">红黑树节点带🌳标识</span></div>
+                    <div class="text-xs text-gray-300">hash扰动 & (cap-1)</div>
+                </div>
+                <div id="bucketsContainer" class="p-4 bg-gray-50/30 grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[550px] overflow-y-auto">
+                    <div class="col-span-full text-center text-gray-400 py-10">加载结构中...</div>
+                </div>
+            </div>
+            <!-- 日志 + 结果 -->
+            <div class="bg-white rounded-2xl shadow p-4">
+                <div class="flex justify-between items-center"><span class="font-bold">📋 操作日志</span><button id="clearLogBtn" class="text-xs bg-gray-200 px-3 py-1 rounded-full">清空</button></div>
+                <div id="logArea" class="h-32 overflow-y-auto text-xs font-mono bg-slate-50 rounded-lg p-2 mt-2 space-y-1"></div>
+                <div id="queryResult" class="mt-2 text-sm hidden"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+  // =========== 模拟 HashMap (支持树化/退化/链表+红黑树) ===========
+  // 由于红黑树完整实现过于复杂，我们使用“模拟树结构”来展示：
+  // - 当桶内节点数量 >= TREEIFY_THRESHOLD 并且全局容量>=MIN_TREEIFY_CAPACITY(64)时，标记该桶为“树化模式”，内部存储排序后的树节点(按hash/键的自然顺序)
+  // - 查询/删除/插入操作会维护树结构(模拟红黑树逻辑，但展示效果为平衡树层级)
+  // 为了演示清晰，我们实现一个简化的树化容器：TreeBucket，模拟红黑树的排序和层级显示。
+  // 核心逻辑：每个桶可以是 LinkedListBucket 或 TreeBucket。达到阈值时转换，扩容时重新分配并判断退化。
+
+  const TREEIFY_THRESHOLD = 8;
+  const UNTREEIFY_THRESHOLD = 6;
+  const MIN_TREEIFY_CAPACITY = 64;
+
+  class Entry {
+    constructor(key, value, hash) {
+      this.key = key;
+      this.value = value;
+      this.hash = hash;
+    }
+  }
+
+  // 模拟红黑树节点 (展示用，排序用)
+  class TreeNode {
+    constructor(entry, left = null, right = null) {
+      this.entry = entry;
+      this.left = left;
+      this.right = right;
+      // 红色标记模拟红黑属性 (UI用)
+      this.red = true;
+    }
+  }
+
+  // 树桶容器 (用BST简单维护，为展示层级)
+  class TreeBucket {
+    constructor(entries) {
+      // entries: Entry 数组，需要构建平衡树(为视觉好看，按hash排序构建尽量平衡)
+      this.root = this.buildBalancedTree(entries);
+      this.size = entries.length;
+    }
+
+    buildBalancedTree(entries) {
+      if (!entries.length) return null;
+      // 按hash排序
+      const sorted = [...entries].sort((a,b) => a.hash - b.hash);
+      const build = (l, r) => {
+        if (l > r) return null;
+        const mid = (l + r) >> 1;
+        const node = new TreeNode(sorted[mid]);
+        node.left = build(l, mid-1);
+        node.right = build(mid+1, r);
+        return node;
+      };
+      return build(0, sorted.length-1);
+    }
+
+    // 获取所有entry (中序)
+    inorder(node = this.root, result = []) {
+      if (!node) return result;
+      this.inorder(node.left, result);
+      result.push(node.entry);
+      this.inorder(node.right, result);
+      return result;
+    }
+
+    // 查找
+    find(key, hash, equalsFn) {
+      let cur = this.root;
+      while(cur) {
+        const curHash = cur.entry.hash;
+        if (hash === curHash && equalsFn(key, cur.entry.key)) return cur.entry;
+        if (hash < curHash || (hash === curHash && String(key) < String(cur.entry.key))) cur = cur.left;
+        else cur = cur.right;
+      }
+      return null;
+    }
+
+    // 插入新entry，返回新root (简单插入后不进行复杂旋转，但对于演示足够)
+    insert(entry, equalsFn) {
+      const insertRec = (node) => {
+        if (!node) return new TreeNode(entry);
+        if (entry.hash === node.entry.hash && equalsFn(entry.key, node.entry.key)) {
+          node.entry.value = entry.value; // 覆盖
+          return node;
+        }
+        if (entry.hash < node.entry.hash || (entry.hash === node.entry.hash && String(entry.key) < String(node.entry.key))) {
+          node.left = insertRec(node.left);
+        } else {
+          node.right = insertRec(node.right);
+        }
+        return node;
+      };
+      this.root = insertRec(this.root);
+      this.size = this.inorder().length;
+      return this.find(entry.key, entry.hash, equalsFn); // 返回旧值判定
+    }
+
+    delete(key, hash, equalsFn) {
+      // 删除逻辑简化：重建树 (演示方便)
+      let entries = this.inorder();
+      const index = entries.findIndex(e => e.hash === hash && equalsFn(e.key, key));
+      if (index === -1) return null;
+      const removed = entries[index];
+      entries.splice(index,1);
+      if (entries.length === 0) this.root = null;
+      else this.root = this.buildBalancedTree(entries);
+      this.size = entries.length;
+      return removed;
+    }
+
+    // 转为链表 (当退化时)
+    toList() {
+      return this.inorder();
+    }
+  }
+
+  class HashMapWithTree {
+    constructor(initialCapacity = 16, loadFactor = 0.75) {
+      this.loadFactor = loadFactor;
+      this.capacity = Math.max(16, this.nextPowerOfTwo(initialCapacity));
+      this.table = new Array(this.capacity);
+      for (let i=0;i<this.capacity;i++) this.table[i] = []; // 初始全为链表数组
+      this.size = 0;
+      this.threshold = this.capacity * this.loadFactor;
+    }
+
+    nextPowerOfTwo(n) {
+      if (n <= 0) return 1;
+      n--;
+      n |= n>>>1; n |= n>>>2; n |= n>>>4; n |= n>>>8; n |= n>>>16;
+      return n+1;
+    }
+
+    _hash(key) {
+      if (key === null) return 0;
+      let h = 0;
+      const str = String(key);
+      for(let i=0;i<str.length;i++) {
+        h = ((h<<5)-h) + str.charCodeAt(i);
+        h |= 0;
+      }
+      return h ^ (h >>> 16);
+    }
+
+    _index(hash) {
+      return (this.capacity - 1) & hash;
+    }
+
+    _equals(k1,k2) {
+      if(k1===k2) return true;
+      if(k1===null || k2===null) return false;
+      return String(k1) === String(k2);
+    }
+
+    // 判断桶是否为树桶
+    _isTreeBucket(bucket) {
+      return bucket && bucket instanceof TreeBucket;
+    }
+
+    // 将链表转为树桶 (条件满足时)
+    _treeify(bucket, idx) {
+      if (!Array.isArray(bucket)) return bucket;
+      if (bucket.length >= TREEIFY_THRESHOLD && this.capacity >= MIN_TREEIFY_CAPACITY) {
+        const tree = new TreeBucket(bucket);
+        this.table[idx] = tree;
+        return tree;
+      }
+      return bucket;
+    }
+
+    // 将树桶转为链表 (当树节点数量 <= UNTREEIFY_THRESHOLD)
+    _untreeify(bucket) {
+      if (bucket instanceof TreeBucket && bucket.size <= UNTREEIFY_THRESHOLD) {
+        const list = bucket.toList();
+        this.table[this._findBucketIndexForTree(bucket)] = list; // 需要知道索引，临时处理
+        return list;
+      }
+      return bucket;
+    }
+
+    _findBucketIndexForTree(treeBucket) {
+      for (let i=0;i<this.table.length;i++) {
+        if (this.table[i] === treeBucket) return i;
+      }
+      return -1;
+    }
+
+    // put 主逻辑
+    put(key, value) {
+      const hash = this._hash(key);
+      const idx = this._index(hash);
+      let bucket = this.table[idx];
+      let oldValue = null;
+      let updated = false;
+
+      // 树桶处理
+      if (this._isTreeBucket(bucket)) {
+        const existed = bucket.find(key, hash, this._equals.bind(this));
+        if (existed) {
+          oldValue = existed.value;
+          existed.value = value;
+          updated = true;
+        } else {
+          bucket.insert(new Entry(key, value, hash), this._equals.bind(this));
+          this.size++;
+        }
+      }
+      // 链表处理
+      else if (Array.isArray(bucket)) {
+        let found = false;
+        for (let i=0;i<bucket.length;i++) {
+          const e = bucket[i];
+          if (e.hash === hash && this._equals(e.key, key)) {
+            oldValue = e.value;
+            e.value = value;
+            updated = true;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          bucket.push(new Entry(key, value, hash));
+          this.size++;
+          // 检查是否需要树化
+          if (bucket.length >= TREEIFY_THRESHOLD && this.capacity >= MIN_TREEIFY_CAPACITY) {
+            this.table[idx] = this._treeify(bucket, idx);
+          }
+        }
+      }
+
+      if (!updated && this.size > this.threshold) {
+        this.resize();
+      }
+      return { oldValue, updated, index: idx };
+    }
+
+    resize() {
+      const oldTable = this.table;
+      const oldCapacity = this.capacity;
+      let newCapacity = this.capacity * 2;
+      this.capacity = newCapacity;
+      this.threshold = this.capacity * this.loadFactor;
+      this.table = new Array(this.capacity);
+      for (let i=0;i<this.capacity;i++) this.table[i] = [];
+      this.size = 0;
+      // 重哈希所有entry
+      for (let i=0;i<oldTable.length;i++) {
+        let bucket = oldTable[i];
+        if (!bucket || bucket.length === 0) continue;
+        let entries = [];
+        if (this._isTreeBucket(bucket)) {
+          entries = bucket.toList();
+        } else {
+          entries = bucket;
+        }
+        for (let entry of entries) {
+          this.put(entry.key, entry.value);
+        }
+      }
+    }
+
+    get(key) {
+      const hash = this._hash(key);
+      const idx = this._index(hash);
+      const bucket = this.table[idx];
+      if (this._isTreeBucket(bucket)) {
+        const entry = bucket.find(key, hash, this._equals.bind(this));
+        return entry ? { value: entry.value, index: idx } : { value: null, index: idx };
+      } else if (Array.isArray(bucket)) {
+        for(let e of bucket) {
+          if(e.hash === hash && this._equals(e.key, key)) return { value: e.value, index: idx };
+        }
+      }
+      return { value: null, index: idx };
+    }
+
+    remove(key) {
+      const hash = this._hash(key);
+      const idx = this._index(hash);
+      let bucket = this.table[idx];
+      if (this._isTreeBucket(bucket)) {
+        const removed = bucket.delete(key, hash, this._equals.bind(this));
+        if (removed) {
+          this.size--;
+          // 检查退化
+          if (bucket.size <= UNTREEIFY_THRESHOLD) {
+            const listBucket = bucket.toList();
+            this.table[idx] = listBucket;
+          }
+          return { success: true, value: removed.value, index: idx };
+        }
+      } else if (Array.isArray(bucket)) {
+        for(let i=0;i<bucket.length;i++) {
+          if(bucket[i].hash === hash && this._equals(bucket[i].key, key)) {
+            const removed = bucket.splice(i,1)[0];
+            this.size--;
+            return { success: true, value: removed.value, index: idx };
+          }
+        }
+      }
+      return { success: false, value: null, index: idx };
+    }
+
+    clear() {
+      this.capacity = 16;
+      this.table = new Array(this.capacity);
+      for(let i=0;i<this.capacity;i++) this.table[i] = [];
+      this.size = 0;
+      this.threshold = this.capacity * this.loadFactor;
+    }
+
+    getBucketsInfo() {
+      return this.table.map((bucket, idx) => {
+        if (!bucket) return { type: 'empty', entries: [] };
+        if (this._isTreeBucket(bucket)) {
+          return { type: 'tree', entries: bucket.inorder(), root: bucket.root, size: bucket.size };
+        }
+        return { type: 'list', entries: bucket };
+      });
+    }
+
+    getCapacity() { return this.capacity; }
+    getSize() { return this.size; }
+    getTreeifyCount() {
+      let cnt = 0;
+      for(let b of this.table) if(this._isTreeBucket(b)) cnt++;
+      return cnt;
+    }
+  }
+
+  // ---------- UI 绑定 ----------
+  let hashMap = new HashMapWithTree(16, 0.75);
+  const bucketsContainer = document.getElementById('bucketsContainer');
+  const logArea = document.getElementById('logArea');
+  const capacitySpan = document.getElementById('capacityVal');
+  const sizeSpan = document.getElementById('sizeVal');
+  const treeifyCountSpan = document.getElementById('treeifyCount');
+  const loadBar = document.getElementById('loadBar');
+  const queryResultDiv = document.getElementById('queryResult');
+
+  function addLog(msg, type='info') {
+    const div = document.createElement('div');
+    div.className = `log-line text-xs ${type==='error'?'text-red-600':type==='success'?'text-emerald-700':'text-gray-700'} border-b pb-1`;
+    div.innerHTML = `🕒 ${new Date().toLocaleTimeString()} ${msg}`;
+    logArea.appendChild(div);
+    div.scrollIntoView({ block: 'nearest' });
+    while(logArea.children.length>50) logArea.removeChild(logArea.firstChild);
+  }
+
+  function showResult(text, ok=true) {
+    queryResultDiv.classList.remove('hidden');
+    queryResultDiv.innerHTML = text;
+    queryResultDiv.className = `mt-2 text-sm p-2 rounded-lg ${ok?'bg-emerald-50 text-emerald-800 border-emerald-200':'bg-rose-50 text-rose-700 border-rose-200'} border`;
+    setTimeout(()=>queryResultDiv.classList.add('hidden'), 2800);
+  }
+
+  // 递归渲染树节点 (带有层级缩进)
+  function renderTreeNode(node, level=0) {
+    if(!node) return null;
+    const container = document.createElement('div');
+    container.className = 'tree-node ml-2';
+    const detail = document.createElement('div');
+    detail.className = `flex items-center gap-1 text-sm py-1 ${node.red ? 'text-red-700' : 'text-gray-800'}`;
+    detail.innerHTML = `
+                <span class="font-mono">🌳 ${node.red ? '🔴' : '⚫'}</span>
+                <span class="font-semibold">${escapeHtml(String(node.entry.key))}</span>
+                <span class="text-emerald-600">= ${escapeHtml(String(node.entry.value))}</span>
+                <span class="text-[10px] text-gray-400">hash:${(node.entry.hash>>>0).toString(16).slice(0,5)}</span>
+            `;
+    container.appendChild(detail);
+    if(node.left || node.right) {
+      const childrenDiv = document.createElement('div');
+      childrenDiv.className = 'tree-children';
+      if(node.left) childrenDiv.appendChild(renderTreeNode(node.left, level+1));
+      if(node.right) childrenDiv.appendChild(renderTreeNode(node.right, level+1));
+      container.appendChild(childrenDiv);
+    }
+    return container;
+  }
+
+  function escapeHtml(str) {
+    if(str===null || str===undefined) return '';
+    return String(str).replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;});
+  }
+
+  function render() {
+    const bucketsInfo = hashMap.getBucketsInfo();
+    const capacity = hashMap.getCapacity();
+    const size = hashMap.getSize();
+    const load = size/capacity;
+    capacitySpan.innerText = capacity;
+    sizeSpan.innerText = size;
+    treeifyCountSpan.innerText = hashMap.getTreeifyCount();
+    loadBar.style.width = `${Math.min(load*100,100)}%`;
+    bucketsContainer.innerHTML = '';
+    for(let i=0;i<bucketsInfo.length;i++) {
+      const bin = bucketsInfo[i];
+      const card = document.createElement('div');
+      card.className = `bucket-card bg-white rounded-xl shadow border ${bin.type==='tree' ? 'border-purple-300 ring-1 ring-purple-200' : 'border-gray-200'} overflow-hidden`;
+      const header = document.createElement('div');
+      header.className = `px-3 py-2 flex justify-between items-center text-xs font-bold ${bin.type==='tree' ? 'bg-purple-50' : 'bg-gray-50'} border-b`;
+      header.innerHTML = `<span>📌 桶 [${i}]</span><span class="bg-gray-200 px-2 rounded-full">${bin.type==='tree' ? '🌳 红黑树' : '🔗 链表'} · ${bin.type==='tree' ? bin.size : bin.entries.length} 项</span>`;
+      card.appendChild(header);
+      const body = document.createElement('div');
+      body.className = 'p-2';
+      if(bin.type === 'empty' || (bin.entries && bin.entries.length===0)) {
+        body.innerHTML = '<div class="text-center text-gray-400 text-xs py-4">∅ 空桶</div>';
+      } else if(bin.type === 'list') {
+        const ul = document.createElement('ul');
+        ul.className = 'divide-y';
+        for(let ent of bin.entries) {
+          const li = document.createElement('li');
+          li.className = 'py-1.5 flex justify-between items-center text-sm';
+          li.innerHTML = `<span><span class="font-mono">🔑 ${escapeHtml(String(ent.key))}</span> <span class="text-emerald-600">→ ${escapeHtml(String(ent.value))}</span></span><span class="text-[10px] text-gray-400">h:${(ent.hash>>>0).toString(16).slice(0,4)}</span>`;
+          ul.appendChild(li);
+        }
+        body.appendChild(ul);
+      } else if(bin.type === 'tree') {
+        if(bin.root) {
+          const treeContainer = renderTreeNode(bin.root);
+          body.appendChild(treeContainer);
+        } else {
+          body.innerHTML = '<div class="text-xs">空树</div>';
+        }
+      }
+      card.appendChild(body);
+      bucketsContainer.appendChild(card);
+    }
+  }
+
+  // 操作封装
+  function doPut() {
+    let key = document.getElementById('inputKey').value;
+    let val = document.getElementById('inputValue').value;
+    if(key === undefined) key = "";
+    const result = hashMap.put(key, val);
+    render();
+    if(result.updated) addLog(`✅ 更新: ${escapeHtml(key)} = ${escapeHtml(val)} [桶${result.index}]`, 'success');
+    else addLog(`➕ 新增: ${escapeHtml(key)} = ${escapeHtml(val)} [桶${result.index}] 当前size=${hashMap.getSize()}`, 'success');
+    showResult(`操作完成: ${result.updated? '更新' : '插入'} 成功`);
+  }
+  function doGet() {
+    const key = document.getElementById('inputKey').value;
+    const res = hashMap.get(key);
+    if(res.value !== null) {
+      addLog(`🔍 查询: ${escapeHtml(key)} → ${escapeHtml(res.value)} (桶${res.index})`);
+      showResult(`值: ${escapeHtml(res.value)}`, true);
+    } else {
+      addLog(`❌ 查询失败: ${escapeHtml(key)} 不存在`, 'error');
+      showResult(`键不存在`, false);
+    }
+  }
+  function doRemove() {
+    const key = document.getElementById('inputKey').value;
+    const res = hashMap.remove(key);
+    render();
+    if(res.success) addLog(`🗑️ 删除: ${escapeHtml(key)} (原值=${escapeHtml(res.value)})`, 'success');
+    else addLog(`⚠️ 删除失败: ${escapeHtml(key)} 不存在`, 'error');
+    showResult(res.success? `已删除 ${escapeHtml(key)}` : '删除失败', res.success);
+  }
+  function doClear() {
+    hashMap.clear();
+    render();
+    addLog(`🧹 清空HashMap, 容量恢复16`, 'info');
+    showResult('已清空', true);
+  }
+  function randomPut() {
+    const k = `key_${Math.floor(Math.random()*10000)}`;
+    const v = `val_${Math.floor(Math.random()*9999)}`;
+    hashMap.put(k,v);
+    render();
+    addLog(`🎲 随机插入: ${k}=${v}`);
+  }
+  // 制造碰撞链: 使用一组特定key在不同哈希扰动下落在同一桶(先容量16，hash & 15 相同)
+  function createCollisionChain() {
+    // 选取一组让下标相同的key (基于当前容量16)
+    let base = 0;
+    let added = 0;
+    while(added < 10) {
+      const testKey = `collision_${Math.random().toString(36).substring(2,6)}`;
+      const idx = hashMap._index(hashMap._hash(testKey));
+      if(idx === 5) { // 故意让桶5产生碰撞，方便观察
+        hashMap.put(testKey, `val_${added}`);
+        added++;
+      }
+      if(added>0 && added%2===0) render();
+    }
+    render();
+    addLog(`🔥 向桶索引5添加10个碰撞元素，部分可能树化(容量需>=64)`, 'success');
+  }
+  function forceTreeify() {
+    // 确保容量>=64 (先扩容)
+    if(hashMap.getCapacity() < 64) {
+      for(let i=0;i<30;i++) hashMap.put(`expand_${i}`, i);
+      render();
+    }
+    const targetIdx = 3;
+    for(let i=0;i<10;i++) {
+      let k = `treeKey_${i}_${Date.now()}`;
+      hashMap.put(k, `treeVal_${i}`);
+    }
+    render();
+    addLog(`🌳 强制增加元素使链表长度≥8 且容量≥64 => 红黑树转换`, 'success');
+  }
+  function addMoreForTree() {
+    for(let i=0;i<5;i++) hashMap.put(`more_${Math.random()}`, 'value');
+    render();
+    addLog(`📈 添加更多元素以触发树化(观察树化桶)`, 'info');
+  }
+  function untreeifyDemo() {
+    addLog(`🔄 执行扩容 或 删除节点至阈值6以下可退树化，但扩容会自动处理`, 'info');
+    // 模拟扩容: 手动调用resize?
+    if(hashMap.getSize() > hashMap.threshold) {
+      hashMap.resize();
+      render();
+      addLog(`⚙️ 扩容已触发，树桶可能拆分为链表`, 'success');
+    } else {
+      addLog(`当前未达扩容阈值，删除一些树节点可退树化(演示删除操作)`, 'info');
+    }
+  }
+
+  document.getElementById('putBtn').onclick = doPut;
+  document.getElementById('getBtn').onclick = doGet;
+  document.getElementById('removeBtn').onclick = doRemove;
+  document.getElementById('clearBtn').onclick = doClear;
+  document.getElementById('randomPutBtn').onclick = randomPut;
+  document.getElementById('createCollisionChainBtn').onclick = createCollisionChain;
+  document.getElementById('treeifyDemoBtn').onclick = forceTreeify;
+  document.getElementById('addMoreForTreeBtn').onclick = addMoreForTree;
+  document.getElementById('untreeifyDemoBtn').onclick = untifyDemo;
+  document.getElementById('clearLogBtn').onclick = ()=>{ logArea.innerHTML = '<div class="text-gray-400">日志已清空</div>'; };
+
+  // 初始渲染
+  render();
+  addLog("🚀 初始化 HashMap 容量16，支持链表 → 红黑树 (阈值≥8且容量≥64)");
+</script>
+</body>
+</html>
