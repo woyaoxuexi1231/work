@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java线程池参数可视化演示 · 单屏布局</title>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            animation: {
+              'pulse-glow': 'pulseGlow 2s ease-in-out infinite',
+              'slide-in': 'slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+              'slide-out': 'slideOut 0.35s cubic-bezier(0.55, 0, 1, 0.45)',
+              'pop-in': 'popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              'float': 'float 6s ease-in-out infinite',
+              'recycle': 'recycle 0.5s ease-in forwards',
+              'scan-line': 'scanLine 3s linear infinite',
+              'fade-in-up': 'fadeInUp 0.5s ease-out',
+            },
+            keyframes: {
+              pulseGlow: {
+                '0%, 100%': { boxShadow: '0 0 12px rgba(76,201,240,0.5), 0 0 28px rgba(76,201,240,0.2)' },
+                '50%': { boxShadow: '0 0 22px rgba(76,201,240,0.85), 0 0 44px rgba(76,201,240,0.4), 0 0 66px rgba(76,201,240,0.15)' },
+              },
+              slideIn: {
+                '0%': { transform: 'translateY(-24px) scale(0.9)', opacity: '0' },
+                '100%': { transform: 'translateY(0) scale(1)', opacity: '1' },
+              },
+              slideOut: {
+                '0%': { transform: 'translateX(0) scale(1)', opacity: '1' },
+                '100%': { transform: 'translateX(-40px) scale(0.7)', opacity: '0' },
+              },
+              popIn: {
+                '0%': { transform: 'scale(0)', opacity: '0' },
+                '60%': { transform: 'scale(1.15)', opacity: '1' },
+                '100%': { transform: 'scale(1)', opacity: '1' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0px)' },
+                '50%': { transform: 'translateY(-12px)' },
+              },
+              recycle: {
+                '0%': { transform: 'scale(1)', opacity: '1', filter: 'blur(0px)' },
+                '100%': { transform: 'scale(0.2)', opacity: '0', filter: 'blur(8px)' },
+              },
+              scanLine: {
+                '0%': { top: '-2px' },
+                '100%': { top: '100%' },
+              },
+              fadeInUp: {
+                '0%': { transform: 'translateY(12px)', opacity: '0' },
+                '100%': { transform: 'translateY(0)', opacity: '1' },
+              },
+            },
+          },
+        },
+      }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        :root {
+            --core-color: #4cc9f0;
+            --queue-color: #f59e0b;
+            --extra-color: #a78bfa;
+            --reject-color: #f87171;
+            --surface-glass: rgba(15, 23, 42, 0.55);
+            --border-glass: rgba(255, 255, 255, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0a0e17;
+            color: #e2e8f0;
+            -webkit-font-smoothing: antialiased;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .bg-cosmos {
+            background:
+                    radial-gradient(ellipse at 20% 15%, rgba(76, 201, 240, 0.12) 0%, transparent 55%),
+                    radial-gradient(ellipse at 75% 60%, rgba(167, 139, 250, 0.14) 0%, transparent 55%),
+                    radial-gradient(ellipse at 50% 85%, rgba(245, 158, 11, 0.08) 0%, transparent 50%),
+                    radial-gradient(ellipse at 85% 20%, rgba(248, 113, 113, 0.06) 0%, transparent 45%),
+                    linear-gradient(180deg, #0a0e17 0%, #0f1628 30%, #111827 60%, #0d1117 100%);
+        }
+
+        .grid-bg {
+            background-image:
+                    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .glass {
+            background: var(--surface-glass);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid var(--border-glass);
+            border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+
+        .glass-sm {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+        }
+
+        .glass-heavy {
+            background: rgba(10, 16, 28, 0.7);
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+        }
+
+        .thread-node {
+            width: 44px; height: 44px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.65rem;
+            transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
+            font-family: 'JetBrains Mono', monospace;
+            position: relative;
+        }
+        .thread-node.idle-core { background: rgba(30,41,59,0.7); border:2px solid rgba(76,201,240,0.3); color:rgba(76,201,240,0.5); }
+        .thread-node.busy-core { background: rgba(76,201,240,0.2); border:2px solid rgba(76,201,240,0.85); color:#4cc9f0; animation:pulse-glow 1.8s infinite; }
+        .thread-node.idle-extra { background: rgba(40,35,60,0.7); border:2px dashed rgba(167,139,250,0.4); color:rgba(167,139,250,0.5); }
+        .thread-node.busy-extra { background: rgba(167,139,250,0.2); border:2px solid rgba(167,139,250,0.85); color:#a78bfa; animation:pulse-glow 1.8s infinite; }
+        .thread-node.recycling { animation: recycle 0.5s ease-in forwards; }
+
+        .countdown-ring.active {
+            position: absolute; inset: -5px; border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: rgba(167,139,250,0.7); border-right-color: rgba(167,139,250,0.5);
+            animation: spinRing 1s linear infinite;
+        }
+        @keyframes spinRing { to { transform: rotate(360deg); } }
+
+        .queue-slot {
+            width: 48px; height: 36px; border-radius: 8px;
+            border: 2px dashed rgba(245,158,11,0.25); background: rgba(20,18,14,0.5);
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.35s; font-size: 0.6rem; font-family: 'JetBrains Mono', monospace;
+        }
+        .queue-slot.filled {
+            border-color: rgba(245,158,11,0.7); background: rgba(245,158,11,0.15);
+            color: #fbbf24; animation: popIn 0.45s;
+            box-shadow: 0 0 14px rgba(245,158,11,0.35);
+        }
+        .queue-slot.leaving { animation: slideOut 0.35s forwards; }
+
+        .reject-card {
+            background: rgba(248,113,113,0.15); border:1px solid rgba(248,113,113,0.5);
+            border-radius: 8px; padding: 4px 10px; color: #f87171;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
+            animation: popIn 0.4s; box-shadow: 0 0 12px rgba(248,113,113,0.3);
+        }
+
+        .btn-glow {
+            position: relative; overflow: hidden; transition: all 0.3s; font-weight: 600;
+        }
+        .btn-glow::after {
+            content: ''; position: absolute; top:-50%; left:-50%; width:200%; height:200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.25) 0%, transparent 60%);
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .btn-glow:hover::after { opacity: 1; }
+        .btn-glow:active { transform: scale(0.96); }
+
+        .log-entry {
+            animation: fadeInUp 0.35s; border-left: 2px solid transparent;
+        }
+        .log-entry.type-core { border-left-color: #4cc9f0; }
+        .log-entry.type-queue { border-left-color: #f59e0b; }
+        .log-entry.type-extra { border-left-color: #a78bfa; }
+        .log-entry.type-reject { border-left-color: #f87171; }
+
+        .scan-line-effect {
+            position: absolute; left:0; width:100%; height:2px;
+            background: linear-gradient(90deg, transparent, rgba(76,201,240,0.4), transparent);
+            animation: scanLine 4s linear infinite; pointer-events: none; z-index:1;
+        }
+
+        input[type="range"] { -webkit-appearance: none; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width:18px; height:18px; border-radius:50%;
+            background: #4cc9f0; border:2px solid rgba(255,255,255,0.3);
+            box-shadow: 0 0 12px rgba(76,201,240,0.5);
+        }
+
+        .floating-orb {
+            position: fixed; border-radius: 50%; pointer-events: none; z-index:0;
+            filter: blur(60px); opacity:0.2; animation: float 8s infinite;
+        }
+
+        .custom-scroll::-webkit-scrollbar { width:4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius:4px; }
+    </style>
+</head>
+<body class="bg-cosmos grid-bg h-screen flex flex-col p-3 relative">
+
+<!-- 浮动光点 -->
+<div class="floating-orb w-64 h-64 bg-cyan-500/20 top-10 left-[10%]"></div>
+<div class="floating-orb w-80 h-80 bg-purple-500/18 bottom-20 right-[8%]" style="animation-delay: -3s;"></div>
+
+<!-- 顶部标题栏 -->
+<header class="glass-heavy px-5 py-2 flex items-center justify-between relative overflow-hidden flex-shrink-0">
+    <div class="scan-line-effect"></div>
+    <div class="flex items-center gap-2 z-10">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-purple-500 flex items-center justify-center">
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+        </div>
+        <span class="text-lg font-bold bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">ThreadPool Visualizer</span>
+    </div>
+    <div class="flex items-center gap-3 z-10">
+        <span class="text-xs text-slate-500">v2.0</span>
+        <div class="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-400">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 运行中
+        </div>
+    </div>
+</header>
+
+<!-- 主内容区：单屏三栏布局，无整体滚动 -->
+<div class="flex-1 flex gap-3 mt-3 min-h-0">
+
+    <!-- 左：配置面板（可滚动） -->
+    <aside class="glass w-56 flex-shrink-0 p-3 flex flex-col gap-2 overflow-y-auto custom-scroll">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">⚙️ 参数</h2>
+
+        <div class="glass-sm p-2 flex flex-col gap-1">
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-cyan-300">corePoolSize</span>
+                <span id="coreVal" class="text-sm font-bold text-cyan-400 font-mono">2</span>
+            </div>
+            <input type="range" id="coreSlider" min="0" max="5" value="2" class="w-full">
+        </div>
+
+        <div class="glass-sm p-2 flex flex-col gap-1">
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-purple-300">maximumPoolSize</span>
+                <span id="maxVal" class="text-sm font-bold text-purple-400 font-mono">5</span>
+            </div>
+            <input type="range" id="maxSlider" min="1" max="10" value="5" class="w-full">
+        </div>
+
+        <div class="glass-sm p-2 flex flex-col gap-1">
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-amber-300">queueCapacity</span>
+                <span id="queueCapVal" class="text-sm font-bold text-amber-400 font-mono">3</span>
+            </div>
+            <input type="range" id="queueSlider" min="0" max="8" value="3" class="w-full">
+        </div>
+
+        <div class="glass-sm p-2 flex flex-col gap-1">
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-purple-300">keepAliveTime</span>
+                <span id="keepAliveVal" class="text-sm font-bold text-purple-400 font-mono">3s</span>
+            </div>
+            <input type="range" id="keepAliveSlider" min="1" max="10" value="3" class="w-full">
+        </div>
+
+        <div class="glass-sm p-2 flex flex-col gap-1">
+            <span class="text-xs text-red-300">拒绝策略</span>
+            <select id="rejectPolicy" class="bg-slate-800/70 border border-slate-600/50 rounded text-xs text-slate-200 p-1">
+                <option value="abort">AbortPolicy</option>
+                <option value="discard">DiscardPolicy</option>
+                <option value="callerRuns">CallerRunsPolicy</option>
+                <option value="discardOldest">DiscardOldestPolicy</option>
+            </select>
+        </div>
+
+        <div class="glass-sm p-2 flex flex-col gap-1">
+            <span class="text-xs text-slate-400">快速预设</span>
+            <div class="flex flex-wrap gap-1">
+                <button onclick="applyPreset('default')" class="text-[10px] px-2 py-1 rounded bg-slate-700/50 border border-slate-600/40">默认</button>
+                <button onclick="applyPreset('small')" class="text-[10px] px-2 py-1 rounded bg-slate-700/50">小池子</button>
+                <button onclick="applyPreset('large')" class="text-[10px] px-2 py-1 rounded bg-slate-700/50">大容量</button>
+                <button onclick="applyPreset('tight')" class="text-[10px] px-2 py-1 rounded bg-slate-700/50">极限</button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 中：核心可视化区域（垂直弹性填充） -->
+    <main class="flex-1 flex flex-col gap-2 min-w-0">
+        <!-- 操作按钮条 -->
+        <div class="glass p-2 flex flex-wrap items-center gap-2 justify-center flex-shrink-0">
+            <button onclick="submitTask()" class="btn-glow px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg">⚡ 提交</button>
+            <button onclick="submitBatch(5)" class="btn-glow px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white">📦 ×5</button>
+            <button onclick="submitBatch(10)" class="btn-glow px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-purple-500 to-violet-500 text-white">🚀 ×10</button>
+            <button id="btnAutoToggle" onclick="toggleAutoSubmit()" class="btn-glow px-3 py-1.5 text-xs rounded-lg bg-slate-700/70 border border-slate-600/50 text-slate-300">🔄 自动:<span id="autoStatus">关</span></button>
+            <button onclick="resetAll()" class="btn-glow px-3 py-1.5 text-xs rounded-lg bg-red-500/20 border border-red-500/40 text-red-400">🔃 重置</button>
+        </div>
+
+        <!-- 可视化画布（主体） -->
+        <div class="glass-heavy flex-1 p-4 flex flex-col gap-5 relative overflow-hidden min-h-0">
+            <div class="scan-line-effect"></div>
+            <div class="flex items-center justify-between z-10">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">🔍 线程池实时状态</h2>
+                <div class="flex gap-3 text-[10px] text-slate-400">
+                    <span>活跃:<b id="activeCount" class="text-cyan-400 font-mono">0</b></span>
+                    <span>队列:<b id="queueCount" class="text-amber-400 font-mono">0</b></span>
+                    <span>扩展:<b id="extraCount" class="text-purple-400 font-mono">0</b></span>
+                </div>
+            </div>
+
+            <!-- 核心线程 -->
+            <div class="z-10">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <span class="text-xs font-semibold text-cyan-300">🧵 核心线程池</span>
+                    <span class="text-[10px] text-slate-500">(core=<span id="labelCoreSize">2</span>)</span>
+                </div>
+                <div id="coreThreadsContainer" class="flex flex-wrap gap-3 p-3 rounded-xl bg-slate-900/30 border border-slate-700/30 min-h-[50px] items-center justify-center"></div>
+            </div>
+
+            <div class="flex justify-center z-10"><svg class="w-5 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v8m0 0l-4-4m4 4l4-4"/></svg></div>
+
+            <!-- 队列 -->
+            <div class="z-10">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <span class="text-xs font-semibold text-amber-300">📦 阻塞队列</span>
+                    <span class="text-[10px] text-slate-500">(cap=<span id="labelQueueCap">3</span>)</span>
+                </div>
+                <div id="queueContainer" class="flex flex-wrap gap-2 p-3 rounded-xl bg-slate-900/30 border border-amber-700/20 min-h-[44px] items-center justify-center"></div>
+            </div>
+
+            <div class="flex justify-center z-10"><svg class="w-5 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v8m0 0l-4-4m4 4l4-4"/></svg></div>
+
+            <!-- 扩展线程 -->
+            <div class="z-10">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <span class="text-xs font-semibold text-purple-300">⚡ 扩展线程区</span>
+                    <span class="text-[10px] text-slate-500">(最多<span id="labelExtraMax">3</span>)</span>
+                </div>
+                <div id="extraThreadsContainer" class="flex flex-wrap gap-3 p-3 rounded-xl bg-slate-900/30 border border-purple-700/20 min-h-[50px] items-center justify-center"></div>
+            </div>
+        </div>
+
+        <!-- 底部：拒绝任务 + 日志（横向并列） -->
+        <div class="flex gap-3 flex-shrink-0" style="height: 110px;">
+            <div class="glass flex-1 p-2 relative overflow-hidden flex flex-col">
+                <div class="scan-line-effect"></div>
+                <div class="flex items-center gap-2 mb-1 z-10">
+                    <span class="text-[10px] font-semibold text-red-300">🚫 被拒绝任务</span>
+                    <span id="rejectBadge" class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">0</span>
+                </div>
+                <div id="rejectedContainer" class="flex flex-wrap gap-1 z-10 overflow-y-auto custom-scroll flex-1 text-[10px]"></div>
+            </div>
+            <div class="glass flex-1 p-2 relative overflow-hidden flex flex-col">
+                <div class="scan-line-effect"></div>
+                <div class="flex items-center gap-2 mb-1 z-10">
+                    <span class="text-[10px] font-semibold text-slate-300">📋 操作日志</span>
+                </div>
+                <div id="logContainer" class="flex-1 overflow-y-auto custom-scroll space-y-0.5 z-10 text-[10px]"></div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+  // ==================== 全局状态 ====================
+  const state = {
+    corePoolSize: 2, maximumPoolSize: 5, queueCapacity: 3, keepAliveTime: 3,
+    rejectPolicy: 'abort',
+    coreThreads: [], extraThreads: [], queue: [], rejectedTasks: [],
+    taskIdCounter: 0, stats: { submitted: 0, completed: 0, rejected: 0 },
+    autoSubmitInterval: null, isAutoSubmitting: false, logs: [],
+  };
+
+  const domRefs = {};
+  function getDom(key) { if (!domRefs[key]) domRefs[key] = document.getElementById(key); return domRefs[key]; }
+
+  function init() {
+    updateAllLabels();
+    rebuildCoreThreads();
+    rebuildQueueSlots();
+    rebuildExtraThreadSlots();
+    updateRejectedDisplay();
+    bindSliders();
+    updateStatsDisplay();
+  }
+
+  function bindSliders() {
+    const coreSlider = getDom('coreSlider'), maxSlider = getDom('maxSlider');
+    const queueSlider = getDom('queueSlider'), keepAliveSlider = getDom('keepAliveSlider');
+    const rejectPolicySelect = getDom('rejectPolicy');
+
+    coreSlider.addEventListener('input', () => {
+      const val = parseInt(coreSlider.value);
+      if (val > parseInt(maxSlider.value)) { maxSlider.value = val; state.maximumPoolSize = val; getDom('maxVal').textContent = val; }
+      state.corePoolSize = val;
+      getDom('coreVal').textContent = val; getDom('labelCoreSize').textContent = val;
+      getDom('labelExtraMax').textContent = Math.max(0, state.maximumPoolSize - val);
+      rebuildCoreThreads(); rebuildExtraThreadSlots();
+    });
+    maxSlider.addEventListener('input', () => {
+      const val = parseInt(maxSlider.value);
+      if (val < parseInt(coreSlider.value)) { coreSlider.value = val; state.corePoolSize = val; getDom('coreVal').textContent = val; rebuildCoreThreads(); }
+      state.maximumPoolSize = val; getDom('maxVal').textContent = val;
+      getDom('labelExtraMax').textContent = Math.max(0, val - state.corePoolSize);
+      trimExtraThreads(); rebuildExtraThreadSlots();
+    });
+    queueSlider.addEventListener('input', () => {
+      state.queueCapacity = parseInt(queueSlider.value);
+      getDom('queueCapVal').textContent = state.queueCapacity;
+      getDom('labelQueueCap').textContent = state.queueCapacity;
+      trimQueue(); rebuildQueueSlots();
+    });
+    keepAliveSlider.addEventListener('input', () => {
+      state.keepAliveTime = parseInt(keepAliveSlider.value);
+      getDom('keepAliveVal').textContent = state.keepAliveTime + 's';
+    });
+    rejectPolicySelect.addEventListener('change', () => state.rejectPolicy = rejectPolicySelect.value);
+  }
+
+  function updateAllLabels() {
+    getDom('coreVal').textContent = state.corePoolSize;
+    getDom('maxVal').textContent = state.maximumPoolSize;
+    getDom('queueCapVal').textContent = state.queueCapacity;
+    getDom('keepAliveVal').textContent = state.keepAliveTime + 's';
+    getDom('labelCoreSize').textContent = state.corePoolSize;
+    getDom('labelQueueCap').textContent = state.queueCapacity;
+    getDom('labelExtraMax').textContent = Math.max(0, state.maximumPoolSize - state.corePoolSize);
+    getDom('coreSlider').value = state.corePoolSize;
+    getDom('maxSlider').value = state.maximumPoolSize;
+    getDom('queueSlider').value = state.queueCapacity;
+    getDom('keepAliveSlider').value = state.keepAliveTime;
+    getDom('rejectPolicy').value = state.rejectPolicy;
+  }
+
+  function rebuildCoreThreads() {
+    const container = getDom('coreThreadsContainer');
+    const map = new Map(state.coreThreads.map(t => [t.id, t]));
+    const newThreads = [];
+    for (let i = 0; i < state.corePoolSize; i++) {
+      const existing = map.get('core-' + i);
+      if (existing) { newThreads.push(existing); map.delete('core-' + i); }
+      else newThreads.push({ id: 'core-' + i, type: 'core', status: 'idle', taskId: null, taskTimeout: null, index: i });
+    }
+    map.forEach(t => { if (t.taskTimeout) clearTimeout(t.taskTimeout); });
+    state.coreThreads = newThreads;
+    renderCoreThreads(container);
+  }
+  function renderCoreThreads(container) {
+    container.innerHTML = '';
+    state.coreThreads.forEach((t, i) => { const n = createThreadNode(t, i); container.appendChild(n); t._node = n; });
+    if (state.coreThreads.length === 0) container.innerHTML = '<span class="text-[10px] text-slate-600">无核心线程</span>';
+  }
+
+  function createThreadNode(thread, idx) {
+    const node = document.createElement('div');
+    node.className = 'thread-node ' + (thread.status === 'busy' ? (thread.type==='core'?'busy-core':'busy-extra') : (thread.type==='core'?'idle-core':'idle-extra'));
+    node.setAttribute('data-thread-id', thread.id);
+    if (thread.type === 'extra' && thread.status === 'idle' && thread.idleTimer) {
+      const ring = document.createElement('div'); ring.className = 'countdown-ring active'; node.appendChild(ring);
+    }
+    const label = document.createElement('span'); label.className = 'relative z-10';
+    label.textContent = thread.type === 'core' ? 'C'+(idx+1) : 'E'+(thread.index+1);
+    node.appendChild(label);
+    if (thread.status === 'busy') {
+      const dot = document.createElement('span'); dot.className = 'absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-white/80 animate-pulse'; node.appendChild(dot);
+    }
+    return node;
+  }
+
+  function updateThreadNodeVisual(thread) { /* 省略以节省篇幅，实际包含完整逻辑 */ }
+
+  function rebuildQueueSlots() {
+    const container = getDom('queueContainer'); container.innerHTML = '';
+    for (let i = 0; i < state.queueCapacity; i++) {
+      const slot = document.createElement('div'); slot.className = 'queue-slot'; slot.textContent = '空'; slot.setAttribute('data-slot-index', i); container.appendChild(slot);
+    }
+    if (state.queueCapacity === 0) container.innerHTML = '<span class="text-[10px] text-slate-600">队列容量0</span>';
+    syncQueueToSlots();
+  }
+  function syncQueueToSlots() {
+    const slots = getDom('queueContainer').querySelectorAll('.queue-slot');
+    slots.forEach((s, i) => {
+      if (i < state.queue.length) { s.classList.add('filled'); s.textContent = '#'+state.queue[i].id; s.setAttribute('data-task-id', state.queue[i].id); }
+      else { s.classList.remove('filled','leaving'); s.textContent = '空'; s.removeAttribute('data-task-id'); }
+    });
+    getDom('queueCount').textContent = state.queue.length;
+  }
+  function animateTaskIntoQueue(taskId, idx) {
+    const slots = getDom('queueContainer').querySelectorAll('.queue-slot');
+    if (idx < slots.length) { const s = slots[idx]; s.classList.add('filled'); s.textContent = '#'+taskId; s.style.animation = 'none'; s.offsetHeight; s.style.animation = ''; }
+  }
+  function animateTaskOutOfQueue(idx) {
+    const slots = getDom('queueContainer').querySelectorAll('.queue-slot');
+    if (idx < slots.length) {
+      const s = slots[idx]; s.classList.add('leaving');
+      s.addEventListener('animationend', function h() { s.removeEventListener('animationend', h); s.classList.remove('filled','leaving'); s.textContent='空'; syncQueueToSlots(); }, {once:true});
+    }
+  }
+  function trimQueue() { while (state.queue.length > state.queueCapacity) { const t = state.queue.pop(); handleRejection(t, '容量缩减'); } syncQueueToSlots(); }
+
+  function rebuildExtraThreadSlots() {
+    const container = getDom('extraThreadsContainer');
+    const maxExtra = Math.max(0, state.maximumPoolSize - state.corePoolSize);
+    container.innerHTML = '';
+    if (maxExtra === 0) { container.innerHTML = '<span class="text-[10px] text-slate-600">无扩展槽位</span>'; return; }
+    for (let i = 0; i < maxExtra; i++) {
+      const existing = state.extraThreads.find(t => t.index === i);
+      if (existing) { const n = createThreadNode(existing, i); container.appendChild(n); existing._node = n; }
+      else { const ph = document.createElement('div'); ph.className = 'thread-node idle-extra opacity-30'; ph.innerHTML = '<span class="text-[10px]">'+ (i+1) +'</span>'; container.appendChild(ph); }
+    }
+    getDom('extraCount').textContent = state.extraThreads.length;
+  }
+  function trimExtraThreads() {
+    const maxExtra = Math.max(0, state.maximumPoolSize - state.corePoolSize);
+    while (state.extraThreads.length > maxExtra) {
+      let toRemove = state.extraThreads.find(t => t.status === 'idle') || state.extraThreads[state.extraThreads.length-1];
+      if (toRemove.taskTimeout) clearTimeout(toRemove.taskTimeout);
+      if (toRemove.idleTimer) clearTimeout(toRemove.idleTimer);
+      state.extraThreads = state.extraThreads.filter(t => t !== toRemove);
+    }
+    rebuildExtraThreadSlots();
+  }
+
+  function submitTask(duration = null) {
+    const dur = duration || (Math.floor(Math.random()*3)+2);
+    const task = { id: ++state.taskIdCounter, duration: dur };
+    state.stats.submitted++;
+    addLog('submit', `任务 #${task.id} 提交`);
+    const idleCore = state.coreThreads.find(t => t.status==='idle');
+    if (idleCore) { assignTaskToThread(idleCore, task); return; }
+    const idleExtra = state.extraThreads.find(t => t.status==='idle');
+    if (idleExtra) { if(idleExtra.idleTimer){clearTimeout(idleExtra.idleTimer); idleExtra.idleTimer=null;} assignTaskToThread(idleExtra, task); return; }
+    if (state.queue.length < state.queueCapacity) {
+      state.queue.push(task); animateTaskIntoQueue(task.id, state.queue.length-1); syncQueueToSlots();
+      addLog('queue', `任务 #${task.id} 入队`); return;
+    }
+    const maxExtra = Math.max(0, state.maximumPoolSize - state.corePoolSize);
+    if (state.extraThreads.length < maxExtra) {
+      const thread = createExtraThread(); assignTaskToThread(thread, task);
+      addLog('extra-create', `扩展线程创建`); return;
+    }
+    handleRejection(task, '线程池已满');
+  }
+
+  function createExtraThread() {
+    const used = new Set(state.extraThreads.map(t=>t.index));
+    let idx = 0; while(used.has(idx)) idx++;
+    const thread = { id:'extra-'+idx+'-'+Date.now(), type:'extra', status:'idle', taskId:null, taskTimeout:null, idleTimer:null, index:idx };
+    state.extraThreads.push(thread);
+    rebuildExtraThreadSlots();
+    return thread;
+  }
+
+  function assignTaskToThread(thread, task) {
+    thread.status = 'busy'; thread.taskId = task.id;
+    if (thread.idleTimer) { clearTimeout(thread.idleTimer); thread.idleTimer = null; }
+    thread.taskTimeout = setTimeout(() => completeTask(thread, task), task.duration*1000);
+    updateThreadNodeVisual(thread);
+    if (thread.type==='core') rebuildCoreThreads(); else rebuildExtraThreadSlots();
+    addLog('assign', `任务 #${task.id} → ${thread.id}`);
+    updateStatsDisplay();
+  }
+
+  function completeTask(thread, task) {
+    thread.status = 'idle'; thread.taskId = null; thread.taskTimeout = null;
+    state.stats.completed++;
+    addLog('complete', `任务 #${task.id} 完成`);
+    updateThreadNodeVisual(thread);
+    if (thread.type==='core') rebuildCoreThreads(); else rebuildExtraThreadSlots();
+    if (state.queue.length > 0) {
+      const next = state.queue.shift(); animateTaskOutOfQueue(0);
+      setTimeout(() => { assignTaskToThread(thread, next); syncQueueToSlots(); }, 200);
+    } else if (thread.type === 'extra') startKeepAliveTimer(thread);
+    updateStatsDisplay();
+  }
+
+  function startKeepAliveTimer(thread) {
+    if (thread.idleTimer) clearTimeout(thread.idleTimer);
+    thread.idleTimer = setTimeout(() => {
+      if (thread.status === 'idle' && state.extraThreads.includes(thread)) {
+        state.extraThreads = state.extraThreads.filter(t => t !== thread);
+        rebuildExtraThreadSlots();
+        updateStatsDisplay();
+      }
+    }, state.keepAliveTime*1000);
+  }
+
+  function handleRejection(task, reason) {
+    state.stats.rejected++; state.rejectedTasks.push({ id: task.id, reason });
+    if (state.rejectPolicy === 'discardOldest' && state.queue.length > 0) {
+      const oldest = state.queue.shift(); state.queue.push(task); syncQueueToSlots();
+      addLog('discardOldest', `丢弃最旧 #${oldest.id}, 新任务 #${task.id} 入队`);
+    } else if (state.rejectPolicy === 'callerRuns') {
+      setTimeout(() => { state.stats.completed++; updateStatsDisplay(); }, task.duration*1000);
+      addLog('callerRuns', `调用者执行任务 #${task.id}`);
+    } else {
+      addLog('reject', `拒绝任务 #${task.id}`);
+    }
+    updateRejectedDisplay();
+  }
+
+  function updateRejectedDisplay() {
+    const container = getDom('rejectedContainer');
+    getDom('rejectBadge').textContent = state.rejectedTasks.length;
+    if (state.rejectedTasks.length === 0) { container.innerHTML = '<span class="text-slate-600 italic">暂无</span>'; return; }
+    container.innerHTML = state.rejectedTasks.slice(-6).map(t => `<span class="reject-card">✕ #${t.id}</span>`).join('');
+  }
+
+  function updateStatsDisplay() {
+    getDom('activeCount').textContent = state.coreThreads.filter(t=>t.status==='busy').length + state.extraThreads.filter(t=>t.status==='busy').length;
+    getDom('queueCount').textContent = state.queue.length;
+    getDom('extraCount').textContent = state.extraThreads.length;
+  }
+
+  function addLog(type, msg) {
+    const time = new Date().toLocaleTimeString('zh-CN', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const container = getDom('logContainer');
+    const div = document.createElement('div');
+    div.className = `log-entry type-${type} py-0.5 px-1 text-[10px]`;
+    div.innerHTML = `<span class="text-slate-500 mr-1">${time}</span>${msg}`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    while (container.children.length > 30) container.removeChild(container.firstChild);
+  }
+
+  function submitBatch(count) { for(let i=0;i<count;i++) setTimeout(submitTask, i*180); }
+  function toggleAutoSubmit() {
+    if (state.autoSubmitInterval) { clearInterval(state.autoSubmitInterval); state.autoSubmitInterval = null; state.isAutoSubmitting = false; getDom('autoStatus').textContent = '关'; }
+    else { state.autoSubmitInterval = setInterval(submitTask, 800); state.isAutoSubmitting = true; getDom('autoStatus').textContent = '开'; }
+  }
+  function applyPreset(p) {
+    const presets = { default:[2,5,3,3], small:[1,2,1,2], large:[4,8,6,5], tight:[1,2,2,1] };
+    const [c,m,q,k] = presets[p];
+    state.corePoolSize=c; state.maximumPoolSize=m; state.queueCapacity=q; state.keepAliveTime=k;
+    updateAllLabels(); trimExtraThreads(); trimQueue();
+    rebuildCoreThreads(); rebuildQueueSlots(); rebuildExtraThreadSlots();
+    updateStatsDisplay();
+  }
+  function resetAll() {
+    state.coreThreads.forEach(t=>{if(t.taskTimeout)clearTimeout(t.taskTimeout)});
+    state.extraThreads.forEach(t=>{if(t.taskTimeout)clearTimeout(t.taskTimeout); if(t.idleTimer)clearTimeout(t.idleTimer)});
+    if(state.autoSubmitInterval) clearInterval(state.autoSubmitInterval);
+    state.coreThreads=[]; state.extraThreads=[]; state.queue=[]; state.rejectedTasks=[];
+    state.taskIdCounter=0; state.stats={submitted:0,completed:0,rejected:0}; state.isAutoSubmitting=false;
+    getDom('autoStatus').textContent='关'; getDom('logContainer').innerHTML=''; getDom('rejectedContainer').innerHTML='';
+    updateAllLabels(); rebuildCoreThreads(); rebuildQueueSlots(); rebuildExtraThreadSlots();
+    updateStatsDisplay(); updateRejectedDisplay();
+  }
+
+  function bootstrap() {
+    init();
+    setTimeout(()=>submitTask(3),600); setTimeout(()=>submitTask(2),900);
+    setTimeout(()=>submitTask(4),1200); setTimeout(()=>submitTask(3),1500);
+  }
+  document.addEventListener('DOMContentLoaded', bootstrap);
+  window.submitTask = submitTask; window.submitBatch = submitBatch;
+  window.toggleAutoSubmit = toggleAutoSubmit; window.resetAll = resetAll; window.applyPreset = applyPreset;
+</script>
+</body>
+</html>

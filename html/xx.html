@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReentrantLock · 重入/公平/条件 可视化演示</title>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <style>
+        :root {
+            --bg-deep: #0a0e17;
+            --accent-cyan: #22d3ee;
+            --accent-purple: #a855f7;
+            --accent-pink: #ec4899;
+            --accent-amber: #f59e0b;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --glass-bg: rgba(15, 20, 30, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.04);
+        }
+
+        @keyframes floatParticle {
+            0%,
+            100% {
+                transform: translateY(0) translateX(0);
+                opacity: 0.3;
+            }
+            25% {
+                transform: translateY(-30px) translateX(15px);
+                opacity: 0.7;
+            }
+            50% {
+                transform: translateY(-15px) translateX(-10px);
+                opacity: 0.5;
+            }
+            75% {
+                transform: translateY(-40px) translateX(5px);
+                opacity: 0.8;
+            }
+        }
+
+        @keyframes pulseGlow {
+            0%,
+            100% {
+                box-shadow: 0 0 8px rgba(34, 211, 238, 0.3), 0 0 20px rgba(34, 211, 238, 0.1);
+            }
+            50% {
+                box-shadow: 0 0 20px rgba(34, 211, 238, 0.6), 0 0 45px rgba(34, 211, 238, 0.25);
+            }
+        }
+
+        @keyframes casFlash {
+            0% {
+                filter: brightness(1);
+                box-shadow: 0 0 0px rgba(245, 158, 11, 0);
+            }
+            30% {
+                filter: brightness(2.5);
+                box-shadow: 0 0 40px rgba(245, 158, 11, 0.9), 0 0 80px rgba(245, 158, 11, 0.4);
+            }
+            100% {
+                filter: brightness(1);
+                box-shadow: 0 0 0px rgba(245, 158, 11, 0);
+            }
+        }
+
+        @keyframes slideInFromRight {
+            0% {
+                transform: translateX(80px);
+                opacity: 0;
+            }
+            60% {
+                transform: translateX(-8px);
+                opacity: 1;
+            }
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInFromTop {
+            0% {
+                transform: translateY(-60px);
+                opacity: 0;
+            }
+            60% {
+                transform: translateY(8px);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes wakeUpPulse {
+            0% {
+                box-shadow: 0 0 0px rgba(16, 185, 129, 0);
+                transform: scale(1);
+            }
+            30% {
+                box-shadow: 0 0 35px rgba(16, 185, 129, 0.8), 0 0 60px rgba(16, 185, 129, 0.3);
+                transform: scale(1.06);
+            }
+            70% {
+                box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+                transform: scale(1.02);
+            }
+            100% {
+                box-shadow: 0 0 0px rgba(16, 185, 129, 0);
+                transform: scale(1);
+            }
+        }
+
+        @keyframes shimmerBtn {
+            0% {
+                background-position: -200% center;
+            }
+            100% {
+                background-position: 200% center;
+            }
+        }
+
+        @keyframes arrowFlow {
+            0% {
+                stroke-dashoffset: 24;
+            }
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes transferBetweenQueues {
+            0% {
+                transform: scale(1) translateY(0);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.15) translateY(-20px);
+                opacity: 0.7;
+            }
+            100% {
+                transform: scale(1) translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: floatParticle var(--duration) ease-in-out infinite;
+            animation-delay: var(--delay);
+        }
+
+        .glass {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 var(--glass-highlight);
+        }
+
+        .glass-heavy {
+            background: rgba(12, 16, 24, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-shimmer {
+            background: linear-gradient(110deg,
+            transparent 0%,
+            transparent 25%,
+            rgba(255, 255, 255, 0.08) 35%,
+            rgba(255, 255, 255, 0.15) 45%,
+            rgba(255, 255, 255, 0.08) 55%,
+            transparent 65%,
+            transparent 100%);
+            background-size: 200% 100%;
+            transition: all 0.3s ease;
+        }
+        .btn-shimmer:hover {
+            animation: shimmerBtn 1.5s ease-in-out infinite;
+            box-shadow: 0 0 25px rgba(34, 211, 238, 0.5), 0 0 50px rgba(34, 211, 238, 0.2);
+        }
+        .btn-shimmer:active {
+            transform: scale(0.95);
+            transition: transform 0.1s ease;
+        }
+
+        .btn-release-shimmer {
+            background: linear-gradient(110deg,
+            transparent 0%,
+            transparent 25%,
+            rgba(255, 255, 255, 0.08) 35%,
+            rgba(255, 255, 255, 0.15) 45%,
+            rgba(255, 255, 255, 0.08) 55%,
+            transparent 65%,
+            transparent 100%);
+            background-size: 200% 100%;
+            transition: all 0.3s ease;
+        }
+        .btn-release-shimmer:hover {
+            animation: shimmerBtn 1.5s ease-in-out infinite;
+            box-shadow: 0 0 25px rgba(168, 85, 247, 0.5), 0 0 50px rgba(168, 85, 247, 0.2);
+        }
+        .btn-release-shimmer:active {
+            transform: scale(0.95);
+        }
+
+        .btn-cond-shimmer {
+            background: linear-gradient(110deg,
+            transparent 0%,
+            transparent 25%,
+            rgba(255, 255, 255, 0.07) 35%,
+            rgba(255, 255, 255, 0.12) 45%,
+            rgba(255, 255, 255, 0.07) 55%,
+            transparent 65%,
+            transparent 100%);
+            background-size: 200% 100%;
+            transition: all 0.3s ease;
+        }
+        .btn-cond-shimmer:hover {
+            animation: shimmerBtn 1.5s ease-in-out infinite;
+            box-shadow: 0 0 20px rgba(236, 72, 153, 0.4), 0 0 40px rgba(236, 72, 153, 0.15);
+        }
+
+        .node-card {
+            transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            cursor: default;
+        }
+        .node-card.slide-in {
+            animation: slideInFromRight 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+        .node-card.slide-in-top {
+            animation: slideInFromTop 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+        .node-card.cas-flash {
+            animation: casFlash 0.7s ease-out;
+        }
+        .node-card.wake-up {
+            animation: wakeUpPulse 0.8s ease-out;
+        }
+        .node-card.transfer-anim {
+            animation: transferBetweenQueues 0.6s ease-in-out;
+        }
+
+        .arrow-line {
+            transition: all 0.5s ease;
+        }
+
+        .log-entry {
+            animation: slideInFromRight 0.4s ease-out;
+        }
+
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+        }
+        *::-webkit-scrollbar {
+            height: 4px;
+            width: 4px;
+        }
+        *::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        *::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center overflow-hidden"
+      style="background: radial-gradient(ellipse at 30% 20%, #0f1a2e 0%, #0a0e17 40%, #0d1117 70%, #060a10 100%);">
+
+<!-- 浮动粒子背景 -->
+<div class="fixed inset-0 pointer-events-none z-0" id="particlesContainer"></div>
+
+<!-- 网格线背景 -->
+<div class="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
+     style="background-image: linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px); background-size: 40px 40px;">
+</div>
+
+<!-- 主布局：垂直排列，单页无滚动 -->
+<div class="relative z-10 w-full max-w-[1300px] mx-auto px-4 py-2 flex flex-col items-center justify-between"
+     style="height: 100vh; max-height: 100vh;">
+
+    <!-- 顶部：标题 + 模式切换 + 状态面板 -->
+    <div class="flex-shrink-0 w-full max-w-[1100px] mb-2 flex items-center gap-4 flex-wrap justify-between">
+        <div class="glass-heavy rounded-2xl px-5 py-2.5 flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                     style="background: linear-gradient(135deg, #1e3a5f, #0f2240); border: 1px solid rgba(34,211,238,0.3);">
+                    <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold text-white tracking-wide leading-tight">
+                        ReentrantLock <span class="text-cyan-400">·</span> 可视化演示
+                    </h1>
+                    <p class="text-[10px] text-slate-400">重入 · 公平/非公平 · Condition</p>
+                </div>
+            </div>
+            <!-- 模式切换 -->
+            <div class="flex rounded-xl overflow-hidden border border-white/10">
+                <button id="btnFair" class="px-3 py-1.5 text-xs font-semibold transition-all duration-300"
+                        style="background: rgba(34,211,238,0.15); color: #22d3ee;">公平锁</button>
+                <button id="btnNonFair" class="px-3 py-1.5 text-xs font-semibold transition-all duration-300"
+                        style="background: transparent; color: #94a3b8;">非公平锁</button>
+            </div>
+        </div>
+        <!-- 状态卡片 -->
+        <div class="flex items-center gap-3 flex-shrink-0">
+            <div class="glass rounded-xl px-4 py-2 flex items-center gap-2.5">
+                <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">State</span>
+                <span id="stateValue"
+                      class="text-2xl font-bold transition-all duration-500"
+                      style="font-variant-numeric: tabular-nums;">0</span>
+            </div>
+            <div class="glass rounded-xl px-4 py-2 flex items-center gap-2.5">
+                <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">重入计数</span>
+                <span id="holdCount"
+                      class="text-2xl font-bold text-cyan-400 transition-all duration-500">0</span>
+            </div>
+            <div class="glass rounded-xl px-4 py-2 flex items-center gap-2.5">
+                <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">持有者</span>
+                <span id="ownerLabel" class="text-sm font-semibold text-emerald-400 transition-all duration-300">无</span>
+            </div>
+            <div class="glass rounded-xl px-4 py-2 flex items-center gap-2.5">
+                <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">模式</span>
+                <span id="modeLabel" class="text-sm font-semibold text-amber-400 transition-all duration-300">公平</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 中央区域：Sync Queue 和 Condition Queue -->
+    <div class="flex-1 w-full max-w-[1100px] flex flex-col gap-2 min-h-0 my-1">
+        <!-- Sync Queue -->
+        <div class="glass-heavy rounded-2xl p-4 flex flex-col" style="flex: 1.2;">
+            <div class="flex items-center gap-2 mb-2 flex-shrink-0">
+                <div class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                <span class="text-xs text-slate-400 uppercase tracking-[0.15em] font-semibold">Sync Queue (CLH) · 等待锁</span>
+            </div>
+            <div class="flex-1 flex items-center justify-center overflow-x-auto py-2" id="syncQueueContainer"
+                 style="min-height: 130px;">
+                <div id="syncEmptyHint"
+                     class="text-slate-500 text-sm flex flex-col items-center gap-2 transition-opacity duration-500">
+                    <svg class="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                    </svg>
+                    <span class="opacity-50">同步队列为空</span>
+                </div>
+            </div>
+        </div>
+        <!-- Condition Queue -->
+        <div class="glass-heavy rounded-2xl p-4 flex flex-col" style="flex: 1;">
+            <div class="flex items-center gap-2 mb-2 flex-shrink-0">
+                <div class="w-2 h-2 rounded-full bg-pink-400 animate-pulse"></div>
+                <span class="text-xs text-slate-400 uppercase tracking-[0.15em] font-semibold">Condition Queue · 等待条件</span>
+            </div>
+            <div class="flex-1 flex items-center justify-center overflow-x-auto py-2" id="condQueueContainer"
+                 style="min-height: 90px;">
+                <div id="condEmptyHint"
+                     class="text-slate-500 text-sm flex flex-col items-center gap-2 transition-opacity duration-500">
+                    <svg class="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <span class="opacity-50">条件队列为空</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部：控制按钮 + 日志 -->
+    <div class="flex-shrink-0 w-full max-w-[1100px] flex flex-col gap-2 mb-1">
+        <!-- 操作按钮区 -->
+        <div class="glass-heavy rounded-2xl px-5 py-3 flex flex-wrap items-center gap-3 justify-center">
+            <!-- 线程选择 -->
+            <div class="flex rounded-xl overflow-hidden border border-white/10 mr-1">
+                <button data-thread="Thread-1" class="thread-select px-3 py-1.5 text-xs font-semibold transition-all duration-300"
+                        style="background: rgba(34,211,238,0.15); color: #22d3ee;">Thread-1</button>
+                <button data-thread="Thread-2" class="thread-select px-3 py-1.5 text-xs font-semibold transition-all duration-300"
+                        style="background: transparent; color: #94a3b8;">Thread-2</button>
+                <button data-thread="Thread-3" class="thread-select px-3 py-1.5 text-xs font-semibold transition-all duration-300"
+                        style="background: transparent; color: #94a3b8;">Thread-3</button>
+            </div>
+            <!-- 操作按钮 -->
+            <button id="btnLock"
+                    class="btn-shimmer relative px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 flex items-center gap-2"
+                    style="background: linear-gradient(135deg, #1a3a4a, #0f2840); border: 1px solid rgba(34,211,238,0.35);">
+                <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Lock
+            </button>
+            <button id="btnUnlock"
+                    class="btn-release-shimmer relative px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 flex items-center gap-2"
+                    style="background: linear-gradient(135deg, #2a1a3e, #1a0f2e); border: 1px solid rgba(168,85,247,0.4);">
+                <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                </svg>
+                Unlock
+            </button>
+            <div class="w-px h-8 mx-1 rounded-full" style="background: rgba(255,255,255,0.1);"></div>
+            <button id="btnAwait"
+                    class="btn-cond-shimmer relative px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 flex items-center gap-2"
+                    style="background: linear-gradient(135deg, #3a1a2e, #2e0f1e); border: 1px solid rgba(236,72,153,0.4);">
+                <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                await()
+            </button>
+            <button id="btnSignal"
+                    class="btn-cond-shimmer relative px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 flex items-center gap-2"
+                    style="background: linear-gradient(135deg, #3a1a2e, #2e0f1e); border: 1px solid rgba(236,72,153,0.4);">
+                <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                signal()
+            </button>
+            <button id="btnReset"
+                    class="relative px-4 py-2.5 rounded-xl font-semibold text-sm text-slate-300 transition-all duration-300 flex items-center gap-2"
+                    style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.15);"
+                    onmouseover="this.style.boxShadow='0 0 20px rgba(255,255,255,0.2)'"
+                    onmouseout="this.style.boxShadow='none'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                重置
+            </button>
+        </div>
+        <!-- 日志区 -->
+        <div class="glass rounded-2xl px-4 py-2.5 w-full overflow-y-auto" style="max-height: 85px;" id="logContainer">
+            <div class="flex items-center gap-2 mb-1 sticky top-0 bg-transparent z-10">
+                <div class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                <span class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Event Log</span>
+            </div>
+            <div id="logEntries" class="space-y-0.5 text-xs font-mono">
+                <div class="text-slate-500 text-[11px]">⏳ 选择线程并操作，观察锁重入、队列及条件等待流程</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+  (function() {
+    // ============ 粒子背景 ============
+    const particlesContainer = document.getElementById('particlesContainer');
+    for (let i = 0; i < 40; i++) {
+      const particle = document.createElement('div');
+      particle.className = 'particle';
+      const size = Math.random() * 3 + 1.5;
+      particle.style.width = size + 'px';
+      particle.style.height = size + 'px';
+      particle.style.left = Math.random() * 100 + '%';
+      particle.style.top = Math.random() * 100 + '%';
+      particle.style.setProperty('--duration', (Math.random() * 8 + 6) + 's');
+      particle.style.setProperty('--delay', (Math.random() * 5) + 's');
+      const colors = ['rgba(34,211,238,0.7)', 'rgba(168,85,247,0.6)', 'rgba(236,72,153,0.5)',
+        'rgba(245,158,11,0.5)', 'rgba(16,185,129,0.5)'
+      ];
+      particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+      particlesContainer.appendChild(particle);
+    }
+
+    // ============ ReentrantLock 模拟器 ============
+    const WAIT_STATUS = { DEFAULT: 0, SIGNAL: -1, CANCELLED: 1, CONDITION: -2, PROPAGATE: -3 };
+
+    class Node {
+      constructor(threadName, waitStatus = 0) {
+        this.id = 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        this.thread = threadName;
+        this.waitStatus = waitStatus;
+        this.prev = null;
+        this.next = null;
+        this.nextWaiter = null; // 用于条件队列的单链表
+        this._parked = false;
+      }
+    }
+
+    class ReentrantLockSimulator {
+      constructor(fair = true) {
+        this.fair = fair;
+        this.state = 0;
+        this.owner = null;
+        this.holdCount = 0;
+        this.head = null; // sync queue head (dummy)
+        this.tail = null;
+        this.firstWaiter = null; // condition queue头
+        this.lastWaiter = null;
+        this.listeners = [];
+      }
+
+      subscribe(fn) { this.listeners.push(fn); }
+
+      notify(event) { this.listeners.forEach(fn => fn(event)); }
+
+      // CAS state
+      compareAndSetState(expect, update) {
+        if (this.state === expect) {
+          this.state = update;
+          this.notify({ type: 'CAS_SUCCESS', target: 'state', expect, update });
+          return true;
+        }
+        this.notify({ type: 'CAS_FAIL', target: 'state', expect, update, actual: this.state });
+        return false;
+      }
+
+      // 是否有前驱节点（公平锁判断用）
+      hasQueuedPredecessors() {
+        const h = this.head;
+        const t = this.tail;
+        const s = h ? h.next : null;
+        // 如果head.next存在且其线程不是当前线程（但这里我们仅判断队列中是否有等待者）
+        // 简化：只要队列中有等待的节点（head.next非空且其线程不为当前模拟线程），返回true
+        // 实际实现中，hasQueuedPredecessors需要检查head.next是否为当前线程，这里我们简化为head != tail
+        return h !== t && (s === null || s.thread !== this._currentThread);
+      }
+
+      // 公平锁的tryAcquire
+      tryAcquireFair(thread) {
+        const c = this.state;
+        if (c === 0) {
+          if (!this.hasQueuedPredecessors() && this.compareAndSetState(0, 1)) {
+            this.setExclusiveOwner(thread);
+            this.notify({ type: 'ACQUIRE_SUCCESS', thread, holdCount: this.holdCount });
+            return true;
+          }
+        } else if (thread === this.owner) {
+          // 重入
+          const nextc = c + 1;
+          this.state = nextc;
+          this.holdCount++;
+          this.notify({ type: 'REENTRANT_SUCCESS', thread, holdCount: this.holdCount, state: nextc });
+          return true;
+        }
+        this.notify({ type: 'ACQUIRE_FAIL', thread });
+        return false;
+      }
+
+      // 非公平锁的tryAcquire
+      tryAcquireNonFair(thread) {
+        const c = this.state;
+        if (c === 0) {
+          if (this.compareAndSetState(0, 1)) {
+            this.setExclusiveOwner(thread);
+            this.notify({ type: 'ACQUIRE_SUCCESS', thread, holdCount: this.holdCount });
+            return true;
+          }
+        } else if (thread === this.owner) {
+          const nextc = c + 1;
+          this.state = nextc;
+          this.holdCount++;
+          this.notify({ type: 'REENTRANT_SUCCESS', thread, holdCount: this.holdCount, state: nextc });
+          return true;
+        }
+        this.notify({ type: 'ACQUIRE_FAIL', thread });
+        return false;
+      }
+
+      tryAcquire(thread) {
+        return this.fair ? this.tryAcquireFair(thread) : this.tryAcquireNonFair(thread);
+      }
+
+      setExclusiveOwner(thread) {
+        this.owner = thread;
+        this.holdCount = 1;
+      }
+
+      // 释放逻辑
+      tryRelease(thread) {
+        if (thread !== this.owner) {
+          this.notify({ type: 'RELEASE_FAIL_NOT_OWNER', thread, owner: this.owner });
+          return false;
+        }
+        const c = this.state - 1;
+        if (c === 0) {
+          this.owner = null;
+          this.holdCount = 0;
+        } else {
+          this.holdCount--;
+        }
+        this.state = c;
+        this.notify({ type: 'RELEASE_SUCCESS', thread, newState: c, holdCount: this.holdCount });
+        return true;
+      }
+
+      // 入队sync队列
+      enq(node) {
+        this.notify({ type: 'ENQ_START', nodeId: node.id, thread: node.thread });
+        while (true) {
+          let t = this.tail;
+          if (t === null) {
+            const dummy = new Node(null, 0);
+            dummy.id = 'dummy_head';
+            if (this.compareAndSetHead(dummy)) {
+              this.tail = this.head;
+              this.notify({ type: 'ENQ_INIT_DUMMY', dummyId: dummy.id });
+            }
+          } else {
+            node.prev = t;
+            if (this.compareAndSetTail(t, node)) {
+              t.next = node;
+              this.notify({ type: 'ENQ_SUCCESS', nodeId: node.id, thread: node.thread,
+                predId: t.id });
+              return t;
+            }
+          }
+        }
+      }
+
+      compareAndSetHead(update) {
+        if (this.head === null) {
+          this.head = update;
+          this.notify({ type: 'CAS_HEAD_SUCCESS', nodeId: update.id });
+          return true;
+        }
+        return false;
+      }
+
+      compareAndSetTail(expect, update) {
+        if (this.tail === expect) {
+          this.tail = update;
+          this.notify({ type: 'CAS_TAIL_SUCCESS', nodeId: update.id });
+          return true;
+        }
+        this.notify({ type: 'CAS_TAIL_FAIL', nodeId: update.id });
+        return false;
+      }
+
+      addWaiter(thread) {
+        const node = new Node(thread, 0);
+        this.notify({ type: 'ADD_WAITER', nodeId: node.id, thread });
+        let pred = this.tail;
+        if (pred !== null) {
+          node.prev = pred;
+          if (this.compareAndSetTail(pred, node)) {
+            pred.next = node;
+            this.notify({ type: 'ADD_WAITER_FAST_PATH', nodeId: node.id, thread, predId: pred.id });
+            return node;
+          }
+        }
+        this.enq(node);
+        return node;
+      }
+
+      setHead(node) {
+        const oldHead = this.head;
+        this.head = node;
+        node.thread = null;
+        node.prev = null;
+        this.notify({ type: 'SET_HEAD', nodeId: node.id, oldHeadId: oldHead ? oldHead.id : 'null' });
+      }
+
+      shouldParkAfterFailedAcquire(pred, node) {
+        let ws = pred.waitStatus;
+        if (ws === WAIT_STATUS.SIGNAL) {
+          this.notify({ type: 'SHOULD_PARK_TRUE', nodeId: node.id });
+          return true;
+        }
+        if (ws > 0) {
+          do {
+            node.prev = pred = pred.prev;
+          } while (pred !== null && pred.waitStatus > 0);
+          if (pred) pred.next = node;
+          this.notify({ type: 'SKIP_CANCELLED', nodeId: node.id });
+          return false;
+        } else {
+          this.compareAndSetWaitStatus(pred, ws, WAIT_STATUS.SIGNAL);
+          this.notify({ type: 'SET_SIGNAL', predId: pred.id, nodeId: node.id });
+          return false;
+        }
+      }
+
+      compareAndSetWaitStatus(node, expect, update) {
+        if (node.waitStatus === expect) {
+          node.waitStatus = update;
+          this.notify({ type: 'CAS_WAITSTATUS_SUCCESS', nodeId: node.id, expect, update });
+          return true;
+        }
+        this.notify({ type: 'CAS_WAITSTATUS_FAIL', nodeId: node.id });
+        return false;
+      }
+
+      unparkSuccessor(node) {
+        let ws = node.waitStatus;
+        if (ws < 0) this.compareAndSetWaitStatus(node, ws, 0);
+        let s = node.next;
+        if (s === null || s.waitStatus > 0) {
+          s = null;
+          for (let t = this.tail; t !== null && t !== node; t = t.prev) {
+            if (t.waitStatus <= 0) s = t;
+          }
+        }
+        if (s !== null) {
+          s._parked = false;
+          this.notify({ type: 'UNPARK_SUCCESSOR', fromNodeId: node.id, successorId: s.id,
+            successorThread: s.thread });
+          return s;
+        }
+        this.notify({ type: 'UNPARK_NO_SUCCESSOR', fromNodeId: node.id });
+        return null;
+      }
+
+      // 主锁获取流程
+      lock(thread) {
+        this._currentThread = thread;
+        this.notify({ type: 'LOCK_START', thread });
+        if (!this.tryAcquire(thread)) {
+          const node = this.addWaiter(thread);
+          this.acquireQueued(node, thread);
+          return node;
+        }
+        return null;
+      }
+
+      acquireQueued(node, thread) {
+        this.notify({ type: 'ACQUIRE_QUEUED_START', nodeId: node.id, thread });
+        const p = node.prev;
+        if (p === this.head && this.tryAcquire(thread)) {
+          this.setHead(node);
+          if (p) p.next = null;
+          this.notify({ type: 'ACQUIRE_QUEUED_SUCCESS', nodeId: node.id, thread });
+          return;
+        }
+        if (p && this.shouldParkAfterFailedAcquire(p, node)) {
+          if (this.shouldParkAfterFailedAcquire(p, node)) {
+            node._parked = true;
+            this.notify({ type: 'PARK', nodeId: node.id, thread });
+          }
+        }
+      }
+
+      unlock(thread) {
+        this.notify({ type: 'UNLOCK_START', thread });
+        if (this.tryRelease(thread)) {
+          if (this.state === 0) {
+            let h = this.head;
+            if (h !== null && h.waitStatus !== 0) {
+              const unparked = this.unparkSuccessor(h);
+              if (unparked) {
+                this.wakeUpAndAcquire(unparked);
+              }
+            }
+          }
+          return true;
+        }
+        return false;
+      }
+
+      wakeUpAndAcquire(node) {
+        this.notify({ type: 'WAKE_UP_ACQUIRE_START', nodeId: node.id, thread: node.thread });
+        if (this.tryAcquire(node.thread)) {
+          this.setHead(node);
+          const oldPred = node.prev;
+          if (oldPred) oldPred.next = null;
+          this.notify({ type: 'WAKE_UP_ACQUIRE_SUCCESS', nodeId: node.id, thread: node.thread });
+        }
+      }
+
+      // ============ Condition 相关 ============
+      addConditionWaiter(thread) {
+        let t = this.lastWaiter;
+        if (t !== null && t.waitStatus !== WAIT_STATUS.CONDITION) {
+          this.unlinkCancelledWaiters();
+          t = this.lastWaiter;
+        }
+        const node = new Node(thread, WAIT_STATUS.CONDITION);
+        if (t === null) {
+          this.firstWaiter = node;
+        } else {
+          t.nextWaiter = node;
+        }
+        this.lastWaiter = node;
+        this.notify({ type: 'COND_ADD_WAITER', nodeId: node.id, thread });
+        return node;
+      }
+
+      unlinkCancelledWaiters() {
+        let t = this.firstWaiter;
+        let trail = null;
+        while (t !== null) {
+          const next = t.nextWaiter;
+          if (t.waitStatus !== WAIT_STATUS.CONDITION) {
+            t.nextWaiter = null;
+            if (trail === null) this.firstWaiter = next;
+            else trail.nextWaiter = next;
+            if (next === null) this.lastWaiter = trail;
+          } else {
+            trail = t;
+          }
+          t = next;
+        }
+      }
+
+      // await 操作：当前线程必须持有锁，释放锁并进入条件队列等待
+      await(thread) {
+        if (thread !== this.owner) {
+          this.notify({ type: 'AWAIT_FAIL_NOT_OWNER', thread });
+          return;
+        }
+        this.notify({ type: 'AWAIT_START', thread });
+        const node = this.addConditionWaiter(thread);
+        const savedState = this.state;
+        // 完全释放锁（释放所有重入）
+        this.owner = null;
+        this.holdCount = 0;
+        this.state = 0;
+        this.notify({ type: 'AWAIT_RELEASE_LOCK', thread, savedState });
+        // 模拟等待：节点在条件队列中
+        node._parked = true;
+        this.notify({ type: 'AWAIT_PARKED', nodeId: node.id, thread });
+      }
+
+      // signal 操作：将条件队列首节点转移到sync队列
+      signal(thread) {
+        if (thread !== this.owner) {
+          this.notify({ type: 'SIGNAL_FAIL_NOT_OWNER', thread });
+          return;
+        }
+        this.notify({ type: 'SIGNAL_START', thread });
+        const first = this.firstWaiter;
+        if (first !== null) {
+          this.doSignal(first);
+        }
+      }
+
+      doSignal(first) {
+        // 从条件队列移除first并转移到sync队列
+        this.firstWaiter = first.nextWaiter;
+        if (this.firstWaiter === null) this.lastWaiter = null;
+        first.nextWaiter = null;
+        // 转移节点
+        this.notify({ type: 'TRANSFER_FOR_SIGNAL', nodeId: first.id, thread: first.thread });
+        // 模拟transferForSignal：修改waitStatus为0，然后enq
+        first.waitStatus = 0;
+        const p = this.enq(first);
+        // 设置前驱为SIGNAL或唤醒
+        const ws = p.waitStatus;
+        if (ws > 0 || !this.compareAndSetWaitStatus(p, ws, WAIT_STATUS.SIGNAL)) {
+          // 唤醒节点线程
+          first._parked = false;
+          this.notify({ type: 'SIGNAL_WAKEUP', nodeId: first.id, thread: first.thread });
+        }
+      }
+
+      // 获取队列节点列表
+      getSyncQueueNodes() {
+        const nodes = [];
+        let curr = this.head;
+        while (curr !== null) {
+          nodes.push(curr);
+          curr = curr.next;
+        }
+        return nodes;
+      }
+
+      getConditionQueueNodes() {
+        const nodes = [];
+        let curr = this.firstWaiter;
+        while (curr !== null) {
+          nodes.push(curr);
+          curr = curr.nextWaiter;
+        }
+        return nodes;
+      }
+
+      reset() {
+        this.state = 0;
+        this.owner = null;
+        this.holdCount = 0;
+        this.head = null;
+        this.tail = null;
+        this.firstWaiter = null;
+        this.lastWaiter = null;
+        this.notify({ type: 'RESET' });
+      }
+    }
+
+    // ============ UI控制器 ============
+    const simulator = new ReentrantLockSimulator(true); // 默认公平锁
+    let selectedThread = 'Thread-1';
+
+    const syncContainer = document.getElementById('syncQueueContainer');
+    const condContainer = document.getElementById('condQueueContainer');
+    const syncEmptyHint = document.getElementById('syncEmptyHint');
+    const condEmptyHint = document.getElementById('condEmptyHint');
+    const stateValueEl = document.getElementById('stateValue');
+    const holdCountEl = document.getElementById('holdCount');
+    const ownerLabelEl = document.getElementById('ownerLabel');
+    const modeLabelEl = document.getElementById('modeLabel');
+    const logEntriesEl = document.getElementById('logEntries');
+    const logContainer = document.getElementById('logContainer');
+
+    let logLines = [];
+
+    function addLog(text, type = 'info') {
+      const time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit',
+        minute: '2-digit', second: '2-digit' });
+      const colors = {
+        info: 'text-slate-300',
+        success: 'text-emerald-400',
+        fail: 'text-rose-400',
+        cas: 'text-amber-400',
+        park: 'text-cyan-400',
+        wake: 'text-green-300',
+        signal: 'text-purple-400',
+        enq: 'text-sky-400',
+        reentrant: 'text-yellow-400',
+      };
+      const colorClass = colors[type] || colors.info;
+      logLines.unshift(
+        `<div class="log-entry flex gap-2 ${colorClass} text-[11px] leading-relaxed"><span class="text-slate-600 flex-shrink-0">${time}</span><span>${text}</span></div>`
+      );
+      if (logLines.length > 50) logLines.pop();
+      logEntriesEl.innerHTML = logLines.join('');
+      logContainer.scrollTop = 0;
+    }
+
+    function updateStatusPanel() {
+      stateValueEl.textContent = simulator.state;
+      stateValueEl.style.color = simulator.state > 0 ? '#22d3ee' : '#94a3b8';
+      holdCountEl.textContent = simulator.holdCount;
+      holdCountEl.style.color = simulator.holdCount > 0 ? '#22d3ee' : '#94a3b8';
+      ownerLabelEl.textContent = simulator.owner || '无';
+      ownerLabelEl.style.color = simulator.owner ? '#34d399' : '#94a3b8';
+      modeLabelEl.textContent = simulator.fair ? '公平' : '非公平';
+      modeLabelEl.style.color = simulator.fair ? '#f59e0b' : '#a78bfa';
+    }
+
+    function renderSyncQueue(highlightNodeId = null, animType = null) {
+      const nodes = simulator.getSyncQueueNodes();
+      if (nodes.length === 0) {
+        syncContainer.innerHTML = '';
+        syncContainer.appendChild(syncEmptyHint);
+        syncEmptyHint.style.display = 'flex';
+      } else {
+        if (syncEmptyHint.parentNode) syncEmptyHint.style.display = 'none';
+        let html = '';
+        nodes.forEach((node, index) => {
+          const isHead = node === simulator.head;
+          const isTail = node === simulator.tail;
+          const isDummy = node.thread === null;
+          const isParked = node._parked === true;
+
+          let borderColor = 'rgba(255,255,255,0.15)';
+          let bgGradient = 'rgba(20,28,40,0.8)';
+          let statusColor = '#94a3b8';
+          let statusText = '0';
+          let statusBadgeBg = 'rgba(100,116,139,0.2)';
+          switch (node.waitStatus) {
+            case -1:
+              statusColor = '#f59e0b';
+              statusText = 'SIGNAL';
+              statusBadgeBg = 'rgba(245,158,11,0.2)';
+              borderColor = 'rgba(245,158,11,0.35)';
+              break;
+            case 1:
+              statusColor = '#ef4444';
+              statusText = 'CANCEL';
+              statusBadgeBg = 'rgba(239,68,68,0.2)';
+              borderColor = 'rgba(239,68,68,0.35)';
+              break;
+            case -2:
+              statusColor = '#a855f7';
+              statusText = 'COND';
+              statusBadgeBg = 'rgba(168,85,247,0.2)';
+              borderColor = 'rgba(168,85,247,0.35)';
+              break;
+            default:
+              statusText = '0';
+          }
+          if (isDummy) {
+            bgGradient = 'rgba(30,36,50,0.7)';
+            borderColor = 'rgba(255,255,255,0.1)';
+          }
+          if (isParked) {
+            borderColor = 'rgba(34,211,238,0.5)';
+            bgGradient = 'rgba(10,30,40,0.8)';
+          }
+          let animClass = '';
+          if (highlightNodeId === node.id) {
+            if (animType === 'slide-in') animClass = 'slide-in';
+            if (animType === 'cas-flash') animClass = 'cas-flash';
+            if (animType === 'wake-up') animClass = 'wake-up';
+            if (animType === 'transfer-anim') animClass = 'transfer-anim';
+          }
+          html += `
+                    <div class="flex items-center gap-0 flex-shrink-0">
+                      ${index > 0 ? `
+                      <div class="flex items-center px-1 flex-shrink-0" style="min-width: 36px;">
+                        <svg class="w-8 h-4" viewBox="0 0 32 16">
+                          <defs><linearGradient id="sg${index}" x1="0%" y1="50%" x2="100%" y2="50%"><stop offset="0%" stop-color="rgba(148,163,184,0.3)" /><stop offset="100%" stop-color="rgba(148,163,184,0.7)" /></linearGradient></defs>
+                          <line x1="0" y1="8" x2="28" y2="8" stroke="url(#sg${index})" stroke-width="1.5" stroke-dasharray="4,3" />
+                          <polygon points="26,3 32,8 26,13" fill="rgba(148,163,184,0.5)" />
+                        </svg>
+                      </div>` : ''}
+                      <div class="node-card flex-shrink-0 rounded-xl px-3 py-2 ${animClass} transition-all duration-500"
+                        style="background: ${bgGradient}; border: 2px solid ${borderColor}; min-width: 100px; position: relative;"
+                        id="card_${node.id}">
+                        ${isHead ? '<div class="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-400 bg-[#0a0e17] px-2 rounded-full border border-emerald-500/30">HEAD</div>' : ''}
+                        ${isTail ? '<div class="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[10px] font-bold text-amber-400 bg-[#0a0e17] px-2 rounded-full border border-amber-500/30">TAIL</div>' : ''}
+                        ${isParked ? '<div class="absolute -top-3 right-2 text-[9px] font-bold text-cyan-400 bg-[#0a0e17] px-1.5 rounded-full border border-cyan-500/40 animate-pulse">PARK</div>' : ''}
+                        <div class="text-center">
+                          <div class="text-white font-bold text-xs truncate" style="max-width: 80px;">${isDummy ? '🤖 Dummy' : node.thread}</div>
+                          <div class="mt-1 flex items-center justify-center gap-1">
+                            <span class="text-[9px] text-slate-500">ws:</span>
+                            <span class="text-[10px] font-bold rounded-md px-1 py-0.5" style="color: ${statusColor}; background: ${statusBadgeBg};">${statusText}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>`;
+        });
+        syncContainer.innerHTML = html;
+      }
+    }
+
+    function renderConditionQueue(highlightNodeId = null, animType = null) {
+      const nodes = simulator.getConditionQueueNodes();
+      if (nodes.length === 0) {
+        condContainer.innerHTML = '';
+        condContainer.appendChild(condEmptyHint);
+        condEmptyHint.style.display = 'flex';
+      } else {
+        if (condEmptyHint.parentNode) condEmptyHint.style.display = 'none';
+        let html = '';
+        nodes.forEach((node, index) => {
+          let borderColor = 'rgba(236,72,153,0.4)';
+          let bgGradient = 'rgba(40,20,30,0.8)';
+          let animClass = '';
+          if (highlightNodeId === node.id) {
+            if (animType === 'slide-in-top') animClass = 'slide-in-top';
+            if (animType === 'transfer-anim') animClass = 'transfer-anim';
+          }
+          html += `
+                    <div class="flex items-center gap-0 flex-shrink-0">
+                      ${index > 0 ? `
+                      <svg class="w-6 h-4" viewBox="0 0 24 16"><line x1="0" y1="8" x2="20" y2="8" stroke="rgba(236,72,153,0.4)" stroke-width="1.5" stroke-dasharray="4,3" /><polygon points="18,3 24,8 18,13" fill="rgba(236,72,153,0.5)" /></svg>` : ''}
+                      <div class="node-card flex-shrink-0 rounded-xl px-3 py-2 ${animClass} transition-all duration-500"
+                        style="background: ${bgGradient}; border: 2px solid ${borderColor}; min-width: 100px;"
+                        id="card_${node.id}">
+                        <div class="text-center">
+                          <div class="text-white font-bold text-xs">${node.thread}</div>
+                          <div class="mt-1"><span class="text-[10px] text-pink-400 bg-pink-400/10 px-1.5 py-0.5 rounded">COND</span></div>
+                        </div>
+                      </div>
+                    </div>`;
+        });
+        condContainer.innerHTML = html;
+      }
+    }
+
+    function flashNode(nodeId, animType) {
+      const card = document.getElementById('card_' + nodeId);
+      if (card) {
+        card.classList.remove('slide-in', 'slide-in-top', 'cas-flash', 'wake-up', 'transfer-anim');
+        void card.offsetWidth;
+        if (animType) card.classList.add(animType);
+      }
+    }
+
+    function renderAll(highlightSyncId = null, syncAnim = null, highlightCondId = null, condAnim = null) {
+      renderSyncQueue(highlightSyncId, syncAnim);
+      renderConditionQueue(highlightCondId, condAnim);
+      updateStatusPanel();
+    }
+
+    simulator.subscribe((event) => {
+      switch (event.type) {
+        case 'LOCK_START':
+          addLog(`🔵 ${event.thread} 尝试获取锁...`, 'info');
+          break;
+        case 'CAS_SUCCESS':
+          addLog(`⚡ CAS成功: state ${event.expect}→${event.update}`, 'cas');
+          break;
+        case 'CAS_FAIL':
+          addLog(`❌ CAS失败: 期望${event.expect}, 实际${event.actual}`, 'fail');
+          break;
+        case 'ACQUIRE_SUCCESS':
+          addLog(`✅ ${event.thread} 获取锁成功! state=1`, 'success');
+          renderAll();
+          break;
+        case 'REENTRANT_SUCCESS':
+          addLog(`🔄 ${event.thread} 重入锁成功! state=${event.state}, 持有计数=${event.holdCount}`,
+            'reentrant');
+          renderAll();
+          break;
+        case 'ACQUIRE_FAIL':
+          addLog(`🚫 ${event.thread} 获取锁失败，准备入队...`, 'fail');
+          break;
+        case 'ADD_WAITER':
+          addLog(`📝 ${event.thread} 创建节点准备入同步队列`, 'enq');
+          break;
+        case 'ENQ_INIT_DUMMY':
+          addLog(`🏗️ 同步队列为空，初始化Dummy Head`, 'enq');
+          break;
+        case 'ENQ_SUCCESS':
+          addLog(`🔗 ${event.thread} 节点入同步队列成功`, 'enq');
+          renderAll(event.nodeId, 'slide-in');
+          setTimeout(() => flashNode(event.nodeId, 'slide-in'), 50);
+          break;
+        case 'ADD_WAITER_FAST_PATH':
+          addLog(`⚡ 快速路径入队: ${event.thread}`, 'enq');
+          renderAll(event.nodeId, 'slide-in');
+          setTimeout(() => flashNode(event.nodeId, 'slide-in'), 50);
+          break;
+        case 'SET_SIGNAL':
+          addLog(`📡 设置前驱 ${event.predId} waitStatus=SIGNAL`, 'signal');
+          renderAll(event.predId, 'cas-flash');
+          setTimeout(() => flashNode(event.predId, 'cas-flash'), 50);
+          break;
+        case 'SHOULD_PARK_TRUE':
+          addLog(`⏸️ ${event.nodeId} 应Park`, 'park');
+          break;
+        case 'PARK':
+          addLog(`💤 ${event.thread} 在同步队列中Park`, 'park');
+          renderAll(event.nodeId, 'cas-flash');
+          break;
+        case 'UNLOCK_START':
+          addLog(`🔓 ${event.thread} 开始释放锁...`, 'info');
+          break;
+        case 'RELEASE_SUCCESS':
+          addLog(`✅ 释放成功! state=${event.newState}, 持有计数=${event.holdCount}`, 'success');
+          break;
+        case 'RELEASE_FAIL_NOT_OWNER':
+          addLog(`⚠️ ${event.thread} 不是锁持有者，释放失败`, 'fail');
+          break;
+        case 'UNPARK_SUCCESSOR':
+          addLog(`🔔 唤醒后继节点: ${event.successorThread}`, 'wake');
+          renderAll(event.successorId, 'wake-up');
+          setTimeout(() => flashNode(event.successorId, 'wake-up'), 50);
+          break;
+        case 'WAKE_UP_ACQUIRE_START':
+          addLog(`🌅 ${event.thread} 被唤醒，重新竞争锁`, 'wake');
+          break;
+        case 'WAKE_UP_ACQUIRE_SUCCESS':
+          addLog(`🏆 ${event.thread} 唤醒后成功获取锁!`, 'success');
+          renderAll(event.nodeId, 'cas-flash');
+          setTimeout(() => flashNode(event.nodeId, 'cas-flash'), 50);
+          break;
+        case 'SET_HEAD':
+          addLog(`🎯 setHead: ${event.nodeId} 成为新Head`, 'success');
+          renderAll(event.nodeId, 'cas-flash');
+          break;
+        case 'AWAIT_START':
+          addLog(`⏳ ${event.thread} 调用 await()，准备释放锁并等待条件`, 'info');
+          break;
+        case 'COND_ADD_WAITER':
+          addLog(`📌 ${event.thread} 加入条件队列`, 'info');
+          renderAll(null, null, event.nodeId, 'slide-in-top');
+          setTimeout(() => flashNode(event.nodeId, 'slide-in-top'), 50);
+          break;
+        case 'AWAIT_RELEASE_LOCK':
+          addLog(`🔓 await() 完全释放锁，之前state=${event.savedState}`, 'info');
+          renderAll();
+          break;
+        case 'AWAIT_PARKED':
+          addLog(`💤 ${event.thread} 在条件队列上等待`, 'park');
+          break;
+        case 'SIGNAL_START':
+          addLog(`📢 ${event.thread} 调用 signal()`, 'signal');
+          break;
+        case 'TRANSFER_FOR_SIGNAL':
+          addLog(`🔄 将节点 ${event.thread} 从条件队列转移到同步队列`, 'signal');
+          // 先从条件队列移除（重新渲染条件队列），然后添加到同步队列
+          renderConditionQueue(null, null);
+          // 节点入同步队列由enq触发，我们等待enq事件
+          break;
+        case 'SIGNAL_WAKEUP':
+          addLog(`⚡ signal唤醒节点 ${event.thread}`, 'wake');
+          renderAll(event.nodeId, 'transfer-anim');
+          break;
+        case 'RESET':
+          addLog(`🔄 系统重置`, 'info');
+          logLines = [];
+          renderAll();
+          break;
+        default:
+          break;
+      }
+      // 确保状态面板更新
+      updateStatusPanel();
+    });
+
+    // ============ UI交互 ============
+    const btnFair = document.getElementById('btnFair');
+    const btnNonFair = document.getElementById('btnNonFair');
+    const threadSelects = document.querySelectorAll('.thread-select');
+    const btnLock = document.getElementById('btnLock');
+    const btnUnlock = document.getElementById('btnUnlock');
+    const btnAwait = document.getElementById('btnAwait');
+    const btnSignal = document.getElementById('btnSignal');
+    const btnReset = document.getElementById('btnReset');
+
+    btnFair.addEventListener('click', () => {
+      simulator.fair = true;
+      btnFair.style.background = 'rgba(34,211,238,0.15)';
+      btnFair.style.color = '#22d3ee';
+      btnNonFair.style.background = 'transparent';
+      btnNonFair.style.color = '#94a3b8';
+      updateStatusPanel();
+      addLog('⚖️ 切换为公平锁模式', 'info');
+    });
+
+    btnNonFair.addEventListener('click', () => {
+      simulator.fair = false;
+      btnNonFair.style.background = 'rgba(168,85,247,0.15)';
+      btnNonFair.style.color = '#a78bfa';
+      btnFair.style.background = 'transparent';
+      btnFair.style.color = '#94a3b8';
+      updateStatusPanel();
+      addLog('⚡ 切换为非公平锁模式', 'info');
+    });
+
+    threadSelects.forEach(btn => {
+      btn.addEventListener('click', () => {
+        threadSelects.forEach(b => {
+          b.style.background = 'transparent';
+          b.style.color = '#94a3b8';
+        });
+        btn.style.background = 'rgba(34,211,238,0.15)';
+        btn.style.color = '#22d3ee';
+        selectedThread = btn.dataset.thread;
+      });
+    });
+
+    function disableButtons(ms) {
+      const buttons = [btnLock, btnUnlock, btnAwait, btnSignal, btnReset];
+      buttons.forEach(b => { b.disabled = true;
+        b.style.opacity = '0.5';
+        b.style.pointerEvents = 'none'; });
+      setTimeout(() => {
+        buttons.forEach(b => { b.disabled = false;
+          b.style.opacity = '1';
+          b.style.pointerEvents = 'auto'; });
+        updateButtonStates();
+      }, ms);
+    }
+
+    function updateButtonStates() {
+      const hasOwner = simulator.owner !== null;
+      btnUnlock.disabled = !hasOwner;
+      btnUnlock.style.opacity = hasOwner ? '1' : '0.4';
+      btnUnlock.style.pointerEvents = hasOwner ? 'auto' : 'none';
+      btnAwait.disabled = !hasOwner;
+      btnAwait.style.opacity = hasOwner ? '1' : '0.4';
+      btnAwait.style.pointerEvents = hasOwner ? 'auto' : 'none';
+      btnSignal.disabled = !hasOwner;
+      btnSignal.style.opacity = hasOwner ? '1' : '0.4';
+      btnSignal.style.pointerEvents = hasOwner ? 'auto' : 'none';
+    }
+
+    btnLock.addEventListener('click', () => {
+      disableButtons(800);
+      simulator.lock(selectedThread);
+      updateButtonStates();
+    });
+
+    btnUnlock.addEventListener('click', () => {
+      disableButtons(800);
+      simulator.unlock(selectedThread);
+      updateButtonStates();
+    });
+
+    btnAwait.addEventListener('click', () => {
+      disableButtons(800);
+      simulator.await(selectedThread);
+      updateButtonStates();
+    });
+
+    btnSignal.addEventListener('click', () => {
+      disableButtons(800);
+      simulator.signal(selectedThread);
+      updateButtonStates();
+    });
+
+    btnReset.addEventListener('click', () => {
+      simulator.reset();
+      logLines = [];
+      logEntriesEl.innerHTML =
+        '<div class="text-slate-500 text-[11px]">⏳ 选择线程并操作，观察锁重入、队列及条件等待流程</div>';
+      updateButtonStates();
+      renderAll();
+    });
+
+    // 键盘快捷键
+    document.addEventListener('keydown', (e) => {
+      switch (e.key.toLowerCase()) {
+        case '1':
+          selectedThread = 'Thread-1';
+          threadSelects.forEach(b => {
+            b.style.background = b.dataset.thread === 'Thread-1' ? 'rgba(34,211,238,0.15)' :
+              'transparent';
+            b.style.color = b.dataset.thread === 'Thread-1' ? '#22d3ee' : '#94a3b8';
+          });
+          break;
+        case '2':
+          selectedThread = 'Thread-2';
+          threadSelects.forEach(b => {
+            b.style.background = b.dataset.thread === 'Thread-2' ? 'rgba(34,211,238,0.15)' :
+              'transparent';
+            b.style.color = b.dataset.thread === 'Thread-2' ? '#22d3ee' : '#94a3b8';
+          });
+          break;
+        case '3':
+          selectedThread = 'Thread-3';
+          threadSelects.forEach(b => {
+            b.style.background = b.dataset.thread === 'Thread-3' ? 'rgba(34,211,238,0.15)' :
+              'transparent';
+            b.style.color = b.dataset.thread === 'Thread-3' ? '#22d3ee' : '#94a3b8';
+          });
+          break;
+        case 'l':
+          btnLock.click();
+          break;
+        case 'u':
+          btnUnlock.click();
+          break;
+        case 'w':
+          btnAwait.click();
+          break;
+        case 's':
+          btnSignal.click();
+          break;
+        case 'r':
+          btnReset.click();
+          break;
+      }
+    });
+
+    // 初始渲染
+    renderAll();
+    updateButtonStates();
+    addLog('🚀 ReentrantLock 演示就绪 | 快捷键: 1/2/3 切换线程, L=Lock, U=Unlock, W=await, S=signal, R=重置',
+      'info');
+    addLog('💡 提示: 同一线程可多次Lock实现重入；await需持有锁；signal将条件队列首节点移至同步队列', 'info');
+    console.log('%c🔐 ReentrantLock Simulator Ready', 'color:#22d3ee;font-size:16px;');
+  })();
+</script>
+</body>
+</html>
