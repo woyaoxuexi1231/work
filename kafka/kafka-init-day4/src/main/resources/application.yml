@@ -43,13 +43,42 @@ spring:
         # 生产者的元数据刷新间隔（毫秒）
         metadata.max.age.ms: 300000
         # 配置拦截器
-        interceptor.classes: com.example.kafka.CustomProducerInterceptor
+#        interceptor.classes: com.example.kafka.CustomProducerInterceptor
 
 
     # 消费者配置
     consumer:
-      group-id: kafka-demo-group
+      # ----- 基础配置 -----
+      group-id: order-consumer-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # JSON 反序列化器
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+
+      # ----- 偏移量与重启行为 -----
+      # 没有初始偏移量或当前偏移量不存在时：earliest=从头消费, latest=从最新开始
       auto-offset-reset: earliest
+      # 是否自动提交偏移量（true 简单但可能丢/重，生产推荐 false，手动控制）
       enable-auto-commit: false
+      # 自动提交间隔（毫秒），仅当 enable-auto-commit=true 时生效
+      auto-commit-interval: 5000
+
+      # ----- 拉取性能配置 -----
+      # 单次 poll() 最多返回的记录数，用于控制处理负载
+      max-poll-records: 50
+      # 最小拉取字节数，默认 1 字节（拉取及时但频繁）；适当增大可提高吞吐（如 1KB）
+      fetch-min-bytes: 1024
+      # 最大等待时间（毫秒），若未达到 fetch-min-bytes 则等待此时间后返回
+      fetch-max-wait-ms: 500
+      # 会话超时（毫秒），消费者心跳超时即被认为下线，触发再均衡
+      session-timeout-ms: 45000
+      # 心跳间隔（毫秒），应为 session-timeout 的 1/3
+      heartbeat-interval-ms: 15000
+      # poll() 最大间隔，若超过此时间未调用 poll() 则消费者被视为死亡
+      max-poll-interval-ms: 300000   # 5分钟，适合处理慢业务
+
+      # ----- JSON 反序列化信任包 -----
+      properties:
+        spring.json.trusted.packages: "com.example.kafka.dto.*"   # 允许反序列化的包
+        spring.json.type.mapping: "order:com.example.kafka.dto.Order"  # 可选：类型映射
+    listener:
+      ack-mode: manual_immediate
