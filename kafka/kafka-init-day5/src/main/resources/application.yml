@@ -19,19 +19,13 @@ spring:
       # acks: 0=不等待确认, 1=等待leader确认, all=等待所有ISR副本确认
       # 生产环境推荐 all，确保不丢数据；测试可设1
       acks: all
-
       # 重试次数，配合幂等性（enable.idempotence）避免乱序
       retries: 10
-
       # ----- 性能 / 批量配置 -----
       # 每个分区批处理的最大字节数（默认16KB），到达该值就会立即发送
       batch-size: 16384
-      # 生产者在发送批次前等待更多消息的时间（毫秒），默认0（立即发送）
-      # 适当增大（例如5ms）可提高批量效率，但会增加少量延迟
-      linger-ms: 5
       # 生产者缓冲区总内存（默认32MB），用于缓存等待发送的消息
       buffer-memory: 33554432
-
       # ----- 压缩 -----
       # 可选：none, gzip, snappy, lz4, zstd
       # 推荐 snappy 或 lz4（平衡压缩比和CPU开销）
@@ -39,6 +33,9 @@ spring:
 
       # ----- 其他高级参数 -----
       properties:
+        # 生产者在发送批次前等待更多消息的时间（毫秒），默认0（立即发送）
+        # 适当增大（例如5ms）可提高批量效率，但会增加少量延迟
+        linger.ms: 5
         # 请求超时（毫秒），默认30秒
         request.timeout.ms: 30000
         # 最大阻塞时间（当缓冲区满时，send() 方法阻塞的最大时间）
@@ -54,24 +51,47 @@ spring:
       group-id: rebalance-demo-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-
       # ----- 消费者组与再均衡核心参数 -----
-      # 会话超时（毫秒）：若消费者在此时间内未发送心跳，则被认为死亡，触发再均衡
-      session-timeout-ms: 45000
-      # 心跳间隔（毫秒）：建议为 session-timeout-ms 的 1/3
-      heartbeat-interval-ms: 15000
-      # poll() 最大间隔（毫秒）：若消费者两次 poll 间隔超过该值，则被踢出组
-      max-poll-interval-ms: 300000   # 5 分钟，适合业务处理较慢的场景
-      # 每次 poll 最多拉取记录数，可通过控制此值避免处理时间超过 max-poll-interval-ms
+      # 每次 poll 最多拉取记录数，控制处理负载避免超过 max-poll-interval
       max-poll-records: 100
 
-      # ----- 分区分配策略（可选：range, roundrobin, sticky, cooperative）-----
-      # 多个策略按优先级排序，以逗号分隔
-      partition-assignment-strategy:
-        - org.apache.kafka.clients.consumer.CooperativeStickyAssignor
-        - org.apache.kafka.clients.consumer.RangeAssignor
+      properties:
+        spring.json.trusted.packages: "*"
+        # ⚠️ Spring Boot 3.x 使用 Duration 类型，属性名不带 -ms 后缀
+        # 会话超时：消费者在此时间内未发送心跳则被认为死亡，触发再均衡
+        session.timeout.ms: 45000
+        # poll() 最大间隔：两次 poll 超过此时间则被踢出组
+        max.poll.interval.ms: 300000
+        # 心跳间隔：建议为 session-timeout 的 1/3
+        heartbeat.interval.ms: 15000
+        # ----- 分区分配策略（选一个注释掉其他的来测试）-----
+        # Kafka 内置 4 种分配策略，各有特点：
+        #
+        # ① RangeAssignor
+        #    - 按主题的「连续分区范围」分配，例如 0-2 → consumerA, 3-5 → consumerB
+        #    - 每个主题独立分配，容易造成分区分配不均衡
+        #    - Kafka 2.4 之前的默认策略
+        #
+        # ② RoundRobinAssignor
+        #    - 将所有主题的所有分区排序后「轮询」分配给每个消费者
+        #    - 比 Range 均衡，但当消费者订阅不同主题时可能仍然不均
+        #
+        # ③ StickyAssignor
+        #    - 在「负载均衡」和「分区粘性」之间取平衡
+        #    - Rebalance 时尽量保留已有分区分配，减少不必要的分区移动
+        #
+        # ④ CooperativeStickyAssignor
+        #    - Sticky 的升级版，支持「增量协作式重平衡」（Cooperative Rebalancing）
+        #    - 不会 stop-the-world，消费者在重平衡期间仍可继续消费
+        #    - Kafka 2.4+ 推荐策略，适合大分区数场景
+        #
+        # 测试建议：每次只保留一个策略，重启应用观察 rebalance 行为
+#        partition.assignment.strategy: org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+#        partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
+        partition.assignment.strategy: org.apache.kafka.clients.consumer.StickyAssignor
+#        partition.assignment.strategy: org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+
+
     listener:
       # 在监听器方法中允许手动 ack，同时使用再均衡监听器时需要设置
       ack-mode: manual_immediate
