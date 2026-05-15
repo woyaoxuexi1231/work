@@ -17,35 +17,21 @@ public class KafkaTopicConfig {
         return new NewTopic("orders", 3, (short) 1);
     }
 
-    /**
-     * 另一个主题，用于演示偏移量重置
-     */
     @Bean
-    public NewTopic userActionsTopic() {
-        return new NewTopic("user-actions", 2, (short) 1);
-    }
-
-    /**
-     * probe-topic：4个分区，用于学习分区路由
-     */
-    @Bean
-    public NewTopic probeTopic() {
-        return new NewTopic("probe-topic", 4, (short) 1);
-    }
-
-    @Bean
-    public NewTopic retryDemoTopic() {
+    public NewTopic orderProcessing(){
         return new NewTopic(
-                "retry-demo-topic",
+                "order-processing",
                 2,
-                (short) 1);
+                (short) 1
+        );
     }
 
     @Bean
-    public NewTopic retryDemoDlq() {
+    public NewTopic orderProcessingDlq(){
         return new NewTopic(
-                "retry-demo-dlq",
+                "order-processing-dlq",
                 1,
-                (short) 1);
+                (short) 1
+        );
     }
 }

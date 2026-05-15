@@ -1,6 +1,11 @@
 server:
   port: 8080
 
+# ⚠️ %M（方法名）有轻微性能开销，生产环境可考虑移除
+logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%-5level) %clr([%15.15t]){faint} %clr(%-40.40logger{36}.%M){cyan} %clr(:){faint} %msg%n"
+
 spring:
   kafka:
     bootstrap-servers: 192.168.2.102:9092

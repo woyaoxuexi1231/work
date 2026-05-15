@@ -7,8 +7,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
-
 /**
  * @author hulei
  * @since 2026/5/15 15:36
@@ -28,9 +26,9 @@ public class ProducerController {
             //         "amount", 100.0 * i,
             //         "timestamp", System.currentTimeMillis()
             // );
-            Order order1 = new Order("order-" + i, 100.0 * i, System.currentTimeMillis());
+            Order order1 = new Order("order-" + i, 100.0 * i + 500, System.currentTimeMillis(), 0);
             ProducerRecord<String, Object> record = new ProducerRecord<>(
-                    "orders",
+                    "order-processing",
                     "order-" + i,
                     order1
             );
