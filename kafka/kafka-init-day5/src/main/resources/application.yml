@@ -1,0 +1,77 @@
+server:
+  port: 8081
+
+# ⚠️ %M（方法名）有轻微性能开销，生产环境可考虑移除
+logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%-5level) %clr([%15.15t]){faint} %clr(%-40.40logger{36}.%M){cyan} %clr(:){faint} %msg%n"
+
+spring:
+  kafka:
+    bootstrap-servers: 192.168.2.102:9092
+    # 生产者配置
+    producer:
+      # ----- 序列化器 -----
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+      # ----- 可靠性配置 -----
+      # acks: 0=不等待确认, 1=等待leader确认, all=等待所有ISR副本确认
+      # 生产环境推荐 all，确保不丢数据；测试可设1
+      acks: all
+
+      # 重试次数，配合幂等性（enable.idempotence）避免乱序
+      retries: 10
+
+      # ----- 性能 / 批量配置 -----
+      # 每个分区批处理的最大字节数（默认16KB），到达该值就会立即发送
+      batch-size: 16384
+      # 生产者在发送批次前等待更多消息的时间（毫秒），默认0（立即发送）
+      # 适当增大（例如5ms）可提高批量效率，但会增加少量延迟
+      linger-ms: 5
+      # 生产者缓冲区总内存（默认32MB），用于缓存等待发送的消息
+      buffer-memory: 33554432
+
+      # ----- 压缩 -----
+      # 可选：none, gzip, snappy, lz4, zstd
+      # 推荐 snappy 或 lz4（平衡压缩比和CPU开销）
+      compression-type: snappy
+
+      # ----- 其他高级参数 -----
+      properties:
+        # 请求超时（毫秒），默认30秒
+        request.timeout.ms: 30000
+        # 最大阻塞时间（当缓冲区满时，send() 方法阻塞的最大时间）
+        max.block.ms: 60000
+        # 每个连接的最大未确认请求数（默认5），开启幂等时必须 ≤5
+        max.in.flight.requests.per.connection: 5
+        # 生产者的元数据刷新间隔（毫秒）
+        metadata.max.age.ms: 300000
+        # 配置拦截器
+#        interceptor.classes: com.example.kafka.CustomProducerInterceptor
+
+    consumer:
+      group-id: rebalance-demo-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
+      # ----- 消费者组与再均衡核心参数 -----
+      # 会话超时（毫秒）：若消费者在此时间内未发送心跳，则被认为死亡，触发再均衡
+      session-timeout-ms: 45000
+      # 心跳间隔（毫秒）：建议为 session-timeout-ms 的 1/3
+      heartbeat-interval-ms: 15000
+      # poll() 最大间隔（毫秒）：若消费者两次 poll 间隔超过该值，则被踢出组
+      max-poll-interval-ms: 300000   # 5 分钟，适合业务处理较慢的场景
+      # 每次 poll 最多拉取记录数，可通过控制此值避免处理时间超过 max-poll-interval-ms
+      max-poll-records: 100
+
+      # ----- 分区分配策略（可选：range, roundrobin, sticky, cooperative）-----
+      # 多个策略按优先级排序，以逗号分隔
+      partition-assignment-strategy:
+        - org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+        - org.apache.kafka.clients.consumer.RangeAssignor
+    listener:
+      # 在监听器方法中允许手动 ack，同时使用再均衡监听器时需要设置
+      ack-mode: manual_immediate
