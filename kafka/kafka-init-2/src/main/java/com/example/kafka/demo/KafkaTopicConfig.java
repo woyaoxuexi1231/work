@@ -24,4 +24,12 @@ public class KafkaTopicConfig {
     public NewTopic userActionsTopic() {
         return new NewTopic("user-actions", 2, (short) 1);
     }
+
+    /**
+     * probe-topic：4个分区，用于学习分区路由
+     */
+    @Bean
+    public NewTopic probeTopic() {
+        return new NewTopic("probe-topic", 4, (short) 1);
+    }
 }

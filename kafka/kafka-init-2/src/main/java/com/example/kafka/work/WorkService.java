@@ -2,10 +2,8 @@ package com.example.kafka.work;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
@@ -22,18 +20,7 @@ import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @RestController
-@Configuration
 public class WorkService {
-
-    public NewTopic probeTopic() {
-        return new NewTopic(
-                // 分区名
-                "probe-topic",
-                // 分区数
-                4,
-                // 副本数
-                (short) 1);
-    }
 
     @Autowired
     KafkaTemplate<String, Object> kafkaTemplate;
