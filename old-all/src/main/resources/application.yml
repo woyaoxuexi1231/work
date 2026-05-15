@@ -93,8 +93,8 @@ spring:
   rabbitmq:
     addresses: 192.168.2.102
     port: 5672
-    username: guest
-    password: guest
+    username: admin
+    password: admin
     virtual-host: /
     publisher-confirm-type: correlated
     publisher-returns: true
@@ -106,23 +106,23 @@ spring:
   # Kafka 配置
   kafka:
     bootstrap-servers: 192.168.2.102:9092  # Kafka 服务器地址（Docker 网络）
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      acks: all                    # 等待所有副本确认
-      retries: 3                   # 重试次数
-      batch-size: 16384            # 批处理大小
-      linger-ms: 1                 # 延迟发送时间
-      buffer-memory: 33554432      # 缓冲区内存大小
-    consumer:
+    consumer: # 配置消费者
       group-id: kafka-demo-group   # 消费者组 ID
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       auto-offset-reset: earliest  # 消费起始位置
-      enable-auto-commit: false    # 禁用自动提交
-      max-poll-records: 100        # 每次拉取最大记录数
-      properties:
-        spring.json.trusted.packages: "*"  # 信任所有包的反序列化
+#      enable-auto-commit: false    # 禁用自动提交
+#      max-poll-records: 100        # 每次拉取最大记录数
+#      properties:
+#        spring.json.trusted.packages: "*"  # 信任所有包的反序列化
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+#      acks: all                    # 等待所有副本确认
+#      retries: 3                   # 重试次数
+#      batch-size: 16384            # 批处理大小
+#      linger-ms: 1                 # 延迟发送时间
+#      buffer-memory: 33554432      # 缓冲区内存大小
 
 
 # ========== RocketMQ 配置 (版本 2.3.5) ==========
