@@ -47,7 +47,7 @@ public class ProducerDemoController {
     @GetMapping("/reliable/send")
     public void send() {
         Map<String, Object> msg = Map.of("key", "value");
-        reliableProducerService.sendWithRetryRecord("key", JSON.toJSONString(msg));
+        reliableProducerService.sendWithRetryRecord("key", "asjfgdaskjfhh");
     }
 
 }

@@ -1,6 +1,10 @@
+server:
+  port: 8080
+
 spring:
   kafka:
     bootstrap-servers: 192.168.2.102:9092
+    # 生产者配置
     producer:
       # ----- 序列化器 -----
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -38,3 +42,11 @@ spring:
         max.in.flight.requests.per.connection: 5
         # 生产者的元数据刷新间隔（毫秒）
         metadata.max.age.ms: 300000
+
+    # 消费者配置
+    consumer:
+      group-id: kafka-demo-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
