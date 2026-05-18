@@ -1,0 +1,65 @@
+server:
+  port: 8080
+
+# ⚠️ %M（方法名）有轻微性能开销，生产环境可考虑移除
+logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%-5level) %clr([%15.15t]){faint} %clr(%-40.40logger{36}.%M){cyan} %clr(:){faint} %msg%n"
+
+spring:
+
+  kafka:
+    bootstrap-servers: 192.168.2.102:9092
+    # 生产者配置
+    producer:
+      # ----- 序列化器 -----
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+      # ----- 可靠性配置 -----
+      # acks: 0=不等待确认, 1=等待leader确认, all=等待所有ISR副本确认
+      # 生产环境推荐 all，确保不丢数据；测试可设1
+      acks: all
+      # 重试次数，配合幂等性（enable.idempotence）避免乱序
+      retries: 10
+      # ----- 性能 / 批量配置 -----
+      # 每个分区批处理的最大字节数（默认16KB），到达该值就会立即发送
+      batch-size: 16384
+      # 生产者缓冲区总内存（默认32MB），用于缓存等待发送的消息
+      buffer-memory: 33554432
+      # ----- 压缩 -----
+      # 可选：none, gzip, snappy, lz4, zstd
+      # 推荐 snappy 或 lz4（平衡压缩比和CPU开销）
+      compression-type: snappy
+
+      # ----- 其他高级参数 -----
+      properties:
+        # 每个连接的最大未确认请求数（默认5），开启幂等时必须 ≤5
+        max.in.flight.requests.per.connection: 5
+        # # 开启幂等性（自动设置 acks=all, retries=Integer.MAX_VALUE, max.in.flight.requests.per.connection<=5）
+        enable.idempotence: true
+
+      # 生产者事务 ID（用于事务恢复，必须唯一）
+      transaction-id-prefix: tx-prod-
+
+    consumer:
+      group-id: rebalance-demo-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+
+
+      properties:
+        spring.json.trusted.packages: "*"
+      # 手动提交偏移量（与事务结合时一般手动）
+      enable-auto-commit: false
+      # 隔离级别：read_committed 只读取已提交的事务消息
+      isolation-level: read_committed
+#
+#    listener:
+#      # 在监听器方法中允许手动 ack，同时使用再均衡监听器时需要设置
+#      ack-mode: manual_immediate
+
+  datasource:
+    url: jdbc:mysql://192.168.2.102:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&connectionCollation=utf8mb4&rewriteBatchedStatements=true&allowMultiQueries=true&useCursorFetch=true
+    username: root
+    password: 123456
