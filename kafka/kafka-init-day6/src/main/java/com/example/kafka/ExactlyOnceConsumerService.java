@@ -27,7 +27,7 @@ public class ExactlyOnceConsumerService {
      * 为简化，这里只演示思路：在 @Transactional 中同时操作 DB 和 Kafka
      */
     @KafkaListener(topics = "orders", groupId = "eos-consumer-group")
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(value = "kafkaTransactionManager", rollbackFor = Exception.class)
     public void onMessage(Order order) {
         // 1. 插入数据库（唯一约束防重，实现幂等）
         jdbcTemplate.update("INSERT INTO `order` (order_id, amount, timestamp) VALUES (?, ?, CURRENT_TIME)",
