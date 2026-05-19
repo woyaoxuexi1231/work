@@ -100,38 +100,29 @@
 
             try {
                 const plaintext = document.getElementById('sensitive-data').value;
-                log("开始复合加密流程：AES 加密业务数据 + RSA 加密 AES Key ...");
+                log("开始复合加密流程（基础版）：AES-ECB 加密业务数据 + RSA-PKCS1 加密 AES Key ...");
 
                 // --- 1. 对称加密准备 ---
-                // 生成随机 128位 AES 密钥和 96位 IV (GCM 推荐)
+                // 生成随机 128位 AES 密钥
                 const aesKey = forge.random.getBytesSync(16);
-                const iv = forge.random.getBytesSync(12);
 
                 // --- 2. RSA 加密 AES Key ---
-                // 注意：RSA 不适合直接加密业务数据（长度限制、性能差），所以我们只用它来加密 AES Key
-                log("执行 RSA-OAEP 加密 AES Key ...");
                 const publicKey = forge.pki.publicKeyFromPem(serverKeyInfo.publicKey);
-                const encryptedKey = publicKey.encrypt(aesKey, 'RSA-OAEP', {
-                    md: forge.md.sha256.create(),
-                    mgf1: { md: forge.md.sha256.create() }
-                });
+                log("执行 RSA-PKCS1 加密 AES Key ...");
+                const encryptedKey = publicKey.encrypt(aesKey);
 
-                // --- 3. AES-GCM 加密业务数据 ---
-                log("执行 AES-GCM 加密业务数据 ...");
-                const cipher = forge.cipher.createCipher('AES-GCM', aesKey);
-                cipher.start({
-                    iv: iv
-                });
+                // --- 3. AES 加密业务数据 ---
+                log("执行 AES-ECB 加密业务数据 ...");
+                const cipher = forge.cipher.createCipher('AES-ECB', aesKey);
+                cipher.start();
                 cipher.update(forge.util.createBuffer(plaintext, 'utf8'));
                 cipher.finish();
-                const encryptedData = cipher.output.getBytes();
-                const tag = cipher.mode.tag.getBytes(); // GCM 认证标签
+                const encryptedDataBase64 = forge.util.encode64(cipher.output.getBytes());
 
                 // --- 4. 组装并发送 ---
                 const payload = {
                     encryptedKey: forge.util.encode64(encryptedKey),
-                    encryptedData: forge.util.encode64(encryptedData + tag),
-                    iv: forge.util.encode64(iv)
+                    encryptedData: encryptedDataBase64
                 };
 
                 log("向后端发送加密请求...");
@@ -146,12 +137,11 @@
                     const response = JSON.parse(resultText);
 
                     // --- 5. 验签（对应“服务端用私钥加密”的正确理解：数字签名） ---
-                    const responseIvBytes = forge.util.decode64(response.iv);
                     const responseEncryptedBytes = forge.util.decode64(response.encryptedData);
                     const responseSignatureBytes = forge.util.decode64(response.signature);
 
                     const md = forge.md.sha256.create();
-                    md.update(responseIvBytes + responseEncryptedBytes);
+                    md.update(responseEncryptedBytes);
                     const verified = publicKey.verify(md.digest().bytes(), responseSignatureBytes);
                     if (!verified) {
                         log("验签失败：响应可能被篡改（或公钥不匹配）", 'error');
@@ -160,21 +150,12 @@
                     log("验签成功：响应确实来自服务端，且未被篡改", 'success');
 
                     // --- 6. 解密响应（使用同一个 AES Key） ---
-                    // Java 返回的 AES-GCM 密文是“ciphertext + tag”，我们需要把最后 16 字节拆出来作为 tag
-                    const combined = responseEncryptedBytes;
-                    const tagLen = 16;
-                    const cipherTextOnly = combined.substring(0, combined.length - tagLen);
-                    const tagOnly = combined.substring(combined.length - tagLen);
-
-                    const decipher = forge.cipher.createDecipher('AES-GCM', aesKey);
-                    decipher.start({
-                        iv: responseIvBytes,
-                        tag: forge.util.createBuffer(tagOnly)
-                    });
-                    decipher.update(forge.util.createBuffer(cipherTextOnly));
+                    const decipher = forge.cipher.createDecipher('AES-ECB', aesKey);
+                    decipher.start();
+                    decipher.update(forge.util.createBuffer(responseEncryptedBytes));
                     const ok = decipher.finish();
                     if (!ok) {
-                        log("响应解密失败：GCM 校验不通过", 'error');
+                        log("响应解密失败：ECB 解密失败", 'error');
                         return;
                     }
                     const responsePlaintext = forge.util.decodeUtf8(decipher.output.getBytes());

@@ -13,14 +13,8 @@ public class DecryptRequest {
     private String encryptedKey;
 
     /**
-     * AES-GCM 的 IV / Nonce（Base64）
-     * 推荐 12 字节（96-bit）。
-     */
-    private String iv;
-
-    /**
-     * AES-GCM 密文（Base64）
-     * 注意：这里的密文一般包含 GCM Tag（Java 侧通常要求“密文 + Tag”拼在一起）。
+     * AES 密文（Base64）
+     * - AES-ECB：ciphertext
      */
     private String encryptedData;
 }

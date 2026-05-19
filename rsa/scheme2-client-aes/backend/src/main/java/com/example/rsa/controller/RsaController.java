@@ -30,15 +30,18 @@ public class RsaController {
     @GetMapping("/key")
     public ResponseEntity<KeyResponse> getLatestKey() throws Exception {
         log.info("[API] 收到获取 RSA 公钥请求");
-        return ResponseEntity.ok(new KeyResponse(keyManager.getPublicKeyPem(), "RSA-OAEP(SHA-256)+AES-GCM"));
+        return ResponseEntity.ok(new KeyResponse(
+                keyManager.getPublicKeyPem(),
+                "RSA-PKCS1 + AES-ECB + RSA签名验签"
+        ));
     }
 
     /**
      * 安全请求演示接口（请求与响应都走“RSA + AES”）
      *
      * 请求：
-     * - encryptedKey: RSA(OAEP) 加密后的 AES key
-     * - iv + encryptedData: AES-GCM 加密后的业务数据
+     * - encryptedKey: RSA(PKCS1Padding) 加密后的 AES key
+     * - encryptedData: AES(ECB/PKCS5Padding) 加密后的业务数据
      *
      * 响应：
      * - 服务端使用同一把 AES key 加密响应
