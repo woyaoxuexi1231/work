@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>聚合支付模块 - Design Patterns Demo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* ===== 毛玻璃核心样式 ===== */
+  .glass {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.20);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+  }
+  .glass-dark {
+    background: rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  body {
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    min-height: 100vh;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  /* 背景动画光斑 */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%; left: -30%;
+    width: 80%; height: 80%;
+    background: radial-gradient(circle, rgba(120,80,255,0.25) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -40%; right: -20%;
+    width: 70%; height: 70%;
+    background: radial-gradient(circle, rgba(255,100,180,0.20) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .content { position: relative; z-index: 1; }
+
+  /* 步骤状态色 */
+  .step-passed  { background: rgba(34,197,94,0.25);  border-color: rgba(34,197,94,0.5);  }
+  .step-skipped { background: rgba(234,179,8,0.25);  border-color: rgba(234,179,8,0.5);  }
+  .step-failed  { background: rgba(239,68,68,0.25);  border-color: rgba(239,68,68,0.5);  }
+  .step-pending { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.15); }
+
+  /* 动画 */
+  @keyframes pulse-step {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+  }
+  .animating { animation: pulse-step 0.6s ease-in-out; }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="content container mx-auto px-4 py-6 max-w-5xl">
+
+  <!-- ===== Header ===== -->
+  <div class="glass-strong rounded-2xl p-6 mb-6">
+    <h1 class="text-3xl font-bold text-white tracking-tight">聚合支付模块</h1>
+    <p class="text-white/60 mt-1 text-sm">
+      Strategy Pattern (策略模式) + Chain of Responsibility (责任链模式) · Spring Boot 3.2
+    </p>
+    <div class="flex gap-4 mt-3 text-xs text-white/50">
+      <span>零修改接入新渠道</span>
+      <span>·</span>
+      <span>异常可控责任链</span>
+      <span>·</span>
+      <span>毛玻璃 UI</span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- ===== 左侧: 策略模式 - 渠道列表 ===== -->
+    <div class="glass rounded-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-white font-semibold text-lg">渠道策略 (Strategy)</h2>
+        <button onclick="loadChannels()"
+                class="text-xs text-white/60 hover:text-white/90 transition px-3 py-1 glass rounded-full">
+          刷新
+        </button>
+      </div>
+
+      <!-- 渠道卡片列表 -->
+      <div id="channelList" class="space-y-3 mb-4">
+        <p class="text-white/40 text-sm">加载中...</p>
+      </div>
+
+      <!-- 模拟支付 -->
+      <div class="glass-dark rounded-xl p-4">
+        <h3 class="text-white/80 text-sm font-medium mb-3">模拟支付请求</h3>
+        <div class="space-y-2">
+          <select id="payChannel" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm
+                 [&>option]:bg-gray-800 [&>option]:text-white">
+          </select>
+          <input id="payAmount" type="number" value="99.00" step="0.01"
+                 class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30"
+                 placeholder="金额">
+        </div>
+        <button onclick="doPay()"
+                class="mt-3 w-full bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-400 hover:to-purple-400
+                       text-white font-medium py-2 rounded-lg transition text-sm">
+          发起支付
+        </button>
+        <div id="payResult" class="mt-3 text-xs text-white/60 font-mono hidden"></div>
+      </div>
+    </div>
+
+    <!-- ===== 右侧: 责任链模式 - 回调处理 ===== -->
+    <div class="glass rounded-2xl p-5">
+      <h2 class="text-white font-semibold text-lg mb-4">回调处理链 (Chain of Responsibility)</h2>
+
+      <!-- 链步骤可视化 -->
+      <div id="chainSteps" class="space-y-2 mb-4">
+        <p class="text-white/40 text-sm">加载中...</p>
+      </div>
+
+      <!-- 模拟回调 -->
+      <div class="glass-dark rounded-xl p-4">
+        <h3 class="text-white/80 text-sm font-medium mb-3">模拟回调通知</h3>
+        <div class="space-y-2">
+          <select id="cbChannel" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm
+                 [&>option]:bg-gray-800 [&>option]:text-white">
+          </select>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="cbOrderNo" type="text" value="ORD001" placeholder="订单号"
+                   class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30">
+            <input id="cbAmount" type="text" value="99.00" placeholder="回调金额"
+                   class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30">
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <select id="cbSign" class="bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-xs
+                   [&>option]:bg-gray-800 [&>option]:text-white">
+              <option value="VALID">正常签名</option>
+              <option value="INVALID">无效签名</option>
+              <option value="">无签名</option>
+            </select>
+            <select id="cbRisk" class="bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-xs
+                   [&>option]:bg-gray-800 [&>option]:text-white">
+              <option value="LOW">低风险(跳过风控)</option>
+              <option value="MID">中风险</option>
+              <option value="BLACK">黑名单(拦截)</option>
+            </select>
+            <select id="cbStatus" class="bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-xs
+                   [&>option]:bg-gray-800 [&>option]:text-white">
+              <option value="WAIT_PAY">待支付</option>
+              <option value="SUCCESS">已是终态</option>
+              <option value="CLOSED">已关闭(异常)</option>
+            </select>
+          </div>
+        </div>
+        <button onclick="doCallback()"
+                class="mt-3 w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400
+                       text-white font-medium py-2 rounded-lg transition text-sm">
+          模拟回调通知
+        </button>
+        <div id="cbResult" class="mt-3 hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 底部: 架构说明 ===== -->
+  <div class="glass rounded-2xl p-5 mt-6">
+    <h2 class="text-white font-semibold text-lg mb-3">架构要点</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div class="glass-dark rounded-xl p-4">
+        <h3 class="text-violet-300 font-medium mb-2">策略自动注册</h3>
+        <p class="text-white/60 leading-relaxed">
+          <code class="text-violet-300/80 bg-black/20 px-1 rounded">PaymentStrategyRegistry</code>
+          通过 <code class="text-violet-300/80 bg-black/20 px-1 rounded">List&lt;PaymentStrategy&gt;</code>
+          接收 Spring 注入的所有实现类，构建 <code class="text-violet-300/80 bg-black/20 px-1 rounded">Map</code> 做 O(1) 路由。
+          新渠道只需新建 <code class="text-violet-300/80 bg-black/20 px-1 rounded">@Component</code> 实现类即可，<strong>零修改</strong>已有代码。
+        </p>
+      </div>
+      <div class="glass-dark rounded-xl p-4">
+        <h3 class="text-emerald-300 font-medium mb-2">责任链异常控制</h3>
+        <p class="text-white/60 leading-relaxed">
+          <code class="text-emerald-300/80 bg-black/20 px-1 rounded">SkipException</code> → 跳过当前节点继续链 ·
+          <code class="text-emerald-300/80 bg-black/20 px-1 rounded">CallbackException</code> → 终止链 ·
+          其他异常 → 终止链。
+          链顺序通过 <code class="text-emerald-300/80 bg-black/20 px-1 rounded">@Order(n)</code> 控制，
+          增删调序无需修改其他 Handler。
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== JS ===== -->
+<script>
+const API = '/api';
+
+// ===== 加载渠道列表 =====
+async function loadChannels() {
+  try {
+    const res = await fetch(API + '/payment/channels').then(r => r.json());
+    const channels = res.data.channels;
+
+    // 更新渠道卡片
+    const colors = {
+      ALIPAY:   { bg: 'from-blue-500/20 to-blue-600/20', icon: '🔵', border: 'border-blue-400/30' },
+      WECHAT:   { bg: 'from-green-500/20 to-green-600/20', icon: '🟢', border: 'border-green-400/30' },
+      UNIONPAY: { bg: 'from-red-500/20 to-red-600/20',   icon: '🔴', border: 'border-red-400/30' },
+      DEFAULT:  { bg: 'from-purple-500/20 to-pink-500/20', icon: '🟣', border: 'border-purple-400/30' }
+    };
+
+    document.getElementById('channelList').innerHTML = channels.map(c => {
+      const theme = colors[c.channel] || colors.DEFAULT;
+      return `<div class="glass-strong rounded-xl p-4 flex items-center justify-between border-l-2 ${theme.border}">
+        <div class="flex items-center gap-3">
+          <span class="text-xl">${theme.icon}</span>
+          <div>
+            <p class="text-white font-medium">${c.displayName}</p>
+            <p class="text-white/40 text-xs">${c.channel}</p>
+          </div>
+        </div>
+        <span class="text-xs text-white/50 glass rounded-full px-3 py-1">已注册</span>
+      </div>`;
+    }).join('');
+
+    // 更新下拉框
+    const opts = channels.map(c => `<option value="${c.channel}">${c.displayName} (${c.channel})</option>`).join('');
+    document.getElementById('payChannel').innerHTML = opts;
+    document.getElementById('cbChannel').innerHTML = opts;
+
+    // 异步加载链结构
+    loadChain();
+  } catch(e) {
+    document.getElementById('channelList').innerHTML =
+      `<p class="text-red-400 text-sm">加载失败: ${e.message}</p>`;
+  }
+}
+
+// ===== 加载回调链 =====
+async function loadChain() {
+  try {
+    const res = await fetch(API + '/callback/chain').then(r => r.json());
+    const handlers = res.data.handlers;
+
+    const labels = {
+      SignatureVerifyHandler:    '① 验签',
+      IdempotencyCheckHandler:   '② 幂等校验',
+      AmountVerifyHandler:       '③ 金额校验',
+      StatusTransitionHandler:   '④ 状态流转',
+      RiskReportHandler:         '⑤ 风控上报',
+      NotifyMerchantHandler:     '⑥ 通知商户',
+      LogPersistenceHandler:     '⑦ 日志持久化'
+    };
+
+    document.getElementById('chainSteps').innerHTML = handlers.map((h, i) => {
+      const label = labels[h] || h;
+      const isLast = i === handlers.length - 1;
+      return `
+        <div class="flex items-center gap-3">
+          <div id="step-${i}" class="step-pending flex-1 glass rounded-xl px-4 py-3 flex items-center gap-3 border transition-all duration-300">
+            <span class="text-white/70 text-sm font-medium w-28 shrink-0">${label}</span>
+            <span class="text-white/30 text-xs flex-1">等待执行</span>
+            <span id="step-time-${i}" class="text-white/30 text-xs w-10 text-right"></span>
+          </div>
+          ${isLast ? '' : '<span class="text-white/20 text-lg">→</span>'}
+        </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('chainSteps').innerHTML =
+      `<p class="text-red-400 text-sm">加载失败: ${e.message}</p>`;
+  }
+}
+
+// ===== 模拟支付 =====
+async function doPay() {
+  const channel = document.getElementById('payChannel').value;
+  const amount  = document.getElementById('payAmount').value;
+  const orderNo = 'ORD' + Date.now();
+
+  const div = document.getElementById('payResult');
+  div.classList.remove('hidden');
+  div.innerHTML = '<span class="text-white/50">请求中...</span>';
+
+  try {
+    const res = await fetch(API + '/payment/pay', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ channel, orderNo, amount, subject: '测试商品' })
+    }).then(r => r.json());
+
+    div.innerHTML = `<pre class="whitespace-pre-wrap break-all">${JSON.stringify(res, null, 2)}</pre>`;
+  } catch(e) {
+    div.innerHTML = `<span class="text-red-400">${e.message}</span>`;
+  }
+}
+
+// ===== 模拟回调通知 =====
+async function doCallback() {
+  const channel  = document.getElementById('cbChannel').value;
+  const orderNo  = document.getElementById('cbOrderNo').value || 'ORD' + Date.now();
+  const amount   = document.getElementById('cbAmount').value;
+  const sign     = document.getElementById('cbSign').value;
+  const riskLevel = document.getElementById('cbRisk').value;
+  const currentStatus = document.getElementById('cbStatus').value;
+
+  const div = document.getElementById('cbResult');
+  div.classList.remove('hidden');
+  div.innerHTML = `
+    <div class="glass rounded-lg p-3">
+      <p class="text-white/50 text-xs">执行中...</p>
+    </div>`;
+
+  // 重置所有步骤状态
+  document.querySelectorAll('[id^="step-"]').forEach(el => {
+    el.className = 'step-pending flex-1 glass rounded-xl px-4 py-3 flex items-center gap-3 border transition-all duration-300';
+    const timeEl = el.querySelector('[id^="step-time-"]');
+    if (timeEl) timeEl.textContent = '';
+    const statusEl = el.querySelector('span:nth-child(2)');
+    if (statusEl) statusEl.textContent = '等待执行';
+  });
+
+  try {
+    const res = await fetch(API + '/callback/notify/' + channel, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ orderNo, amount, sign, riskLevel, currentStatus, notifyUrl: 'https://merchant.example.com/notify' })
+    }).then(r => r.json());
+
+    // 更新链步骤状态
+    const steps = res.data.steps || [];
+    steps.forEach((s, i) => {
+      const el = document.getElementById('step-' + i);
+      const timeEl = document.getElementById('step-time-' + i);
+      if (!el) return;
+
+      // 重置类名
+      el.className = 'flex-1 glass rounded-xl px-4 py-3 flex items-center gap-3 border transition-all duration-300';
+
+      const statusText = el.querySelector('span:nth-child(2)');
+      if (s.status.startsWith('PASSED')) {
+        el.classList.add('step-passed');
+        if (statusText) statusText.innerHTML = '<span class="text-green-300 text-xs">✓ 通过</span>';
+      } else if (s.status.startsWith('SKIPPED')) {
+        el.classList.add('step-skipped');
+        if (statusText) statusText.innerHTML = `<span class="text-yellow-300 text-xs">→ 跳过: ${s.status.replace('SKIPPED: ','')}</span>`;
+      } else if (s.status.startsWith('FAILED') || s.status.startsWith('ERROR')) {
+        el.classList.add('step-failed');
+        if (statusText) statusText.innerHTML = `<span class="text-red-300 text-xs">✗ 失败: ${s.status}</span>`;
+      }
+      if (timeEl) timeEl.textContent = s.costMs + 'ms';
+      el.classList.add('animating');
+    });
+
+    // 结果卡片
+    const success = res.data.success;
+    div.innerHTML = `
+      <div class="glass rounded-lg p-3 border ${success ? 'border-green-400/40' : 'border-red-400/40'}">
+        <p class="text-sm font-medium ${success ? 'text-green-300' : 'text-red-300'}">
+          ${success ? '✓ 回调处理成功' : '✗ 回调处理失败'}
+        </p>
+        ${!success ? `<p class="text-xs text-red-400/80 mt-1">终止于: ${res.data.failedAt} — ${res.data.errorMsg}</p>` : ''}
+        <p class="text-xs text-white/40 mt-1">总耗时: ${res.data.totalCostMs}ms | 完成步骤: ${steps.length}</p>
+      </div>`;
+  } catch(e) {
+    div.innerHTML = `<div class="glass rounded-lg p-3 border border-red-400/40">
+      <p class="text-sm text-red-400">请求失败: ${e.message}</p></div>`;
+  }
+}
+
+// ===== 启动 =====
+loadChannels();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: payment-module
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.example.payment: DEBUG
