@@ -2,7 +2,6 @@ package com.example.payment.callback.handler;
 
 import com.example.payment.callback.AbstractCallbackHandler;
 import com.example.payment.callback.CallbackContext;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -10,8 +9,7 @@ import org.springframework.stereotype.Component;
  * 低风险订单 → 抛出 SkipException 跳过（可选步骤）。
  * 高风险订单 → 必须上报，失败则终止链。
  */
-@Component
-@Order(5)
+@Component("riskReport")
 public class RiskReportHandler extends AbstractCallbackHandler {
 
     @Override

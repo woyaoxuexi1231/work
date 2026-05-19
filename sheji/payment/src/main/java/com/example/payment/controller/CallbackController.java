@@ -18,29 +18,44 @@ public class CallbackController {
         this.chainExecutor = chainExecutor;
     }
 
-    /** 获取当前回调处理链结构 */
+    /** 获取所有渠道的链结构 */
+    @GetMapping("/chains")
+    public ApiResult chains() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        for (String channel : chainExecutor.channels()) {
+            Map<String, Object> channelInfo = new LinkedHashMap<>();
+            channelInfo.put("handlers", chainExecutor.getHandlerDisplayNames(channel));
+            data.put(channel, channelInfo);
+        }
+        return ApiResult.ok(data);
+    }
+
+    /** 获取指定渠道的回调处理链 */
     @GetMapping("/chain")
-    public ApiResult chain() {
-        return ApiResult.ok(Map.of("handlers", chainExecutor.getHandlerNames()));
+    public ApiResult chain(@RequestParam String channel) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("channel", channel.toUpperCase());
+        data.put("handlers", chainExecutor.getHandlerDisplayNames(channel));
+        return ApiResult.ok(data);
     }
 
     /**
-     * 模拟回调通知 —— 执行完整的责任链。
+     * 模拟回调通知 —— 执行该渠道专属责任链。
      *
      * 请求参数可控制各步骤行为：
-     * - sign=INVALID     → 步骤1验签失败
-     * - orderNo=重复值   → 步骤2幂等跳过（第二次请求）
-     * - amount=0         → 步骤3金额异常失败
-     * - currentStatus=X  → 步骤4状态流转控制
-     * - riskLevel=LOW    → 步骤5跳过低风险
-     * - riskLevel=BLACK  → 步骤5风控拦截
-     * - notifyUrl含fail  → 步骤6通知失败
+     * - sign/signature=INVALID → 步骤1验签失败
+     * - orderNo=重复值        → 步骤2幂等跳过（第二次请求）
+     * - amount=0              → 步骤3金额异常失败
+     * - currentStatus=X       → 步骤4状态流转控制
+     * - riskLevel=LOW         → 步骤5跳过低风险
+     * - riskLevel=BLACK       → 步骤5风控拦截
+     * - notifyUrl含fail       → 步骤6通知失败
      */
     @PostMapping("/notify/{channel}")
     public ApiResult notify(@PathVariable String channel, @RequestBody Map<String, String> params) {
         String orderNo = params.getOrDefault("orderNo", "ORD" + System.currentTimeMillis());
         CallbackContext ctx = new CallbackContext(channel.toUpperCase(), orderNo, params);
-        CallbackResult result = chainExecutor.execute(ctx);
+        CallbackResult result = chainExecutor.execute(channel, ctx);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("channel", channel);

@@ -2,7 +2,6 @@ package com.example.payment.callback.handler;
 
 import com.example.payment.callback.AbstractCallbackHandler;
 import com.example.payment.callback.CallbackContext;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -10,8 +9,7 @@ import org.springframework.stereotype.Component;
  * 已处理 → 抛出 SkipException 跳过当前步骤（链继续，这是正常场景）。
  * 未处理 → 标记为已处理，继续。
  */
-@Component
-@Order(2)
+@Component("idempotencyCheck")
 public class IdempotencyCheckHandler extends AbstractCallbackHandler {
 
     @Override

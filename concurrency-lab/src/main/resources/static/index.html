@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>并发踩坑实验室：库存超卖 / 积分丢失 / Redis 预扣</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <div class="fixed inset-0 -z-10">
+    <div class="absolute inset-0 bg-gradient-to-br from-indigo-900/40 via-slate-950 to-fuchsia-900/30"></div>
+    <div class="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-indigo-400/20 blur-3xl"></div>
+    <div class="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
+  </div>
+
+  <main class="mx-auto max-w-6xl px-6 py-10">
+    <header class="mb-8">
+      <h1 class="text-3xl font-semibold tracking-tight">并发踩坑实验室</h1>
+      <p class="mt-2 text-slate-300">一键跑压测：库存超卖（不加锁 vs 加锁）、积分丢失（Integer vs LongAdder）、Redis 预扣 + DB 异步落库。</p>
+      <p class="mt-1 text-slate-400">默认端口 8201，打开本页即可操作。</p>
+    </header>
+
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+        <h2 class="text-lg font-semibold">初始化</h2>
+        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label class="block">
+            <span class="text-sm text-slate-300">SKU</span>
+            <input id="sku" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="SKU-1" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">内存库存（重置用）</span>
+            <input id="memStock" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="1000" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">DB 总库存（Redis 模式）</span>
+            <input id="dbTotal" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="1000" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">预取到 Redis</span>
+            <input id="prefetch" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="500" />
+          </label>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-3">
+          <button id="btnReset" class="rounded-xl bg-indigo-500/80 px-4 py-2 text-sm font-medium hover:bg-indigo-500">重置内存库存&积分</button>
+          <button id="btnRedisInit" class="rounded-xl bg-fuchsia-500/70 px-4 py-2 text-sm font-medium hover:bg-fuchsia-500">初始化 Redis+DB 库存</button>
+          <button id="btnState" class="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/15">查询当前状态</button>
+        </div>
+      </div>
+
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+        <h2 class="text-lg font-semibold">压测参数</h2>
+        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <label class="block">
+            <span class="text-sm text-slate-300">线程数</span>
+            <input id="threads" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="50" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">请求数</span>
+            <input id="requests" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="2000" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">每次 qty / delta</span>
+            <input id="qty" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="1" />
+          </label>
+        </div>
+
+        <label class="mt-4 block">
+          <span class="text-sm text-slate-300">Redis 补货 batch（Redis 没库存时从 DB 再拿多少）</span>
+          <input id="replenishBatch" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="50" />
+        </label>
+
+        <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <button data-mode="STOCK_UNSAFE" class="run rounded-xl bg-rose-500/70 px-4 py-2 text-sm font-medium hover:bg-rose-500">库存：不加锁（会超卖）</button>
+          <button data-mode="STOCK_LOCK" class="run rounded-xl bg-emerald-500/70 px-4 py-2 text-sm font-medium hover:bg-emerald-500">库存：加锁（不超卖）</button>
+          <button data-mode="POINTS_UNSAFE" class="run rounded-xl bg-amber-500/70 px-4 py-2 text-sm font-medium hover:bg-amber-500">积分：Integer 累加（会丢）</button>
+          <button data-mode="POINTS_SAFE" class="run rounded-xl bg-sky-500/70 px-4 py-2 text-sm font-medium hover:bg-sky-500">积分：LongAdder（不丢）</button>
+          <button data-mode="REDIS_STOCK" class="run md:col-span-2 rounded-xl bg-fuchsia-500/70 px-4 py-2 text-sm font-medium hover:bg-fuchsia-500">Redis 预扣 + DB 异步落库</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+      <div class="flex items-center justify-between gap-4">
+        <h2 class="text-lg font-semibold">输出</h2>
+        <button id="btnClear" class="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/15">清空</button>
+      </div>
+      <pre id="out" class="mt-4 max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-slate-950/40 p-4 text-xs leading-relaxed"></pre>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const out = $("out");
+
+    function log(obj) {
+      const s = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      out.textContent = `${new Date().toISOString()}\n${s}\n\n` + out.textContent;
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      try {
+        return { ok: res.ok, data: JSON.parse(text) };
+      } catch {
+        return { ok: res.ok, data: text };
+      }
+    }
+
+    async function getJson(url) {
+      const res = await fetch(url);
+      const text = await res.text();
+      try {
+        return { ok: res.ok, data: JSON.parse(text) };
+      } catch {
+        return { ok: res.ok, data: text };
+      }
+    }
+
+    $("btnClear").addEventListener("click", () => (out.textContent = ""));
+
+    $("btnReset").addEventListener("click", async () => {
+      const inMemoryStock = Number($("memStock").value || "0");
+      const r = await postJson("/api/reset", { inMemoryStock });
+      log({ action: "reset", ...r });
+    });
+
+    $("btnRedisInit").addEventListener("click", async () => {
+      const sku = $("sku").value.trim();
+      const total = Number($("dbTotal").value || "0");
+      const prefetch = Number($("prefetch").value || "0");
+      const r = await postJson("/api/redis/init", { sku, total, prefetch });
+      log({ action: "redisInit", ...r });
+    });
+
+    $("btnState").addEventListener("click", async () => {
+      const sku = $("sku").value.trim();
+      const r = await getJson(`/api/state?sku=${encodeURIComponent(sku)}`);
+      log({ action: "state", ...r });
+    });
+
+    document.querySelectorAll("button.run").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const mode = btn.dataset.mode;
+        const sku = $("sku").value.trim();
+        const threads = Number($("threads").value || "1");
+        const requests = Number($("requests").value || "1");
+        const qty = Number($("qty").value || "1");
+        const replenishBatch = Number($("replenishBatch").value || "50");
+
+        const r = await postJson("/api/test/run", { mode, threads, requests, qty, sku, replenishBatch });
+        log({ action: "run", mode, ...r });
+      });
+    });
+  </script>
+</body>
+</html>
+

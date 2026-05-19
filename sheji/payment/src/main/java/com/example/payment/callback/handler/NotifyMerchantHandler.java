@@ -2,15 +2,13 @@ package com.example.payment.callback.handler;
 
 import com.example.payment.callback.AbstractCallbackHandler;
 import com.example.payment.callback.CallbackContext;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * 步骤6: 通知商户 —— 向商户系统发送支付成功通知。
  * 通知失败 → 终止链（商户不知情可能导致业务问题）。
  */
-@Component
-@Order(6)
+@Component("notifyMerchant")
 public class NotifyMerchantHandler extends AbstractCallbackHandler {
 
     @Override
