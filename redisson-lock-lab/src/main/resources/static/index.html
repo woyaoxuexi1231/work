@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Redisson 分布式锁实战：看门狗/过期/幂等兜底</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <div class="fixed inset-0 -z-10">
+    <div class="absolute inset-0 bg-gradient-to-br from-emerald-900/25 via-slate-950 to-indigo-900/20"></div>
+    <div class="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-emerald-400/15 blur-3xl"></div>
+    <div class="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-indigo-400/15 blur-3xl"></div>
+  </div>
+
+  <main class="mx-auto max-w-6xl px-6 py-10">
+    <header class="mb-8">
+      <h1 class="text-3xl font-semibold tracking-tight">Redisson 分布式锁实战</h1>
+      <p class="mt-2 text-slate-300">重点对比：指定 lease 可能“业务没跑完锁就过期” vs 看门狗自动续期；再给出 Lua value-lock 和幂等兜底。</p>
+      <p class="mt-1 text-slate-400">服务端端口默认 8401；需要本机 Redis：127.0.0.1:6379。</p>
+    </header>
+
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+        <h2 class="text-lg font-semibold">参数</h2>
+        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label class="block">
+            <span class="text-sm text-slate-300">lockKey</span>
+            <input id="lockKey" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400/50" value="lock:order:sku-1" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">waitMs（抢锁等待）</span>
+            <input id="waitMs" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400/50" value="200" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">workMs（模拟业务耗时）</span>
+            <input id="workMs" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400/50" value="35000" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-300">leaseMs（指定过期，Redisson/Lua）</span>
+            <input id="leaseMs" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400/50" value="5000" />
+          </label>
+          <label class="block md:col-span-2">
+            <span class="text-sm text-slate-300">renewEveryMs（Lua 续期间隔，可空）</span>
+            <input id="renewEveryMs" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400/50" value="3000" />
+          </label>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-3">
+          <button id="btnInfo" class="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/15">查看实例信息</button>
+          <button id="btnTtl" class="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/15">查询 TTL</button>
+        </div>
+      </div>
+
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+        <h2 class="text-lg font-semibold">一键跑场景</h2>
+        <div class="mt-4 grid grid-cols-1 gap-3">
+          <button id="btnRedissonWatchdog" class="rounded-xl bg-emerald-500/70 px-4 py-2 text-sm font-medium hover:bg-emerald-500">
+            Redisson：不传 lease（看门狗自动续期）
+          </button>
+          <button id="btnRedissonLease" class="rounded-xl bg-rose-500/70 px-4 py-2 text-sm font-medium hover:bg-rose-500">
+            Redisson：指定 lease（业务可能跑不完就过期）
+          </button>
+          <button id="btnLuaRenew" class="rounded-xl bg-indigo-500/70 px-4 py-2 text-sm font-medium hover:bg-indigo-500">
+            Lua value-lock：SET NX PX + 定时续期 + 校验 value 解锁
+          </button>
+        </div>
+
+        <div class="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
+          <div class="text-sm font-medium">幂等兜底（应对主从切换导致的重复加锁）</div>
+          <div class="mt-3 flex flex-wrap items-end gap-3">
+            <label class="block flex-1 min-w-[220px]">
+              <span class="text-sm text-slate-300">bizKey（请求幂等号）</span>
+              <input id="bizKey" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="settle:2026-05-19:order-123" />
+            </label>
+            <label class="block w-[140px]">
+              <span class="text-sm text-slate-300">ttl(s)</span>
+              <input id="idemTtl" type="number" class="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400/50" value="60" />
+            </label>
+            <button id="btnIdem" class="rounded-xl bg-indigo-500/70 px-4 py-2 text-sm font-medium hover:bg-indigo-500">执行一次</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+      <div class="flex items-center justify-between gap-4">
+        <h2 class="text-lg font-semibold">输出</h2>
+        <button id="btnClear" class="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/15">清空</button>
+      </div>
+      <pre id="out" class="mt-4 max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-slate-950/40 p-4 text-xs leading-relaxed"></pre>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const out = $("out");
+
+    function log(obj) {
+      const s = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      out.textContent = `${new Date().toISOString()}\n${s}\n\n` + out.textContent;
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      try {
+        return { ok: res.ok, data: JSON.parse(text) };
+      } catch {
+        return { ok: res.ok, data: text };
+      }
+    }
+
+    async function getJson(url) {
+      const res = await fetch(url);
+      const text = await res.text();
+      try {
+        return { ok: res.ok, data: JSON.parse(text) };
+      } catch {
+        return { ok: res.ok, data: text };
+      }
+    }
+
+    function readCommon() {
+      return {
+        lockKey: $("lockKey").value.trim(),
+        waitMs: Number($("waitMs").value || "0"),
+        workMs: Number($("workMs").value || "1"),
+      };
+    }
+
+    $("btnClear").addEventListener("click", () => (out.textContent = ""));
+
+    $("btnInfo").addEventListener("click", async () => {
+      const r = await getJson("/api/info");
+      log({ action: "info", ...r });
+    });
+
+    $("btnTtl").addEventListener("click", async () => {
+      const lockKey = $("lockKey").value.trim();
+      const r = await postJson("/api/ttl", { lockKey });
+      log({ action: "ttl", ...r });
+    });
+
+    $("btnRedissonWatchdog").addEventListener("click", async () => {
+      const req = readCommon();
+      const r = await postJson("/api/redisson/run", req);
+      log({ action: "redissonWatchdog", ...r });
+    });
+
+    $("btnRedissonLease").addEventListener("click", async () => {
+      const req = readCommon();
+      req.leaseMs = Number($("leaseMs").value || "1");
+      const r = await postJson("/api/redisson/run", req);
+      log({ action: "redissonLease", ...r });
+    });
+
+    $("btnLuaRenew").addEventListener("click", async () => {
+      const req = readCommon();
+      req.leaseMs = Number($("leaseMs").value || "1");
+      const renewEveryMs = $("renewEveryMs").value;
+      if (renewEveryMs !== "") {
+        req.renewEveryMs = Number(renewEveryMs);
+      }
+      const r = await postJson("/api/lua/run", req);
+      log({ action: "luaRenew", ...r });
+    });
+
+    $("btnIdem").addEventListener("click", async () => {
+      const bizKey = $("bizKey").value.trim();
+      const ttlSeconds = Number($("idemTtl").value || "60");
+      const r = await postJson("/api/idem", { bizKey, ttlSeconds });
+      log({ action: "idem", ...r });
+    });
+  </script>
+</body>
+</html>
+
