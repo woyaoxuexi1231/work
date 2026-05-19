@@ -14,11 +14,11 @@
 </head>
 <body class="flex items-center justify-center p-4">
 <div class="glass p-8 w-full max-w-xl shadow-2xl text-white">
-    <h1 class="text-2xl font-bold mb-4 text-center">版本号防篡改（Token + 版本锁定 + AAD）</h1>
+    <h1 class="text-2xl font-bold mb-4 text-center">版本号防篡改（基础版）</h1>
 
     <div class="bg-white/10 p-4 rounded-lg mb-4">
         <div class="text-sm opacity-90">最新公钥版本: <span id="latest-ver" class="font-mono font-bold">加载中...</span></div>
-        <div class="text-xs opacity-70 mt-1">学习点：攻击者可以篡改外层 version，但篡改不了 token 签名，也篡改不了 RSA 密文内部的版本锁定。</div>
+        <div class="text-xs opacity-70 mt-1">学习点：攻击者可以篡改外层 version，但篡改不了 token 的签名，所以服务端能识别并拒绝。</div>
     </div>
 
     <div class="space-y-4">
@@ -90,46 +90,24 @@
             const attackVersion = document.getElementById("attack-version").value;
             const submitVersion = attackVersion || keyPack.version;
 
-            uiLog(`开始加密：真实加密版本=v${keyPack.version}，提交版本=v${submitVersion}`);
+            uiLog(`开始加密：真实版本=v${keyPack.version}，提交版本=v${submitVersion}`);
 
             const aesKey = forge.random.getBytesSync(16);
-            const iv = forge.random.getBytesSync(12);
-
-            // keyMaterial = version(4) + timestamp(8) + aesKey(16)
-            const buffer = forge.util.createBuffer();
-            buffer.putInt32(parseInt(keyPack.version));
-
-            const now = Date.now();
-            const hi = Math.floor(now / 0x100000000);
-            const lo = now >>> 0;
-            buffer.putInt32(hi);
-            buffer.putInt32(lo);
-
-            buffer.putBytes(aesKey);
-            const keyMaterial = buffer.getBytes();
 
             const publicKey = forge.pki.publicKeyFromPem(keyPack.publicKey);
-            const encryptedKey = publicKey.encrypt(keyMaterial, "RSA-OAEP", {
-                md: forge.md.sha256.create(),
-                mgf1: { md: forge.md.sha256.create() }
-            });
+            const encryptedKey = publicKey.encrypt(aesKey); // RSA PKCS1 v1.5（基础）
 
-            const cipher = forge.cipher.createCipher("AES-GCM", aesKey);
-            cipher.start({
-                iv: iv,
-                additionalData: keyPack.version // AAD：必须是“真实加密版本”
-            });
+            const cipher = forge.cipher.createCipher("AES-ECB", aesKey);
+            cipher.start();
             cipher.update(forge.util.createBuffer(plaintext, "utf8"));
             cipher.finish();
-            const encryptedData = cipher.output.getBytes();
-            const tag = cipher.mode.tag.getBytes();
+            const encryptedDataBase64 = forge.util.encode64(cipher.output.getBytes());
 
             const payload = {
                 version: submitVersion,
                 token: keyPack.token,
                 encryptedKey: forge.util.encode64(encryptedKey),
-                iv: forge.util.encode64(iv),
-                encryptedData: forge.util.encode64(encryptedData + tag)
+                encryptedData: encryptedDataBase64
             };
 
             uiLog("发送 POST /api/decrypt ...");
@@ -158,4 +136,3 @@
 </script>
 </body>
 </html>
-
