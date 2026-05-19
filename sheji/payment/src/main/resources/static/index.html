@@ -83,7 +83,7 @@
     <div class="flex gap-4 mt-3 text-xs text-white/50">
       <span>零修改接入新渠道</span>
       <span>·</span>
-      <span>异常可控责任链</span>
+      <span>每渠道独立责任链</span>
       <span>·</span>
       <span>毛玻璃 UI</span>
     </div>
@@ -137,9 +137,10 @@
 
       <!-- 模拟回调 -->
       <div class="glass-dark rounded-xl p-4">
-        <h3 class="text-white/80 text-sm font-medium mb-3">模拟回调通知</h3>
+        <h3 class="text-white/80 text-sm font-medium mb-3">模拟回调通知（每渠道独立链）</h3>
         <div class="space-y-2">
-          <select id="cbChannel" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm
+          <select id="cbChannel" onchange="onChannelChange()"
+                  class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm
                  [&>option]:bg-gray-800 [&>option]:text-white">
           </select>
           <div class="grid grid-cols-2 gap-2">
@@ -182,24 +183,29 @@
   <!-- ===== 底部: 架构说明 ===== -->
   <div class="glass rounded-2xl p-5 mt-6">
     <h2 class="text-white font-semibold text-lg mb-3">架构要点</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
       <div class="glass-dark rounded-xl p-4">
         <h3 class="text-violet-300 font-medium mb-2">策略自动注册</h3>
         <p class="text-white/60 leading-relaxed">
           <code class="text-violet-300/80 bg-black/20 px-1 rounded">PaymentStrategyRegistry</code>
           通过 <code class="text-violet-300/80 bg-black/20 px-1 rounded">List&lt;PaymentStrategy&gt;</code>
-          接收 Spring 注入的所有实现类，构建 <code class="text-violet-300/80 bg-black/20 px-1 rounded">Map</code> 做 O(1) 路由。
-          新渠道只需新建 <code class="text-violet-300/80 bg-black/20 px-1 rounded">@Component</code> 实现类即可，<strong>零修改</strong>已有代码。
+          接收 Spring 注入的所有实现类，新渠道只需加 <code class="text-violet-300/80 bg-black/20 px-1 rounded">@Component</code>。
         </p>
       </div>
       <div class="glass-dark rounded-xl p-4">
-        <h3 class="text-emerald-300 font-medium mb-2">责任链异常控制</h3>
+        <h3 class="text-emerald-300 font-medium mb-2">每渠道独立责任链</h3>
         <p class="text-white/60 leading-relaxed">
-          <code class="text-emerald-300/80 bg-black/20 px-1 rounded">SkipException</code> → 跳过当前节点继续链 ·
-          <code class="text-emerald-300/80 bg-black/20 px-1 rounded">CallbackException</code> → 终止链 ·
-          其他异常 → 终止链。
-          链顺序通过 <code class="text-emerald-300/80 bg-black/20 px-1 rounded">@Order(n)</code> 控制，
-          增删调序无需修改其他 Handler。
+          <code class="text-emerald-300/80 bg-black/20 px-1 rounded">CallbackChannelStrategy</code>
+          定义该渠道的链步骤。支付宝7步全走，微信6步（无风控），银联5步（无幂等+风控）。
+          换渠道时链实时切换。
+        </p>
+      </div>
+      <div class="glass-dark rounded-xl p-4">
+        <h3 class="text-amber-300 font-medium mb-2">异常三态控制</h3>
+        <p class="text-white/60 leading-relaxed">
+          <code class="text-amber-300/80 bg-black/20 px-1 rounded">SkipException</code> → 跳过继续 ·
+          <code class="text-amber-300/80 bg-black/20 px-1 rounded">CallbackException</code> → 终止链 ·
+          链顺序由 <code class="text-amber-300/80 bg-black/20 px-1 rounded">getHandlerNames()</code> 控制。
         </p>
       </div>
     </div>
@@ -210,6 +216,17 @@
 <!-- ===== JS ===== -->
 <script>
 const API = '/api';
+
+// 渠道名称映射
+const labels = {
+  SignatureVerifyHandler:    '① 验签',
+  IdempotencyCheckHandler:   '② 幂等校验',
+  AmountVerifyHandler:       '③ 金额校验',
+  StatusTransitionHandler:   '④ 状态流转',
+  RiskReportHandler:         '⑤ 风控上报',
+  NotifyMerchantHandler:     '⑥ 通知商户',
+  LogPersistenceHandler:     '⑦ 日志持久化'
+};
 
 // ===== 加载渠道列表 =====
 async function loadChannels() {
@@ -244,29 +261,26 @@ async function loadChannels() {
     document.getElementById('payChannel').innerHTML = opts;
     document.getElementById('cbChannel').innerHTML = opts;
 
-    // 异步加载链结构
-    loadChain();
+    // 加载当前选中渠道的链
+    const selectedChannel = document.getElementById('cbChannel').value;
+    if (selectedChannel) loadChain(selectedChannel);
   } catch(e) {
     document.getElementById('channelList').innerHTML =
       `<p class="text-red-400 text-sm">加载失败: ${e.message}</p>`;
   }
 }
 
-// ===== 加载回调链 =====
-async function loadChain() {
-  try {
-    const res = await fetch(API + '/callback/chain').then(r => r.json());
-    const handlers = res.data.handlers;
+// ===== 切换渠道时重新加载链 =====
+function onChannelChange() {
+  const channel = document.getElementById('cbChannel').value;
+  if (channel) loadChain(channel);
+}
 
-    const labels = {
-      SignatureVerifyHandler:    '① 验签',
-      IdempotencyCheckHandler:   '② 幂等校验',
-      AmountVerifyHandler:       '③ 金额校验',
-      StatusTransitionHandler:   '④ 状态流转',
-      RiskReportHandler:         '⑤ 风控上报',
-      NotifyMerchantHandler:     '⑥ 通知商户',
-      LogPersistenceHandler:     '⑦ 日志持久化'
-    };
+// ===== 加载指定渠道的回调链 =====
+async function loadChain(channel) {
+  try {
+    const res = await fetch(API + '/callback/chain?channel=' + channel).then(r => r.json());
+    const handlers = res.data.handlers;
 
     document.getElementById('chainSteps').innerHTML = handlers.map((h, i) => {
       const label = labels[h] || h;
@@ -319,11 +333,14 @@ async function doCallback() {
   const riskLevel = document.getElementById('cbRisk').value;
   const currentStatus = document.getElementById('cbStatus').value;
 
+  // 渠道差异化参数名：支付宝用 sign，银联用 signature
+  const signParam = channel === 'UNIONPAY' ? 'signature' : 'sign';
+
   const div = document.getElementById('cbResult');
   div.classList.remove('hidden');
   div.innerHTML = `
     <div class="glass rounded-lg p-3">
-      <p class="text-white/50 text-xs">执行中...</p>
+      <p class="text-white/50 text-xs">执行中 (${channel})...</p>
     </div>`;
 
   // 重置所有步骤状态
@@ -336,10 +353,13 @@ async function doCallback() {
   });
 
   try {
+    const body = { orderNo, amount, riskLevel, currentStatus, notifyUrl: 'https://merchant.example.com/notify' };
+    body[signParam] = sign;
+
     const res = await fetch(API + '/callback/notify/' + channel, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ orderNo, amount, sign, riskLevel, currentStatus, notifyUrl: 'https://merchant.example.com/notify' })
+      body: JSON.stringify(body)
     }).then(r => r.json());
 
     // 更新链步骤状态
@@ -349,7 +369,6 @@ async function doCallback() {
       const timeEl = document.getElementById('step-time-' + i);
       if (!el) return;
 
-      // 重置类名
       el.className = 'flex-1 glass rounded-xl px-4 py-3 flex items-center gap-3 border transition-all duration-300';
 
       const statusText = el.querySelector('span:nth-child(2)');
@@ -374,8 +393,9 @@ async function doCallback() {
         <p class="text-sm font-medium ${success ? 'text-green-300' : 'text-red-300'}">
           ${success ? '✓ 回调处理成功' : '✗ 回调处理失败'}
         </p>
+        <p class="text-xs text-white/40 mt-1">渠道: ${channel} | 链步骤数: ${steps.length}</p>
         ${!success ? `<p class="text-xs text-red-400/80 mt-1">终止于: ${res.data.failedAt} — ${res.data.errorMsg}</p>` : ''}
-        <p class="text-xs text-white/40 mt-1">总耗时: ${res.data.totalCostMs}ms | 完成步骤: ${steps.length}</p>
+        <p class="text-xs text-white/40 mt-1">总耗时: ${res.data.totalCostMs}ms</p>
       </div>`;
   } catch(e) {
     div.innerHTML = `<div class="glass rounded-lg p-3 border border-red-400/40">

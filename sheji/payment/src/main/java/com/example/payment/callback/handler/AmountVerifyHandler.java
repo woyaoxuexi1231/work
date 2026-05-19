@@ -2,15 +2,13 @@ package com.example.payment.callback.handler;
 
 import com.example.payment.callback.AbstractCallbackHandler;
 import com.example.payment.callback.CallbackContext;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * 步骤3: 金额校验 —— 校验回调中的金额与订单金额是否一致。
  * 金额不一致 → 终止链（可能是数据篡改）。
  */
-@Component
-@Order(3)
+@Component("amountVerify")
 public class AmountVerifyHandler extends AbstractCallbackHandler {
 
     @Override

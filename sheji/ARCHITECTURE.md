@@ -267,67 +267,131 @@ public class IdempotencyCheckHandler extends AbstractCallbackHandler {
 }
 ```
 
-**核心：链执行器** (`CallbackChainExecutor.java`):
+**核心：链执行器** (`CallbackChainExecutor.java`) — 每渠道独立链：
 
 ```java
 @Component
 public class CallbackChainExecutor {
 
-    private final List<CallbackHandler> handlers;
+    // 改造后: Map<渠道, 该渠道的责任链>
+    private final Map<String, List<CallbackHandler>> chains;
 
-    // Spring 注入所有 Handler，按 @Order 排序
-    public CallbackChainExecutor(List<CallbackHandler> handlers) {
-        this.handlers = handlers;  // Spring 已按 @Order 排好序
+    // 注入所有渠道策略 + ApplicationContext，按 bean name 查找 Handler
+    public CallbackChainExecutor(
+            List<CallbackChannelStrategy> channelStrategies,
+            ApplicationContext ctx) {
+
+        // 遍历每个渠道策略，按 getHandlerNames() 查 bean，构建该渠道的链
+        for (CallbackChannelStrategy strategy : channelStrategies) {
+            List<CallbackHandler> chain = strategy.getHandlerNames().stream()
+                .map(name -> ctx.getBean(name, CallbackHandler.class))
+                .toList();
+            chains.put(strategy.getChannel(), chain);
+        }
     }
 
-    public CallbackResult execute(CallbackContext ctx) {
+    // 执行指定渠道的责任链
+    public CallbackResult execute(String channel, CallbackContext ctx) {
+        List<CallbackHandler> handlers = chains.get(channel.toUpperCase());
         for (CallbackHandler handler : handlers) {
-            try {
-                handler.handle(ctx);
-                ctx.addStep(handler.name(), "PASSED", costMs);  // 通过，继续
-            } catch (SkipException e) {
-                ctx.addStep(handler.name(), "SKIPPED", costMs);  // 跳过，继续
-            } catch (CallbackException e) {
-                return CallbackResult.fail(handler.name(), e.getMessage(), steps);  // 终止
-            } catch (Exception e) {
-                return CallbackResult.fail(handler.name(), "未知异常", steps);       // 终止
-            }
+            // ... 异常分流逻辑不变
         }
-        return CallbackResult.success(steps, totalCostMs);
     }
 }
 ```
 
 ### 5. 七个 Handler 一览
 
-| @Order | Handler | 核心逻辑 | skip 场景 | fail 场景 |
-|--------|---------|---------|-----------|-----------|
-| 1 | SignatureVerifyHandler | 验证回调签名 | — | 签名缺失 / 签名无效 |
-| 2 | IdempotencyCheckHandler | 幂等防重 | 已处理过 | — |
-| 3 | AmountVerifyHandler | 金额校验 | — | 金额缺失 / 金额异常 |
-| 4 | StatusTransitionHandler | 状态机流转 | 已是终态 | 状态异常无法流转 |
-| 5 | RiskReportHandler | 风控上报 | 低风险订单 | 黑名单订单 |
-| 6 | NotifyMerchantHandler | 通知商户 | 未配置通知地址 | 通知失败 |
-| 7 | LogPersistenceHandler | 日志持久化 | — | (永不失败) |
+Handler 本身不再带有顺序信息（去掉了 @Order），顺序由各渠道的 `getHandlerNames()` 决定：
 
-### 6. 链的编排方式
+| Handler | Bean Name | 核心逻辑 | skip 场景 | fail 场景 |
+|---------|-----------|---------|-----------|-----------|
+| SignatureVerifyHandler | signatureVerify | 委托给渠道策略验签 | — | 签名缺失 / 签名无效 |
+| IdempotencyCheckHandler | idempotencyCheck | 幂等防重 | 已处理过 | — |
+| AmountVerifyHandler | amountVerify | 金额校验 | — | 金额缺失 / 金额异常 |
+| StatusTransitionHandler | statusTransition | 状态机流转 | 已是终态 | 状态异常无法流转 |
+| RiskReportHandler | riskReport | 风控上报 | 低风险订单 | 黑名单订单 |
+| NotifyMerchantHandler | notifyMerchant | 通知商户 | 未配置通知地址 | 通知失败 |
+| LogPersistenceHandler | logPersistence | 日志持久化 | — | (永不失败) |
 
-使用 Spring 的 `@Order(n)` 注解控制顺序，**不需要任何 XML 或手动拼接代码**：
+### 6. 链的编排方式 — 每渠道独立配置
+
+不再使用全局 @Order。每个渠道的 `CallbackChannelStrategy.getHandlerNames()` 直接声明自己的链：
 
 ```java
-@Component @Order(1)  // 第 1 步
-public class SignatureVerifyHandler extends AbstractCallbackHandler { ... }
+// 支付宝: 完整 7 步
+public List<String> getHandlerNames() {
+    return List.of("signatureVerify", "idempotencyCheck", "amountVerify",
+                   "statusTransition", "riskReport", "notifyMerchant", "logPersistence");
+}
 
-@Component @Order(2)  // 第 2 步
-public class IdempotencyCheckHandler extends AbstractCallbackHandler { ... }
-// ...
+// 微信: 6 步（无风控上报）
+public List<String> getHandlerNames() {
+    return List.of("signatureVerify", "idempotencyCheck", "amountVerify",
+                   "statusTransition", "notifyMerchant", "logPersistence");
+}
+
+// 银联: 5 步（无幂等 + 无风控）
+public List<String> getHandlerNames() {
+    return List.of("signatureVerify", "amountVerify",
+                   "statusTransition", "notifyMerchant", "logPersistence");
+}
 ```
 
-如果要插入新步骤，只需给一个新的 number（比如插入到 2 和 3 之间，用 `@Order(25)` 之类的技巧，或调整现有数字）。
+增删调序只需修改对应的 `getHandlerNames()` 返回值，Handler 和执行器代码完全不动。
 
 ---
 
-## 两种模式的联动
+## 设计三：渠道差异化的责任链 + 每渠道独立链配置
+
+### 要解决什么问题？
+
+改造前的问题：
+1. 责任链是全局单例，所有渠道共用同一条链，无法按渠道增减步骤
+2. Handler 内部不做渠道差异化（比如支付宝 RSA 验签 vs 微信 MD5 验签全写死）
+
+### 解决方案
+
+引入 `CallbackChannelStrategy` 接口，一个渠道一个实现，承担两个职责：
+
+**职责一：渠道差异化处理逻辑**
+
+```java
+public interface CallbackChannelStrategy {
+    String getChannel();
+    boolean verifySignature(Map<String, String> params);   // 各渠道验签不同
+    Map<String, Object> parseCallback(Map<String, String> params); // 数据解析不同
+    List<String> getHandlerNames();                         // 该渠道的链配置
+}
+```
+
+`SignatureVerifyHandler` 改造为注入 `CallbackChannelRegistry`，验签逻辑委托给渠道策略：
+
+```java
+@Component("signatureVerify")
+public class SignatureVerifyHandler extends AbstractCallbackHandler {
+    private final CallbackChannelRegistry channelRegistry;
+
+    @Override
+    protected void doHandle(CallbackContext ctx) {
+        CallbackChannelStrategy strategy = channelRegistry.get(ctx.getChannel());
+        if (!strategy.verifySignature(ctx.getRawParams())) {
+            fail("签名验证失败（" + ctx.getChannel() + "）");
+        }
+    }
+}
+```
+
+**职责二：每渠道独立链配置**
+
+通过 `getHandlerNames()` 返回该渠道专属的 Handler bean name 列表，`CallbackChainExecutor` 启动时为每个渠道构建独立的链。
+
+新渠道接入只需新建一个 `@Component` 实现 `CallbackChannelStrategy`：
+- 链自动生成（按 getHandlerNames() 配置）
+- 差异化逻辑自动生效（Handler 通过 Registry 查策略）
+- **零改已有代码**
+
+## 多种模式的联动
 
 ```
 用户请求
@@ -335,7 +399,7 @@ public class IdempotencyCheckHandler extends AbstractCallbackHandler { ... }
     ├─ 支付场景 ──→ PaymentController
     │                   │
     │                   ▼
-    │           PaymentStrategyRegistry   ← 策略模式负责
+    │           PaymentStrategyRegistry   ← 策略模式（选渠道）
     │                   │
     │           Alipay / Wechat / UnionPay
     │                   │
@@ -347,15 +411,21 @@ public class IdempotencyCheckHandler extends AbstractCallbackHandler { ... }
                 CallbackController
                         │
                         ▼
-                CallbackChainExecutor       ← 责任链模式负责
-                        │
-            ①→②→③→④→⑤→⑥→⑦  Handler 链
-                        │
-                        ▼
-                  CallbackResult
+                CallbackChainExecutor       ← 责任链模式（管流程）
+                   │          │
+                   ▼          ▼
+          CallbackChannelRegistry    chains Map<渠道, List<Handler>>
+                   │
+          AlipayCallbackStrategy    → 链: ①②③④⑤⑥⑦
+          WechatCallbackStrategy    → 链: ①②③④⑥⑦
+          UnionPayCallbackStrategy  → 链: ①③④⑥⑦
 ```
 
-两种模式各司其职：策略模式负责**"选哪个渠道"**，责任链模式负责**"回调来了怎么处理"**。
+四种模式各司其职：
+- **策略模式**负责"选哪个渠道发起支付"
+- **责任链模式**负责"回调来了按什么流程处理"
+- **策略模式（回调层）**负责"同一流程节点，不同渠道怎么实现"
+- **链配置**负责"不同渠道走哪些节点、按什么顺序"
 
 ---
 
@@ -388,7 +458,8 @@ public class IdempotencyCheckHandler extends AbstractCallbackHandler { ... }
 | **开闭原则** | 新渠道 = 新 @Component 类，零改已有代码 |
 | **异常驱动流程控制** | 三种异常控制责任链的"继续 / 跳过 / 终止"三态 |
 | **模板方法模式** | `AbstractCallbackHandler.handle()` 是模板，`doHandle()` 留给子类 |
-| **@Order 编排** | 用声明式注解控制链顺序，无需硬编码 |
+| **每渠道独立链配置** | `getHandlerNames()` 声明链步骤 + ApplicationContext 按名查 bean |
+| **策略嵌套责任链** | `CallbackChannelStrategy` 同时承担差异化逻辑 + 链配置，两种模式正交组合 |
 | **不可变上下文** | `CallbackContext` 作为贯穿对象，输入不可变、属性可变 |
 | **统一返回体** | `ApiResult` / `CallbackResult` 封装成功/失败信息，前端统一消费 |
 
