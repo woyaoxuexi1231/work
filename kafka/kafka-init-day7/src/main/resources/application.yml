@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+# ⚠️ %M（方法名）有轻微性能开销，生产环境可考虑移除
+logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%-5level) %clr([%15.15t]){faint} %clr(%-40.40logger{36}.%M){cyan} %clr(:){faint} %msg%n"
+
+spring:
+
+  kafka:
+    bootstrap-servers: 192.168.2.102:9092
+    # 生产者配置
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        # 在消息头中存储类型信息，以便消费者知道具体类
+        spring.json.add.type.headers: true
+    consumer:
+      group-id: product-consumer-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # 使用 ErrorHandlingDeserializer 包装实际反序列化器
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        # 真正执行反序列化的委托类
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # 信任所有包（生产环境请限定为你的包名）
+        spring.json.trusted.packages: "*"
+        # 如果没有类型头，默认使用 Product 类
+        spring.json.value.default.type: com.example.kafka.dto.ProductV1
+        # 当反序列化发生异常时，是否将异常放入头部（供监听器捕获）
+        spring.json.deserializer.exception.handler: org.springframework.kafka.support.serializer.JsonDeserializer.ErrorHandler
+      enable-auto-commit: false
+    listener:
+      # 允许监听器方法接收反序列化异常头
+      missing-topics-fatal: false
+      ack-mode: manual_immediate
+
+  datasource:
+    url: jdbc:mysql://192.168.2.102:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&connectionCollation=utf8mb4&rewriteBatchedStatements=true&allowMultiQueries=true&useCursorFetch=true
+    username: root
+    password: 123456
