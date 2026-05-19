@@ -33,9 +33,13 @@ public class CryptoService {
         aesCipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(aesKey, "AES"));
         byte[] encrypted = aesCipher.doFinal(responsePlaintext.getBytes(StandardCharsets.UTF_8));
 
+        // 创建一个 签名工具对象，并指定算法为 SHA256withRSA。
         Signature signature = Signature.getInstance("SHA256withRSA");
+        // 初始化签名工具，告诉它：“请使用这个私钥来签名”。
         signature.initSign(signingKey);
+        // 把 encrypted（密文字节数组）喂进签名工具。
         signature.update(encrypted);
+        // 完成 SHA-256 哈希计算，得到密文的哈希值 H
         byte[] sig = signature.sign();
 
         return new EncryptResponse(

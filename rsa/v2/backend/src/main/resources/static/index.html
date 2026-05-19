@@ -109,12 +109,25 @@
                 uiLog("服务端拒绝: " + text, "error");
                 return;
             }
+
+            /*
+            收到的密文 → SHA256 → 哈希 H_client
+            收到的签名 S → 公钥操作(S) → H_recovered
+            比较 H_client 和 H_recovered
+             */
+
+            // 拿到密文和签名的原始字节
             const response = JSON.parse(text);
             const responseEncryptedBytes = forge.util.decode64(response.encryptedData);
-
             const sigBytes = forge.util.decode64(response.signature);
-            const md = forge.md.sha256.create();
-            md.update(responseEncryptedBytes);
+
+            // 客户端自己计算密文的 SHA-256 摘要
+            const md = forge.md.sha256.create(); // 创建一个 SHA-256 哈希对象。
+            md.update(responseEncryptedBytes); // 把收到的密文字节喂进去，这一步完全复现了服务端签名时 signature.update(encrypted) 的操作。此时 md 内部已经算出了密文的哈希值（但还没输出最终摘要）。
+
+            // md.digest().bytes() 正式完成 SHA-256 计算，输出密文的 32 字节哈希值，记为 H_client。
+            // 用 RSA 公钥 对签名 sigBytes 执行公钥操作：H_recovered = sigBytes^e mod n 这就是我们之前说的“公钥解密签名”，从中恢复出原始哈希。
+            // 比较 H_recovered 和传入的 H_client，如果完全相同则返回 true，否则返回 false。
             const verified = publicKey.verify(md.digest().bytes(), sigBytes);
             if (!verified) {
                 uiLog("验签失败：响应可能被篡改", "error");
@@ -125,7 +138,6 @@
             decipher.start();
             decipher.update(forge.util.createBuffer(responseEncryptedBytes));
             const ok = decipher.finish();
-            if (!ok) {
             if (!ok) {
                 uiLog("响应解密失败：AES-ECB 解密失败", "error");
                 return;

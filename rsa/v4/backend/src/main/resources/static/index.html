@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>v1：RSA + AES（最基础）</title>
+    <title>v4：keyVersion + token（演示）</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js"></script>
     <style>
@@ -14,7 +14,7 @@
 </head>
 <body class="flex items-center justify-center p-4">
 <div class="glass p-8 w-full max-w-xl shadow-2xl text-white">
-    <h1 class="text-2xl font-bold mb-4 text-center">v1：RSA(PKCS1) + AES(ECB)</h1>
+    <h1 class="text-2xl font-bold mb-4 text-center">v4：keyVersion + token（演示）</h1>
 
     <div class="bg-white/10 p-4 rounded-lg mb-4">
         <div class="text-sm opacity-90">服务端公钥: <span id="key-status" class="font-mono font-bold">加载中...</span></div>
@@ -59,7 +59,7 @@
             const res = await fetch("/api/key");
             keyInfo = await res.json();
             document.getElementById("key-status").textContent = "已加载";
-            uiLog("获取成功：" + keyInfo.algorithm, "success");
+            uiLog("获取成功：" + keyInfo.algorithm + "，keyVersion=" + keyInfo.keyVersion, "success");
         } catch (e) {
             uiLog("获取失败：" + e.message, "error");
         }
@@ -93,6 +93,8 @@
             const encryptedDataBase64 = forge.util.encode64(cipher.output.getBytes());
 
             const payload = {
+                keyVersion: keyInfo.keyVersion,
+                token: keyInfo.token,
                 encryptedKey: forge.util.encode64(encryptedKey),
                 encryptedData: encryptedDataBase64
             };
