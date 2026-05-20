@@ -4,16 +4,25 @@ import { post } from '../../api/request.js'
 import { ElMessage } from 'element-plus'
 
 const overview = ref(null)
-const loading = ref(true)
+const loading = ref(false)
+let fetching = false  // 防止重复请求
 
 onMounted(async () => {
   await fetchOverview()
 })
 
 async function fetchOverview() {
+  // 防止重复请求
+  if (fetching) return
+  fetching = true
   loading.value = true
   try {
     const res = await post('/risk-api/api/hub/overview')
+    // 处理 HTTP 错误（如 502 Bad Gateway）
+    if (res._httpError) {
+      ElMessage.error(res.message || '网关错误')
+      return
+    }
     if (res.code === 200) {
       overview.value = res.data
     } else {
@@ -23,6 +32,7 @@ async function fetchOverview() {
     ElMessage.error('网络错误')
   } finally {
     loading.value = false
+    fetching = false
   }
 }
 

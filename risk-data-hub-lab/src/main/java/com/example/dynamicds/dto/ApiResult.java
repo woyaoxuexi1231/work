@@ -7,9 +7,9 @@ import lombok.Data;
  * <p>
  * <b>为什么要有 ApiResult？</b><br>
  * 统一响应格式，前端可以按统一结构解析：
- * <pre>{ "code": 0, "message": "success", "data": {...} }</pre>
- * 0 表示成功，非 0 表示业务异常。
- * 前端判断 {@code if (res.code === 0)} 比 try-catch 解析异常要可靠。
+ * <pre>{ "code": 200, "message": "success", "data": {...} }</pre>
+ * 200 表示成功，非 200 表示业务异常。
+ * 前端判断 {@code if (res.code === 200)} 比 try-catch 解析异常要可靠。
  * <p>
  * <b>静态工厂方法 vs new ApiResult()</b><br>
  * {@code ApiResult.ok(data)} 和 {@code ApiResult.fail(code, msg)} 是静态工厂方法，
@@ -29,7 +29,7 @@ public class ApiResult<T> {
     /** 成功（有返回数据） */
     public static <T> ApiResult<T> ok(T data) {
         ApiResult<T> r = new ApiResult<>();
-        r.code = 0;
+        r.code = 200;
         r.message = "success";
         r.data = data;
         return r;

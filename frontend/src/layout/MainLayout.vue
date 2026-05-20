@@ -7,9 +7,12 @@ const router = useRouter()
 const route = useRoute()
 const currentUser = ref(null)
 
-// 通过 Gateway 获取当前用户
+// 通过 Gateway 获取当前用户（忽略 HTTP 错误，由路由守卫处理）
 post('/api/auth/me').then(data => {
-  if (data.code === 0) currentUser.value = data.data
+  // 只处理正常响应，HTTP 错误由路由守卫重定向
+  if (!data._httpError && data.code === 200) {
+    currentUser.value = data.data
+  }
 })
 
 const handleCommand = async (command) => {
