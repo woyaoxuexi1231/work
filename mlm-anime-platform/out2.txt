@@ -1,0 +1,56 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ---------------------< com.mlm:mlm-anime-platform >---------------------
+[INFO] Building MLM Anime Platform 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ mlm-anime-platform ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 9 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ mlm-anime-platform ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 65 source files with javac [debug release 17] to target\classes
+[INFO] 某些消息已经过简化; 请使用 -Xdiags:verbose 重新编译以获得完整输出
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[84,34] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[98,38] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[121,38] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[139,46] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[175,38] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[180,34] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[227,74] 不可比较的类型: java.lang.Integer和com.mlm.common.enums.StepStatus
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[231,49] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/web/controller/ProjectController.java:[170,60] 找不到符号
+  符号:   方法 getCode()
+  位置: 类 java.lang.Integer
+[INFO] 9 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  3.379 s
+[INFO] Finished at: 2026-05-20T16:07:20+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project mlm-anime-platform: Compilation failure: Compilation failure: 
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[84,34] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[98,38] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[121,38] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[139,46] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[175,38] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[180,34] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[227,74] 不可比较的类型: java.lang.Integer和com.mlm.common.enums.StepStatus
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/model/core/ModelGateway.java:[231,49] 不兼容的类型: com.mlm.common.enums.StepStatus无法转换为java.lang.Integer
+[ERROR] /D:/project/work/mlm-anime-platform/src/main/java/com/mlm/web/controller/ProjectController.java:[170,60] 找不到符号
+[ERROR]   符号:   方法 getCode()
+[ERROR]   位置: 类 java.lang.Integer
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

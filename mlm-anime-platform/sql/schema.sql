@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS project_stage_member (
     project_id  BIGINT NOT NULL COMMENT '项目ID',
     stage       INT    NOT NULL COMMENT '阶段(2=剧本创作,3=剧本审核,4=拆分镜,5=AI成片,6=终审)',
     user_id     BIGINT NOT NULL COMMENT '负责人用户ID',
-    UNIQUE KEY uk_project_stage (project_id, stage)
+    INDEX idx_project_stage (project_id, stage)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目阶段负责人';
 
 -- 剧集表

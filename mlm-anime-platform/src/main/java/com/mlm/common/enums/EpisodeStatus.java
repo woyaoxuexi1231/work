@@ -1,8 +1,7 @@
 package com.mlm.common.enums;
 
 import com.baomidou.mybatisplus.annotation.EnumValue;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
+import lombok.Getter;
 
 /**
  * 剧集管线状态 — 整数编码
@@ -18,6 +17,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  *  7 = COMPLETED        已完成
  * </pre>
  */
+@Getter
 public enum EpisodeStatus {
     SCRIPT_DRAFT(2, "剧本创作"),
     SCRIPT_REVIEW(3, "剧本审核"),
@@ -33,11 +33,6 @@ public enum EpisodeStatus {
 
     EpisodeStatus(int code, String label) { this.code = code; this.label = label; }
 
-    @JsonValue
-    public int getCode() { return code; }
-    public String getLabel() { return label; }
-
-    @JsonCreator
     public static EpisodeStatus of(int code) {
         for (EpisodeStatus s : values()) {
             if (s.code == code) return s;

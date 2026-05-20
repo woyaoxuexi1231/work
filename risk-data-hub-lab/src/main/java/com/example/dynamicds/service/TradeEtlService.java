@@ -24,13 +24,34 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * ETL 同步编排入口 —— 数据中台的核心同步引擎。
- *
- * 流程：
- * 1. 校验数据源类型（中台库不能作为同步来源）
- * 2. 创建同步上下文（数据源key、类型、分页大小、批次号）
- * 3. 并发派发 4 类业务（STOCK / TRADE / POSITION / ASSET）到 syncBusinessExecutor
- * 4. 每类业务内部使用生产者-消费者双线程：拉取上游 → 转换 → 落库中台
- * 5. 合并所有业务结果并返回摘要
+ * <p>
+ * <b>策略模式（Strategy Pattern）</b><br>
+ * {@code businessSyncTemplates} 是一个 {@code List&lt;BusinessSyncTemplate&gt;}，
+ * Spring 会自动注入所有实现了 BusinessSyncTemplate 接口的 Bean（Stock/Trade/Position/Asset）。
+ * 这有几个好处：
+ * <ul>
+ *   <li><b>开闭原则</b> — 新增一种业务同步（比如"分红同步"）只需新建一个 @Service 实现类，
+ *       无需修改 TradeEtlService 的代码。</li>
+ *   <li><b>遍历派发</b> — for 循环提交所有模板到线程池，天然并发。</li>
+ *   <li><b>故障隔离</b> — 如果某个模板执行失败，不影响其他模板（各自有独立的拉取-落库线程对）。</li>
+ * </ul>
+ * <p>
+ * <b>为什么用 syncBusinessExecutor（4 线程）而不是虚拟线程？</b>
+ * <ul>
+ *   <li>4 类业务各自占用 2 个线程（拉取 + 落库），固定 4 线程保证
+ *       STOCK 的拉取线程不会抢占 ASSET 的落库线程。</li>
+ *   <li>每类业务内部的双线程通过阻塞队列协调，不需要额外的调度。</li>
+ *   <li>线程数固定，排查问题时可快速定位到对应线程名（risk-hub-business-）。</li>
+ * </ul>
+ * <p>
+ * <b>流程</b>
+ * <ol>
+ *   <li>校验数据源类型（中台库不能作为同步来源）</li>
+ *   <li>创建同步上下文（数据源key、类型、分页大小、批次号）</li>
+ *   <li>并发派发 4 类业务（STOCK / TRADE / POSITION / ASSET）</li>
+ *   <li>每类业务内部使用生产者-消费者双线程：拉取上游 → 转换 → 落库中台</li>
+ *   <li>合并所有业务结果并返回摘要</li>
+ * </ol>
  */
 @Service
 @Slf4j
@@ -40,7 +61,9 @@ public class TradeEtlService {
     private final DynamicDataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final CleanTradeMapper cleanTradeMapper;
+    /** Spring 自动注入所有 BusinessSyncTemplate 实现类（策略模式） */
     private final List<BusinessSyncTemplate> businessSyncTemplates;
+    /** 4 线程池，每类业务一个 Future */
     @Qualifier("syncBusinessExecutor")
     private final ThreadPoolExecutor syncBusinessExecutor;
 

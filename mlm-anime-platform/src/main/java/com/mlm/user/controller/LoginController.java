@@ -44,7 +44,7 @@ public class LoginController {
     }
 
     /** 当前用户信息 */
-    @GetMapping("/api/auth/me")
+    @PostMapping("/api/auth/me")
     @ResponseBody
     public ApiResult<User> me(HttpSession session) {
         User user = (User) session.getAttribute(SESSION_USER_KEY);

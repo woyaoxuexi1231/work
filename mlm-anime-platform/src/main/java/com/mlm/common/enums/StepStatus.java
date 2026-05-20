@@ -1,8 +1,7 @@
 package com.mlm.common.enums;
 
 import com.baomidou.mybatisplus.annotation.EnumValue;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
+import lombok.Getter;
 
 /**
  * 步骤子状态 — 整数编码
@@ -13,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  *  2 = PROCESSING 处理中
  * </pre>
  */
+@Getter
 public enum StepStatus {
     PENDING(0, "待处理"),
     SUCCESS(1, "成功"),
@@ -25,11 +25,6 @@ public enum StepStatus {
 
     StepStatus(int code, String label) { this.code = code; this.label = label; }
 
-    @JsonValue
-    public int getCode() { return code; }
-    public String getLabel() { return label; }
-
-    @JsonCreator
     public static StepStatus of(int code) {
         for (StepStatus s : values()) {
             if (s.code == code) return s;

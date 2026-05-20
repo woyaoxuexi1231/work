@@ -111,7 +111,16 @@ public class PlatformBootstrapService {
     /**
      * 初始化演示数据：清空所有表 → 灌入字典和发号器 → 拉取 Marketstack 股票数据 →
      * 按上游系统各自的表结构分别写入 trade_oms 和 trade_broker。
-     * 前端 POST /api/hub/init-data 触发此方法。
+     * <p>
+     * <b>设计说明：</b>
+     * <ul>
+     *   <li><b>synchronized</b> — 防止前端连续点击"初始化"按钮导致并发灌数。
+     *       如果两次初始化同时执行，第一次 truncate 后第二次 insert 的数据可能被第一次清掉，
+     *       最终数据不一致。</li>
+     *   <li><b>与 InitDataTaskService 的 AtomicBoolean 双重保护</b> —
+     *       InitDataTaskService.startTask() 的 CAS 确保"同一时刻只有一个初始化任务在执行"，
+     *       initDemoData() 的 synchronized 确保"即使绕过任务服务直接调用也不会并发"。</li>
+     * </ul>
      */
     public synchronized Map<String, Object> initDemoData() {
         log.info("[平台初始化] 开始按当前表结构初始化演示数据");

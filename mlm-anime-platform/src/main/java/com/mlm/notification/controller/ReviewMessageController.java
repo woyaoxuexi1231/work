@@ -11,10 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 审核消息 REST 接口
- * <p>
- * 前端消息铃铛通过此接口查询未读消息。
- * 消息的写入由 Pipeline Handler 在进入审核状态时自动触发。
+ * 审核消息接口 — 全部 POST
  */
 @RestController
 @RequestMapping("/api/notifications")
@@ -28,19 +25,16 @@ public class ReviewMessageController {
         this.messageService = messageService;
     }
 
-    /** 未读消息列表 */
-    @GetMapping
+    @PostMapping("/list")
     public ApiResult<List<ReviewMessage>> listUnread() {
         return ApiResult.ok(messageService.findUnread());
     }
 
-    /** 未读消息数量（用于前端 badge 显示） */
-    @GetMapping("/count")
+    @PostMapping("/count")
     public ApiResult<Map<String, Long>> count() {
         return ApiResult.ok(Map.of("count", messageService.countUnread()));
     }
 
-    /** 标记已读 */
     @PostMapping("/read")
     public ApiResult<?> markAsRead(@RequestBody List<Long> ids) {
         messageService.markAsRead(ids.toArray(new Long[0]));
