@@ -5,8 +5,8 @@ import com.example.dynamicds.dto.DataSourceVO;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
@@ -34,9 +34,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * - 超时后强制 close，避免无限等待
  */
 @Component
+@Slf4j
+@RequiredArgsConstructor
 public class DynamicDataSourceManager {
-
-    private static final Logger log = LoggerFactory.getLogger(DynamicDataSourceManager.class);
 
     /** 优雅下线最大等待时间（毫秒） */
     private static final long DRAIN_TIMEOUT_MS = 30_000;
@@ -45,10 +45,7 @@ public class DynamicDataSourceManager {
 
     private final DynamicRoutingDataSource routingDataSource;
     private final ConcurrentHashMap<String, HikariDataSource> dataSources = new ConcurrentHashMap<>();
-
-    public DynamicDataSourceManager(DynamicRoutingDataSource routingDataSource) {
-        this.routingDataSource = routingDataSource;
-    }
+    private final ConcurrentHashMap<String, DataSourceConfigDTO> dataSourceConfigs = new ConcurrentHashMap<>();
 
     // ==================== 注册数据源 ====================
 
@@ -73,6 +70,7 @@ public class DynamicDataSourceManager {
         }
 
         dataSources.put(key, ds);
+        dataSourceConfigs.put(key, copyConfig(config));
         routingDataSource.register(key, ds, new ConcurrentHashMap<>(dataSources));
     }
 
@@ -90,6 +88,7 @@ public class DynamicDataSourceManager {
 
         // Step 1: 从路由表移除，新请求不再路由到此数据源
         dataSources.remove(key);
+        dataSourceConfigs.remove(key);
         routingDataSource.remove(key, new ConcurrentHashMap<>(dataSources));
         log.info("Datasource '{}' removed from routing table, draining...", key);
 
@@ -137,6 +136,11 @@ public class DynamicDataSourceManager {
 
     public boolean exists(String key) {
         return dataSources.containsKey(key);
+    }
+
+    public DataSourceConfigDTO getConfig(String key) {
+        DataSourceConfigDTO config = dataSourceConfigs.get(key);
+        return config == null ? null : copyConfig(config);
     }
 
     public DataSource getDataSource(String key) {
@@ -195,7 +199,10 @@ public class DynamicDataSourceManager {
 
     private DataSourceVO toVO(String key, HikariDataSource ds) {
         DataSourceVO vo = new DataSourceVO();
+        DataSourceConfigDTO config = dataSourceConfigs.get(key);
         vo.setKey(key);
+        vo.setName(config == null ? key : config.getName());
+        vo.setDatasourceType(config == null ? "UNKNOWN" : config.getDatasourceType());
         vo.setUrl(ds.getJdbcUrl());
         vo.setPoolName(ds.getPoolName());
         vo.setMaxPoolSize(ds.getMaximumPoolSize());
@@ -205,5 +212,23 @@ public class DynamicDataSourceManager {
         vo.setTotalConnections(getTotalConnections(ds));
         vo.setOnline(!ds.isClosed());
         return vo;
+    }
+
+    private DataSourceConfigDTO copyConfig(DataSourceConfigDTO source) {
+        DataSourceConfigDTO target = new DataSourceConfigDTO();
+        target.setKey(source.getKey());
+        target.setName(source.getName());
+        target.setDatasourceType(source.getDatasourceType());
+        target.setUrl(source.getUrl());
+        target.setUsername(source.getUsername());
+        target.setPassword(source.getPassword());
+        target.setDriverClassName(source.getDriverClassName());
+        target.setMaxPoolSize(source.getMaxPoolSize());
+        target.setMinIdle(source.getMinIdle());
+        target.setConnectionTimeout(source.getConnectionTimeout());
+        target.setIdleTimeout(source.getIdleTimeout());
+        target.setMaxLifetime(source.getMaxLifetime());
+        target.setPoolName(source.getPoolName());
+        return target;
     }
 }

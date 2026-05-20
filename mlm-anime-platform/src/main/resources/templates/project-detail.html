@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>项目流水线 - MLM</title>
+    <th:block th:replace="~{fragments :: head}"></th:block>
+    <style>
+        .episode-card { transition: all 0.2s; }
+        .episode-card:hover { transform: translateY(-2px); }
+        .pipeline-bar { height: 6px; border-radius: 3px; transition: all 0.3s; }
+        .pipeline-bar.active { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+        .pipeline-bar.done { background: #22c55e; }
+        .pipeline-bar.pending { background: rgba(255,255,255,0.1); }
+        .pipeline-bar.failed { background: #ef4444; }
+        .step-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            transition: all 0.3s;
+        }
+        .step-dot.done { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+        .step-dot.active { background: #6366f1; box-shadow: 0 0 12px rgba(99,102,241,0.6); animation: pulse 2s infinite; }
+        .step-dot.pending { background: rgba(255,255,255,0.2); }
+        .step-dot.failed { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.2); }
+        }
+    </style>
+</head>
+<body>
+    <th:block th:replace="~{fragments :: nav}"></th:block>
+    <main class="p-6">
+        <!-- 项目头部 -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <a href="/projects" class="text-gray-400 hover:text-white text-sm">← 返回项目列表</a>
+                <h1 class="text-3xl font-bold text-white mt-1" id="projectName">-</h1>
+                <div class="flex gap-4 text-sm text-gray-400 mt-1">
+                    <span>📺 共 <span id="totalEpisodes">0</span> 集</span>
+                    <span>✅ 已完成 <span id="completedEpisodes">0</span> 集</span>
+                    <span id="resourceBadge" class="hidden">📎 引用资源 #<span id="resourceId"></span></span>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="showAddEpisodeModal()" class="btn-glass text-white px-3 py-2 rounded-lg text-sm">+ 添加剧集</button>
+            </div>
+        </div>
+
+        <!-- Pipeline 流程可视化 -->
+        <div class="glass p-4 mb-6">
+            <div class="flex items-center justify-between" id="pipelineSteps">
+                <div class="flex items-center gap-1 text-xs text-gray-500">
+                    <span class="step-dot done"></span> 已完成
+                </div>
+                <div class="flex items-center gap-1 text-xs text-gray-500">
+                    <span class="step-dot active"></span> 进行中
+                </div>
+                <div class="flex items-center gap-1 text-xs text-gray-500">
+                    <span class="step-dot pending"></span> 待处理
+                </div>
+                <div class="flex items-center gap-1 text-xs text-gray-500">
+                    <span class="step-dot failed"></span> 失败
+                </div>
+            </div>
+        </div>
+
+        <!-- 剧集列表（每集即 Pipeline 的一行） -->
+        <div class="space-y-3" id="episodeList">
+            <div class="text-center text-gray-500 py-8">加载中...</div>
+        </div>
+
+        <!-- 添加剧集弹窗 -->
+        <div id="addEpisodeModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="glass p-6 w-96">
+                <h2 class="text-xl font-bold text-white mb-4">添加剧集</h2>
+                <input id="newEpisodeTitle" class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white mb-3" placeholder="本集标题">
+                <input id="newEpisodeNumber" type="number" class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white mb-4" placeholder="集号">
+                <div class="flex gap-3 justify-end">
+                    <button onclick="hideAddEpisodeModal()" class="px-4 py-2 text-gray-400">取消</button>
+                    <button onclick="addEpisode()" class="btn-glass text-white px-4 py-2 rounded-lg">添加</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提交剧本弹窗 -->
+        <div id="scriptModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="glass p-6 w-[600px] max-w-[90vw]">
+                <h2 class="text-xl font-bold text-white mb-4">编辑剧本 — 第 <span id="scriptEpisodeNumber"></span> 集</h2>
+                <textarea id="scriptContent" rows="12" class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white font-mono text-sm mb-4" placeholder="在此输入剧本内容..."></textarea>
+                <div class="flex gap-3 justify-end">
+                    <button onclick="hideScriptModal()" class="px-4 py-2 text-gray-400">取消</button>
+                    <button onclick="submitScript()" class="btn-glass text-white px-4 py-2 rounded-lg">提交剧本</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const PROJECT_ID = [[${projectId}]];
+        const STEPS = [
+            { key: 'SCRIPT_DRAFT', label: '剧本创作', icon: '📝' },
+            { key: 'SCRIPT_REVIEW', label: '剧本审核', icon: '🔍' },
+            { key: 'STORYBOARD', label: '拆分镜', icon: '🎬' },
+            { key: 'GENERATING', label: 'AI成片', icon: '🤖' },
+            { key: 'EPISODE_APPROVAL', label: '终审', icon: '✅' },
+            { key: 'COMPLETED', label: '已完成', icon: '🏁' }
+        ];
+        const STEP_KEYS = STEPS.map(s => s.key);
+        let currentEpisodeId = null;
+
+        async function loadProject() {
+            const res = await fetch(`/api/projects/${PROJECT_ID}`);
+            const data = await res.json();
+            const d = data.data || {};
+            const project = d.project || {};
+            const episodes = d.episodes || [];
+
+            document.getElementById('projectName').textContent = project.name;
+            document.getElementById('totalEpisodes').textContent = project.episodesCount || episodes.length;
+            document.getElementById('completedEpisodes').textContent = project.completedCount || 0;
+            if (project.resourceId) {
+                document.getElementById('resourceBadge').classList.remove('hidden');
+                document.getElementById('resourceId').textContent = project.resourceId;
+            }
+
+            renderEpisodes(episodes);
+        }
+
+        function renderEpisodes(episodes) {
+            const el = document.getElementById('episodeList');
+            if (episodes.length === 0) {
+                el.innerHTML = '<div class="text-center text-gray-500 py-8">暂无剧集，点击右上角添加</div>';
+                return;
+            }
+
+            if (episodes.length === 0) {
+                el.innerHTML = `
+                    <div class="glass p-8 text-center">
+                        <div class="text-4xl mb-3">📺</div>
+                        <p class="text-gray-400 mb-4">项目暂无剧集，添加第一集开始流水线</p>
+                        <button onclick="showAddEpisodeModal()" class="btn-glass text-white px-4 py-2 rounded-lg">+ 添加第一集</button>
+                    </div>
+                `;
+                return;
+            }
+
+            el.innerHTML = episodes.map(ep => {
+                const currentIdx = STEP_KEYS.indexOf(ep.status);
+                const isCompleted = ep.status === 'COMPLETED';
+                const isFailed = ep.stepStatus === 'FAILED';
+
+                return `
+                    <div class="glass p-4 episode-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <span class="text-lg font-bold text-white">第 ${ep.episodeNumber} 集</span>
+                                <span class="text-gray-400">${ep.title || ''}</span>
+                                <span class="status-badge status-${isFailed ? 'failed' : ep.status.toLowerCase()}">
+                                    ${isFailed ? '失败' : (STEPS[currentIdx]?.label || ep.status)}
+                                </span>
+                            </div>
+                            <div class="flex gap-1">
+                                ${renderActions(ep)}
+                            </div>
+                        </div>
+
+                        <!-- Pipeline 进度条 -->
+                        <div class="flex items-center gap-1 mb-2">
+                            ${STEPS.map((s, i) => `
+                                <div class="flex-1 flex flex-col items-center">
+                                    <div class="step-dot ${i < currentIdx ? 'done' : i === currentIdx ? (isFailed ? 'failed' : 'active') : 'pending'}"></div>
+                                    <div class="text-xs mt-1 ${i === currentIdx ? 'text-indigo-400 font-medium' : 'text-gray-500'}">${s.icon}</div>
+                                    <div class="text-[10px] text-gray-600">${s.label}</div>
+                                </div>
+                                ${i < STEPS.length - 1 ? `
+                                    <div class="flex-1 pipeline-bar ${i < currentIdx ? 'done' : i === currentIdx ? (isFailed ? 'failed' : 'active') : 'pending'}"></div>
+                                ` : ''}
+                            `).join('')}
+                        </div>
+
+                        ${ep.scriptContent ? `<div class="text-xs text-gray-500 mt-2 truncate">📄 剧本已提交 (${ep.scriptContent.length} 字)</div>` : ''}
+                        ${ep.errorMsg ? `<div class="text-xs text-red-400 mt-1">❌ ${ep.errorMsg}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderActions(ep) {
+            const isFailed = ep.stepStatus === 'FAILED';
+            const isPending = ep.stepStatus === 'PENDING';
+            const isCompleted = ep.status === 'COMPLETED';
+
+            if (isCompleted) return '<span class="text-xs text-green-400">✅ 已完成</span>';
+
+            let html = '';
+
+            if (ep.status === 'SCRIPT_DRAFT' && isPending) {
+                html += `<button onclick="openScriptModal(${ep.id}, ${ep.episodeNumber})" class="btn-glass text-white px-2 py-1 rounded text-xs">✏️ 写剧本</button>`;
+            }
+
+            if (ep.status === 'SCRIPT_REVIEW' && isPending) {
+                html += `<button onclick="approveScript(${ep.id})" class="btn-success text-white px-2 py-1 rounded text-xs">✅ 通过</button>`;
+                html += `<button onclick="rejectScript(${ep.id})" class="btn-danger text-white px-2 py-1 rounded text-xs">❌ 驳回</button>`;
+            }
+
+            if (ep.status === 'EPISODE_APPROVAL' && isPending) {
+                html += `<button onclick="approveEpisode(${ep.id})" class="btn-success text-white px-2 py-1 rounded text-xs">✅ 终审通过</button>`;
+                html += `<button onclick="rejectEpisode(${ep.id})" class="btn-danger text-white px-2 py-1 rounded text-xs">❌ 驳回</button>`;
+            }
+
+            if (isFailed) {
+                html += `<button onclick="retryEpisode(${ep.id})" class="btn-glass text-white px-2 py-1 rounded text-xs">🔄 重试</button>`;
+            }
+
+            return html || '<span class="text-xs text-gray-500">处理中...</span>';
+        }
+
+        // ---- Actions ----
+        function openScriptModal(episodeId, episodeNumber) {
+            currentEpisodeId = episodeId;
+            document.getElementById('scriptEpisodeNumber').textContent = episodeNumber;
+            document.getElementById('scriptContent').value = '';
+            document.getElementById('scriptModal').classList.remove('hidden');
+        }
+        function hideScriptModal() { document.getElementById('scriptModal').classList.add('hidden'); }
+
+        async function submitScript() {
+            const content = document.getElementById('scriptContent').value.trim();
+            if (!content) return alert('请输入剧本内容');
+            await fetch(`/api/projects/${PROJECT_ID}/episodes/${currentEpisodeId}/submit-script`, {
+                method: 'POST',
+                headers: {'Content-Type': 'text/plain'},
+                body: content
+            });
+            hideScriptModal();
+            loadProject();
+        }
+
+        async function approveScript(id) {
+            await fetch(`/api/projects/${PROJECT_ID}/episodes/${id}/approve-script`, {method:'POST'});
+            loadProject();
+        }
+
+        async function rejectScript(id) {
+            await fetch(`/api/projects/${PROJECT_ID}/episodes/${id}/reject-script`, {method:'POST'});
+            loadProject();
+        }
+
+        async function approveEpisode(id) {
+            await fetch(`/api/projects/${PROJECT_ID}/episodes/${id}/approve`, {method:'POST'});
+            loadProject();
+        }
+
+        async function rejectEpisode(id) {
+            await fetch(`/api/projects/${PROJECT_ID}/episodes/${id}/reject`, {method:'POST'});
+            loadProject();
+        }
+
+        async function retryEpisode(id) {
+            await fetch(`/api/projects/${PROJECT_ID}/episodes/${id}/retry`, {method:'POST'});
+            loadProject();
+        }
+
+        // ---- Add Episode ----
+        function showAddEpisodeModal() { document.getElementById('addEpisodeModal').classList.remove('hidden'); }
+        function hideAddEpisodeModal() { document.getElementById('addEpisodeModal').classList.add('hidden'); }
+
+        async function addEpisode() {
+            const title = document.getElementById('newEpisodeTitle').value.trim() || '新剧集';
+            const number = document.getElementById('newEpisodeNumber').value;
+            if (!number) return alert('请输入集号');
+            await fetch(`/api/projects/${PROJECT_ID}/episodes?title=${encodeURIComponent(title)}&episodeNumber=${number}`, {
+                method: 'POST'
+            });
+            hideAddEpisodeModal();
+            document.getElementById('newEpisodeTitle').value = '';
+            document.getElementById('newEpisodeNumber').value = '';
+            loadProject();
+        }
+
+        // ---- Auto refresh ----
+        loadProject();
+        setInterval(loadProject, 15000); // 每15秒刷新状态
+    </script>
+</body>
+</html>

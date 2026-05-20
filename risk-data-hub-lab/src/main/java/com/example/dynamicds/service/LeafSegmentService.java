@@ -1,11 +1,10 @@
 package com.example.dynamicds.service;
 
-import com.example.dynamicds.datasource.RoutingJdbcExecutor;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.stereotype.Service;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.LinkedHashMap;
@@ -15,6 +14,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @Service
+@Slf4j
+@RequiredArgsConstructor
 public class LeafSegmentService {
 
     private final ConcurrentHashMap<String, SegmentBuffer> buffers = new ConcurrentHashMap<>();
@@ -22,13 +23,10 @@ public class LeafSegmentService {
     private final ExecutorService preloadExecutor =
             Executors.newSingleThreadExecutor(new CustomizableThreadFactory("leaf-preload-"));
 
-    public LeafSegmentService(DynamicLocalTxSupport localTxSupport) {
-        this.localTxSupport = localTxSupport;
-    }
-
     public long nextId(String tag) {
         SegmentBuffer buffer = buffers.computeIfAbsent(tag, key -> new SegmentBuffer());
         synchronized (buffer) {
+            // current buffer 用完时，先尝试切到预加载好的 next；没有再回源数据库拿新号段。
             if (!buffer.current.hasNext()) {
                 switchSegment(buffer, tag);
             }
@@ -72,10 +70,12 @@ public class LeafSegmentService {
 
     private void switchSegment(SegmentBuffer buffer, String tag) {
         if (buffer.next.ready) {
+            log.info("[Leaf] tag={} 当前号段耗尽，切换到预加载 next buffer: {}-{}", tag, buffer.next.start, buffer.next.end);
             buffer.current = buffer.next.copy();
             buffer.next = Segment.empty();
             return;
         }
+        log.info("[Leaf] tag={} 当前无 next buffer，回源数据库申请新号段", tag);
         Segment fresh = fetchSegment(tag);
         buffer.current = fresh;
         buffer.next = Segment.empty();
@@ -88,18 +88,22 @@ public class LeafSegmentService {
         if (!lowWaterMark || buffer.loadingNext || buffer.next.ready) {
             return;
         }
+        log.info("[Leaf] tag={} 当前号段剩余不足 20%，异步预加载 next buffer", tag);
         buffer.loadingNext = true;
         preloadExecutor.submit(() -> {
             Segment next = fetchSegment(tag);
             synchronized (buffer) {
                 buffer.next = next;
                 buffer.loadingNext = false;
+                log.info("[Leaf] tag={} next buffer 预加载完成: {}-{}", tag, next.start, next.end);
             }
         });
     }
 
     private Segment fetchSegment(String tag) {
-        return localTxSupport.executeOn(PlatformBootstrapService.DS_META, connection -> {
+        return localTxSupport.executeOn(PlatformBootstrapService.DS_HUB, connection -> {
+            // 这里故意保留手写 JDBC + select ... for update，
+            // 因为 Leaf-segment 的核心价值就在于“中心库一行记录的行锁分配号段”。
             try (PreparedStatement select = connection.prepareStatement(
                     "select max_id, step from leaf_alloc where biz_tag = ? for update")) {
                 select.setString(1, tag);
@@ -116,6 +120,7 @@ public class LeafSegmentService {
                         update.setString(2, tag);
                         update.executeUpdate();
                     }
+                    log.info("[Leaf] tag={} 从数据库拿到新号段: {}-{}，step={}", tag, oldMax + 1, newMax, step);
                     return new Segment(oldMax + 1, oldMax + 1, newMax, true);
                 }
             }

@@ -19,10 +19,10 @@ public class DataSourceConfig {
     public DynamicRoutingDataSource dataSource() {
         // 默认数据源 — H2 内存库
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:default_db;DB_CLOSE_DELAY=-1;MODE=MySQL");
-        config.setUsername("sa");
-        config.setPassword("");
-        config.setDriverClassName("org.h2.Driver");
+        config.setJdbcUrl("jdbc:mysql://192.168.2.102:3306/test?useSSL=false&serverTimezone=UTC&characterEncoding=utf-8&allowPublicKeyRetrieval=true");
+        config.setUsername("root");
+        config.setPassword("123456");
+        config.setDriverClassName("com.mysql.cj.jdbc.Driver");
         config.setMaximumPoolSize(5);
         config.setMinimumIdle(1);
         config.setPoolName("HikariPool-default");

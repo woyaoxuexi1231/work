@@ -1,19 +1,19 @@
 package com.example.dynamicds.service;
 
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
 
 @Component
+@Slf4j
+@RequiredArgsConstructor
 public class DynamicLocalTxSupport {
 
     private final DynamicDataSourceManager manager;
-
-    public DynamicLocalTxSupport(DynamicDataSourceManager manager) {
-        this.manager = manager;
-    }
 
     public <T> T executeOn(String dataSourceKey, SqlCallback<T> callback) {
         DataSource dataSource = manager.getDataSource(dataSourceKey);
@@ -23,11 +23,14 @@ public class DynamicLocalTxSupport {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             try {
+                log.debug("[本地事务] 开始执行 dataSourceKey={}", dataSourceKey);
                 T result = callback.apply(connection);
                 connection.commit();
+                log.debug("[本地事务] 提交成功 dataSourceKey={}", dataSourceKey);
                 return result;
             } catch (Exception e) {
                 connection.rollback();
+                log.warn("[本地事务] 已回滚 dataSourceKey={}, reason={}", dataSourceKey, e.getMessage());
                 throw e;
             }
         } catch (Exception e) {

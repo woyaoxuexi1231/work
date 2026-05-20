@@ -1,6 +1,10 @@
 spring:
   application:
     name: risk-data-hub-lab
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jackson:
+    time-zone: Asia/Shanghai
 
 server:
   port: 8501
@@ -8,3 +12,62 @@ server:
 logging:
   level:
     com.example.dynamicds: DEBUG
+    com.baomidou.mybatisplus: INFO
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+hub:
+  datasource:
+    default-key: risk_hub
+    items:
+      - key: risk_hub
+        name: 中台库
+        datasource-type: HUB
+        url: jdbc:mysql://192.168.2.102:3306/risk_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        username: root
+        password: 123456
+        max-pool-size: 8
+        min-idle: 1
+      - key: trade_oms
+        name: 交易系统A库
+        datasource-type: TRADE_OMS
+        url: jdbc:mysql://192.168.2.102:3306/trade_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        username: root
+        password: 123456
+        max-pool-size: 8
+        min-idle: 1
+      - key: trade_broker
+        name: 交易系统B库
+        datasource-type: TRADE_BROKER
+        url: jdbc:mysql://192.168.2.102:3306/trade_broker?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        username: root
+        password: 123456
+        max-pool-size: 8
+        min-idle: 1
+
+marketstack:
+  enabled: true
+  base-url: https://api.marketstack.com/v2
+  access-key: 64d9883d55cec83b567a4d48743532f3
+  symbols:
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - META
+    - TSLA
+    - GOOGL
+    - AMD
+    - NFLX
+    - INTC
+    - ORCL
+    - IBM
+    - JPM
+    - BAC
+    - WMT
