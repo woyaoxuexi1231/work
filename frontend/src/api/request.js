@@ -19,26 +19,36 @@ export function removeToken() {
 
 // 统一响应解析，处理 HTTP 错误和非 JSON 响应
 async function parseResponse(res) {
-  const status = res.status
+  const httpStatus = res.status
   
   // 处理 2xx 成功状态
-  if (status >= 200 && status < 300) {
+  if (httpStatus >= 200 && httpStatus < 300) {
     const contentType = res.headers.get('content-type') || ''
     if (contentType.includes('application/json')) {
-      return res.json()
+      const data = await res.json()
+      // 确保返回完整响应，包含 status 字段
+      return {
+        code: data.code !== undefined ? data.code : httpStatus,
+        message: data.message || 'success',
+        status: data.status || 'OK',
+        data: data.data,
+        _httpError: false
+      }
     }
     // 非 JSON 响应
-    return { code: status, message: '服务器返回了非 JSON 响应' }
+    return { code: httpStatus, message: '服务器返回了非 JSON 响应', status: 'NON_JSON_RESPONSE', _httpError: true }
   }
   
   // 处理 4xx/5xx 错误状态
-  let errorMsg = `HTTP ${status}`
+  let errorMsg = `HTTP ${httpStatus}`
+  let errorStatus = `HTTP_ERROR_${httpStatus}`
   try {
     const data = await res.json()
     if (data.message) errorMsg = data.message
-    return { code: status, message: errorMsg, _httpError: true }
+    if (data.status) errorStatus = data.status
+    return { code: httpStatus, message: errorMsg, status: errorStatus, _httpError: true }
   } catch {
-    return { code: status, message: errorMsg, _httpError: true }
+    return { code: httpStatus, message: errorMsg, status: errorStatus, _httpError: true }
   }
 }
 

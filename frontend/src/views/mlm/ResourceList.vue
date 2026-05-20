@@ -35,8 +35,11 @@ async function fetchResources() {
     }
     if (res.code === 200) {
       resourceList.value = res.data || []
+      if (res.status) {
+        console.log('[MLM] 资源列表已加载:', res.status)
+      }
     } else {
-      ElMessage.error(res.message || '获取资源列表失败')
+      ElMessage.error((res.message || '获取资源列表失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')

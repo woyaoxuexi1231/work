@@ -43,8 +43,11 @@ async function fetchModels() {
     }
     if (res.code === 200) {
       modelList.value = res.data || []
+      if (res.status) {
+        console.log('[MLM] 模型列表已加载:', res.status)
+      }
     } else {
-      ElMessage.error(res.message || '获取模型列表失败')
+      ElMessage.error((res.message || '获取模型列表失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -69,12 +72,12 @@ async function createModel() {
       enabled: modelForm.value.enabled
     })
     if (res.code === 200) {
-      ElMessage.success('创建成功')
+      ElMessage.success((res.message || '创建成功') + ' [' + res.status + ']')
       dialogVisible.value = false
       modelForm.value = { name: '', vendor: 'stable_diffusion', type: 'TEXT_TO_IMAGE', apiKey: '', apiUrl: '', enabled: true }
       await fetchModels()
     } else {
-      ElMessage.error(res.message || '创建失败')
+      ElMessage.error((res.message || '创建失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')

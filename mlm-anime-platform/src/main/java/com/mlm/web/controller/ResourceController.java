@@ -25,6 +25,6 @@ public class ResourceController {
 
     @PostMapping("/list")
     public ApiResult<List<Resource>> list() {
-        return ApiResult.ok(resourceService.listAll());
+        return ApiResult.ok(resourceService.listAll(), "RESOURCE_LIST_LOADED");
     }
 }
