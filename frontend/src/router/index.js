@@ -57,6 +57,11 @@ router.beforeEach(async (to, from, next) => {
   }
   try {
     const data = await post('/api/auth/me')
+    // 处理 HTTP 错误（如 502 Bad Gateway、401 Unauthorized）
+    if (data._httpError) {
+      next('/login')
+      return
+    }
     if (data.code === 200 && data.data) {
       next()
     } else {

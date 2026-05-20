@@ -12,7 +12,7 @@ export default defineConfig({
       // 所有请求统一走 Gateway（鉴权 + 路由转发）
       '/login':       { target: GATEWAY_TARGET, changeOrigin: true },
       '/logout':      { target: GATEWAY_TARGET, changeOrigin: true },
-      '/api/auth':    { target: GATEWAY_TARGET, changeOrigin: true },
+      '/api':         { target: GATEWAY_TARGET, changeOrigin: true },
       '/mlm-api':     { target: GATEWAY_TARGET, changeOrigin: true },
       '/risk-api':    { target: GATEWAY_TARGET, changeOrigin: true },
     }

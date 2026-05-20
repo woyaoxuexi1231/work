@@ -19,10 +19,21 @@ async function doLogin() {
   loading.value = true
   try {
     const data = await postForm('/login', { username: loginForm.value.username, password: loginForm.value.password })
+    // 处理 HTTP 错误响应（如 502 Bad Gateway）
+    if (data._httpError) {
+      ElMessage.error(data.message || '网关错误')
+      return
+    }
     if (data.code === 200) {
-      setToken(data.data.token)
-      ElMessage.success('登录成功')
-      router.push('/dashboard')
+      // 兼容多种 token 路径格式：data.data.token 或 data.token 或 data.data (直接是token字符串)
+      const token = data.data?.token || data.token || data.data
+      if (token) {
+        setToken(token)
+        ElMessage.success('登录成功')
+        router.push('/dashboard')
+      } else {
+        ElMessage.error('登录响应格式异常')
+      }
     } else {
       ElMessage.error(data.message || '登录失败')
     }

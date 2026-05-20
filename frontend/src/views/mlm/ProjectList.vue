@@ -4,17 +4,27 @@ import { post } from '../../api/request.js'
 import { ElMessage } from 'element-plus'
 
 const projects = ref([])
-const loading = ref(true)
+const loading = ref(false)
 const tableLoading = ref(false)
+let fetching = false  // 防止重复请求
 
 onMounted(async () => {
   await fetchProjects()
 })
 
 async function fetchProjects() {
+  // 防止重复请求
+  if (fetching) return
+  fetching = true
+  loading.value = true
   tableLoading.value = true
   try {
     const res = await post('/mlm-api/api/projects/list')
+    // 处理 HTTP 错误（如 502 Bad Gateway）
+    if (res._httpError) {
+      ElMessage.error(res.message || '网关错误')
+      return
+    }
     if (res.code === 200) {
       projects.value = res.data || []
     } else {
@@ -25,6 +35,7 @@ async function fetchProjects() {
   } finally {
     loading.value = false
     tableLoading.value = false
+    fetching = false
   }
 }
 </script>
