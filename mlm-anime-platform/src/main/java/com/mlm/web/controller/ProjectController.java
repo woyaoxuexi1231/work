@@ -12,14 +12,15 @@ import com.mlm.pipeline.entity.StageMember;
 import com.mlm.pipeline.mapper.StageMemberMapper;
 import com.mlm.pipeline.service.EpisodeService;
 import com.mlm.pipeline.service.ProjectService;
-import com.mlm.user.entity.User;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.List;
@@ -41,6 +42,7 @@ public class ProjectController {
     private final PipelineEngine pipelineEngine;
     private final StageMemberMapper stageMemberMapper;
     private final ModelGateway modelGateway;
+    private final RestTemplate restTemplate = new RestTemplate();
 
     public ProjectController(ProjectService projectService, EpisodeService episodeService,
                              PipelineEngine pipelineEngine, StageMemberMapper stageMemberMapper,
@@ -54,21 +56,21 @@ public class ProjectController {
 
     /** 项目列表 */
     @PostMapping("/list")
-    public ApiResult<List<Project>> list(HttpSession session) {
-        User user = currentUser(session);
+    public ApiResult<List<Project>> list(HttpServletRequest request) {
+        Long userId = currentUserId(request);
         List<Project> all = projectService.listAll();
-        all.removeIf(p -> !p.getIsPublic() && !p.getCreatedBy().equals(user.getId()));
+        all.removeIf(p -> !p.getIsPublic() && !p.getCreatedBy().equals(userId));
         return ApiResult.ok(all);
     }
 
     /** 项目详情（含剧集列表） */
     @PostMapping("/get")
-    public ApiResult<Map<String, Object>> get(@RequestBody Map<String, Long> body, HttpSession session) {
+    public ApiResult<Map<String, Object>> get(@RequestBody Map<String, Long> body, HttpServletRequest request) {
         Long id = body.get("id");
         Project project = projectService.getById(id);
         if (project == null) return ApiResult.fail(404, "项目不存在");
-        User user = currentUser(session);
-        if (!project.getIsPublic() && !project.getCreatedBy().equals(user.getId()))
+        Long userId = currentUserId(request);
+        if (!project.getIsPublic() && !project.getCreatedBy().equals(userId))
             return ApiResult.fail(403, "无权访问");
         List<Episode> episodes = episodeService.findByProjectId(id);
         Map<String, Object> result = new HashMap<>();
@@ -79,21 +81,21 @@ public class ProjectController {
 
     /** 创建项目 */
     @PostMapping("/create")
-    public ApiResult<Project> create(@RequestBody Map<String, Object> body, HttpSession session) {
+    public ApiResult<Project> create(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         String name = (String) body.get("name");
         Long resourceId = body.get("resourceId") != null ? ((Number) body.get("resourceId")).longValue() : null;
-        User user = currentUser(session);
-        return ApiResult.ok(pipelineEngine.createProject(name, resourceId, user.getId()));
+        Long userId = currentUserId(request);
+        return ApiResult.ok(pipelineEngine.createProject(name, resourceId, userId));
     }
 
     /** 切换可见性 */
     @PostMapping("/toggle-visibility")
-    public ApiResult<?> toggleVisibility(@RequestBody Map<String, Long> body, HttpSession session) {
+    public ApiResult<?> toggleVisibility(@RequestBody Map<String, Long> body, HttpServletRequest request) {
         Long id = body.get("id");
-        User user = currentUser(session);
+        Long userId = currentUserId(request);
         Project project = projectService.getById(id);
         if (project == null) return ApiResult.fail(404, "项目不存在");
-        if (!project.getCreatedBy().equals(user.getId())) return ApiResult.fail(403, "仅创建者可操作");
+        if (!project.getCreatedBy().equals(userId)) return ApiResult.fail(403, "仅创建者可操作");
         project.setIsPublic(!project.getIsPublic());
         projectService.update(project);
         return ApiResult.ok();
@@ -101,8 +103,8 @@ public class ProjectController {
 
     /** 添加剧集 */
     @PostMapping("/episode/add")
-    public ApiResult<Episode> addEpisode(@RequestBody Map<String, Object> body, HttpSession session) {
-        checkStagePermission(((Number) body.get("projectId")).longValue(), 2, session);
+    public ApiResult<Episode> addEpisode(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        checkStagePermission(((Number) body.get("projectId")).longValue(), 2, request);
         return ApiResult.ok(pipelineEngine.addEpisode(
             ((Number) body.get("projectId")).longValue(),
             (String) body.get("title"),
@@ -112,10 +114,10 @@ public class ProjectController {
 
     /** 提交剧本 */
     @PostMapping("/episode/submit-script")
-    public ApiResult<?> submitScript(@RequestBody Map<String, Object> body, HttpSession session) {
+    public ApiResult<?> submitScript(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         Long projectId = ((Number) body.get("projectId")).longValue();
         Long episodeId = ((Number) body.get("episodeId")).longValue();
-        checkStagePermission(projectId, 2, session);
+        checkStagePermission(projectId, 2, request);
         Episode episode = episodeService.getById(episodeId);
         if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
         episode.setScriptContent((String) body.get("scriptContent"));
@@ -125,10 +127,10 @@ public class ProjectController {
 
     /** 剧本审核通过 */
     @PostMapping("/episode/approve-script")
-    public ApiResult<?> approveScript(@RequestBody Map<String, Number> body, HttpSession session) {
+    public ApiResult<?> approveScript(@RequestBody Map<String, Number> body, HttpServletRequest request) {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
-        checkStagePermission(projectId, 3, session);
+        checkStagePermission(projectId, 3, request);
         Episode episode = episodeService.getById(episodeId);
         if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
         pipelineEngine.advance(episode);
@@ -137,20 +139,20 @@ public class ProjectController {
 
     /** 剧本驳回 */
     @PostMapping("/episode/reject-script")
-    public ApiResult<?> rejectScript(@RequestBody Map<String, Number> body, HttpSession session) {
+    public ApiResult<?> rejectScript(@RequestBody Map<String, Number> body, HttpServletRequest request) {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
-        checkStagePermission(projectId, 3, session);
+        checkStagePermission(projectId, 3, request);
         pipelineEngine.reject(episodeId, EpisodeStatus.SCRIPT_DRAFT);
         return ApiResult.ok();
     }
 
     /** 终审通过 */
     @PostMapping("/episode/approve")
-    public ApiResult<?> approve(@RequestBody Map<String, Number> body, HttpSession session) {
+    public ApiResult<?> approve(@RequestBody Map<String, Number> body, HttpServletRequest request) {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
-        checkStagePermission(projectId, 6, session);
+        checkStagePermission(projectId, 6, request);
         Episode episode = episodeService.getById(episodeId);
         if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
         pipelineEngine.advance(episode);
@@ -159,22 +161,22 @@ public class ProjectController {
 
     /** 终审驳回 */
     @PostMapping("/episode/reject")
-    public ApiResult<?> reject(@RequestBody Map<String, Number> body, HttpSession session) {
+    public ApiResult<?> reject(@RequestBody Map<String, Number> body, HttpServletRequest request) {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
-        checkStagePermission(projectId, 6, session);
+        checkStagePermission(projectId, 6, request);
         pipelineEngine.reject(episodeId, EpisodeStatus.GENERATING);
         return ApiResult.ok();
     }
 
     /** 重试失败步骤 */
     @PostMapping("/episode/retry")
-    public ApiResult<?> retry(@RequestBody Map<String, Number> body, HttpSession session) {
+    public ApiResult<?> retry(@RequestBody Map<String, Number> body, HttpServletRequest request) {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
         Episode episode = episodeService.getById(episodeId);
         if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
-        checkStagePermission(projectId, episode.getStatus(), session);
+        checkStagePermission(projectId, episode.getStatus(), request);
         pipelineEngine.retry(episodeId);
         return ApiResult.ok();
     }
@@ -183,10 +185,10 @@ public class ProjectController {
 
     /** 生成图片 */
     @PostMapping("/episode/generate-image")
-    public ApiResult<?> generateImage(@RequestBody Map<String, Object> body, HttpSession session) {
+    public ApiResult<?> generateImage(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         Long projectId = ((Number) body.get("projectId")).longValue();
         Long episodeId = ((Number) body.get("episodeId")).longValue();
-        checkStagePermission(projectId, 5, session);
+        checkStagePermission(projectId, 5, request);
         GenerateRequest req = new GenerateRequest();
         req.setType(com.mlm.common.enums.ModelType.TEXT_TO_IMAGE);
         req.setVendor("stable_diffusion");
@@ -200,10 +202,10 @@ public class ProjectController {
 
     /** 生成视频 */
     @PostMapping("/episode/generate-video")
-    public ApiResult<?> generateVideo(@RequestBody Map<String, Object> body, HttpSession session) {
+    public ApiResult<?> generateVideo(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         Long projectId = ((Number) body.get("projectId")).longValue();
         Long episodeId = ((Number) body.get("episodeId")).longValue();
-        checkStagePermission(projectId, 5, session);
+        checkStagePermission(projectId, 5, request);
         GenerateRequest req = new GenerateRequest();
         req.setType(com.mlm.common.enums.ModelType.IMAGE_TO_VIDEO);
         req.setVendor("kling");
@@ -215,10 +217,10 @@ public class ProjectController {
 
     /** 完成生成 → 推进到终审 */
     @PostMapping("/episode/complete-generation")
-    public ApiResult<?> completeGeneration(@RequestBody Map<String, Number> body, HttpSession session) {
+    public ApiResult<?> completeGeneration(@RequestBody Map<String, Number> body, HttpServletRequest request) {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
-        checkStagePermission(projectId, 5, session);
+        checkStagePermission(projectId, 5, request);
         Episode episode = episodeService.getById(episodeId);
         if (episode == null) return ApiResult.fail(404, "剧集不存在");
         pipelineEngine.advance(episode);
@@ -247,12 +249,12 @@ public class ProjectController {
     }
 
     @PostMapping("/stage-members/set")
-    public ApiResult<?> setMembers(@RequestBody Map<String, Object> body, HttpSession session) {
+    public ApiResult<?> setMembers(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         Long projectId = ((Number) body.get("projectId")).longValue();
-        User user = currentUser(session);
+        Long userId = currentUserId(request);
         Project project = projectService.getById(projectId);
         if (project == null) return ApiResult.fail(404, "项目不存在");
-        if (!project.getCreatedBy().equals(user.getId())) return ApiResult.fail(403, "仅创建者可设置");
+        if (!project.getCreatedBy().equals(userId)) return ApiResult.fail(403, "仅创建者可设置");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> members = (List<Map<String, Object>>) body.get("members");
         stageMemberMapper.delete(new LambdaQueryWrapper<StageMember>().eq(StageMember::getProjectId, projectId));
@@ -268,22 +270,41 @@ public class ProjectController {
 
     // ====== 工具 ======
 
-    private User currentUser(HttpSession session) {
-        User user = (User) session.getAttribute("loginUser");
-        if (user == null) throw new RuntimeException("未登录");
-        return user;
+    /** 通过 Authorization 头调 Gateway 获取当前用户 ID */
+    private Long currentUserId(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("未登录");
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", authHeader);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<Map> resp = restTemplate.exchange(
+                "http://localhost:9000/api/auth/me", HttpMethod.POST, entity, Map.class);
+            Map<String, Object> body = resp.getBody();
+            if (body == null || !Integer.valueOf(0).equals(body.get("code"))) {
+                throw new RuntimeException("未登录");
+            }
+            Map<String, Object> data = (Map<String, Object>) body.get("data");
+            return ((Number) data.get("id")).longValue();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("鉴权失败: " + e.getMessage());
+        }
     }
 
-    private void checkStagePermission(Long projectId, int stageCode, HttpSession session) {
-        User user = currentUser(session);
+    private void checkStagePermission(Long projectId, int stageCode, HttpServletRequest request) {
+        Long userId = currentUserId(request);
         Project project = projectService.getById(projectId);
         if (project == null) throw new RuntimeException("项目不存在");
-        if (project.getCreatedBy().equals(user.getId())) return;
+        if (project.getCreatedBy().equals(userId)) return;
         StageMember member = stageMemberMapper.selectOne(
             new LambdaQueryWrapper<StageMember>()
                 .eq(StageMember::getProjectId, projectId)
                 .eq(StageMember::getStage, stageCode)
-                .eq(StageMember::getUserId, user.getId())
+                .eq(StageMember::getUserId, userId)
         );
         if (member == null) throw new RuntimeException("无权操作该阶段");
     }

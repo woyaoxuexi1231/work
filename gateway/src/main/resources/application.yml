@@ -1,0 +1,30 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: gateway
+
+  datasource:
+    url: jdbc:mysql://192.168.2.102:3306/gateway_auth?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+# JWT
+jwt:
+  secret: gateway-jwt-secret-key-2024-mlm-anime-platform
+  expiration: 86400000
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      table-underline: true

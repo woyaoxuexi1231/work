@@ -19,7 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -93,17 +93,26 @@ public class TradeEtlService {
                 dataSourceKey, config.getDatasourceType(), safePageSize, batchNo, businessSyncTemplates.size());
 
         try {
-            List<Future<BusinessSyncResult>> futures = new ArrayList<>();
+            List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
             for (BusinessSyncTemplate template : businessSyncTemplates) {
-                futures.add(syncBusinessExecutor.submit(() -> template.execute(context, progressListener)));
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return template.execute(context, progressListener);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }, syncBusinessExecutor));
             }
+
+            // 等待所有业务模板执行完毕
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
 
             Map<String, Object> businessResults = new LinkedHashMap<>();
             int totalPulled = 0;
             int totalSaved = 0;
             int maxPageCount = 0;
-            for (Future<BusinessSyncResult> future : futures) {
-                BusinessSyncResult result = future.get();
+            for (CompletableFuture<BusinessSyncResult> future : futures) {
+                BusinessSyncResult result = future.get(); // 不阻塞，allOf 已确保全部完成
                 businessResults.put(result.getBusinessCode(), result.toMap());
                 totalPulled += result.getPulledCount();
                 totalSaved += result.getSavedCount();

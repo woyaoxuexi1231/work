@@ -38,6 +38,8 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +49,7 @@ import java.util.Map;
  *
  * 职责：
  * 1. @PostConstruct init()：自动创建三个数据库的 schema、注册数据源、创建表结构
- * 2. initDemoData()：前端手动触发，从 Marketstack API（或本地兜底）拉取股票数据，
+ * 2. initDemoData()：前端手动触发，在本地生成伪随机股票数据，
  *    分别写入 trade_oms 和 trade_broker 两个异构上游系统
  *
  * 两个上游系统的表结构不同（oms_* 和 broker_* 前缀不同），
@@ -79,7 +81,6 @@ public class PlatformBootstrapService {
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final LeafSegmentService leafSegmentService;
     private final HubDataSourceProperties properties;
-    private final MarketstackService marketstackService;
     private final DynamicSqlMapper dynamicSqlMapper;
     private final DictItemMapper dictItemMapper;
     private final LeafAllocMapper leafAllocMapper;
@@ -109,7 +110,7 @@ public class PlatformBootstrapService {
     }
 
     /**
-     * 初始化演示数据：清空所有表 → 灌入字典和发号器 → 拉取 Marketstack 股票数据 →
+     * 初始化演示数据：清空所有表 → 灌入字典和发号器 → 生成本地股票数据 →
      * 按上游系统各自的表结构分别写入 trade_oms 和 trade_broker。
      * <p>
      * <b>设计说明：</b>
@@ -126,7 +127,7 @@ public class PlatformBootstrapService {
         log.info("[平台初始化] 开始按当前表结构初始化演示数据");
         clearAllTableData();
         initHubBaseData();
-        List<MarketstackService.StockSnapshot> snapshots = marketstackService.fetchBootstrapStocks();
+        List<StockSnapshot> snapshots = generateFallbackStocks();
         seedTradeSystemsFromMarketData(snapshots);
         leafSegmentService.clearLocalCache();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -246,6 +247,9 @@ public class PlatformBootstrapService {
 
     private void clearHubTables() {
         routingMybatisExecutor.run(DS_HUB, () -> {
+            executeSql("truncate table sync_business_record");
+            executeSql("truncate table sync_task");
+            executeSql("truncate table init_task");
             executeSql("truncate table tx_coordination_log");
             executeSql("truncate table event_message");
             executeSql("truncate table clean_asset");
@@ -276,15 +280,15 @@ public class PlatformBootstrapService {
     }
 
     /**
-     * 将从 Marketstack 获取（或本地生成）的股票行情数据，分别写入
+     * 从本地生成的股票行情数据，分别写入
      * trade_oms（oms_* 前缀）和 trade_broker（broker_* 前缀）两个异构上游系统。
      * 每只股票生成：快照/行情 1 条、交易/成交 多条、持仓 1 条、资金/资产 伪随机 1 条。
      */
-    private void seedTradeSystemsFromMarketData(List<MarketstackService.StockSnapshot> snapshots) {
+    private void seedTradeSystemsFromMarketData(List<StockSnapshot> snapshots) {
         log.info("[平台初始化] 开始写入交易系统A业务表，股票样本数={}", snapshots.size());
         routingMybatisExecutor.run(DS_TRADE_OMS, () -> {
             for (int i = 0; i < snapshots.size(); i++) {
-                MarketstackService.StockSnapshot snapshot = snapshots.get(i);
+                StockSnapshot snapshot = snapshots.get(i);
                 insertOmsStockSnapshot(snapshot, i + 1);
                 for (int j = 0; j < OMS_ORDER_REPEAT; j++) {
                     insertOmsTradeSeed(snapshot, i + 1, j + 1);
@@ -301,7 +305,7 @@ public class PlatformBootstrapService {
         log.info("[平台初始化] 开始写入交易系统B业务表，股票样本数={}", snapshots.size());
         routingMybatisExecutor.run(DS_TRADE_BROKER, () -> {
             for (int i = 0; i < snapshots.size(); i++) {
-                MarketstackService.StockSnapshot snapshot = snapshots.get(i);
+                StockSnapshot snapshot = snapshots.get(i);
                 insertBrokerStockQuote(snapshot, i + 1);
                 for (int j = 0; j < BROKER_DEAL_REPEAT; j++) {
                     insertBrokerTradeSeed(snapshot, i + 1, j + 1);
@@ -324,6 +328,9 @@ public class PlatformBootstrapService {
 
     private void dropHubTables() {
         routingMybatisExecutor.run(DS_HUB, () -> {
+            executeSql("drop table if exists sync_business_record");
+            executeSql("drop table if exists sync_task");
+            executeSql("drop table if exists init_task");
             executeSql("drop table if exists tx_coordination_log");
             executeSql("drop table if exists event_message");
             executeSql("drop table if exists clean_asset");
@@ -438,6 +445,46 @@ public class PlatformBootstrapService {
                     "phase varchar(32) not null," +
                     "detail varchar(256) not null," +
                     "created_at varchar(32) not null)");
+            executeSql("create table if not exists init_task (" +
+                    "id bigint not null auto_increment primary key," +
+                    "task_id varchar(64) not null," +
+                    "status varchar(32) not null default 'IDLE'," +
+                    "submitted_at varchar(32)," +
+                    "started_at varchar(32)," +
+                    "finished_at varchar(32)," +
+                    "message varchar(256)," +
+                    "error_message varchar(1024)," +
+                    "result text," +
+                    "unique key uk_init_task_id(task_id))");
+            executeSql("create table if not exists sync_task (" +
+                    "id bigint not null auto_increment primary key," +
+                    "task_id varchar(64) not null," +
+                    "data_source_key varchar(64)," +
+                    "data_source_name varchar(128)," +
+                    "datasource_type varchar(32)," +
+                    "page_size int default 2," +
+                    "status varchar(32) not null default 'IDLE'," +
+                    "total_pulled_count int default 0," +
+                    "total_saved_count int default 0," +
+                    "submitted_at varchar(32)," +
+                    "started_at varchar(32)," +
+                    "finished_at varchar(32)," +
+                    "message varchar(256)," +
+                    "error_message varchar(1024)," +
+                    "unique key uk_sync_task_id(task_id))");
+            executeSql("create table if not exists sync_business_record (" +
+                    "id bigint not null auto_increment primary key," +
+                    "task_id varchar(64) not null," +
+                    "business_code varchar(32) not null," +
+                    "status varchar(32) not null default 'RUNNING'," +
+                    "page_count int default 0," +
+                    "pulled_count int default 0," +
+                    "saved_count int default 0," +
+                    "last_row_id bigint default 0," +
+                    "error_message varchar(1024)," +
+                    "started_at varchar(32)," +
+                    "finished_at varchar(32)," +
+                    "key idx_record_task_id(task_id))");
         });
     }
 
@@ -540,7 +587,7 @@ public class PlatformBootstrapService {
         });
     }
 
-    private void insertOmsStockSnapshot(MarketstackService.StockSnapshot snapshot, int index) {
+    private void insertOmsStockSnapshot(StockSnapshot snapshot, int index) {
         OmsStockSnapshot entity = new OmsStockSnapshot();
         entity.setSymbol(snapshot.getSymbol());
         entity.setExchangeCode(defaultExchange(snapshot));
@@ -555,7 +602,7 @@ public class PlatformBootstrapService {
         omsStockSnapshotMapper.insert(entity);
     }
 
-    private void insertOmsTradeSeed(MarketstackService.StockSnapshot snapshot, int index, int repeat) {
+    private void insertOmsTradeSeed(StockSnapshot snapshot, int index, int repeat) {
         long qty = resolveTradeQty(snapshot, index, repeat);
         BigDecimal price = resolveTradePrice(snapshot, repeat);
         OmsTradeOrder entity = new OmsTradeOrder();
@@ -572,7 +619,7 @@ public class PlatformBootstrapService {
         omsTradeOrderMapper.insert(entity);
     }
 
-    private void insertOmsPositionSeed(MarketstackService.StockSnapshot snapshot, int index) {
+    private void insertOmsPositionSeed(StockSnapshot snapshot, int index) {
         long holdingQty = resolvePositionQty(snapshot, index);
         BigDecimal price = resolveTradePrice(snapshot, 1);
         OmsPositionHolding entity = new OmsPositionHolding();
@@ -587,7 +634,7 @@ public class PlatformBootstrapService {
         omsPositionHoldingMapper.insert(entity);
     }
 
-    private void insertOmsCashSeed(MarketstackService.StockSnapshot snapshot, int index) {
+    private void insertOmsCashSeed(StockSnapshot snapshot, int index) {
         BigDecimal base = resolveTradePrice(snapshot, 2).multiply(BigDecimal.valueOf(10000L + index * 10L));
         OmsCashAsset entity = new OmsCashAsset();
         entity.setInvestorName(OMS_ACCOUNTS.get(index % OMS_ACCOUNTS.size()));
@@ -600,7 +647,7 @@ public class PlatformBootstrapService {
         omsCashAssetMapper.insert(entity);
     }
 
-    private void insertBrokerStockQuote(MarketstackService.StockSnapshot snapshot, int index) {
+    private void insertBrokerStockQuote(StockSnapshot snapshot, int index) {
         long volume = resolveVolume(snapshot, index + 17);
         BrokerStockQuote entity = new BrokerStockQuote();
         entity.setQuoteCode(snapshot.getSymbol() + "-" + normalizeTradeDay(snapshot.getDate()));
@@ -617,7 +664,7 @@ public class PlatformBootstrapService {
         brokerStockQuoteMapper.insert(entity);
     }
 
-    private void insertBrokerTradeSeed(MarketstackService.StockSnapshot snapshot, int index, int repeat) {
+    private void insertBrokerTradeSeed(StockSnapshot snapshot, int index, int repeat) {
         long qty = resolveTradeQty(snapshot, index + 11, repeat + 1);
         BigDecimal price = resolveTradePrice(snapshot, repeat + 1);
         BrokerTradeDeal entity = new BrokerTradeDeal();
@@ -634,7 +681,7 @@ public class PlatformBootstrapService {
         brokerTradeDealMapper.insert(entity);
     }
 
-    private void insertBrokerPositionSeed(MarketstackService.StockSnapshot snapshot, int index) {
+    private void insertBrokerPositionSeed(StockSnapshot snapshot, int index) {
         long qty = resolvePositionQty(snapshot, index + 5);
         BigDecimal price = resolveTradePrice(snapshot, 2);
         BrokerPositionBalance entity = new BrokerPositionBalance();
@@ -649,7 +696,7 @@ public class PlatformBootstrapService {
         brokerPositionBalanceMapper.insert(entity);
     }
 
-    private void insertBrokerFundSeed(MarketstackService.StockSnapshot snapshot, int index) {
+    private void insertBrokerFundSeed(StockSnapshot snapshot, int index) {
         BigDecimal base = resolveTradePrice(snapshot, 3).multiply(BigDecimal.valueOf(12000L + index * 12L));
         BrokerFundAccount entity = new BrokerFundAccount();
         entity.setClientFullName(BROKER_CLIENTS.get(index % BROKER_CLIENTS.size()));
@@ -662,17 +709,17 @@ public class PlatformBootstrapService {
         brokerFundAccountMapper.insert(entity);
     }
 
-    private long resolveTradeQty(MarketstackService.StockSnapshot snapshot, int index, int repeat) {
+    private long resolveTradeQty(StockSnapshot snapshot, int index, int repeat) {
         long base = resolveVolume(snapshot, index) % 5000L;
         return ((base / 100L) + 5L + repeat) * 100L;
     }
 
-    private long resolvePositionQty(MarketstackService.StockSnapshot snapshot, int index) {
+    private long resolvePositionQty(StockSnapshot snapshot, int index) {
         long base = resolveVolume(snapshot, index) % 8000L;
         return ((base / 100L) + 10L) * 100L;
     }
 
-    private long resolveVolume(MarketstackService.StockSnapshot snapshot, int index) {
+    private long resolveVolume(StockSnapshot snapshot, int index) {
         if (snapshot.getVolume() == null) {
             return 50000L + index * 500L;
         }
@@ -680,12 +727,12 @@ public class PlatformBootstrapService {
         return Math.max(1000L, volume);
     }
 
-    private BigDecimal resolveTradePrice(MarketstackService.StockSnapshot snapshot, int bias) {
+    private BigDecimal resolveTradePrice(StockSnapshot snapshot, int bias) {
         BigDecimal basePrice = resolveBasePrice(snapshot);
         return basePrice.add(BigDecimal.valueOf(bias).multiply(BigDecimal.valueOf(0.03))).setScale(4, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal resolveBasePrice(MarketstackService.StockSnapshot snapshot) {
+    private BigDecimal resolveBasePrice(StockSnapshot snapshot) {
         if (snapshot.getClose() != null) {
             return snapshot.getClose();
         }
@@ -699,11 +746,11 @@ public class PlatformBootstrapService {
         return (price == null ? BigDecimal.valueOf(100) : price).setScale(4, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal resolveTurnover(MarketstackService.StockSnapshot snapshot, long volume) {
+    private BigDecimal resolveTurnover(StockSnapshot snapshot, long volume) {
         return resolveBasePrice(snapshot).multiply(BigDecimal.valueOf(volume)).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String defaultExchange(MarketstackService.StockSnapshot snapshot) {
+    private String defaultExchange(StockSnapshot snapshot) {
         return snapshot.getExchange() == null || snapshot.getExchange().isBlank() ? "XNAS" : snapshot.getExchange();
     }
 
@@ -753,6 +800,97 @@ public class PlatformBootstrapService {
         alloc.setStep(step);
         alloc.setDescription(description);
         return alloc;
+    }
+
+    // ========== 本地股票数据生成（替代原 Marketstack 远程拉取） ==========
+
+    private static final List<String> SYMBOLS = List.of(
+            "AAPL", "MSFT", "NVDA", "AMZN", "META",
+            "TSLA", "GOOGL", "AMD", "NFLX", "INTC",
+            "ORCL", "IBM", "JPM", "BAC", "WMT",
+            "TSM", "QCOM", "AVGO", "ADBE", "CRM",
+            "CSCO", "UBER", "PYPL", "SHOP", "SQ",
+            "COIN", "MU", "ARM", "SONY", "BABA",
+            "PDD", "BIDU", "NIO", "XPEV", "LI",
+            "DIS", "KO", "MCD", "PEP", "COST", "HD");
+
+    /** 回溯天数 */
+    private static final int LOOKBACK_DAYS = 120;
+    /** 最大生成行数 */
+    private static final int MAX_FALLBACK_ROWS = 2000;
+
+    /**
+     * 生成本地兜底股票行情数据（伪随机 OHLCV）。
+     * 数据范围：从今天往前推 LOOKBACK_DAYS 天，覆盖 SYMBOLS 中所有股票。
+     */
+    private List<StockSnapshot> generateFallbackStocks() {
+        List<StockSnapshot> result = new ArrayList<>();
+        LocalDate dateTo = LocalDate.now();
+        LocalDate dateFrom = dateTo.minusDays(LOOKBACK_DAYS);
+
+        long totalDays = Math.max(1L, dateTo.toEpochDay() - dateFrom.toEpochDay() + 1L);
+        log.info("[平台初始化] 开始生成本地股票数据 symbolsCount={}, totalDays={}, maxRows={}",
+                SYMBOLS.size(), totalDays, MAX_FALLBACK_ROWS);
+
+        for (int dayOffset = 0; dayOffset < totalDays && result.size() < MAX_FALLBACK_ROWS; dayOffset++) {
+            LocalDate tradeDate = dateTo.minusDays(dayOffset);
+            for (int symbolIndex = 0; symbolIndex < SYMBOLS.size() && result.size() < MAX_FALLBACK_ROWS; symbolIndex++) {
+                result.add(buildFallbackSnapshot(SYMBOLS.get(symbolIndex), tradeDate, symbolIndex, dayOffset));
+            }
+        }
+
+        result.sort(Comparator.comparing(StockSnapshot::getDate).reversed()
+                .thenComparing(StockSnapshot::getSymbol));
+        log.info("[平台初始化] 本地股票数据生成完成 count={}", result.size());
+        return result;
+    }
+
+    private StockSnapshot buildFallbackSnapshot(String symbol, LocalDate tradeDate, int symbolIndex, int dayOffset) {
+        BigDecimal anchor = BigDecimal.valueOf(35 + (symbolIndex % 12) * 18L + (symbol.length() % 5) * 7L);
+        BigDecimal trend = BigDecimal.valueOf(dayOffset % 17L).multiply(BigDecimal.valueOf(0.43));
+        BigDecimal wave = BigDecimal.valueOf((symbolIndex * 13L + dayOffset * 7L) % 9L).multiply(BigDecimal.valueOf(0.21));
+        BigDecimal open = anchor.add(trend).add(wave).setScale(4, RoundingMode.HALF_UP);
+        BigDecimal high = open.add(BigDecimal.valueOf(1.15 + (symbolIndex % 4) * 0.37)).setScale(4, RoundingMode.HALF_UP);
+        BigDecimal low = open.subtract(BigDecimal.valueOf(0.85 + (dayOffset % 3) * 0.19)).max(BigDecimal.valueOf(1)).setScale(4, RoundingMode.HALF_UP);
+        BigDecimal close = low.add(high.subtract(low).multiply(BigDecimal.valueOf(((symbolIndex + dayOffset) % 7 + 2) / 10.0)))
+                .setScale(4, RoundingMode.HALF_UP);
+        BigDecimal volume = BigDecimal.valueOf(800_000L + symbolIndex * 37_000L + dayOffset * 9_000L);
+
+        StockSnapshot snapshot = new StockSnapshot();
+        snapshot.setSymbol(symbol);
+        snapshot.setExchange(resolveExchange(symbolIndex));
+        snapshot.setDate(tradeDate + "T16:00:00+0000");
+        snapshot.setOpen(open);
+        snapshot.setHigh(high);
+        snapshot.setLow(low);
+        snapshot.setClose(close);
+        snapshot.setVolume(volume);
+        return snapshot;
+    }
+
+    private String resolveExchange(int symbolIndex) {
+        return switch (symbolIndex % 4) {
+            case 0 -> "XNAS";
+            case 1 -> "XNYS";
+            case 2 -> "ARCX";
+            default -> "BATS";
+        };
+    }
+
+    /**
+     * 股票快照数据 — 用于初始化时生成伪随机行情。
+     * 替代原 MarketstackService.StockSnapshot。
+     */
+    @lombok.Data
+    public static class StockSnapshot {
+        private String symbol;
+        private String exchange;
+        private String date;
+        private BigDecimal open;
+        private BigDecimal high;
+        private BigDecimal low;
+        private BigDecimal close;
+        private BigDecimal volume;
     }
 
     /**
