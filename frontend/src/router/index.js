@@ -25,6 +25,11 @@ const routes = [
         component: () => import('../views/mlm/ProjectList.vue')
       },
       {
+        path: 'mlm/project/:id',
+        name: 'MlmProjectDetail',
+        component: () => import('../views/mlm/ProjectDetail.vue')
+      },
+      {
         path: 'mlm/resources',
         name: 'MlmResources',
         component: () => import('../views/mlm/ResourceList.vue')
