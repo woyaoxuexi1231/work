@@ -1,16 +1,19 @@
 package com.example.dynamicds.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 /**
- * 初始化任务记录 — 替代原内存中的 InitTaskSnapshot。
+ * 初始化任务记录
  */
 @Data
 @TableName("init_task")
 public class InitTask {
+    @JsonIgnore
     @TableId(type = IdType.AUTO)
     private Long id;
     private String taskId;
@@ -21,5 +24,9 @@ public class InitTask {
     private Integer progress;
     private String message;
     private String errorMessage;
+    @JsonIgnore
     private String result;
+    /** 任务是否正在运行 — 由 status 计算，非数据库字段 */
+    @TableField(exist = false)
+    private boolean running;
 }

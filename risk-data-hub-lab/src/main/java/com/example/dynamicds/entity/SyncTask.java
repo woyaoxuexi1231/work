@@ -1,16 +1,19 @@
 package com.example.dynamicds.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 /**
- * 同步任务记录 — 替代原内存中的 SyncTaskSnapshot。
+ * 同步任务记录
  */
 @Data
 @TableName("sync_task")
 public class SyncTask {
+    @JsonIgnore
     @TableId(type = IdType.AUTO)
     private Long id;
     private String taskId;
@@ -27,4 +30,7 @@ public class SyncTask {
     private String finishedAt;
     private String message;
     private String errorMessage;
+    /** 任务是否正在运行 — 由 status 计算，非数据库字段 */
+    @TableField(exist = false)
+    private boolean running;
 }

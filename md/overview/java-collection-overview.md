@@ -15,6 +15,7 @@
    - 容量保持2的幂，使位运算取模效率远高于`%`。
 
    **P4: HashMap链表转红黑树阈值**
+
    - 链表长度≥8且数组长度≥64时，树化为红黑树。
    - 长度≤6时退化为链表，避免TreeNode内存浪费与长尾检索开销。
 
@@ -132,6 +133,7 @@
    - 其他常见工具：`reverse()`、`shuffle()`、`frequency()`、`unmodifiableXXX`（不可变视图，区别于`List.of`的不可变集合）。
 
    **P28: 数组与集合的转换**
+
    - 集合转数组：`list.toArray(new String[0])`（推荐零长度数组），直接强转会抛出`ClassCastException`。
    - 数组转集合：`Arrays.asList()`返回固定大小的视图，修改会相互影响，不支持增删操作；JDK 9+ `List.of(array)`创建不可变集合。
    - 需要注意基本类型数组陷阱：`Arrays.asList(int[])`会将其视为单个元素，需使用包装类数组。

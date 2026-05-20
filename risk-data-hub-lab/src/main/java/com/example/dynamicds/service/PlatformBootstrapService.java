@@ -584,10 +584,9 @@ public class PlatformBootstrapService {
                     "started_at varchar(32)," +
                     "finished_at varchar(32)," +
                     "key idx_record_task_id(task_id))");
-            // 确保已存在的 init_task 表有 progress 字段
-            executeSql("ALTER TABLE init_task ADD COLUMN IF NOT EXISTS progress int default 0");
-            // 确保已存在的 sync_task 表有 progress 字段
-            executeSql("ALTER TABLE sync_task ADD COLUMN IF NOT EXISTS progress int default 0");
+            // 确保已存在的 init_task 表有 progress 字段（MySQL 不支持 IF NOT EXISTS，忽略重复列错误）
+            safeAddColumn("init_task", "progress int default 0");
+            safeAddColumn("sync_task", "progress int default 0");
         });
     }
 
@@ -885,6 +884,15 @@ public class PlatformBootstrapService {
 
     private void executeSql(String sql) {
         dynamicSqlMapper.executeSql(sql);
+    }
+
+    /** MySQL 兼容的添加字段 — IF NOT EXISTS 非 MySQL 标准语法，用 try-catch 忽略重复列错误 */
+    private void safeAddColumn(String table, String columnDef) {
+        try {
+            executeSql("ALTER TABLE " + table + " ADD COLUMN " + columnDef);
+        } catch (Exception e) {
+            log.debug("[Schema] 忽略已存在列: {}.{}", table, columnDef.substring(0, columnDef.indexOf(' ')));
+        }
     }
 
     private DictItem buildDictItem(String dictType, String dictCode, String dictName, String dictDesc) {

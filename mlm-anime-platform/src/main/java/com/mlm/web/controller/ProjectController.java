@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.List;
@@ -44,8 +43,6 @@ public class ProjectController {
     private final PipelineEngine pipelineEngine;
     private final StageMemberMapper stageMemberMapper;
     private final ModelGateway modelGateway;
-    private final RestTemplate restTemplate;
-
     @Value("${auth.service.url:http://localhost:9000}")
     private String authServiceUrl;
 
@@ -60,7 +57,7 @@ public class ProjectController {
 
     /** 项目详情（含剧集列表） */
     @PostMapping("/get")
-    public ApiResult<ProjectDetailVO> get(@RequestBody ProjectGetRequest req, HttpServletRequest request) {
+    public ApiResult<ProjectDetailVO> get(@RequestBody IdRequest req, HttpServletRequest request) {
         if (req == null || req.getId() == null) {
             return ApiResult.fail(400, "项目ID不能为空", "INVALID_REQUEST");
         }
@@ -323,7 +320,7 @@ public class ProjectController {
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.set("Authorization", authHeader);
             org.springframework.http.HttpEntity<Map<String, String>> entity = new org.springframework.http.HttpEntity<>(body, headers);
-            var resp = restTemplate.exchange(
+            var resp = new org.springframework.web.client.RestTemplate().exchange(
                     authServiceUrl + "/api/auth/me",
                     org.springframework.http.HttpMethod.POST,
                     entity,
