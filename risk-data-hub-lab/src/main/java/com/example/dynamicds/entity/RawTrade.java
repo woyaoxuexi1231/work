@@ -6,6 +6,12 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
+/**
+ * 原始交易记录实体（当前未使用 — 保留供参考）。
+ * 注意：raw_trade 表不在任何 DDL 创建逻辑中，该实体未被任何业务逻辑引用。
+ * 若后续需要引入原始交易层，请先在 DDL 中创建 raw_trade 表并实现对应 Mapper。
+ */
+@Deprecated
 @TableName("raw_trade")
 @Data
 public class RawTrade {

@@ -11,10 +11,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 剧本创作步骤处理器 — SCRIPT_DRAFT
+ * 【策略实现】剧本创作步骤处理器 — 对应 EpisodeStatus.SCRIPT_DRAFT(2)
  * <p>
- * 将用户已提交的剧本内容（episode.scriptContent）提交给 AI 做润色和格式化。
- * 提交成功后 Pipeline 推进到 SCRIPT_REVIEW 等待人工审核。
+ * 将用户手写的剧本内容（episode.scriptContent）提交给 AI 做润色和格式化。
+ * 当前实现调用 OpenAI（文生文模型），将内容发送到模型网关后即返回。
+ * AI 异步完成后自动推进到 SCRIPT_REVIEW 等待人工审核。
+ * <p>
+ * 为什么不用 AI 直接生成剧本？—— 创作方向应由用户掌控，AI 只做润色。
  */
 @Component
 public class DraftStepHandler implements StepHandler {

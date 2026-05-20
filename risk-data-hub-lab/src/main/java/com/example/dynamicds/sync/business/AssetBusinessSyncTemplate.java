@@ -25,6 +25,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * 资金/资产同步模板。
+ * 将 OMS 的 oms_cash_asset 或 Broker 的 broker_fund_account 清洗后写入中台 clean_asset 表。
+ */
 @Service
 public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<AssetBusinessSyncTemplate.AssetRow, CleanAsset> {
 

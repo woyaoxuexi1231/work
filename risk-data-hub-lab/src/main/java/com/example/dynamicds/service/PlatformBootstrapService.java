@@ -42,6 +42,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 平台初始化服务 — 系统启动引导 + 演示数据灌数。
+ *
+ * 职责：
+ * 1. @PostConstruct init()：自动创建三个数据库的 schema、注册数据源、创建表结构
+ * 2. initDemoData()：前端手动触发，从 Marketstack API（或本地兜底）拉取股票数据，
+ *    分别写入 trade_oms 和 trade_broker 两个异构上游系统
+ *
+ * 两个上游系统的表结构不同（oms_* 和 broker_* 前缀不同），
+ * 但概念一一对应：股票快照/行情、交易/成交、持仓、资金/资产。
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -81,6 +92,10 @@ public class PlatformBootstrapService {
     private final BrokerPositionBalanceMapper brokerPositionBalanceMapper;
     private final BrokerFundAccountMapper brokerFundAccountMapper;
 
+    /**
+     * 系统启动后自动执行：创建数据库 → 注册数据源 → 创建所有表结构。
+     * 演示数据不在启动时灌入，由前端手动触发 initDemoData()。
+     */
     @PostConstruct
     public void init() {
         log.info("[平台初始化] 开始自动创建 schema、注册数据源并校验表结构");
@@ -93,6 +108,11 @@ public class PlatformBootstrapService {
         log.info("[平台初始化] schema 和表结构准备完成，演示数据请从前端手动初始化");
     }
 
+    /**
+     * 初始化演示数据：清空所有表 → 灌入字典和发号器 → 拉取 Marketstack 股票数据 →
+     * 按上游系统各自的表结构分别写入 trade_oms 和 trade_broker。
+     * 前端 POST /api/hub/init-data 触发此方法。
+     */
     public synchronized Map<String, Object> initDemoData() {
         log.info("[平台初始化] 开始按当前表结构初始化演示数据");
         clearAllTableData();
@@ -140,6 +160,10 @@ public class PlatformBootstrapService {
                 "clean_stock", "clean_trade", "clean_position", "clean_asset", "event_message"));
     }
 
+    /**
+     * 确保三个数据库（risk_hub, trade_oms, trade_broker）已存在。
+     * 使用不带数据库名的管理连接执行 CREATE DATABASE IF NOT EXISTS。
+     */
     private void ensureSchemas() {
         HubDataSourceProperties.Item adminItem = properties.findRequired(properties.getDefaultKey());
         String bootstrapUrl = toBootstrapUrl(adminItem.getUrl());
@@ -242,6 +266,11 @@ public class PlatformBootstrapService {
         });
     }
 
+    /**
+     * 将从 Marketstack 获取（或本地生成）的股票行情数据，分别写入
+     * trade_oms（oms_* 前缀）和 trade_broker（broker_* 前缀）两个异构上游系统。
+     * 每只股票生成：快照/行情 1 条、交易/成交 多条、持仓 1 条、资金/资产 伪随机 1 条。
+     */
     private void seedTradeSystemsFromMarketData(List<MarketstackService.StockSnapshot> snapshots) {
         log.info("[平台初始化] 开始写入交易系统A业务表，股票样本数={}", snapshots.size());
         routingMybatisExecutor.run(DS_TRADE_OMS, () -> {
@@ -717,6 +746,10 @@ public class PlatformBootstrapService {
         return alloc;
     }
 
+    /**
+     * 从 JDBC URL 中提取数据库名称（最后一个 '/' 之后、'?' 之前的部分）
+     * 例：jdbc:mysql://host:3306/risk_hub?useSSL=false → risk_hub
+     */
     private String extractSchemaName(String jdbcUrl) {
         int queryIndex = jdbcUrl.indexOf('?');
         String base = queryIndex >= 0 ? jdbcUrl.substring(0, queryIndex) : jdbcUrl;

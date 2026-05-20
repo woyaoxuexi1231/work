@@ -26,6 +26,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * 交易（订单/成交）同步模板。
+ * 将 OMS 的 oms_trade_order 或 Broker 的 broker_trade_deal 清洗后写入中台 clean_trade 表。
+ * 清洗过程中使用 DictionaryService 将原始状态码翻译为中文名称。
+ * - OMS: sideCode(B/S) + tradeStatus(NEW/DONE/CANCEL)
+ * - Broker: bsFlag(1/2) + statusMark(A/S/X)
+ */
 @Service
 public class TradeBusinessSyncTemplate extends AbstractBusinessSyncTemplate<TradeBusinessSyncTemplate.TradeRow, CleanTrade> {
 

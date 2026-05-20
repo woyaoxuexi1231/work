@@ -35,7 +35,7 @@ public class KlingAdapter implements ModelAdapter {
 
     @Override
     public String submit(GenerateRequest request) {
-        int delaySeconds = 120 + (int)(Math.random() * 180);
+        int delaySeconds = 5 + (int)(Math.random() * 10); // 5-15 秒
         String taskId = UUID.randomUUID().toString();
         completionMap.put(taskId, LocalDateTime.now().plusSeconds(delaySeconds));
         log.info("[Kling 模拟] 提交图生视频: taskId={}, refImage={}, 预计 {} 秒后完成",

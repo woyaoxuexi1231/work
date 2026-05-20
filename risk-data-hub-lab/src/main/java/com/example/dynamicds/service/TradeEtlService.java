@@ -23,9 +23,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * ETL orchestration entry.
- * It validates the source datasource, dispatches business templates in parallel,
- * and finally merges every business result into one summary object.
+ * ETL 同步编排入口 —— 数据中台的核心同步引擎。
+ *
+ * 流程：
+ * 1. 校验数据源类型（中台库不能作为同步来源）
+ * 2. 创建同步上下文（数据源key、类型、分页大小、批次号）
+ * 3. 并发派发 4 类业务（STOCK / TRADE / POSITION / ASSET）到 syncBusinessExecutor
+ * 4. 每类业务内部使用生产者-消费者双线程：拉取上游 → 转换 → 落库中台
+ * 5. 合并所有业务结果并返回摘要
  */
 @Service
 @Slf4j
@@ -44,6 +49,10 @@ public class TradeEtlService {
         });
     }
 
+    /**
+     * 执行同步：校验 → 并发派发 4 类业务 → 合并结果。
+     * 每类业务使用独立的生产者-消费者线程对，不同业务类型之间通过 syncBusinessExecutor 并发执行。
+     */
     public Map<String, Object> syncByDataSource(String dataSourceKey,
                                                 int pageSize,
                                                 SyncProgressListener progressListener) {
@@ -57,7 +66,7 @@ public class TradeEtlService {
                 .batchNo(batchNo)
                 .build();
 
-        log.info("[SyncOrchestrator] start dataSourceKey={}, datasourceType={}, pageSize={}, batchNo={}, businessCount={}",
+        log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 业务模板数={}",
                 dataSourceKey, config.getDatasourceType(), safePageSize, batchNo, businessSyncTemplates.size());
 
         try {
@@ -88,11 +97,11 @@ public class TradeEtlService {
             summary.put("pulledCount", totalPulled);
             summary.put("savedCount", totalSaved);
             summary.put("businessResults", businessResults);
-            log.info("[SyncOrchestrator] done dataSourceKey={}, batchNo={}, pulledCount={}, savedCount={}",
+            log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
                     dataSourceKey, batchNo, totalPulled, totalSaved);
             return summary;
         } catch (Exception e) {
-            log.error("[SyncOrchestrator] failed dataSourceKey={}, message={}", dataSourceKey, e.getMessage(), e);
+            log.error("[同步编排] 同步失败 dataSourceKey={}, 错误={}", dataSourceKey, e.getMessage(), e);
             throw new IllegalStateException("同步任务执行失败: " + e.getMessage(), e);
         }
     }

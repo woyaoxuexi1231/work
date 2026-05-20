@@ -33,6 +33,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * - 标记为 offline，等待活跃连接排空（HikariCP HikariPoolMXBean 可查）
  * - 超时后强制 close，避免无限等待
  */
+/**
+ * 动态数据源管理器 — 运行时注册/移除 HikariCP 数据源的核心入口。
+ *
+ * 职责：
+ * 1. 运行时注册新数据源（创建 HikariCP 连接池并注入路由表）
+ * 2. 运行时优雅下线数据源（摘除路由表 → 等待连接排空 → 关闭连接池）
+ * 3. 查询数据源连接池指标
+ *
+ * 线程安全设计：
+ * - dataSources 使用 ConcurrentHashMap，保证 add/remove/get 原子性
+ * - register / remove 方法内部对单个 key 有 synchronized 保护，防止同一 key 被并发注册
+ * - 路由表刷新由 DynamicRoutingDataSource 的 ReadWriteLock 保护
+ */
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -52,6 +65,10 @@ public class DynamicDataSourceManager {
     /**
      * 动态注册数据源. 连接池参数全部由调用方指定，不写死.
      */
+    /**
+     * 注册数据源：创建连接池 → 测试连接 → 加入路由表
+     * 注册失败时自动关闭已创建的连接池，避免连接泄露
+     */
     public synchronized void register(DataSourceConfigDTO config) {
         String key = config.getKey();
         if (dataSources.containsKey(key)) {
@@ -60,12 +77,13 @@ public class DynamicDataSourceManager {
 
         HikariDataSource ds = createHikariDataSource(config);
 
-        // 测试连接
+        // 测试连接是否可用
         try {
             ds.getConnection().close();
-            log.info("Datasource '{}' connection test OK — {}", key, config.getUrl());
+            log.info("[数据源管理] 数据源 '{}' 连接测试通过 — {}", key, config.getUrl());
         } catch (Exception e) {
             ds.close();
+            log.error("[数据源管理] 数据源 '{}' 连接测试失败: {}", key, e.getMessage());
             throw new RuntimeException("数据源 '" + key + "' 连接测试失败: " + e.getMessage(), e);
         }
 
@@ -80,6 +98,10 @@ public class DynamicDataSourceManager {
      * 优雅下线：先从路由表摘除 → 等待活跃连接排空 → 关闭连接池.
      * 如果超时仍有关键连接，强制关闭并记录告警.
      */
+    /**
+     * 优雅下线数据源：从路由表摘除 → 等待活跃连接排空 → 关闭连接池
+     * 超时后强制关闭并记录告警，避免线程永远阻塞
+     */
     public synchronized void remove(String key) {
         HikariDataSource ds = dataSources.get(key);
         if (ds == null) {
@@ -90,17 +112,17 @@ public class DynamicDataSourceManager {
         dataSources.remove(key);
         dataSourceConfigs.remove(key);
         routingDataSource.remove(key, new ConcurrentHashMap<>(dataSources));
-        log.info("Datasource '{}' removed from routing table, draining...", key);
+        log.info("[数据源管理] 数据源 '{}' 已从路由表移除，开始排空连接...", key);
 
         // Step 2: 等待活跃连接排空
         long start = System.currentTimeMillis();
         while (System.currentTimeMillis() - start < DRAIN_TIMEOUT_MS) {
             int active = getActiveConnections(ds);
             if (active == 0) {
-                log.info("Datasource '{}' drained after {}ms", key, System.currentTimeMillis() - start);
+                log.info("[数据源管理] 数据源 '{}' 连接已排空，耗时 {}ms", key, System.currentTimeMillis() - start);
                 break;
             }
-            log.debug("Datasource '{}' still has {} active connections, waiting...", key, active);
+            log.debug("[数据源管理] 数据源 '{}' 仍有 {} 个活跃连接，继续等待...", key, active);
             try {
                 Thread.sleep(DRAIN_POLL_MS);
             } catch (InterruptedException e) {
@@ -112,10 +134,10 @@ public class DynamicDataSourceManager {
         // Step 3: 关闭连接池
         int active = getActiveConnections(ds);
         if (active > 0) {
-            log.warn("Datasource '{}' force closing with {} active connections", key, active);
+            log.warn("[数据源管理] 数据源 '{}' 强制关闭，仍有 {} 个活跃连接", key, active);
         }
         ds.close();
-        log.info("Datasource '{}' closed", key);
+        log.info("[数据源管理] 数据源 '{}' 连接池已关闭", key);
     }
 
     // ==================== 查询 ====================

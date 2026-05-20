@@ -11,11 +11,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 拆分镜步骤处理器 — STORYBOARD
+ * 【策略实现】拆分镜步骤处理器 — 对应 EpisodeStatus.STORYBOARD(4)
  * <p>
- * 剧本审核通过后自动触发，调用 AI 将剧本拆分为分镜脚本。
- * 每个分镜包含镜头号、画面描述、持续时间等。
- * 分镜完成后自动推进到 GENERATING 开始 AI 成片。
+ * 剧本审核通过后自动触发，调用 AI（文生文）将剧本拆分为分镜脚本。
+ * 每个分镜应包含：镜头号、画面描述、持续时间、运镜方式、角色位置。
+ * <p>
+ * AI 返回的分镜 JSON 通过 ModelGateway.saveResultToEpisode()
+ * 自动回写到 episode.storyboardContent 字段，
+ * 前端生成工作台从中读取。
  */
 @Component
 public class StoryboardStepHandler implements StepHandler {

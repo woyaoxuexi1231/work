@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 数据源管理控制器 — 运行时查看、注册、删除数据源。
+ * 注册时自动测试连接可用性，删除时执行优雅下线（排空连接池）。
+ */
 @RestController
 @RequestMapping("/api/datasource")
 @RequiredArgsConstructor
@@ -16,13 +20,17 @@ public class DataSourceController {
 
     private final DynamicDataSourceManager manager;
 
-    /** 查询所有已注册数据源及其连接池状态 */
+    /**
+     * GET /api/datasource — 查询所有已注册数据源及其连接池状态
+     */
     @GetMapping
     public ApiResult<List<DataSourceVO>> list() {
         return ApiResult.ok(manager.listAll());
     }
 
-    /** 查询单个数据源 */
+    /**
+     * GET /api/datasource/{key} — 查询单个数据源的连接池指标
+     */
     @GetMapping("/{key}")
     public ApiResult<DataSourceVO> get(@PathVariable String key) {
         DataSourceVO vo = manager.get(key);
@@ -32,8 +40,13 @@ public class DataSourceController {
         return ApiResult.ok(vo);
     }
 
-    /** 动态注册数据源 */
+    /**
+     * POST /api/datasource — 动态注册新数据源（创建连接池 + 测试连接 + 加入路由表）
+     */
     @PostMapping
+    /**
+     * 注册数据源：参数校验 → 检查唯一性 → 创建连接池 → 测试连接 → 加入路由表
+     */
     public ApiResult<Void> register(@RequestBody DataSourceConfigDTO config) {
         if (config.getKey() == null || config.getKey().isBlank()) {
             return ApiResult.fail(400, "key 不能为空");
@@ -58,8 +71,13 @@ public class DataSourceController {
         }
     }
 
-    /** 优雅下线数据源 */
+    /**
+     * DELETE /api/datasource/{key} — 优雅下线数据源（摘除路由 + 排空连接 + 关闭连接池）
+     */
     @DeleteMapping("/{key}")
+    /**
+     * 删除数据源：检查存在性 → 优雅下线（摘除路由 + 排空连接池 + 关闭）
+     */
     public ApiResult<Void> remove(@PathVariable String key) {
         if (!manager.exists(key)) {
             return ApiResult.fail(404, "数据源不存在: " + key);

@@ -17,6 +17,16 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+/**
+ * Marketstack 行情数据服务 — 对接 Marketstack API 获取美股历史行情。
+ *
+ * 核心功能：
+ * 1. 从 Marketstack EOD API 拉取股票日线数据
+ * 2. 当 API 不可用时（网络/配额/配置缺失），自动切换到本地兜底数据生成
+ * 3. 兜底数据使用伪随机算法生成合理的 OHLCV 数据
+ *
+ * 该服务只在平台初始化阶段（initDemoData）被调用一次。
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -44,7 +54,7 @@ public class MarketstackService {
         }
 
         String symbols = String.join(",", properties.getSymbols());
-        log.info("[Marketstack] 开始拉取历史股票数据 symbols={}, dateFrom={}, dateTo={}, pageSize={}, maxRows={}",
+        log.info("[行情服务] 开始拉取 Marketstack 历史行情 symbols={}, 起始日期={}, 截止日期={}, 分页大小={}, 最大行数={}",
                 symbols, dateFrom, dateTo, pageSize, maxRows);
 
         try {
@@ -87,20 +97,20 @@ public class MarketstackService {
             }
             result.sort(Comparator.comparing(StockSnapshot::getDate).reversed()
                     .thenComparing(StockSnapshot::getSymbol));
-            log.info("[Marketstack] 拉取完成 count={}", result.size());
+            log.info("[行情服务] Marketstack 拉取完成，共 {} 条行情记录", result.size());
             return result;
         } catch (RestClientResponseException e) {
             if (!properties.isFallbackEnabled()) {
                 throw e;
             }
-            log.warn("[Marketstack] 远程接口不可用，切换到本地兜底股票数据，status={}, body={}",
+            log.warn("[行情服务] Marketstack API 不可用，切换到本地兜底数据，HTTP状态={}, body={}",
                     e.getStatusCode(), e.getResponseBodyAsString());
             return generateFallbackStocks(dateFrom, dateTo, maxRows);
         } catch (Exception e) {
             if (!properties.isFallbackEnabled()) {
                 throw e;
             }
-            log.warn("[Marketstack] 拉取失败，切换到本地兜底股票数据，message={}", e.getMessage());
+            log.warn("[行情服务] Marketstack 拉取异常，切换到本地兜底数据，错误={}", e.getMessage());
             return generateFallbackStocks(dateFrom, dateTo, maxRows);
         }
     }
@@ -113,7 +123,7 @@ public class MarketstackService {
         }
 
         long totalDays = Math.max(1L, dateTo.toEpochDay() - dateFrom.toEpochDay() + 1L);
-        log.info("[Marketstack] 开始生成本地兜底股票数据 symbolsCount={}, totalDays={}, maxRows={}",
+        log.info("[行情服务] 生成本地兜底行情数据 symbolsCount={}, totalDays={}, maxRows={}",
                 symbols.size(), totalDays, maxRows);
 
         for (int dayOffset = 0; dayOffset < totalDays && result.size() < maxRows; dayOffset++) {
@@ -125,7 +135,7 @@ public class MarketstackService {
 
         result.sort(Comparator.comparing(StockSnapshot::getDate).reversed()
                 .thenComparing(StockSnapshot::getSymbol));
-        log.info("[Marketstack] 本地兜底股票数据生成完成 count={}", result.size());
+        log.info("[行情服务] 本地兜底行情数据生成完成 count={}", result.size());
         return result;
     }
 

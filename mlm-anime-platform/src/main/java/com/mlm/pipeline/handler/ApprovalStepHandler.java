@@ -12,11 +12,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 成片终审步骤处理器 — EPISODE_APPROVAL
+ * 【策略实现】成片终审步骤处理器 — 对应 EpisodeStatus.EPISODE_APPROVAL(6)
  * <p>
- * AI 成片完成后自动进入终审，插入审核消息等待人工终审。
- * 通过 → PipelineEngine.advance 推进到 COMPLETED（该集完成）。
- * 驳回 → PipelineEngine.reject 退回 GENERATING 重做。
+ * AI 成片完成后进入终审（由用户点击「提交终审」触发）。
+ * <ul>
+ *   <li>插入 EPISODE_REVIEW 类型审核消息，前端铃铛通知</li>
+ *   <li>通过 → PipelineEngine.advance 推进到 COMPLETED（该集完成，更新项目计数）</li>
+ *   <li>驳回 → PipelineEngine.reject 退回 GENERATING 重做 AI 成片</li>
+ * </ul>
  */
 @Component
 public class ApprovalStepHandler implements StepHandler {
