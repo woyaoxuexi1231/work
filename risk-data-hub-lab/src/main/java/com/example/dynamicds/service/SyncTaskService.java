@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 
 @Slf4j
@@ -27,9 +26,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class SyncTaskService {
 
     private static final String LOCK_KEY = "risk-hub:sync:task:lock";
+    private static final String TAG_SYNC_TASK = "sync_task";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final RedissonClient redissonClient;
+    private final LeafSegmentService leafSegmentService;
     private final TradeEtlService tradeEtlService;
     private final DynamicDataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
@@ -39,6 +40,7 @@ public class SyncTaskService {
     private final ThreadPoolExecutor syncTaskExecutor;
 
     public SyncTaskService(RedissonClient redissonClient,
+                           LeafSegmentService leafSegmentService,
                            TradeEtlService tradeEtlService,
                            DynamicDataSourceManager dataSourceManager,
                            RoutingMybatisExecutor routingMybatisExecutor,
@@ -47,6 +49,7 @@ public class SyncTaskService {
                            RabbitMqSender rabbitMqSender,
                            @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor) {
         this.redissonClient = redissonClient;
+        this.leafSegmentService = leafSegmentService;
         this.tradeEtlService = tradeEtlService;
         this.dataSourceManager = dataSourceManager;
         this.routingMybatisExecutor = routingMybatisExecutor;
@@ -70,12 +73,11 @@ public class SyncTaskService {
             throw new IllegalStateException("已有同步任务正在运行");
         }
 
-        String taskId = UUID.randomUUID().toString();
         String now = now();
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
 
         SyncTask task = new SyncTask();
-        task.setTaskId(taskId);
+        task.setId(leafSegmentService.nextId(TAG_SYNC_TASK));
         task.setStatus("QUEUED");
         task.setProgress(0);
         task.setDataSourceKey(dataSourceKey);
@@ -87,8 +89,8 @@ public class SyncTaskService {
         task.setRunning(true);
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> syncTaskMapper.insert(task));
 
-        log.info("[SyncTask] submit taskId={}, dataSourceKey={}, pageSize={}", taskId, dataSourceKey, safePageSize);
-        syncTaskExecutor.submit(() -> runTask(taskId, dataSourceKey, safePageSize, config.getName(), config.getDatasourceType(), lock));
+        log.info("[SyncTask] submit id={}, dataSourceKey={}, pageSize={}", task.getId(), dataSourceKey, safePageSize);
+        syncTaskExecutor.submit(() -> runTask(task.getId(), dataSourceKey, safePageSize, config.getName(), config.getDatasourceType(), lock));
         return task;
     }
 
@@ -109,14 +111,13 @@ public class SyncTaskService {
         return task;
     }
 
-    private void runTask(String taskId, String dataSourceKey, int pageSize,
+    private void runTask(Long id, String dataSourceKey, int pageSize,
                          String dataSourceName, String datasourceType, RLock lock) {
         try {
-            updateTask(taskId, "RUNNING", now(), null, null, null, 0, 0, 0);
+            updateTask(id, "RUNNING", now(), null, null, null, 0, 0, 0);
 
             SyncResultDTO result = tradeEtlService.syncByDataSource(
-                    dataSourceKey, pageSize, p -> {
-                    });
+                    dataSourceKey, pageSize, p -> {});
 
             int totalPulled = 0;
             int totalSaved = 0;
@@ -127,7 +128,7 @@ public class SyncTaskService {
                 com.example.dynamicds.sync.SyncSupport.BusinessSyncResult bizResult = entry.getValue();
 
                 SyncBusinessRecord record = new SyncBusinessRecord();
-                record.setTaskId(taskId);
+                record.setTaskId(id);
                 record.setBusinessCode(bizCode);
                 record.setStatus("SUCCESS");
                 record.setPageCount(bizResult.getPageCount());
@@ -143,14 +144,14 @@ public class SyncTaskService {
                 totalSaved += bizResult.getSavedCount();
             }
 
-            updateTask(taskId, "SUCCESS", null, "同步任务完成", null, now(),
+            updateTask(id, "SUCCESS", null, "同步任务完成", null, now(),
                     totalPulled, totalSaved, 100);
-            log.info("[SyncTask] done taskId={}, pulled={}, saved={}", taskId, totalPulled, totalSaved);
+            log.info("[SyncTask] done id={}, pulled={}, saved={}", id, totalPulled, totalSaved);
 
-            rabbitMqSender.sendSyncCompleted(taskId, dataSourceKey, datasourceType, totalPulled, totalSaved);
+            rabbitMqSender.sendSyncCompleted(id, dataSourceKey, datasourceType, totalPulled, totalSaved);
         } catch (Exception e) {
-            updateTask(taskId, "FAILED", null, "同步任务失败", e.getMessage(), now(), 0, 0, 0);
-            log.error("[SyncTask] failed taskId={}", taskId, e);
+            updateTask(id, "FAILED", null, "同步任务失败", e.getMessage(), now(), 0, 0, 0);
+            log.error("[SyncTask] failed id={}", id, e);
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -158,12 +159,11 @@ public class SyncTaskService {
         }
     }
 
-    private void updateTask(String taskId, String status, String startedAt,
+    private void updateTask(Long id, String status, String startedAt,
                             String message, String errorMessage,
                             String finishedAt, int totalPulled, int totalSaved, Integer progress) {
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
-            SyncTask task = syncTaskMapper.selectOne(
-                    new LambdaQueryWrapper<SyncTask>().eq(SyncTask::getTaskId, taskId).last("limit 1"));
+            SyncTask task = syncTaskMapper.selectById(id);
             if (task == null) return;
             task.setStatus(status);
             if (startedAt != null) task.setStartedAt(startedAt);

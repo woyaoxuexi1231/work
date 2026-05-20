@@ -13,10 +13,8 @@ import lombok.Data;
 @Data
 @TableName("init_task")
 public class InitTask {
-    @JsonIgnore
     @TableId(type = IdType.INPUT)
     private Long id;
-    private String taskId;
     private String status;
     private String submittedAt;
     private String startedAt;

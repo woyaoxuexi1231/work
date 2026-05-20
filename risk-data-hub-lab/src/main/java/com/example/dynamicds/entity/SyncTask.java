@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 /**
@@ -13,10 +12,8 @@ import lombok.Data;
 @Data
 @TableName("sync_task")
 public class SyncTask {
-    @JsonIgnore
     @TableId(type = IdType.INPUT)
     private Long id;
-    private String taskId;
     private String dataSourceKey;
     private String dataSourceName;
     private String datasourceType;

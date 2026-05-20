@@ -70,6 +70,8 @@ public class PlatformBootstrapService {
     private static final String TAG_BROKER_POSITION = "broker_position_balance";
     private static final String TAG_BROKER_FUND = "broker_fund_account";
     private static final String TAG_DICT_ITEM = "dict_item";
+    private static final String TAG_INIT_TASK = "init_task";
+    private static final String TAG_SYNC_TASK = "sync_task";
 
     public static final String DS_HUB = "risk_hub";
     public static final String DS_TRADE_OMS = "trade_oms";
@@ -97,6 +99,12 @@ public class PlatformBootstrapService {
     @Value("${spring.datasource.url}")
     private String hubUrl;
 
+    @Value("${spring.datasource.username}")
+    private String hubUser;
+
+    @Value("${spring.datasource.password}")
+    private String hubPwd;
+
     @Value("${app.ddl.enabled:true}")
     private boolean ddlEnabled;
 
@@ -109,27 +117,24 @@ public class PlatformBootstrapService {
         ensureDataSource(DS_TRADE_BROKER);
         if (ddlEnabled) {
             ensureLatestSchema();
+            initHubBaseData();
         }
         leafSegmentService.clearLocalCache();
         log.info("[平台初始化] 完成");
     }
 
-    /** 仅创建 trade 业务的 schema（hub 由 spring.datasource.url 保证已存在） */
     private void ensureTradeSchemas() {
-        for (HubDataSourceProperties.Item item : properties.getItems()) {
-            try {
-                String url = item.getUrl();
-                String schemaName = url.substring(url.lastIndexOf('/') + 1);
-                String user = item.getUsername();
-                String pwd = item.getPassword();
-                try (Connection conn = DriverManager.getConnection(
-                        url.substring(0, url.lastIndexOf('/')), user, pwd);
-                     Statement stmt = conn.createStatement()) {
-                    stmt.execute("create database if not exists `" + schemaName + "` default character set utf8mb4");
-                    log.info("[平台初始化] schema={}", schemaName);
-                }
+        // 取 spring.datasource.url 的 host:port: jdbc:mysql://host:port/risk_hub?... -> host:port
+        String prefix = hubUrl.substring(0, hubUrl.indexOf('/', "jdbc:mysql://".length()));
+        String query = hubUrl.contains("?") ? hubUrl.substring(hubUrl.indexOf('?')) : "";
+        String baseUrl = prefix + query;
+        for (String db : List.of("trade_oms", "trade_broker")) {
+            try (Connection c = DriverManager.getConnection(baseUrl, hubUser, hubPwd);
+                 Statement s = c.createStatement()) {
+                s.execute("create database if not exists `" + db + "` default character set utf8mb4");
+                log.info("[平台初始化] schema={}", db);
             } catch (Exception e) {
-                throw new IllegalStateException("auto-create schema failed: " + e.getMessage(), e);
+                throw new IllegalStateException("create schema failed: " + db, e);
             }
         }
     }
@@ -229,7 +234,6 @@ public class PlatformBootstrapService {
                     "created_at varchar(32) not null)");
             executeSql("create table if not exists init_task (" +
                     "id bigint primary key," +
-                    "task_id varchar(64) not null," +
                     "status varchar(32) not null default 'IDLE'," +
                     "submitted_at varchar(32)," +
                     "started_at varchar(32)," +
@@ -237,11 +241,9 @@ public class PlatformBootstrapService {
                     "progress int default 0," +
                     "message varchar(256)," +
                     "error_message varchar(1024)," +
-                    "result text," +
-                    "unique key uk_init_task_id(task_id))");
+                    "result text)");
             executeSql("create table if not exists sync_task (" +
                     "id bigint primary key," +
-                    "task_id varchar(64) not null," +
                     "data_source_key varchar(64)," +
                     "data_source_name varchar(128)," +
                     "datasource_type varchar(32)," +
@@ -254,11 +256,10 @@ public class PlatformBootstrapService {
                     "started_at varchar(32)," +
                     "finished_at varchar(32)," +
                     "message varchar(256)," +
-                    "error_message varchar(1024)," +
-                    "unique key uk_sync_task_id(task_id))");
+                    "error_message varchar(1024))");
             executeSql("create table if not exists sync_business_record (" +
                     "id bigint primary key," +
-                    "task_id varchar(64) not null," +
+                    "task_id bigint not null," +
                     "business_code varchar(32) not null," +
                     "status varchar(32) not null default 'RUNNING'," +
                     "page_count int default 0," +
@@ -415,8 +416,6 @@ public class PlatformBootstrapService {
         log.info("[平台初始化] 开始初始化演示数据（带进度）");
         progressCallback.accept(0);
         clearBusinessDataTables();
-        progressCallback.accept(3);
-        initHubBaseData();
         progressCallback.accept(5);
 
         List<StockSnapshot> snapshots = generateFallbackStocks();
@@ -480,13 +479,8 @@ public class PlatformBootstrapService {
 
     private void initHubBaseData() {
         routingMybatisExecutor.run(DS_HUB, () -> {
-            dictItemMapper.insert(buildDictItem("trade_status_oms", "NEW", "待确认", "交易系统A待确认状态"));
-            dictItemMapper.insert(buildDictItem("trade_status_oms", "DONE", "已成交", "交易系统A成交完成"));
-            dictItemMapper.insert(buildDictItem("trade_status_oms", "CANCEL", "已撤单", "交易系统A撤单状态"));
-            dictItemMapper.insert(buildDictItem("trade_status_broker", "A", "待确认", "交易系统B待确认状态"));
-            dictItemMapper.insert(buildDictItem("trade_status_broker", "S", "已成交", "交易系统B成交完成"));
-            dictItemMapper.insert(buildDictItem("trade_status_broker", "X", "已撤单", "交易系统B撤单状态"));
-
+            leafAllocMapper.insert(buildLeafAlloc(TAG_INIT_TASK, 1L, 10, "初始化任务主键"));
+            leafAllocMapper.insert(buildLeafAlloc(TAG_SYNC_TASK, 1L, 10, "同步任务主键"));
             leafAllocMapper.insert(buildLeafAlloc(TAG_DICT_ITEM, 1L, 20, "字典项主键"));
             leafAllocMapper.insert(buildLeafAlloc(TAG_OMS_SNAPSHOT, 1L, 20, "OMS股票快照主键"));
             leafAllocMapper.insert(buildLeafAlloc(TAG_OMS_ORDER, 1L, 20, "OMS交易订单主键"));
@@ -502,6 +496,14 @@ public class PlatformBootstrapService {
             leafAllocMapper.insert(buildLeafAlloc("clean_asset", 300000L, 20, "中台标准资金主键"));
             leafAllocMapper.insert(buildLeafAlloc("event_message", 500000L, 20, "同步事件主键"));
             leafAllocMapper.insert(buildLeafAlloc("tx_audit", 900000L, 10, "事务审计主键"));
+
+
+            dictItemMapper.insert(buildDictItem("trade_status_oms", "NEW", "待确认", "交易系统A待确认状态"));
+            dictItemMapper.insert(buildDictItem("trade_status_oms", "DONE", "已成交", "交易系统A成交完成"));
+            dictItemMapper.insert(buildDictItem("trade_status_oms", "CANCEL", "已撤单", "交易系统A撤单状态"));
+            dictItemMapper.insert(buildDictItem("trade_status_broker", "A", "待确认", "交易系统B待确认状态"));
+            dictItemMapper.insert(buildDictItem("trade_status_broker", "S", "已成交", "交易系统B成交完成"));
+            dictItemMapper.insert(buildDictItem("trade_status_broker", "X", "已撤单", "交易系统B撤单状态"));
         });
     }
 

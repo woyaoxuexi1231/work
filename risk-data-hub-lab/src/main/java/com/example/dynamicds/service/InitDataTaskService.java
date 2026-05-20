@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 
 @Slf4j
@@ -24,9 +23,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class InitDataTaskService {
 
     private static final String LOCK_KEY = "risk-hub:init:task:lock";
+    private static final String TAG_INIT_TASK = "init_task";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final RedissonClient redissonClient;
+    private final LeafSegmentService leafSegmentService;
     private final PlatformBootstrapService platformBootstrapService;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final InitTaskMapper initTaskMapper;
@@ -39,11 +40,9 @@ public class InitDataTaskService {
             throw new IllegalStateException("已有初始化任务正在运行");
         }
 
-        String taskId = UUID.randomUUID().toString();
         String now = now();
-
         InitTask task = new InitTask();
-        task.setTaskId(taskId);
+        task.setId(leafSegmentService.nextId(TAG_INIT_TASK));
         task.setStatus("QUEUED");
         task.setProgress(0);
         task.setSubmittedAt(now);
@@ -51,8 +50,8 @@ public class InitDataTaskService {
         task.setRunning(true);
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> initTaskMapper.insert(task));
 
-        log.info("[InitTask] submit taskId={}", taskId);
-        initDataTaskExecutor.submit(() -> runTask(taskId, lock));
+        log.info("[InitTask] submit id={}", task.getId());
+        initDataTaskExecutor.submit(() -> runTask(task.getId(), lock));
         return task;
     }
 
@@ -73,18 +72,18 @@ public class InitDataTaskService {
         return task;
     }
 
-    private void runTask(String taskId, RLock lock) {
+    private void runTask(Long id, RLock lock) {
         try {
-            updateTask(taskId, "RUNNING", null, 0, "初始化任务执行中...", null, null, now());
+            updateTask(id, "RUNNING", null, 0, "初始化任务执行中...", null, null, now());
 
             Map<String, Object> result = platformBootstrapService.initDemoDataWithProgress(p -> {});
             int snapshotCount = ((Number) result.getOrDefault("snapshotCount", 0)).intValue();
 
-            updateTask(taskId, "SUCCESS", null, 100, "初始化任务完成", null, null, now());
-            log.info("[InitTask] done taskId={}, snapshotCount={}", taskId, snapshotCount);
+            updateTask(id, "SUCCESS", null, 100, "初始化任务完成", null, null, now());
+            log.info("[InitTask] done id={}, snapshotCount={}", id, snapshotCount);
         } catch (Exception e) {
-            updateTask(taskId, "FAILED", null, 0, "初始化任务失败", e.getMessage(), null, now());
-            log.error("[InitTask] failed taskId={}", taskId, e);
+            updateTask(id, "FAILED", null, 0, "初始化任务失败", e.getMessage(), null, now());
+            log.error("[InitTask] failed id={}", id, e);
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -92,12 +91,11 @@ public class InitDataTaskService {
         }
     }
 
-    private void updateTask(String taskId, String status, String resultJson, Integer progress,
+    private void updateTask(Long id, String status, String resultJson, Integer progress,
                             String message, String errorMessage,
                             String startedAt, String finishedAt) {
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
-            InitTask task = initTaskMapper.selectOne(
-                    new LambdaQueryWrapper<InitTask>().eq(InitTask::getTaskId, taskId).last("limit 1"));
+            InitTask task = initTaskMapper.selectById(id);
             if (task == null) return;
             task.setStatus(status);
             if (resultJson != null) task.setResult(resultJson);
