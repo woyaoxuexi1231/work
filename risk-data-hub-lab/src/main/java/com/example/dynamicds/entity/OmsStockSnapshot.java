@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 @Data
 @TableName("oms_stock_snapshot")
 public class OmsStockSnapshot {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private String symbol;
     private String exchangeCode;

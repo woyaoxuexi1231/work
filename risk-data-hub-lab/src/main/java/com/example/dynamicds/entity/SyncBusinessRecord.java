@@ -11,7 +11,7 @@ import lombok.Data;
 @Data
 @TableName("sync_business_record")
 public class SyncBusinessRecord {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private String taskId;
     private String businessCode;

@@ -14,7 +14,7 @@ import lombok.Data;
 @TableName("init_task")
 public class InitTask {
     @JsonIgnore
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private String taskId;
     private String status;

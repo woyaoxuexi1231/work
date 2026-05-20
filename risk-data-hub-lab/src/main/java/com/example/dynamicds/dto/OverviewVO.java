@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -15,7 +16,7 @@ import java.util.Map;
 public class OverviewVO {
     private String project;
     private String summary;
-    private Map<String, Object> topology;
+    private Map<String, List<String>> topology;
     private Map<String, Object> businessTableStats;
     private Map<String, Integer> hubTableStats;
     private int datasourceCount;
