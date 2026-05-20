@@ -29,11 +29,13 @@ public class JwtUtil {
     public String create(Map<String, Object> claims) {
         try {
             long now = System.currentTimeMillis();
-            claims.put("iat", now / 1000);
-            claims.put("exp", (now + expiration) / 1000);
+            // 使用 HashMap 复制，避免向不可变 Map 添加元素
+            Map<String, Object> mutableClaims = new java.util.HashMap<>(claims);
+            mutableClaims.put("iat", now / 1000);
+            mutableClaims.put("exp", (now + expiration) / 1000);
 
-            String headerJson = objectMapper.writeValueAsString(Map.of("alg", "HS256", "typ", "JWT"));
-            String payloadJson = objectMapper.writeValueAsString(claims);
+            String headerJson = objectMapper.writeValueAsString(new java.util.HashMap<>(Map.of("alg", "HS256", "typ", "JWT")));
+            String payloadJson = objectMapper.writeValueAsString(mutableClaims);
 
             String headerB64 = base64UrlEncode(headerJson.getBytes(StandardCharsets.UTF_8));
             String payloadB64 = base64UrlEncode(payloadJson.getBytes(StandardCharsets.UTF_8));

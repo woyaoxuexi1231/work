@@ -1,32 +1,103 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { post } from '../../api/request.js'
+import { ElMessage } from 'element-plus'
 
 const projects = ref([])
 const loading = ref(true)
+const tableLoading = ref(false)
 
 onMounted(async () => {
-  const res = await post('/mlm-api/api/projects/list')
-  if (res.code === 0) projects.value = res.data || []
-  loading.value = false
+  await fetchProjects()
 })
+
+async function fetchProjects() {
+  tableLoading.value = true
+  try {
+    const res = await post('/mlm-api/api/projects/list')
+    if (res.code === 200) {
+      projects.value = res.data || []
+    } else {
+      ElMessage.error(res.message || '获取项目列表失败')
+    }
+  } catch (e) {
+    ElMessage.error('网络错误')
+  } finally {
+    loading.value = false
+    tableLoading.value = false
+  }
+}
 </script>
 
 <template>
-  <div>
-    <h1 class="text-2xl font-bold mb-4">项目列表</h1>
-    <p class="text-sm text-gray-500 mb-6">MLM Anime 流水线管理</p>
+  <div class="project-list">
+    <el-breadcrumb separator="/">
+      <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
+      <el-breadcrumb-item>MLM Anime</el-breadcrumb-item>
+      <el-breadcrumb-item>项目列表</el-breadcrumb-item>
+    </el-breadcrumb>
 
-    <div v-if="loading" class="text-gray-400 text-sm">加载中...</div>
-    <div v-else-if="projects.length === 0" class="text-gray-400 text-sm py-12 text-center">
-      暂无项目
-    </div>
-    <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div v-for="p in projects" :key="p.id"
-        class="rounded-2xl bg-white p-5 shadow-sm">
-        <h3 class="font-semibold">{{ p.name || p.title || `项目 #${p.id}` }}</h3>
-        <p class="mt-1 text-xs text-gray-500">{{ p.description || p.status || '' }}</p>
-      </div>
-    </div>
+    <el-card class="content-card">
+      <template #header>
+        <div class="card-header">
+          <span>项目列表</span>
+          <el-button type="primary" :icon="Plus" size="small">新建项目</el-button>
+        </div>
+      </template>
+      
+      <el-table 
+        :data="projects" 
+        v-loading="tableLoading"
+        stripe
+        style="width: 100%"
+      >
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column label="项目名称" min-width="200">
+          <template #default="{ row }">
+            <div class="project-name">
+              <el-icon color="#409EFF"><FolderOpened /></el-icon>
+              <span>{{ row.name || row.title || `项目 #${row.id}` }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="300" />
+        <el-table-column prop="status" label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'running' ? 'success' : 'info'" size="small">
+              {{ row.status || '未知' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150" fixed="right">
+          <template #default>
+            <el-button link type="primary" size="small">编辑</el-button>
+            <el-button link type="danger" size="small">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      
+      <el-empty v-if="!loading && projects.length === 0" description="暂无项目" />
+    </el-card>
   </div>
 </template>
+
+<style scoped>
+.project-list {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.content-card {
+  margin-top: 16px;
+  border-radius: 12px;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.project-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+</style>
