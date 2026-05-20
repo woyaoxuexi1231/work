@@ -55,6 +55,9 @@ marketstack:
   enabled: true
   base-url: https://api.marketstack.com/v2
   access-key: 64d9883d55cec83b567a4d48743532f3
+  lookback-days: 120
+  page-size: 200
+  max-rows: 2000
   symbols:
     - AAPL
     - MSFT
@@ -71,3 +74,29 @@ marketstack:
     - JPM
     - BAC
     - WMT
+    - TSM
+    - QCOM
+    - AVGO
+    - ADBE
+    - CRM
+    - CSCO
+    - UBER
+    - PYPL
+    - SHOP
+    - SQ
+    - COIN
+    - MU
+    - ARM
+    - SONY
+    - BABA
+    - PDD
+    - BIDU
+    - NIO
+    - XPEV
+    - LI
+    - DIS
+    - KO
+    - MCD
+    - PEP
+    - COST
+    - HD

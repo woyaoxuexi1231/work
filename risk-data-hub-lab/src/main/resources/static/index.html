@@ -71,11 +71,11 @@
       <div class="rounded-3xl bg-white p-6 shadow-sm">
         <div>
           <h2 class="text-xl font-bold">同步数据</h2>
-          <p class="mt-1 text-sm text-slate-500">这里只保留一个按钮。后台会从指定交易系统分页拉取数据，再按来源结构做字段映射后落库。</p>
+          <p class="mt-1 text-sm text-slate-500">这里只保留一个按钮。后台会从指定交易系统分页拉取交易表数据，再按来源结构做字段映射后落库。股票主表、持仓表、资金表会在启动时一起准备好，方便你压多表并发。</p>
         </div>
         <div class="mt-5 flex flex-col gap-3">
           <select id="syncDataSourceKey" class="rounded-2xl border px-3 py-2 text-sm"></select>
-          <input id="pageSize" type="number" value="2" min="1" max="200" class="rounded-2xl border px-3 py-2 text-sm" placeholder="分页大小">
+          <input id="pageSize" type="number" value="100" min="1" max="200" class="rounded-2xl border px-3 py-2 text-sm" placeholder="分页大小">
           <button onclick="syncData()" class="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500">
             同步数据
           </button>
@@ -143,9 +143,16 @@ async function loadSummary() {
   const data = res.data || {};
   const topology = data.topology || {};
   const upstreamCount = (topology.upstreams || []).length;
+  const tableStats = data.businessTableStats || {};
+  const omsStats = tableStats.trade_oms || {};
+  const brokerStats = tableStats.trade_broker || {};
+  const totalBusinessTables = Object.keys(omsStats).length + Object.keys(brokerStats).length;
+  const stockRowCount = (omsStats.oms_stock_snapshot || 0) + (brokerStats.broker_stock_quote || 0);
   document.getElementById('summaryCards').innerHTML = [
     card('数据源数量', data.datasourceCount || 0, '当前已注册的数据源'),
     card('上游库数量', upstreamCount, '当前页面可选同步来源'),
+    card('业务表数量', totalBusinessTables, '两个上游库目前的业务表总数'),
+    card('股票基础数据', stockRowCount, '两个上游库里的股票主表总量'),
     card('中台落库条数', data.cleanTradeCount || 0, 'clean_trade 当前总量')
   ].join('');
 }
