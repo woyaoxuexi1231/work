@@ -2,107 +2,99 @@ package com.example.dynamicds.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
-import com.example.dynamicds.datasource.RoutingJdbcExecutor;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
 import com.example.dynamicds.entity.CleanTrade;
 import com.example.dynamicds.mapper.CleanTradeMapper;
-import lombok.Data;
+import com.example.dynamicds.sync.BusinessSyncContext;
+import com.example.dynamicds.sync.BusinessSyncTemplate;
+import com.example.dynamicds.sync.SyncSupport.BusinessSyncResult;
+import com.example.dynamicds.sync.SyncSupport.SyncProgressListener;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * ETL orchestration entry.
+ * It validates the source datasource, dispatches business templates in parallel,
+ * and finally merges every business result into one summary object.
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class TradeEtlService {
 
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     private final DynamicDataSourceManager dataSourceManager;
-    private final RoutingJdbcExecutor routingJdbcExecutor;
     private final RoutingMybatisExecutor routingMybatisExecutor;
-    private final DictionaryService dictionaryService;
-    private final LeafSegmentService leafSegmentService;
-    private final MessageOutboxService messageOutboxService;
     private final CleanTradeMapper cleanTradeMapper;
+    private final List<BusinessSyncTemplate> businessSyncTemplates;
+    @Qualifier("syncBusinessExecutor")
+    private final ThreadPoolExecutor syncBusinessExecutor;
 
     public Map<String, Object> syncByDataSource(String dataSourceKey, int pageSize) {
         return syncByDataSource(dataSourceKey, pageSize, progress -> {
         });
     }
 
-    public Map<String, Object> syncByDataSource(String dataSourceKey, int pageSize, SyncProgressListener progressListener) {
+    public Map<String, Object> syncByDataSource(String dataSourceKey,
+                                                int pageSize,
+                                                SyncProgressListener progressListener) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
-        int safePageSize = Math.max(1, Math.min(pageSize, 200));
+        int safePageSize = Math.max(1, Math.min(pageSize, 500));
         String batchNo = "SYNC-" + System.currentTimeMillis();
-        log.info("[ETL] 开始同步 dataSourceKey={}, datasourceType={}, pageSize={}",
-                dataSourceKey, config.getDatasourceType(), safePageSize);
+        BusinessSyncContext context = BusinessSyncContext.builder()
+                .dataSourceKey(dataSourceKey)
+                .datasourceType(config.getDatasourceType())
+                .pageSize(safePageSize)
+                .batchNo(batchNo)
+                .build();
 
-        long lastId = 0L;
-        int pageNo = 0;
-        int pulledCount = 0;
-        int savedCount = 0;
-        List<Map<String, Object>> pageDetails = new ArrayList<>();
+        log.info("[SyncOrchestrator] start dataSourceKey={}, datasourceType={}, pageSize={}, batchNo={}, businessCount={}",
+                dataSourceKey, config.getDatasourceType(), safePageSize, batchNo, businessSyncTemplates.size());
 
-        while (true) {
-            long previousLastId = lastId;
-            List<SourceRow> sourceRows = fetchPage(dataSourceKey, config.getDatasourceType(), lastId, safePageSize);
-            if (sourceRows.isEmpty()) {
-                break;
+        try {
+            List<Future<BusinessSyncResult>> futures = new ArrayList<>();
+            for (BusinessSyncTemplate template : businessSyncTemplates) {
+                futures.add(syncBusinessExecutor.submit(() -> template.execute(context, progressListener)));
             }
 
-            pageNo++;
-            int currentPageSaved = 0;
-            for (SourceRow sourceRow : sourceRows) {
-                CleanTrade cleanTrade = transformRow(dataSourceKey, config.getDatasourceType(), sourceRow, batchNo);
-                routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> cleanTradeMapper.insert(cleanTrade));
-                markSourceRowSynced(dataSourceKey, config.getDatasourceType(), sourceRow.getId());
-                publishSyncEvent(cleanTrade);
-                pulledCount++;
-                savedCount++;
-                currentPageSaved++;
-                lastId = sourceRow.getId();
-                log.info("[ETL] 同步成功 dataSourceKey={}, type={}, sourceRowId={}, globalId={}",
-                        dataSourceKey, config.getDatasourceType(), sourceRow.getId(), cleanTrade.getGlobalId());
+            Map<String, Object> businessResults = new LinkedHashMap<>();
+            int totalPulled = 0;
+            int totalSaved = 0;
+            int maxPageCount = 0;
+            for (Future<BusinessSyncResult> future : futures) {
+                BusinessSyncResult result = future.get();
+                businessResults.put(result.getBusinessCode(), result.toMap());
+                totalPulled += result.getPulledCount();
+                totalSaved += result.getSavedCount();
+                maxPageCount = Math.max(maxPageCount, result.getPageCount());
             }
 
-            Map<String, Object> pageInfo = new LinkedHashMap<>();
-            pageInfo.put("pageNo", pageNo);
-            pageInfo.put("rowCount", sourceRows.size());
-            pageInfo.put("savedCount", currentPageSaved);
-            pageInfo.put("lastRowId", lastId);
-            pageDetails.add(pageInfo);
-            progressListener.onProgress(new SyncProgress(pageNo, sourceRows.size(), pulledCount, savedCount, lastId));
-
-            if (lastId <= previousLastId) {
-                throw new IllegalStateException("同步游标未推进，已主动终止任务，避免死循环");
-            }
-
-            if (sourceRows.size() < safePageSize) {
-                break;
-            }
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("dataSourceKey", dataSourceKey);
+            summary.put("dataSourceName", config.getName());
+            summary.put("datasourceType", config.getDatasourceType());
+            summary.put("pageSize", safePageSize);
+            summary.put("batchNo", batchNo);
+            summary.put("pageCount", maxPageCount);
+            summary.put("pulledCount", totalPulled);
+            summary.put("savedCount", totalSaved);
+            summary.put("businessResults", businessResults);
+            log.info("[SyncOrchestrator] done dataSourceKey={}, batchNo={}, pulledCount={}, savedCount={}",
+                    dataSourceKey, batchNo, totalPulled, totalSaved);
+            return summary;
+        } catch (Exception e) {
+            log.error("[SyncOrchestrator] failed dataSourceKey={}, message={}", dataSourceKey, e.getMessage(), e);
+            throw new IllegalStateException("同步任务执行失败: " + e.getMessage(), e);
         }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("dataSourceKey", dataSourceKey);
-        result.put("dataSourceName", config.getName());
-        result.put("datasourceType", config.getDatasourceType());
-        result.put("pageSize", safePageSize);
-        result.put("pageCount", pageNo);
-        result.put("pulledCount", pulledCount);
-        result.put("savedCount", savedCount);
-        result.put("batchNo", batchNo);
-        result.put("pages", pageDetails);
-        return result;
     }
 
     public List<CleanTrade> cleanedTrades() {
@@ -121,142 +113,5 @@ public class TradeEtlService {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
         return config;
-    }
-
-    private List<SourceRow> fetchPage(String dataSourceKey, String datasourceType, long lastId, int pageSize) {
-        return switch (datasourceType) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS -> fetchOmsTradePage(dataSourceKey, lastId, pageSize);
-            case PlatformBootstrapService.TYPE_TRADE_BROKER -> fetchBrokerTradePage(dataSourceKey, lastId, pageSize);
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + datasourceType);
-        };
-    }
-
-    private List<SourceRow> fetchOmsTradePage(String dataSourceKey, long lastId, int pageSize) {
-        String sql = """
-                select id, order_no, investor_name, side_code, order_amount, trade_status, trade_time
-                from oms_trade_order
-                where sync_flag = 0 and id > ?
-                order by id asc
-                limit ?
-                """;
-        return routingJdbcExecutor.query(dataSourceKey, jdbc -> jdbc.query(sql, (rs, rowNum) -> {
-            SourceRow row = new SourceRow();
-            row.setId(rs.getLong("id"));
-            row.setBizNo(rs.getString("order_no"));
-            row.setDisplayName(rs.getString("investor_name"));
-            row.setRawDirection(rs.getString("side_code"));
-            row.setAmount(rs.getBigDecimal("order_amount"));
-            row.setRawStatus(rs.getString("trade_status"));
-            row.setTradeTime(rs.getString("trade_time"));
-            return row;
-        }, lastId, pageSize));
-    }
-
-    private List<SourceRow> fetchBrokerTradePage(String dataSourceKey, long lastId, int pageSize) {
-        String sql = """
-                select id, deal_code, client_full_name, bs_flag, turnover_amount, status_mark, deal_at
-                from broker_trade_deal
-                where sync_flag = 0 and id > ?
-                order by id asc
-                limit ?
-                """;
-        return routingJdbcExecutor.query(dataSourceKey, jdbc -> jdbc.query(sql, (rs, rowNum) -> {
-            SourceRow row = new SourceRow();
-            row.setId(rs.getLong("id"));
-            row.setBizNo(rs.getString("deal_code"));
-            row.setDisplayName(rs.getString("client_full_name"));
-            row.setRawDirection(rs.getString("bs_flag"));
-            row.setAmount(rs.getBigDecimal("turnover_amount"));
-            row.setRawStatus(rs.getString("status_mark"));
-            row.setTradeTime(rs.getString("deal_at"));
-            return row;
-        }, lastId, pageSize));
-    }
-
-    private CleanTrade transformRow(String dataSourceKey, String datasourceType, SourceRow sourceRow, String batchNo) {
-        return switch (datasourceType) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS -> transformOmsTradeRow(dataSourceKey, sourceRow, batchNo);
-            case PlatformBootstrapService.TYPE_TRADE_BROKER -> transformBrokerTradeRow(dataSourceKey, sourceRow, batchNo);
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + datasourceType);
-        };
-    }
-
-    private CleanTrade transformOmsTradeRow(String dataSourceKey, SourceRow sourceRow, String batchNo) {
-        CleanTrade cleanTrade = baseTrade(dataSourceKey, PlatformBootstrapService.TYPE_TRADE_OMS, sourceRow, batchNo);
-        cleanTrade.setBizType("股票交易");
-        cleanTrade.setDirection("B".equalsIgnoreCase(sourceRow.getRawDirection()) ? "BUY" : "SELL");
-        cleanTrade.setStatusName(dictionaryService.translate("trade_status_oms", sourceRow.getRawStatus()));
-        cleanTrade.setCounterpartyName(sourceRow.getDisplayName());
-        return cleanTrade;
-    }
-
-    private CleanTrade transformBrokerTradeRow(String dataSourceKey, SourceRow sourceRow, String batchNo) {
-        CleanTrade cleanTrade = baseTrade(dataSourceKey, PlatformBootstrapService.TYPE_TRADE_BROKER, sourceRow, batchNo);
-        cleanTrade.setBizType("股票交易");
-        cleanTrade.setDirection("1".equals(sourceRow.getRawDirection()) ? "BUY" : "SELL");
-        cleanTrade.setStatusName(dictionaryService.translate("trade_status_broker", sourceRow.getRawStatus()));
-        cleanTrade.setCounterpartyName(sourceRow.getDisplayName());
-        return cleanTrade;
-    }
-
-    private CleanTrade baseTrade(String dataSourceKey, String datasourceType, SourceRow sourceRow, String batchNo) {
-        CleanTrade cleanTrade = new CleanTrade();
-        cleanTrade.setGlobalId(leafSegmentService.nextId("clean_trade"));
-        cleanTrade.setSourceSystem(dataSourceKey);
-        cleanTrade.setSourceType(datasourceType);
-        cleanTrade.setSourceRowId(sourceRow.getId());
-        cleanTrade.setVendorTradeNo(sourceRow.getBizNo());
-        cleanTrade.setAmount(sourceRow.getAmount());
-        cleanTrade.setTradeTime(sourceRow.getTradeTime());
-        cleanTrade.setCleanMode("MANUAL_SYNC");
-        cleanTrade.setCleanBatch(batchNo);
-        cleanTrade.setCreatedAt(LocalDateTime.now().format(FORMATTER));
-        return cleanTrade;
-    }
-
-    private void markSourceRowSynced(String dataSourceKey, String datasourceType, long rowId) {
-        switch (datasourceType) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS ->
-                    routingJdbcExecutor.run(dataSourceKey, jdbc ->
-                            jdbc.update("update oms_trade_order set sync_flag = 1 where id = ?", rowId));
-            case PlatformBootstrapService.TYPE_TRADE_BROKER ->
-                    routingJdbcExecutor.run(dataSourceKey, jdbc ->
-                            jdbc.update("update broker_trade_deal set sync_flag = 1 where id = ?", rowId));
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + datasourceType);
-        }
-    }
-
-    private void publishSyncEvent(CleanTrade cleanTrade) {
-        String payload = "{"
-                + "\"globalId\":" + cleanTrade.getGlobalId() + ","
-                + "\"sourceSystem\":\"" + cleanTrade.getSourceSystem() + "\","
-                + "\"sourceType\":\"" + cleanTrade.getSourceType() + "\","
-                + "\"bizNo\":\"" + cleanTrade.getVendorTradeNo() + "\""
-                + "}";
-        messageOutboxService.publish("risk.sync.completed", String.valueOf(cleanTrade.getGlobalId()), payload);
-    }
-
-    @Data
-    private static class SourceRow {
-        private Long id;
-        private String bizNo;
-        private String displayName;
-        private BigDecimal amount;
-        private String rawDirection;
-        private String rawStatus;
-        private String tradeTime;
-    }
-
-    public interface SyncProgressListener {
-        void onProgress(SyncProgress progress);
-    }
-
-    @Data
-    public static class SyncProgress {
-        private final int pageNo;
-        private final int rowCount;
-        private final int pulledCount;
-        private final int savedCount;
-        private final long lastRowId;
     }
 }

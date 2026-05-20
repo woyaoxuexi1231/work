@@ -1,12 +1,15 @@
 package com.example.dynamicds.service;
 
+import com.example.dynamicds.datasource.RoutingMybatisExecutor;
+import com.example.dynamicds.entity.LeafAlloc;
+import com.example.dynamicds.mapper.LeafAllocMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.stereotype.Service;
 
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,7 +22,9 @@ import java.util.concurrent.Executors;
 public class LeafSegmentService {
 
     private final ConcurrentHashMap<String, SegmentBuffer> buffers = new ConcurrentHashMap<>();
-    private final DynamicLocalTxSupport localTxSupport;
+    private final RoutingMybatisExecutor routingMybatisExecutor;
+    private final LeafAllocMapper leafAllocMapper;
+    private final PlatformTransactionManager transactionManager;
     private final ExecutorService preloadExecutor =
             Executors.newSingleThreadExecutor(new CustomizableThreadFactory("leaf-preload-"));
 
@@ -101,30 +106,21 @@ public class LeafSegmentService {
     }
 
     private Segment fetchSegment(String tag) {
-        return localTxSupport.executeOn(PlatformBootstrapService.DS_HUB, connection -> {
-            // 这里故意保留手写 JDBC + select ... for update，
-            // 因为 Leaf-segment 的核心价值就在于“中心库一行记录的行锁分配号段”。
-            try (PreparedStatement select = connection.prepareStatement(
-                    "select max_id, step from leaf_alloc where biz_tag = ? for update")) {
-                select.setString(1, tag);
-                try (ResultSet rs = select.executeQuery()) {
-                    if (!rs.next()) {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () ->
+                transactionTemplate.execute(status -> {
+                    LeafAlloc alloc = leafAllocMapper.selectForUpdate(tag);
+                    if (alloc == null) {
                         throw new IllegalArgumentException("leaf tag 不存在: " + tag);
                     }
-                    long oldMax = rs.getLong("max_id");
-                    int step = rs.getInt("step");
+                    long oldMax = alloc.getMaxId();
+                    int step = alloc.getStep();
                     long newMax = oldMax + step;
-                    try (PreparedStatement update = connection.prepareStatement(
-                            "update leaf_alloc set max_id = ? where biz_tag = ?")) {
-                        update.setLong(1, newMax);
-                        update.setString(2, tag);
-                        update.executeUpdate();
-                    }
+                    alloc.setMaxId(newMax);
+                    leafAllocMapper.updateById(alloc);
                     log.info("[Leaf] tag={} 从数据库拿到新号段: {}-{}，step={}", tag, oldMax + 1, newMax, step);
                     return new Segment(oldMax + 1, oldMax + 1, newMax, true);
-                }
-            }
-        });
+                }));
     }
 
     private static final class SegmentBuffer {

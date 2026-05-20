@@ -1,6 +1,7 @@
 package com.example.dynamicds.controller;
 
 import com.example.dynamicds.dto.ApiResult;
+import com.example.dynamicds.service.InitDataTaskService;
 import com.example.dynamicds.service.OverviewService;
 import com.example.dynamicds.service.PlatformBootstrapService;
 import com.example.dynamicds.service.SyncTaskService;
@@ -22,7 +23,7 @@ import java.util.Map;
 public class HubController {
 
     private final OverviewService overviewService;
-    private final PlatformBootstrapService bootstrapService;
+    private final InitDataTaskService initDataTaskService;
     private final TradeEtlService tradeEtlService;
     private final SyncTaskService syncTaskService;
 
@@ -32,11 +33,19 @@ public class HubController {
         return ApiResult.ok(overviewService.overview());
     }
 
-    @PostMapping("/reset")
-    public ApiResult<Void> reset() {
-        log.info("[控制层] 重置演示数据");
-        bootstrapService.resetDemoData();
-        return ApiResult.ok();
+    @PostMapping("/init-data")
+    public ApiResult<Map<String, Object>> initData() {
+        log.info("[控制层] 提交异步初始化任务");
+        try {
+            return ApiResult.ok(initDataTaskService.startTask());
+        } catch (IllegalStateException e) {
+            return ApiResult.fail(409, e.getMessage());
+        }
+    }
+
+    @GetMapping("/init-task")
+    public ApiResult<Map<String, Object>> initTask() {
+        return ApiResult.ok(initDataTaskService.currentTask());
     }
 
     @PostMapping("/sync")

@@ -70,12 +70,25 @@
     <div class="space-y-6">
       <div class="rounded-3xl bg-white p-6 shadow-sm">
         <div>
+          <h2 class="text-xl font-bold">初始化数据</h2>
+          <p class="mt-1 text-sm text-slate-500">启动时只保证表结构正常。这里手动初始化演示股票数据，并写入两个异构上游交易系统库。</p>
+        </div>
+        <div class="mt-5">
+          <button id="initButton" onclick="initData()" class="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700">
+            初始化演示数据
+          </button>
+        </div>
+        <pre id="initResult" class="mt-5 min-h-[120px] overflow-auto rounded-2xl bg-slate-900 p-4 text-xs text-cyan-200">等待初始化...</pre>
+      </div>
+
+      <div class="rounded-3xl bg-white p-6 shadow-sm">
+        <div>
           <h2 class="text-xl font-bold">同步数据</h2>
-          <p class="mt-1 text-sm text-slate-500">这里只保留一个按钮。后台会从指定交易系统分页拉取交易表数据，再按来源结构做字段映射后落库。股票主表、持仓表、资金表会在启动时一起准备好，方便你压多表并发。</p>
+          <p class="mt-1 text-sm text-slate-500">同步任务会按模板模式并发处理 4 类业务：股票、交易、持仓、资金。每类业务内部固定一对线程：拉取线程 + 落库线程。</p>
         </div>
         <div class="mt-5 flex flex-col gap-3">
           <select id="syncDataSourceKey" class="rounded-2xl border px-3 py-2 text-sm"></select>
-          <input id="pageSize" type="number" value="100" min="1" max="200" class="rounded-2xl border px-3 py-2 text-sm" placeholder="分页大小">
+          <input id="pageSize" type="number" value="100" min="1" max="500" class="rounded-2xl border px-3 py-2 text-sm" placeholder="分页大小">
           <button id="syncButton" onclick="syncData()" class="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500">
             同步数据
           </button>
@@ -110,6 +123,8 @@
 <script>
 const API = {
   overview: () => fetch('/api/hub/overview').then(r => r.json()),
+  initData: () => fetch('/api/hub/init-data', { method: 'POST' }).then(r => r.json()),
+  initTask: () => fetch('/api/hub/init-task').then(r => r.json()),
   sync: (dataSourceKey, pageSize) => fetch('/api/hub/sync?dataSourceKey=' + encodeURIComponent(dataSourceKey) + '&pageSize=' + pageSize, { method: 'POST' }).then(r => r.json()),
   syncTask: () => fetch('/api/hub/sync-task').then(r => r.json()),
   cleanedTrades: () => fetch('/api/hub/cleaned-trades').then(r => r.json()),
@@ -119,6 +134,7 @@ const API = {
 };
 
 let syncTaskTimer = null;
+let initTaskTimer = null;
 
 function toast(message, type = 'success') {
   const el = document.getElementById('toast');
@@ -151,22 +167,34 @@ function setSyncButtonRunning(running) {
   button.textContent = running ? '同步中...' : '同步数据';
 }
 
+function setInitButtonRunning(running) {
+  const button = document.getElementById('initButton');
+  if (!button) {
+    return;
+  }
+  button.disabled = running;
+  button.className = 'rounded-2xl px-4 py-3 text-sm font-semibold text-white ' + (running ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-slate-700');
+  button.textContent = running ? '初始化中...' : '初始化演示数据';
+}
+
 async function loadSummary() {
   const res = await API.overview();
   const data = res.data || {};
   const topology = data.topology || {};
   const upstreamCount = (topology.upstreams || []).length;
   const tableStats = data.businessTableStats || {};
+  const hubStats = data.hubTableStats || {};
   const omsStats = tableStats.trade_oms || {};
   const brokerStats = tableStats.trade_broker || {};
   const totalBusinessTables = Object.keys(omsStats).length + Object.keys(brokerStats).length;
   const stockRowCount = (omsStats.oms_stock_snapshot || 0) + (brokerStats.broker_stock_quote || 0);
+  const cleanTotal = (hubStats.clean_stock || 0) + (hubStats.clean_trade || 0) + (hubStats.clean_position || 0) + (hubStats.clean_asset || 0);
   document.getElementById('summaryCards').innerHTML = [
     card('数据源数量', data.datasourceCount || 0, '当前已注册的数据源'),
     card('上游库数量', upstreamCount, '当前页面可选同步来源'),
     card('业务表数量', totalBusinessTables, '两个上游库目前的业务表总数'),
     card('股票基础数据', stockRowCount, '两个上游库里的股票主表总量'),
-    card('中台落库条数', data.cleanTradeCount || 0, 'clean_trade 当前总量')
+    card('中台落库条数', cleanTotal, '股票、交易、持仓、资金四类清洗表总量')
   ].join('');
 }
 
@@ -248,6 +276,60 @@ async function syncData() {
   toast('同步任务已提交，后台异步执行');
 }
 
+async function initData() {
+  const res = await API.initData();
+  renderJson('initResult', res.data || res);
+  if (res.code !== 0) {
+    toast(res.message || '初始化失败', 'error');
+    return;
+  }
+  setInitButtonRunning(true);
+  startInitTaskPolling();
+  toast('初始化任务已提交，后台异步执行');
+}
+
+async function loadInitTaskStatus() {
+  const res = await API.initTask();
+  const task = res.data || {};
+  renderJson('initResult', task);
+  const running = !!task.running;
+  setInitButtonRunning(running);
+  if (!running) {
+    stopInitTaskPolling();
+    if (task.status === 'SUCCESS') {
+      await Promise.all([loadSummary(), loadDataSources(), loadTrades()]);
+    }
+  }
+  return task;
+}
+
+function startInitTaskPolling() {
+  stopInitTaskPolling();
+  initTaskTimer = setInterval(async () => {
+    try {
+      const task = await loadInitTaskStatus();
+      if (!task.running) {
+        if (task.status === 'SUCCESS') {
+          toast('初始化任务执行完成');
+        } else if (task.status === 'FAILED') {
+          toast(task.errorMessage || task.message || '初始化任务执行失败', 'error');
+        }
+      }
+    } catch (e) {
+      stopInitTaskPolling();
+      setInitButtonRunning(false);
+      toast('查询初始化任务状态失败: ' + e.message, 'error');
+    }
+  }, 1500);
+}
+
+function stopInitTaskPolling() {
+  if (initTaskTimer) {
+    clearInterval(initTaskTimer);
+    initTaskTimer = null;
+  }
+}
+
 async function loadSyncTaskStatus() {
   const res = await API.syncTask();
   const task = res.data || {};
@@ -314,7 +396,7 @@ function card(title, value, desc) {
 
 async function loadAll() {
   try {
-    await Promise.all([loadSummary(), loadDataSources(), loadTrades(), loadSyncTaskStatus()]);
+    await Promise.all([loadSummary(), loadDataSources(), loadTrades(), loadSyncTaskStatus(), loadInitTaskStatus()]);
   } catch (e) {
     toast('加载失败: ' + e.message, 'error');
   }

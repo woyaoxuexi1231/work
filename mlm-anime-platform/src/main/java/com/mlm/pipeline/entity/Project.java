@@ -33,6 +33,12 @@ public class Project {
     /** 已完成集数 */
     private Integer completedCount = 0;
 
+    /** 创建者用户 ID */
+    private Long createdBy;
+
+    /** 是否公开项目 */
+    private Boolean isPublic = true;
+
     /** 创建时间（自动填充） */
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
