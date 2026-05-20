@@ -36,6 +36,11 @@ public class TradeEtlService {
     private final CleanTradeMapper cleanTradeMapper;
 
     public Map<String, Object> syncByDataSource(String dataSourceKey, int pageSize) {
+        return syncByDataSource(dataSourceKey, pageSize, progress -> {
+        });
+    }
+
+    public Map<String, Object> syncByDataSource(String dataSourceKey, int pageSize, SyncProgressListener progressListener) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
         int safePageSize = Math.max(1, Math.min(pageSize, 200));
         String batchNo = "SYNC-" + System.currentTimeMillis();
@@ -49,6 +54,7 @@ public class TradeEtlService {
         List<Map<String, Object>> pageDetails = new ArrayList<>();
 
         while (true) {
+            long previousLastId = lastId;
             List<SourceRow> sourceRows = fetchPage(dataSourceKey, config.getDatasourceType(), lastId, safePageSize);
             if (sourceRows.isEmpty()) {
                 break;
@@ -75,6 +81,11 @@ public class TradeEtlService {
             pageInfo.put("savedCount", currentPageSaved);
             pageInfo.put("lastRowId", lastId);
             pageDetails.add(pageInfo);
+            progressListener.onProgress(new SyncProgress(pageNo, sourceRows.size(), pulledCount, savedCount, lastId));
+
+            if (lastId <= previousLastId) {
+                throw new IllegalStateException("同步游标未推进，已主动终止任务，避免死循环");
+            }
 
             if (sourceRows.size() < safePageSize) {
                 break;
@@ -234,5 +245,18 @@ public class TradeEtlService {
         private String rawDirection;
         private String rawStatus;
         private String tradeTime;
+    }
+
+    public interface SyncProgressListener {
+        void onProgress(SyncProgress progress);
+    }
+
+    @Data
+    public static class SyncProgress {
+        private final int pageNo;
+        private final int rowCount;
+        private final int pulledCount;
+        private final int savedCount;
+        private final long lastRowId;
     }
 }
