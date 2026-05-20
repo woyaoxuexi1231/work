@@ -25,11 +25,13 @@
 
 ## 1.1 这次又新增了什么
 
-这次我又继续按你的要求补了 3 件事：
+这次我又继续按你的要求补了 5 件事：
 
 - 全部核心数据对象改成 `lombok`
-- 项目启动时自动创建 schema 和表，存在就跳过
-- 项目启动时先调用 Marketstack 拉一批真实股票数据，再按两个上游交易系统的不同字段结构入库
+- 项目启动时自动创建 schema，并按最新版结构重建表
+- 项目启动时先调用 Marketstack 拉大量股票行情
+- 再基于这批股票行情派生出多个业务表，方便你做多线程压测
+- 开发阶段默认按最新结构直接重建表，不再兼容历史表结构和历史数据
 
 ## 2. 三个数据库
 
@@ -38,11 +40,17 @@
 - `trade_oms`
   - 上游交易系统 A
   - 类型 `TRADE_OMS`
+  - 表 `oms_stock_snapshot`
   - 表 `oms_trade_order`
+  - 表 `oms_position_holding`
+  - 表 `oms_cash_asset`
 - `trade_broker`
   - 上游交易系统 B
   - 类型 `TRADE_BROKER`
+  - 表 `broker_stock_quote`
   - 表 `broker_trade_deal`
+  - 表 `broker_position_balance`
+  - 表 `broker_fund_account`
 - `risk_hub`
   - 中台库
   - 类型 `HUB`
@@ -60,13 +68,13 @@
 2. 创建 `trade_oms`
 3. 创建 `trade_broker`
 4. 创建 `risk_hub`
-5. 再创建各自的表
+5. 直接按最新版结构重建各自的表
 
 也就是说：
 
 - 数据库不存在，会自动创建
-- 表不存在，会自动创建
-- 已存在，就不会重复创建
+- 表存在，也会先删再按最新版重建
+- 这版默认不考虑历史兼容，只保证当前结构正确
 
 ## 3. 为什么这里必须有 datasourceType
 
@@ -74,7 +82,14 @@
 
 ### 交易系统 A
 
-表是 `oms_trade_order`，字段示例：
+交易系统 A 现在不再只有一张交易表，而是至少 4 张常用业务表：
+
+- `oms_stock_snapshot`
+- `oms_trade_order`
+- `oms_position_holding`
+- `oms_cash_asset`
+
+同步主表仍然是 `oms_trade_order`，字段示例：
 
 - `order_no`
 - `investor_name`
@@ -85,7 +100,14 @@
 
 ### 交易系统 B
 
-表是 `broker_trade_deal`，字段示例：
+交易系统 B 也扩成了 4 张异构业务表：
+
+- `broker_stock_quote`
+- `broker_trade_deal`
+- `broker_position_balance`
+- `broker_fund_account`
+
+同步主表仍然是 `broker_trade_deal`，字段示例：
 
 - `deal_code`
 - `client_full_name`
@@ -182,7 +204,7 @@
 - `direction = B -> BUY, S -> SELL`
 - `amount = order_amount`
 - `status_name = translate("trade_status_oms", trade_status)`
-- `biz_type = 证券交易`
+- `biz_type = 股票交易`
 
 ### `TRADE_BROKER`
 
@@ -202,7 +224,7 @@
 - `direction = 1 -> BUY, 2 -> SELL`
 - `amount = turnover_amount`
 - `status_name = translate("trade_status_broker", status_mark)`
-- `biz_type = 证券交易`
+- `biz_type = 股票交易`
 
 这才是你说的“字段可能不一致，但是意思是一个意思”。
 
@@ -252,9 +274,33 @@
 1. 自动创建 3 个 schema
 2. 注册三套默认数据源
 3. 创建三库表结构
-4. 调用 Marketstack 拉股票数据
-5. 按两套交易系统结构分别写入上游库
-6. 写入中台字典和 Leaf 初始号段
+4. 调用 Marketstack 拉大量股票数据
+5. 先写入两个上游库的股票主表
+6. 再派生写入交易表、持仓表、资金表
+7. 写入中台字典和 Leaf 初始号段
+
+## 8.1 为什么这次要扩成多业务表
+
+因为你后面要做的是：
+
+- 多线程
+- 多表
+- 多批量
+- 不同系统字段结构
+
+如果启动只给你一张小交易表，那你根本测不出什么东西。
+
+所以这次启动数据改成了两层：
+
+1. 第一层是真实股票行情
+2. 第二层是基于行情派生出的业务表
+
+这样你可以同时拿到：
+
+- 大量股票基础数据
+- 大量交易数据
+- 大量持仓数据
+- 大量资金资产数据
 
 默认配置在：
 
@@ -281,6 +327,12 @@ Marketstack 配置也放在这里，默认从环境变量读取：
 - 你想手动初始化
 - 你想单独检查建表语句
 - 你想不依赖应用自己建库
+
+注意：
+
+- 这个 SQL 现在也是“直接 drop 后重建”的风格
+- 因为你已经明确说了，在项目彻底完成前，每次都会清库
+- 所以这里不再维护历史迁移脚本
 
 ### 9.2 启动项目
 

@@ -172,7 +172,7 @@ public class TradeEtlService {
 
     private CleanTrade transformOmsTradeRow(String dataSourceKey, SourceRow sourceRow, String batchNo) {
         CleanTrade cleanTrade = baseTrade(dataSourceKey, PlatformBootstrapService.TYPE_TRADE_OMS, sourceRow, batchNo);
-        cleanTrade.setBizType("证券交易");
+        cleanTrade.setBizType("股票交易");
         cleanTrade.setDirection("B".equalsIgnoreCase(sourceRow.getRawDirection()) ? "BUY" : "SELL");
         cleanTrade.setStatusName(dictionaryService.translate("trade_status_oms", sourceRow.getRawStatus()));
         cleanTrade.setCounterpartyName(sourceRow.getDisplayName());
@@ -181,7 +181,7 @@ public class TradeEtlService {
 
     private CleanTrade transformBrokerTradeRow(String dataSourceKey, SourceRow sourceRow, String batchNo) {
         CleanTrade cleanTrade = baseTrade(dataSourceKey, PlatformBootstrapService.TYPE_TRADE_BROKER, sourceRow, batchNo);
-        cleanTrade.setBizType("证券交易");
+        cleanTrade.setBizType("股票交易");
         cleanTrade.setDirection("1".equals(sourceRow.getRawDirection()) ? "BUY" : "SELL");
         cleanTrade.setStatusName(dictionaryService.translate("trade_status_broker", sourceRow.getRawStatus()));
         cleanTrade.setCounterpartyName(sourceRow.getDisplayName());
