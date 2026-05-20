@@ -10,8 +10,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 同步任务和初始化任务都会长期复用这些线程池。
- * 这里统一交给 Spring 管理，避免每次执行任务时临时 new 一个新的线程池。
+ * 线程池配置 — 统一管理同步/初始化/业务处理线程池。
+ *
+ * 线程池分配策略：
+ * - syncTaskExecutor（1 线程）：顺序执行同步任务，同一时间只有一个同步任务在运行
+ * - initDataTaskExecutor（1 线程）：顺序执行初始化任务，防止并发灌数冲突
+ * - syncBusinessExecutor（4 线程）：并发执行 4 类业务（STOCK/TRADE/POSITION/ASSET）
+ * - stock/trade/position/asset PairExecutor（各 2 线程）：每类业务内部分为拉取线程 + 落库线程
+ *
+ * 所有线程池使用 AbortPolicy：队列满时直接抛出异常，避免静默丢任务。
  */
 @Configuration
 public class SyncThreadPoolConfig {

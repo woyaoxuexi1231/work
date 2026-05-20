@@ -45,7 +45,8 @@ create table oms_position_holding (
     available_qty bigint not null,
     cost_price decimal(18,4) not null,
     market_value decimal(18,2) not null,
-    stat_day varchar(16) not null
+    stat_day varchar(16) not null,
+    sync_flag int default 0 not null
 );
 
 create table oms_cash_asset (
@@ -55,7 +56,8 @@ create table oms_cash_asset (
     cash_balance decimal(18,2) not null,
     frozen_balance decimal(18,2) not null,
     total_asset decimal(18,2) not null,
-    stat_day varchar(16) not null
+    stat_day varchar(16) not null,
+    sync_flag int default 0 not null
 );
 
 insert into oms_stock_snapshot(symbol, exchange_code, market_day, open_price, high_price, low_price, close_price, volume_qty, turnover_amount, sync_flag) values
@@ -116,7 +118,8 @@ create table broker_position_balance (
     enable_volume bigint not null,
     cost_px decimal(18,4) not null,
     market_amt decimal(18,2) not null,
-    biz_date varchar(16) not null
+    biz_date varchar(16) not null,
+    sync_flag int default 0 not null
 );
 
 create table broker_fund_account (
@@ -126,7 +129,8 @@ create table broker_fund_account (
     current_balance decimal(18,2) not null,
     frozen_capital decimal(18,2) not null,
     total_asset decimal(18,2) not null,
-    biz_date varchar(16) not null
+    biz_date varchar(16) not null,
+    sync_flag int default 0 not null
 );
 
 insert into broker_stock_quote(quote_code, secu_code, trade_day, exchange_name, open_px, high_px, low_px, close_px, vol_num, turnover_amt, sync_flag) values
@@ -182,6 +186,55 @@ create table clean_trade (
     created_at varchar(32) not null
 );
 
+create table clean_stock (
+    global_id bigint primary key,
+    source_system varchar(64) not null,
+    source_type varchar(32) not null,
+    source_row_id bigint not null,
+    stock_code varchar(32) not null,
+    exchange_code varchar(32),
+    market_day varchar(16) not null,
+    open_price decimal(18,4) not null,
+    high_price decimal(18,4) not null,
+    low_price decimal(18,4) not null,
+    close_price decimal(18,4) not null,
+    volume_qty bigint not null,
+    turnover_amount decimal(18,2) not null,
+    clean_batch varchar(64) not null,
+    created_at varchar(32) not null
+);
+
+create table clean_position (
+    global_id bigint primary key,
+    source_system varchar(64) not null,
+    source_type varchar(32) not null,
+    source_row_id bigint not null,
+    account_name varchar(128) not null,
+    stock_code varchar(32) not null,
+    holding_qty bigint not null,
+    available_qty bigint not null,
+    cost_price decimal(18,4) not null,
+    market_value decimal(18,2) not null,
+    stat_day varchar(16) not null,
+    clean_batch varchar(64) not null,
+    created_at varchar(32) not null
+);
+
+create table clean_asset (
+    global_id bigint primary key,
+    source_system varchar(64) not null,
+    source_type varchar(32) not null,
+    source_row_id bigint not null,
+    account_name varchar(128) not null,
+    account_no varchar(64) not null,
+    cash_balance decimal(18,2) not null,
+    frozen_balance decimal(18,2) not null,
+    total_asset decimal(18,2) not null,
+    stat_day varchar(16) not null,
+    clean_batch varchar(64) not null,
+    created_at varchar(32) not null
+);
+
 create table event_message (
     message_id bigint primary key,
     topic varchar(64) not null,
@@ -208,6 +261,9 @@ insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values
 ('trade_status_broker', 'X', '已撤单', '交易系统B撤单状态');
 
 insert into leaf_alloc(biz_tag, max_id, step, description) values
+('clean_stock', 50000, 20, '中台标准股票主键'),
 ('clean_trade', 100000, 20, '中台标准交易主键'),
+('clean_position', 200000, 20, '中台标准持仓主键'),
+('clean_asset', 300000, 20, '中台标准资金主键'),
 ('event_message', 500000, 20, '同步事件主键'),
 ('tx_audit', 900000, 10, '事务审计主键');

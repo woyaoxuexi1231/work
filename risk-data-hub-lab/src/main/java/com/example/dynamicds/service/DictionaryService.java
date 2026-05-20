@@ -10,6 +10,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * 字典服务 — 管理状态码映射。
+ * 两个上游系统的交易状态码不同（OMS: NEW/DONE/CANCEL vs Broker: A/S/X），
+ * 在 ETL 清洗时通过本服务的 translate() 方法统一转换为中文名称。
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -51,6 +56,11 @@ public class DictionaryService {
         });
     }
 
+    /**
+     * 将上游系统的原始状态码翻译为中文名称。
+     * 例如：OMS 的 'NEW' → '待确认'，Broker 的 'S' → '已成交'
+     * 如果找不到映射，回退返回原始 code 并记录告警。
+     */
     public String translate(String dictType, String dictCode) {
         return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () -> {
             DictItem item = dictItemMapper.selectOne(new LambdaQueryWrapper<DictItem>()

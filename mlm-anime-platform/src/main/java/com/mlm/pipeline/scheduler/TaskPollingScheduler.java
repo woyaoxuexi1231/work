@@ -29,6 +29,11 @@ import java.util.Optional;
  * <p>
  * 职责分离：轮询由 {@link ModelGateway} 处理，推进由 {@link PipelineEngine} 处理，
  * 此调度器只做编排（Orchestration），不嵌入业务逻辑。
+ * <p>
+ * 【自动推进条件】
+ * 剧集处于 STORYBOARD 或 GENERATING 状态，且 stepStatus == SUCCESS（全部任务完成）
+ * → 调用 PipelineEngine.advance() 推进到下一状态。
+ * 这是串联「AI 异步完成」与「状态机推进」的关键枢纽。
  */
 @Component
 public class TaskPollingScheduler {

@@ -9,8 +9,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 /**
- * 注入 DynamicRoutingDataSource 作为主数据源。
- * 默认库只承担兜底角色，真正的业务库都会通过运行时注册接入。
+ * 数据源配置 — 以配置中的 hub.datasource.default-key 为启动连接，
+ * 后续业务数据源通过 DynamicDataSourceManager 运行时动态注册。
+ *
+ * 启动时先连 MySQL（不带具体数据库名），自动创建所有 schema 后
+ * 再注册 risk_hub / trade_oms / trade_broker 三个业务数据源。
  */
 @Configuration
 @RequiredArgsConstructor

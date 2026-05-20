@@ -18,20 +18,31 @@ import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 同步任务服务 — 异步执行 ETL 同步（4 类业务并发）。
+ * 使用独立的单线程池（syncTaskExecutor）顺序执行，
+ * 保证同一时刻只有一个同步任务在运行。
+ * 前端 POST /api/hub/sync 触发，通过轮询 /api/hub/sync-task 获取进度。
+ */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class SyncTaskService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private volatile SyncTaskSnapshot currentTask = SyncTaskSnapshot.idle();
 
     private final TradeEtlService tradeEtlService;
     private final DynamicDataSourceManager dataSourceManager;
-    @Qualifier("syncTaskExecutor")
     private final ThreadPoolExecutor syncTaskExecutor;
 
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private volatile SyncTaskSnapshot currentTask = SyncTaskSnapshot.idle();
+    public SyncTaskService(TradeEtlService tradeEtlService,
+                           DynamicDataSourceManager dataSourceManager,
+                           @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor) {
+        this.tradeEtlService = tradeEtlService;
+        this.dataSourceManager = dataSourceManager;
+        this.syncTaskExecutor = syncTaskExecutor;
+    }
 
     public Map<String, Object> startTask(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
@@ -42,7 +53,7 @@ public class SyncTaskService {
             throw new IllegalArgumentException("Hub datasource cannot be used as sync source: " + dataSourceKey);
         }
         if (!running.compareAndSet(false, true)) {
-            throw new IllegalStateException("Another sync task is already running");
+            throw new IllegalStateException("已有同步任务正在运行");
         }
 
         SyncTaskSnapshot snapshot = new SyncTaskSnapshot();
@@ -56,7 +67,7 @@ public class SyncTaskService {
         snapshot.setMessage("Sync task submitted");
         currentTask = snapshot;
 
-        log.info("[SyncTask] submitted taskId={}, dataSourceKey={}, pageSize={}",
+        log.info("[同步任务] 提交 taskId={}, dataSourceKey={}, pageSize={}",
                 snapshot.getTaskId(), snapshot.getDataSourceKey(), snapshot.getPageSize());
         syncTaskExecutor.submit(() -> runTask(snapshot));
         return toMap(currentTask);
@@ -72,7 +83,7 @@ public class SyncTaskService {
             snapshot.setStartedAt(now());
             snapshot.setMessage("Sync task is running");
             currentTask = snapshot;
-            log.info("[SyncTask] started taskId={}, dataSourceKey={}, pageSize={}",
+            log.info("[同步任务] 开始执行 taskId={}, dataSourceKey={}, pageSize={}",
                     snapshot.getTaskId(), snapshot.getDataSourceKey(), snapshot.getPageSize());
 
             Map<String, Object> result = tradeEtlService.syncByDataSource(
@@ -85,14 +96,14 @@ public class SyncTaskService {
             snapshot.setResult(result);
             snapshot.setMessage("Sync task finished");
             currentTask = snapshot;
-            log.info("[SyncTask] finished taskId={}, savedCount={}", snapshot.getTaskId(), snapshot.getSavedCount());
+            log.info("[同步任务] 执行完成 taskId={}, 落库总数={}", snapshot.getTaskId(), snapshot.getSavedCount());
         } catch (Exception e) {
             snapshot.setStatus("FAILED");
             snapshot.setFinishedAt(now());
             snapshot.setErrorMessage(e.getMessage());
             snapshot.setMessage("Sync task failed");
             currentTask = snapshot;
-            log.error("[SyncTask] failed taskId={}, message={}", snapshot.getTaskId(), e.getMessage(), e);
+            log.error("[同步任务] 执行失败 taskId={}, 错误={}", snapshot.getTaskId(), e.getMessage(), e);
         } finally {
             running.set(false);
         }

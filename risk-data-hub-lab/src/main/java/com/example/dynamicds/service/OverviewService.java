@@ -9,6 +9,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 概览服务 — 提供系统总览数据，包括数据源拓扑、业务表统计、中台表统计、
+ * Leaf 发号器状态等，供前端 /api/hub/overview 接口使用。
+ */
 @Service
 @RequiredArgsConstructor
 public class OverviewService {

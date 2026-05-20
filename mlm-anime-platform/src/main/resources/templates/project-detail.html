@@ -111,14 +111,33 @@
         const STATUS_SCRIPT_REVIEW = 3;
         const STATUS_GENERATING = 5;
         const STATUS_EPISODE_APPROVAL = 6;
+        let stageMembers = {}; // stageCode → [userIds]
+        let allUsers = [];
         let currentEpisodeId = null;
 
         async function loadProject() {
-            const res = await fetch(`/api/projects/${PROJECT_ID}`);
+            const [res, memberRes, userRes] = await Promise.all([
+                fetch(`/api/projects/${PROJECT_ID}`),
+                fetch(`/api/projects/${PROJECT_ID}/stage-members`),
+                fetch('/api/users')
+            ]);
             const data = await res.json();
             const d = data.data || {};
             const project = d.project || {};
             const episodes = d.episodes || [];
+
+            // 加载阶段负责人
+            try {
+                const memberData = await memberRes.json();
+                const members = memberData.data || [];
+                allUsers = (await (await fetch('/api/users')).json()).data || [];
+                stageMembers = {};
+                members.forEach(m => {
+                    if (!stageMembers[m.stage]) stageMembers[m.stage] = [];
+                    stageMembers[m.stage].push(m.userId);
+                });
+            } catch(e) {}
+
 
             document.getElementById('projectName').textContent = project.name;
             document.getElementById('totalEpisodes').textContent = project.episodesCount || episodes.length;
@@ -179,18 +198,24 @@
                             </div>
                         </div>
 
-                        <!-- Pipeline 进度条 -->
-                        <div class="flex items-center gap-1 mb-2">
-                            ${STEPS.map((s, i) => `
-                                <div class="flex-1 flex flex-col items-center">
-                                    <div class="step-dot ${i < currentIdx ? 'done' : i === currentIdx ? (isFailed ? 'failed' : 'active') : 'pending'}"></div>
-                                    <div class="text-xs mt-1 ${i === currentIdx ? 'text-indigo-400 font-medium' : 'text-gray-500'}">${s.icon}</div>
-                                    <div class="text-[10px] text-gray-600">${s.label}</div>
-                                </div>
-                                ${i < STEPS.length - 1 ? `
-                                    <div class="flex-1 pipeline-bar ${i < currentIdx ? 'done' : i === currentIdx ? (isFailed ? 'failed' : 'active') : 'pending'}"></div>
-                                ` : ''}
-                            `).join('')}
+                        <!-- Pipeline 进度条（含负责人） -->
+                        <div class="flex items-center gap-1 mb-1">
+                            ${STEPS.map((s, i) => {
+                                const ownerIds = stageMembers[s.key] || [];
+                                const ownerNames = ownerIds.map(id => { const u = allUsers.find(u => u.id === id); return u ? u.username : ''; }).filter(Boolean).join(', ');
+                                const ownerText = ownerNames ? '👤' + ownerNames : '';
+                                return `
+                                    <div class="flex-1 flex flex-col items-center">
+                                        <div class="step-dot ${i < currentIdx ? 'done' : i === currentIdx ? (isFailed ? 'failed' : 'active') : 'pending'}"></div>
+                                        <div class="text-xs mt-1 ${i === currentIdx ? 'text-indigo-400 font-medium' : 'text-gray-500'}">${s.icon}</div>
+                                        <div class="text-[10px] text-gray-600">${s.label}</div>
+                                        <div class="text-[9px] text-gray-500 mt-0.5 truncate max-w-[70px]">${ownerText}</div>
+                                    </div>
+                                    ${i < STEPS.length - 1 ? `
+                                        <div class="flex-1 pipeline-bar ${i < currentIdx ? 'done' : i === currentIdx ? (isFailed ? 'failed' : 'active') : 'pending'}"></div>
+                                    ` : ''}
+                                `;
+                            }).join('')}
                         </div>
 
                         ${ep.scriptContent ? `<div class="text-xs text-gray-500 mt-2 truncate">📄 剧本已提交 (${ep.scriptContent.length} 字)</div>` : ''}

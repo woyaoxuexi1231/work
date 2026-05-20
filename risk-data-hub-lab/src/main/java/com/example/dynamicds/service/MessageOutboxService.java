@@ -12,6 +12,13 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * 消息发件箱服务 — 将 ETL 同步完成事件持久化到 event_message 表。
+ *
+ * 当前采用「发件箱模式」（Outbox Pattern）：同步事件先写入数据库，
+ * 后续可由独立的消息消费模块读取并投递到消息队列。
+ * 当前仅实现写入端，消费端预留。
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor

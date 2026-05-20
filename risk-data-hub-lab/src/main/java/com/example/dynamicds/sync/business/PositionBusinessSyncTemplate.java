@@ -25,6 +25,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * 持仓同步模板。
+ * 将 OMS 的 oms_position_holding 或 Broker 的 broker_position_balance 清洗后写入中台 clean_position 表。
+ */
 @Service
 public class PositionBusinessSyncTemplate extends AbstractBusinessSyncTemplate<PositionBusinessSyncTemplate.PositionRow, CleanPosition> {
 

@@ -25,6 +25,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * 股票（行情/快照）同步模板。
+ * 将 OMS 的 oms_stock_snapshot 或 Broker 的 broker_stock_quote 清洗后写入中台 clean_stock 表。
+ * 两个上游系统的字段命名不同但含义对应：
+ * - OMS: stock_code + openPrice/closePrice
+ * - Broker: secuCode + openPx/closePx
+ */
 @Service
 public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<StockBusinessSyncTemplate.StockRow, CleanStock> {
 

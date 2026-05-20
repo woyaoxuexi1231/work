@@ -10,19 +10,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * AI 成片步骤处理器 — GENERATING
+ * 【策略实现】AI 成片步骤处理器 — 对应 EpisodeStatus.GENERATING(5)
  * <p>
- * 不自动提交任何 AI 任务。职责仅限于：
- * <ol>
- *   <li>将 stepStatus 置为 PENDING（等待用户在前端操作）</li>
- *   <li>由前端生成工作台页面驱动后续的「生成图片→生成视频→提交终审」</li>
- * </ol>
- * 这样设计的理由：
+ * 【重要】不自动提交任何 AI 任务。职责仅限于将 stepStatus 置为 PENDING。
+ * <p>
+ * 为什么不做自动提交？
  * <ul>
- *   <li>AI 成片是<em>用户手动操作</em>的场景而非自动流程</li>
- *   <li>用户需要先看到分镜列表，再逐场景决定生成什么</li>
- *   <li>自动提交会让用户失去控制感，且无法选择生成参数</li>
+ *   <li>AI 成片是<em>用户手动操作</em>的场景，不是自动流水线</li>
+ *   <li>用户需要先查看分镜列表，再逐场景决定生成什么</li>
+ *   <li>自动提交让用户失去对生成过程的控制感</li>
  * </ul>
+ * 后续流程由前端生成工作台驱动：生成图片 → 生成视频 → 提交终审。
  */
 @Component
 public class GeneratingStepHandler implements StepHandler {

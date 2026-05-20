@@ -15,23 +15,36 @@ import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 初始化任务服务 — 异步执行平台演示数据初始化。
+ * 使用独立的单线程池（initDataTaskExecutor）顺序执行，
+ * 防止并发初始化导致数据冲突。
+ * 前端 POST /api/hub/init-data 触发，通过轮询 /api/hub/init-task 获取进度。
+ */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class InitDataTaskService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    private final PlatformBootstrapService platformBootstrapService;
-    @Qualifier("initDataTaskExecutor")
-    private final ThreadPoolExecutor initDataTaskExecutor;
-
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile InitTaskSnapshot currentTask = InitTaskSnapshot.idle();
 
+    private final PlatformBootstrapService platformBootstrapService;
+    private final ThreadPoolExecutor initDataTaskExecutor;
+
+    public InitDataTaskService(
+            PlatformBootstrapService platformBootstrapService,
+            @Qualifier("initDataTaskExecutor") ThreadPoolExecutor initDataTaskExecutor) {
+        this.platformBootstrapService = platformBootstrapService;
+        this.initDataTaskExecutor = initDataTaskExecutor;
+    }
+
+    /**
+     * 提交初始化任务（幂等：已有运行中的任务则拒绝）
+     */
     public Map<String, Object> startTask() {
         if (!running.compareAndSet(false, true)) {
-            throw new IllegalStateException("Another init task is already running");
+            throw new IllegalStateException("已有初始化任务正在运行");
         }
 
         InitTaskSnapshot snapshot = new InitTaskSnapshot();

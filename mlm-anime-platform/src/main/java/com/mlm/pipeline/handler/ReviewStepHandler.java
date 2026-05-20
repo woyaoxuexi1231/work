@@ -12,11 +12,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 剧本审核步骤处理器 — SCRIPT_REVIEW
+ * 【策略实现】剧本审核步骤处理器 — 对应 EpisodeStatus.SCRIPT_REVIEW(3)
  * <p>
- * 进入审核时插入一条审核消息，等待人工审核剧本。
- * 通过 → PipelineEngine.advance 推进到 STORYBOARD（自动拆分镜）。
- * 驳回 → PipelineEngine.reject 退回 SCRIPT_DRAFT（重写）。
+ * 进入审核状态时做两件事：
+ * <ol>
+ *   <li>将 stepStatus 置为 PENDING，让前端显示「通过/驳回」按钮</li>
+ *   <li>插入 review_message 审核消息，前端铃铛会显示未读</li>
+ * </ol>
+ * 人工通过 → PipelineEngine.advance 推进到 STORYBOARD（自动拆分镜）。
+ * 人工驳回 → PipelineEngine.reject 退回 SCRIPT_DRAFT（重写）。
  */
 @Component
 public class ReviewStepHandler implements StepHandler {
