@@ -17,6 +17,17 @@ const newProject = ref({
 })
 const resourceList = ref([])
 
+// 状态常量 - 匹配后端 EpisodeStatus 枚举
+const STATUS = {
+  SCRIPT_DRAFT: 2,
+  SCRIPT_REVIEW: 3,
+  STORYBOARD: 4,
+  GENERATING: 5,
+  EPISODE_APPROVAL: 6,
+  COMPLETED: 7,
+  FAILED: -1
+}
+
 onMounted(async () => {
   await fetchProjects()
   await fetchResources()
@@ -35,7 +46,7 @@ async function fetchProjects() {
     if (res.code === 200) {
       projects.value = res.data || []
     } else {
-      ElMessage.error(res.message || '获取项目列表失败')
+      ElMessage.error((res.message || '获取项目列表失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -68,12 +79,12 @@ async function createProject() {
       resourceId: newProject.value.resourceId
     })
     if (res.code === 200) {
-      ElMessage.success('创建成功')
+      ElMessage.success((res.message || '创建成功') + ' [' + res.status + ']')
       dialogVisible.value = false
       newProject.value = { name: '', resourceId: null }
       await fetchProjects()
     } else {
-      ElMessage.error(res.message || '创建失败')
+      ElMessage.error((res.message || '创建失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -89,7 +100,7 @@ async function toggleVisibility(row) {
       ElMessage.success(row.isPublic ? '已设为私有' : '已设为公开')
       await fetchProjects()
     } else {
-      ElMessage.error(res.message || '操作失败')
+      ElMessage.error((res.message || '操作失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -100,34 +111,69 @@ function goToDetail(project) {
   window.location.hash = `#/mlm/project/${project.id}`
 }
 
-const statusType = (status) => {
-  const map = {
-    'CREATED': 'info',
-    'SCRIPT_DRAFT': 'warning',
-    'SCRIPT_REVIEW': 'warning',
-    'STORYBOARD': 'primary',
-    'GENERATING': 'primary',
-    'GENERATION_REVIEW': 'primary',
-    'FINAL_REVIEW': 'primary',
-    'COMPLETED': 'success',
-    'REJECTED': 'danger'
+// 获取阶段名称
+function getStageName(episodes) {
+  if (!episodes || episodes.length === 0) return '无剧集'
+  
+  // 找到最高阶段的状态
+  let maxStatus = 0
+  let hasCompleted = false
+  let hasFailed = false
+  
+  for (const ep of episodes) {
+    if (ep.status === STATUS.COMPLETED) {
+      hasCompleted = true
+    } else if (ep.status === STATUS.FAILED) {
+      hasFailed = true
+    } else if (ep.status > maxStatus) {
+      maxStatus = ep.status
+    }
   }
-  return map[status] || 'info'
+  
+  if (hasCompleted) return '已完成'
+  if (hasFailed) return '部分失败'
+  
+  const statusNames = {
+    [STATUS.SCRIPT_DRAFT]: '剧本创作',
+    [STATUS.SCRIPT_REVIEW]: '剧本审核',
+    [STATUS.STORYBOARD]: '拆分镜',
+    [STATUS.GENERATING]: 'AI成片',
+    [STATUS.EPISODE_APPROVAL]: '终审'
+  }
+  
+  return statusNames[maxStatus] || '未开始'
 }
 
-const statusText = (status) => {
-  const map = {
-    'CREATED': '已创建',
-    'SCRIPT_DRAFT': '剧本草稿',
-    'SCRIPT_REVIEW': '剧本审核',
-    'STORYBOARD': '分镜制作',
-    'GENERATING': '生成中',
-    'GENERATION_REVIEW': '生成审核',
-    'FINAL_REVIEW': '终审',
-    'COMPLETED': '已完成',
-    'REJECTED': '已驳回'
+// 获取阶段类型
+function getStageType(episodes) {
+  if (!episodes || episodes.length === 0) return 'info'
+  
+  let maxStatus = 0
+  let hasCompleted = false
+  let hasFailed = false
+  
+  for (const ep of episodes) {
+    if (ep.status === STATUS.COMPLETED) {
+      hasCompleted = true
+    } else if (ep.status === STATUS.FAILED) {
+      hasFailed = true
+    } else if (ep.status > maxStatus) {
+      maxStatus = ep.status
+    }
   }
-  return map[status] || status || '未知'
+  
+  if (hasCompleted) return 'success'
+  if (hasFailed) return 'danger'
+  if (maxStatus === STATUS.SCRIPT_REVIEW || maxStatus === STATUS.EPISODE_APPROVAL) return 'warning'
+  if (maxStatus > 0) return 'primary'
+  return 'info'
+}
+
+// 计算项目进度
+function getProjectProgress(episodes) {
+  if (!episodes || episodes.length === 0) return 0
+  const completed = episodes.filter(ep => ep.status === STATUS.COMPLETED).length
+  return Math.round((completed / episodes.length) * 100)
 }
 </script>
 
@@ -142,8 +188,8 @@ const statusText = (status) => {
     <el-card class="content-card">
       <template #header>
         <div class="card-header">
-          <span>项目列表</span>
-          <el-button type="primary" :icon="Plus" @click="dialogVisible = true">新建项目</el-button>
+          <span>项目列表 ({{ projects.length }})</span>
+          <el-button type="primary" @click="dialogVisible = true">新建项目</el-button>
         </div>
       </template>
       
@@ -163,11 +209,20 @@ const statusText = (status) => {
           </template>
         </el-table-column>
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" width="120">
+        <el-table-column label="阶段" width="150">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" size="small">
-              {{ statusText(row.status) }}
+            <el-tag :type="getStageType(row.episodes)" size="small">
+              {{ getStageName(row.episodes) }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="进度" width="120">
+          <template #default="{ row }">
+            <el-progress 
+              :percentage="getProjectProgress(row.episodes)" 
+              :status="getProjectProgress(row.episodes) === 100 ? 'success' : undefined"
+              style="width: 80px"
+            />
           </template>
         </el-table-column>
         <el-table-column label="可见性" width="100">

@@ -60,7 +60,7 @@ public class ProjectController {
         Long userId = currentUserId(request);
         List<Project> all = projectService.listAll();
         all.removeIf(p -> !p.getIsPublic() && !p.getCreatedBy().equals(userId));
-        return ApiResult.ok(all);
+        return ApiResult.ok(all, "PROJECT_LIST_LOADED");
     }
 
     /** 项目详情（含剧集列表） */
@@ -68,15 +68,15 @@ public class ProjectController {
     public ApiResult<Map<String, Object>> get(@RequestBody Map<String, Long> body, HttpServletRequest request) {
         Long id = body.get("id");
         Project project = projectService.getById(id);
-        if (project == null) return ApiResult.fail(404, "项目不存在");
+        if (project == null) return ApiResult.fail(404, "项目不存在", "PROJECT_NOT_FOUND");
         Long userId = currentUserId(request);
         if (!project.getIsPublic() && !project.getCreatedBy().equals(userId))
-            return ApiResult.fail(403, "无权访问");
+            return ApiResult.fail(403, "无权访问该项目", "ACCESS_DENIED");
         List<Episode> episodes = episodeService.findByProjectId(id);
         Map<String, Object> result = new HashMap<>();
         result.put("project", project);
         result.put("episodes", episodes);
-        return ApiResult.ok(result);
+        return ApiResult.ok(result, "PROJECT_DETAIL_LOADED");
     }
 
     /** 创建项目 */
@@ -85,7 +85,8 @@ public class ProjectController {
         String name = (String) body.get("name");
         Long resourceId = body.get("resourceId") != null ? ((Number) body.get("resourceId")).longValue() : null;
         Long userId = currentUserId(request);
-        return ApiResult.ok(pipelineEngine.createProject(name, resourceId, userId));
+        Project project = pipelineEngine.createProject(name, resourceId, userId);
+        return ApiResult.ok(project, "PROJECT_CREATED");
     }
 
     /** 切换可见性 */
@@ -94,22 +95,24 @@ public class ProjectController {
         Long id = body.get("id");
         Long userId = currentUserId(request);
         Project project = projectService.getById(id);
-        if (project == null) return ApiResult.fail(404, "项目不存在");
-        if (!project.getCreatedBy().equals(userId)) return ApiResult.fail(403, "仅创建者可操作");
+        if (project == null) return ApiResult.fail(404, "项目不存在", "PROJECT_NOT_FOUND");
+        if (!project.getCreatedBy().equals(userId)) return ApiResult.fail(403, "仅创建者可操作", "PERMISSION_DENIED");
         project.setIsPublic(!project.getIsPublic());
         projectService.update(project);
-        return ApiResult.ok();
+        String newStatus = project.getIsPublic() ? "PROJECT_PUBLISHED" : "PROJECT_UNPUBLISHED";
+        return ApiResult.ok(newStatus);
     }
 
     /** 添加剧集 */
     @PostMapping("/episode/add")
     public ApiResult<Episode> addEpisode(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         checkStagePermission(((Number) body.get("projectId")).longValue(), 2, request);
-        return ApiResult.ok(pipelineEngine.addEpisode(
+        Episode episode = pipelineEngine.addEpisode(
             ((Number) body.get("projectId")).longValue(),
             (String) body.get("title"),
             ((Number) body.get("episodeNumber")).intValue()
-        ));
+        );
+        return ApiResult.ok(episode, "EPISODE_CREATED");
     }
 
     /** 提交剧本 */
@@ -119,10 +122,10 @@ public class ProjectController {
         Long episodeId = ((Number) body.get("episodeId")).longValue();
         checkStagePermission(projectId, 2, request);
         Episode episode = episodeService.getById(episodeId);
-        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
+        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         episode.setScriptContent((String) body.get("scriptContent"));
         pipelineEngine.submitScript(episode);
-        return ApiResult.ok();
+        return ApiResult.ok("SCRIPT_SUBMITTED");
     }
 
     /** 剧本审核通过 */
@@ -132,9 +135,9 @@ public class ProjectController {
         Long episodeId = body.get("episodeId").longValue();
         checkStagePermission(projectId, 3, request);
         Episode episode = episodeService.getById(episodeId);
-        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
+        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         pipelineEngine.advance(episode);
-        return ApiResult.ok();
+        return ApiResult.ok("SCRIPT_APPROVED");
     }
 
     /** 剧本驳回 */
@@ -144,7 +147,7 @@ public class ProjectController {
         Long episodeId = body.get("episodeId").longValue();
         checkStagePermission(projectId, 3, request);
         pipelineEngine.reject(episodeId, EpisodeStatus.SCRIPT_DRAFT);
-        return ApiResult.ok();
+        return ApiResult.ok("SCRIPT_REJECTED");
     }
 
     /** 终审通过 */
@@ -154,9 +157,9 @@ public class ProjectController {
         Long episodeId = body.get("episodeId").longValue();
         checkStagePermission(projectId, 6, request);
         Episode episode = episodeService.getById(episodeId);
-        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
+        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         pipelineEngine.advance(episode);
-        return ApiResult.ok();
+        return ApiResult.ok("FINAL_APPROVED");
     }
 
     /** 终审驳回 */
@@ -166,7 +169,7 @@ public class ProjectController {
         Long episodeId = body.get("episodeId").longValue();
         checkStagePermission(projectId, 6, request);
         pipelineEngine.reject(episodeId, EpisodeStatus.GENERATING);
-        return ApiResult.ok();
+        return ApiResult.ok("FINAL_REJECTED");
     }
 
     /** 重试失败步骤 */
@@ -175,10 +178,10 @@ public class ProjectController {
         Long projectId = body.get("projectId").longValue();
         Long episodeId = body.get("episodeId").longValue();
         Episode episode = episodeService.getById(episodeId);
-        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在");
+        if (episode == null || !episode.getProjectId().equals(projectId)) return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         checkStagePermission(projectId, episode.getStatus(), request);
         pipelineEngine.retry(episodeId);
-        return ApiResult.ok();
+        return ApiResult.ok("EPISODE_RETRIED");
     }
 
     // ====== AI 生成 ======
@@ -197,7 +200,7 @@ public class ProjectController {
         req.setWidth(1920);
         req.setHeight(1080);
         modelGateway.generate(req);
-        return ApiResult.ok();
+        return ApiResult.ok("IMAGE_GENERATION_STARTED");
     }
 
     /** 生成视频 */
@@ -212,7 +215,7 @@ public class ProjectController {
         req.setReferenceImageUrl((String) body.getOrDefault("imageUrl", "https://example.com/default.jpg"));
         req.setEpisodeId(episodeId);
         modelGateway.generate(req);
-        return ApiResult.ok();
+        return ApiResult.ok("VIDEO_GENERATION_STARTED");
     }
 
     /** 完成生成 → 推进到终审 */
@@ -222,9 +225,9 @@ public class ProjectController {
         Long episodeId = body.get("episodeId").longValue();
         checkStagePermission(projectId, 5, request);
         Episode episode = episodeService.getById(episodeId);
-        if (episode == null) return ApiResult.fail(404, "剧集不存在");
+        if (episode == null) return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         pipelineEngine.advance(episode);
-        return ApiResult.ok();
+        return ApiResult.ok("GENERATION_COMPLETED");
     }
 
     /** 生成结果 */

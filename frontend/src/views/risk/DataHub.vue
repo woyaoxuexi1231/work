@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { post } from '../../api/request.js'
 import { ElMessage } from 'element-plus'
 
@@ -7,6 +7,7 @@ const activeTab = ref('overview')
 const overview = ref(null)
 const loading = ref(false)
 let fetching = false
+let refreshTimer = null
 
 // 数据源相关
 const datasourceList = ref([])
@@ -31,13 +32,43 @@ const syncForm = ref({
 })
 const syncTask = ref(null)
 const initTask = ref(null)
+const syncTaskLoading = ref(false)
+const initTaskLoading = ref(false)
 
 onMounted(async () => {
   await fetchOverview()
   await fetchDatasources()
   await fetchSyncTask()
   await fetchInitTask()
+  
+  // 启动定时刷新 - 任务状态每 3 秒刷新一次
+  startTaskRefresh()
 })
+
+onUnmounted(() => {
+  stopTaskRefresh()
+})
+
+// 定时刷新任务状态
+function startTaskRefresh() {
+  if (refreshTimer) return
+  refreshTimer = setInterval(async () => {
+    // 只在同步任务 tab 活跃时刷新
+    if (activeTab.value === 'sync') {
+      await Promise.all([
+        fetchSyncTask(true),
+        fetchInitTask(true)
+      ])
+    }
+  }, 3000)  // 每 3 秒刷新
+}
+
+function stopTaskRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
 
 async function fetchOverview() {
   if (fetching) return
@@ -51,8 +82,12 @@ async function fetchOverview() {
     }
     if (res.code === 200) {
       overview.value = res.data
+      // 显示详细状态
+      if (res.status) {
+        console.log('[Risk Hub] 总览已刷新:', res.status)
+      }
     } else {
-      ElMessage.error(res.message || '获取概览失败')
+      ElMessage.error((res.message || '获取概览失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -73,7 +108,7 @@ async function fetchDatasources() {
     if (res.code === 200) {
       datasourceList.value = res.data || []
     } else {
-      ElMessage.error(res.message || '获取数据源失败')
+      ElMessage.error((res.message || '获取数据源失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -82,25 +117,58 @@ async function fetchDatasources() {
   }
 }
 
-async function fetchSyncTask() {
+async function fetchSyncTask(silent = false) {
+  syncTaskLoading.value = true
   try {
     const res = await post('/risk-api/api/hub/sync-task')
+    if (res._httpError) {
+      if (!silent) ElMessage.error(res.message || '网关错误')
+      return
+    }
     if (res.code === 200) {
+      const oldStatus = syncTask.value?.status
       syncTask.value = res.data
+      // 状态变化时提示
+      if (!silent && oldStatus && oldStatus !== res.data?.status) {
+        ElMessage.info('同步任务状态: ' + (res.data?.status || '未知'))
+      }
+    } else {
+      if (!silent) ElMessage.error((res.message || '获取同步任务失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
-    // 静默
+    // 静默失败
+  } finally {
+    syncTaskLoading.value = false
   }
 }
 
-async function fetchInitTask() {
+async function fetchInitTask(silent = false) {
+  initTaskLoading.value = true
   try {
     const res = await post('/risk-api/api/hub/init-task')
+    if (res._httpError) {
+      if (!silent) ElMessage.error(res.message || '网关错误')
+      return
+    }
     if (res.code === 200) {
+      const oldStatus = initTask.value?.status
+      const oldProgress = initTask.value?.progress
       initTask.value = res.data
+      // 进度变化时静默更新，但完成后提示
+      if (!silent && oldStatus && oldStatus !== res.data?.status) {
+        ElMessage.info('初始化任务状态: ' + (res.data?.status || '未知'))
+      }
+      // 进度变化提示
+      if (!silent && oldProgress !== undefined && res.data?.progress !== oldProgress) {
+        console.log('[Risk Hub] 初始化进度:', res.data?.progress + '%')
+      }
+    } else {
+      if (!silent) ElMessage.error((res.message || '获取初始化任务失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
-    // 静默
+    // 静默失败
+  } finally {
+    initTaskLoading.value = false
   }
 }
 
@@ -113,11 +181,11 @@ async function registerDatasource() {
   try {
     const res = await post('/risk-api/api/datasource/register', datasourceForm.value)
     if (res.code === 200) {
-      ElMessage.success('数据源注册成功')
+      ElMessage.success((res.message || '数据源注册成功') + ' [' + res.status + ']')
       datasourceDialogVisible.value = false
       await fetchDatasources()
     } else {
-      ElMessage.error(res.message || '注册失败')
+      ElMessage.error((res.message || '注册失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -130,10 +198,10 @@ async function removeDatasource(key) {
   try {
     const res = await post('/risk-api/api/datasource/remove', { key })
     if (res.code === 200) {
-      ElMessage.success('删除成功')
+      ElMessage.success((res.message || '删除成功') + ' [' + res.status + ']')
       await fetchDatasources()
     } else {
-      ElMessage.error(res.message || '删除失败')
+      ElMessage.error((res.message || '删除失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -152,11 +220,11 @@ async function startSync() {
       pageSize: syncForm.value.pageSize
     })
     if (res.code === 200) {
-      ElMessage.success('同步任务已启动')
+      ElMessage.success((res.message || '同步任务已启动') + ' [' + res.status + ']')
       syncDialogVisible.value = false
       await fetchSyncTask()
     } else {
-      ElMessage.error(res.message || '启动失败')
+      ElMessage.error((res.message || '启动失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -170,16 +238,25 @@ async function startInitData() {
   try {
     const res = await post('/risk-api/api/hub/init-data')
     if (res.code === 200) {
-      ElMessage.success('初始化任务已启动')
+      ElMessage.success((res.message || '初始化任务已启动') + ' [' + res.status + ']')
       await fetchInitTask()
     } else {
-      ElMessage.error(res.message || '启动失败')
+      ElMessage.error((res.message || '启动失败') + ' [' + (res.status || res.code) + ']')
     }
   } catch (e) {
     ElMessage.error('网络错误')
   } finally {
     syncLoading.value = false
   }
+}
+
+// 手动刷新任务状态
+async function refreshTasks() {
+  await Promise.all([
+    fetchSyncTask(true),
+    fetchInitTask(true)
+  ])
+  ElMessage.success('任务状态已刷新')
 }
 
 const hubRecordCount = computed(() => {
@@ -212,6 +289,16 @@ const taskStatusType = (status) => {
   }
   return map[status] || 'info'
 }
+
+const taskStatusText = (status) => {
+  const map = {
+    'PENDING': '等待中',
+    'RUNNING': '运行中',
+    'COMPLETED': '已完成',
+    'FAILED': '失败'
+  }
+  return map[status] || status || '未知'
+}
 </script>
 
 <template>
@@ -229,7 +316,7 @@ const taskStatusType = (status) => {
           <template #header>
             <div class="card-header">
               <span>数据中台同步实验室</span>
-              <el-button type="primary" :icon="Refresh" @click="fetchOverview">刷新</el-button>
+              <el-button type="primary" @click="fetchOverview">刷新</el-button>
             </div>
           </template>
 
@@ -280,7 +367,7 @@ const taskStatusType = (status) => {
               <el-table-column prop="status" label="状态" width="100">
                 <template #default="{ row }">
                   <el-tag :type="row.status === 'connected' ? 'success' : 'danger'" size="small">
-                    {{ row.status }}
+                    {{ row.status === 'connected' ? '已连接' : '断开' }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -335,7 +422,7 @@ const taskStatusType = (status) => {
           <template #header>
             <div class="card-header">
               <span>数据源配置</span>
-              <el-button type="primary" :icon="Plus" @click="datasourceDialogVisible = true">注册数据源</el-button>
+              <el-button type="primary" @click="datasourceDialogVisible = true">注册数据源</el-button>
             </div>
           </template>
 
@@ -374,45 +461,80 @@ const taskStatusType = (status) => {
         </el-card>
       </el-tab-pane>
 
-      <!-- 同步任务 -->
+      <!-- 同步任务 (带自动刷新) -->
       <el-tab-pane label="同步任务" name="sync">
         <el-card class="content-card">
           <template #header>
             <div class="card-header">
               <span>同步任务管理</span>
               <div>
+                <el-button @click="refreshTasks" :loading="syncTaskLoading || initTaskLoading">刷新状态</el-button>
                 <el-button type="primary" @click="syncDialogVisible = true">发起同步</el-button>
                 <el-button type="success" @click="startInitData" :loading="syncLoading">初始化数据</el-button>
               </div>
             </div>
           </template>
 
+          <!-- 实时状态提示 -->
+          <el-alert
+            v-if="syncTask?.status === 'RUNNING' || initTask?.status === 'RUNNING'"
+            :title="(syncTask?.status === 'RUNNING' ? '同步任务运行中...' : '') + (initTask?.status === 'RUNNING' ? '初始化任务运行中...' : '')"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 16px"
+          >
+            <template #default>
+              <span>状态每 3 秒自动刷新</span>
+            </template>
+          </el-alert>
+
           <!-- 当前同步任务 -->
           <div class="task-section">
-            <h4>当前同步任务</h4>
+            <div class="task-header">
+              <h4>同步任务</h4>
+              <el-tag v-if="syncTask?.status" :type="taskStatusType(syncTask.status)" size="small">
+                {{ taskStatusText(syncTask.status) }}
+              </el-tag>
+            </div>
             <el-descriptions v-if="syncTask" :column="3" border style="margin-top: 12px">
               <el-descriptions-item label="任务ID">{{ syncTask.taskId || '-' }}</el-descriptions-item>
               <el-descriptions-item label="状态">
-                <el-tag :type="taskStatusType(syncTask.status)" size="small">{{ syncTask.status }}</el-tag>
+                <el-tag :type="taskStatusType(syncTask.status)" size="small">
+                  {{ taskStatusText(syncTask.status) }}
+                </el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="数据源">{{ syncTask.dataSourceKey || '-' }}</el-descriptions-item>
               <el-descriptions-item label="开始时间">{{ syncTask.startTime || '-' }}</el-descriptions-item>
               <el-descriptions-item label="结束时间">{{ syncTask.endTime || '-' }}</el-descriptions-item>
               <el-descriptions-item label="同步条数">{{ syncTask.totalRecords || 0 }}</el-descriptions-item>
             </el-descriptions>
-            <el-empty v-else description="暂无运行中的任务" />
+            <el-empty v-else description="暂无同步任务" />
           </div>
 
           <!-- 初始化任务 -->
           <div class="task-section" style="margin-top: 24px">
-            <h4>初始化任务</h4>
+            <div class="task-header">
+              <h4>初始化任务</h4>
+              <el-tag v-if="initTask?.status" :type="taskStatusType(initTask.status)" size="small">
+                {{ taskStatusText(initTask.status) }}
+              </el-tag>
+            </div>
             <el-descriptions v-if="initTask" :column="3" border style="margin-top: 12px">
               <el-descriptions-item label="任务ID">{{ initTask.taskId || '-' }}</el-descriptions-item>
               <el-descriptions-item label="状态">
-                <el-tag :type="taskStatusType(initTask.status)" size="small">{{ initTask.status }}</el-tag>
+                <el-tag :type="taskStatusType(initTask.status)" size="small">
+                  {{ taskStatusText(initTask.status) }}
+                </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="进度">{{ initTask.progress || 0 }}%</el-descriptions-item>
-              <el-descriptions-item label="开始时间" :span="3">{{ initTask.startTime || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="进度">
+                <el-progress 
+                  :percentage="initTask.progress || 0" 
+                  :status="initTask.status === 'COMPLETED' ? 'success' : undefined"
+                  style="width: 100px"
+                />
+              </el-descriptions-item>
+              <el-descriptions-item label="开始时间" :span="2">{{ initTask.startTime || '-' }}</el-descriptions-item>
             </el-descriptions>
             <el-empty v-else description="暂无初始化任务" />
           </div>
@@ -522,7 +644,12 @@ const taskStatusType = (status) => {
 .task-section {
   margin-top: 16px;
 }
-.task-section h4 {
+.task-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.task-header h4 {
   margin: 0;
   color: #303133;
   font-size: 16px;

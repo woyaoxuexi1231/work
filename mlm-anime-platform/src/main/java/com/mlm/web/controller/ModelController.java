@@ -26,12 +26,12 @@ public class ModelController {
 
     @PostMapping("/list")
     public ApiResult<List<ModelConfigEntity>> list() {
-        return ApiResult.ok(configMapper.selectList(null));
+        return ApiResult.ok(configMapper.selectList(null), "MODEL_LIST_LOADED");
     }
 
     @PostMapping("/create")
     public ApiResult<ModelConfigEntity> create(@RequestBody ModelConfigEntity config) {
         configMapper.insert(config);
-        return ApiResult.ok(config);
+        return ApiResult.ok(config, "MODEL_CREATED");
     }
 }

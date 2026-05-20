@@ -7,9 +7,9 @@ import lombok.Data;
  * <p>
  * <b>为什么要有 ApiResult？</b><br>
  * 统一响应格式，前端可以按统一结构解析：
- * <pre>{ "code": 200, "message": "success", "data": {...} }</pre>
+ * <pre>{ "code": 200, "message": "success", "status": "OK", "data": {...} }</pre>
  * 200 表示成功，非 200 表示业务异常。
- * 前端判断 {@code if (res.code === 200)} 比 try-catch 解析异常要可靠。
+ * status 字段提供详细的状态描述。
  * <p>
  * <b>静态工厂方法 vs new ApiResult()</b><br>
  * {@code ApiResult.ok(data)} 和 {@code ApiResult.fail(code, msg)} 是静态工厂方法，
@@ -24,20 +24,37 @@ import lombok.Data;
 public class ApiResult<T> {
     private int code;
     private String message;
+    private String status;
     private T data;
 
-    /** 成功（有返回数据） */
+    /** 成功（有返回数据）- 默认状态描述 */
     public static <T> ApiResult<T> ok(T data) {
         ApiResult<T> r = new ApiResult<>();
         r.code = 200;
-        r.message = "success";
+        r.message = "操作成功";
+        r.status = "SUCCESS";
+        r.data = data;
+        return r;
+    }
+
+    /** 成功（有返回数据）- 自定义状态描述 */
+    public static <T> ApiResult<T> ok(T data, String status) {
+        ApiResult<T> r = new ApiResult<>();
+        r.code = 200;
+        r.message = "操作成功";
+        r.status = status;
         r.data = data;
         return r;
     }
 
     /** 成功（无返回数据，如 POST 注册/删除后） */
     public static <T> ApiResult<T> ok() {
-        return ok(null);
+        return ok(null, "SUCCESS");
+    }
+
+    /** 成功（无返回数据）- 自定义状态描述 */
+    public static <T> ApiResult<T> ok(String status) {
+        return ok(null, status);
     }
 
     /** 失败 — code 使用 HTTP 语义（400/404/409/500） */
@@ -45,6 +62,16 @@ public class ApiResult<T> {
         ApiResult<T> r = new ApiResult<>();
         r.code = code;
         r.message = message;
+        r.status = "FAILED";
+        return r;
+    }
+
+    /** 失败 - 自定义状态描述 */
+    public static <T> ApiResult<T> fail(int code, String message, String status) {
+        ApiResult<T> r = new ApiResult<>();
+        r.code = code;
+        r.message = message;
+        r.status = status;
         return r;
     }
 }

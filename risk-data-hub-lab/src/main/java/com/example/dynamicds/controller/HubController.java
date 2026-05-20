@@ -34,39 +34,39 @@ public class HubController {
     @PostMapping("/overview")
     public ApiResult<Map<String, Object>> overview() {
         log.info("[控制层] 查询项目总览");
-        return ApiResult.ok(overviewService.overview());
+        return ApiResult.ok(overviewService.overview(), "OVERVIEW_LOADED");
     }
 
     @PostMapping("/init-data")
     public ApiResult<Map<String, Object>> initData() {
         log.info("[控制层] 提交异步初始化任务");
         try {
-            return ApiResult.ok(initDataTaskService.startTask());
+            return ApiResult.ok(initDataTaskService.startTask(), "INIT_TASK_STARTED");
         } catch (IllegalStateException e) {
-            return ApiResult.fail(409, e.getMessage());
+            return ApiResult.fail(409, e.getMessage(), "INIT_TASK_ALREADY_RUNNING");
         }
     }
 
     @PostMapping("/init-task")
     public ApiResult<Map<String, Object>> initTask() {
-        return ApiResult.ok(initDataTaskService.currentTask());
+        return ApiResult.ok(initDataTaskService.currentTask(), "INIT_TASK_STATUS");
     }
 
     @PostMapping("/sync")
     public ApiResult<Map<String, Object>> sync(@RequestBody SyncRequest request) {
         log.info("[控制层] 提交异步同步任务 dataSourceKey={}, pageSize={}", request.getDataSourceKey(), request.getPageSize());
         try {
-            return ApiResult.ok(syncTaskService.startTask(request.getDataSourceKey(), request.getPageSize()));
+            return ApiResult.ok(syncTaskService.startTask(request.getDataSourceKey(), request.getPageSize()), "SYNC_TASK_STARTED");
         } catch (IllegalArgumentException e) {
-            return ApiResult.fail(400, e.getMessage());
+            return ApiResult.fail(400, e.getMessage(), "SYNC_TASK_INVALID_PARAM");
         } catch (IllegalStateException e) {
-            return ApiResult.fail(409, e.getMessage());
+            return ApiResult.fail(409, e.getMessage(), "SYNC_TASK_ALREADY_RUNNING");
         }
     }
 
     @PostMapping("/sync-task")
     public ApiResult<Map<String, Object>> syncTask() {
-        return ApiResult.ok(syncTaskService.currentTask());
+        return ApiResult.ok(syncTaskService.currentTask(), "SYNC_TASK_STATUS");
     }
 
     @PostMapping("/cleaned-trades")

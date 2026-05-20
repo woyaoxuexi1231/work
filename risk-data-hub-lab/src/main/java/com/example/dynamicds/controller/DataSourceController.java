@@ -27,16 +27,16 @@ public class DataSourceController {
 
     @PostMapping("/list")
     public ApiResult<List<DataSourceVO>> list() {
-        return ApiResult.ok(manager.listAll());
+        return ApiResult.ok(manager.listAll(), "DATASOURCE_LIST_LOADED");
     }
 
     @PostMapping("/get")
     public ApiResult<DataSourceVO> get(@RequestBody KeyRequest request) {
         DataSourceVO vo = manager.get(request.getKey());
         if (vo == null) {
-            return ApiResult.fail(404, "数据源不存在: " + request.getKey());
+            return ApiResult.fail(404, "数据源不存在: " + request.getKey(), "DATASOURCE_NOT_FOUND");
         }
-        return ApiResult.ok(vo);
+        return ApiResult.ok(vo, "DATASOURCE_LOADED");
     }
 
     /**
@@ -45,25 +45,25 @@ public class DataSourceController {
     @PostMapping("/register")
     public ApiResult<Void> register(@RequestBody DataSourceConfigDTO config) {
         if (config.getKey() == null || config.getKey().isBlank()) {
-            return ApiResult.fail(400, "key 不能为空");
+            return ApiResult.fail(400, "key 不能为空", "VALIDATION_KEY_EMPTY");
         }
         if (config.getName() == null || config.getName().isBlank()) {
-            return ApiResult.fail(400, "name 不能为空");
+            return ApiResult.fail(400, "name 不能为空", "VALIDATION_NAME_EMPTY");
         }
         if (config.getDatasourceType() == null || config.getDatasourceType().isBlank()) {
-            return ApiResult.fail(400, "datasourceType 不能为空");
+            return ApiResult.fail(400, "datasourceType 不能为空", "VALIDATION_TYPE_EMPTY");
         }
         if (config.getUrl() == null || config.getUrl().isBlank()) {
-            return ApiResult.fail(400, "url 不能为空");
+            return ApiResult.fail(400, "url 不能为空", "VALIDATION_URL_EMPTY");
         }
         if (manager.exists(config.getKey())) {
-            return ApiResult.fail(409, "数据源 '" + config.getKey() + "' 已存在");
+            return ApiResult.fail(409, "数据源 '" + config.getKey() + "' 已存在", "DATASOURCE_ALREADY_EXISTS");
         }
         try {
             manager.register(config);
-            return ApiResult.ok();
+            return ApiResult.ok("DATASOURCE_REGISTERED");
         } catch (Exception e) {
-            return ApiResult.fail(500, e.getMessage());
+            return ApiResult.fail(500, e.getMessage(), "DATASOURCE_REGISTER_FAILED");
         }
     }
 
@@ -73,13 +73,13 @@ public class DataSourceController {
     @PostMapping("/remove")
     public ApiResult<Void> remove(@RequestBody KeyRequest request) {
         if (!manager.exists(request.getKey())) {
-            return ApiResult.fail(404, "数据源不存在: " + request.getKey());
+            return ApiResult.fail(404, "数据源不存在: " + request.getKey(), "DATASOURCE_NOT_FOUND");
         }
         try {
             manager.remove(request.getKey());
-            return ApiResult.ok();
+            return ApiResult.ok("DATASOURCE_REMOVED");
         } catch (Exception e) {
-            return ApiResult.fail(500, e.getMessage());
+            return ApiResult.fail(500, e.getMessage(), "DATASOURCE_REMOVE_FAILED");
         }
     }
 }
