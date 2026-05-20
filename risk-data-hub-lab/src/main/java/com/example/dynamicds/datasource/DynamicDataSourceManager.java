@@ -61,16 +61,29 @@ public class DynamicDataSourceManager {
 
     // ==================== 注册数据源 ====================
 
-    /**
-     * 注册数据源：创建连接池 → 测试连接 → 加入路由表。
-     *
-     * 设计要点：
-     * - synchronized 防止并发注册相同 key
-     * - 测试连接（getConnection → close）确保 URL/账号密码有效后才加入路由表
-     * - 连接测试失败时立即 close 掉已创建的 HikariCP 连接池，避免连接泄露
-     * - DataSourceConfigDTO 不直接存入，而是通过 copyConfig 深拷贝保存，
-     *   防止调用方后续修改 DTO 对象影响内部状态
-     */
+    /** 注册中台默认数据源（使用 Spring Boot 自动配置的 DataSource） */
+    public synchronized void registerHub(String key, String name, DataSource ds) {
+        if (!(ds instanceof HikariDataSource)) {
+            throw new IllegalArgumentException("默认数据源必须是 HikariDataSource");
+        }
+        HikariDataSource hds = (HikariDataSource) ds;
+        dataSources.put(key, hds);
+        DataSourceConfigDTO config = new DataSourceConfigDTO();
+        config.setKey(key);
+        config.setName(name);
+        config.setDatasourceType("HUB");
+        config.setUrl(hds.getJdbcUrl());
+        config.setUsername(hds.getUsername());
+        config.setPassword(hds.getPassword());
+        config.setDriverClassName(hds.getDriverClassName());
+        config.setMaxPoolSize(hds.getMaximumPoolSize());
+        config.setMinIdle(hds.getMinimumIdle());
+        config.setPoolName(hds.getPoolName());
+        dataSourceConfigs.put(key, config);
+        routingDataSource.register(key, hds, new ConcurrentHashMap<>(dataSources));
+        log.info("[数据源管理] 已注册默认数据源 '{}' — {}", key, hds.getJdbcUrl());
+    }
+
     public synchronized void register(DataSourceConfigDTO config) {
         String key = config.getKey();
         if (dataSources.containsKey(key)) {

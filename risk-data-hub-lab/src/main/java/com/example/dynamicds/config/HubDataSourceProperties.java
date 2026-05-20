@@ -28,8 +28,6 @@ import java.util.List;
 @Data
 public class HubDataSourceProperties {
 
-    /** 默认数据源 key（启动时使用的管理连接） */
-    private String defaultKey;
     /** 所有数据源配置列表 */
     private List<Item> items = new ArrayList<>();
 

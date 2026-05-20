@@ -14,7 +14,7 @@ import lombok.Data;
 @TableName("sync_task")
 public class SyncTask {
     @JsonIgnore
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private String taskId;
     private String dataSourceKey;

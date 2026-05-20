@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 @Data
 @TableName("broker_position_balance")
 public class BrokerPositionBalance {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private String clientFullName;
     private String secuCode;
