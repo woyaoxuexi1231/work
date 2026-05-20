@@ -1,26 +1,121 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { post } from '../../api/request.js'
 import { ElMessage } from 'element-plus'
 
-const modelList = ref([
-  { id: 1, name: 'Stable Diffusion XL', type: '文生图', status: 'enabled', description: '高性能文生图模型' },
-  { id: 2, name: 'ControlNet', type: '姿态控制', status: 'enabled', description: '精确姿态控制模型' },
-  { id: 3, name: 'LoRA Trainer', type: '微调训练', status: 'disabled', description: '自定义角色训练' }
-])
-
+const modelList = ref([])
+const loading = ref(false)
 const dialogVisible = ref(false)
+const dialogLoading = ref(false)
+
 const modelForm = ref({
   name: '',
-  type: '',
-  description: ''
+  vendor: 'stable_diffusion',
+  type: 'TEXT_TO_IMAGE',
+  apiKey: '',
+  apiUrl: '',
+  enabled: true
 })
 
-function handleEdit(row) {
-  ElMessage.info('编辑功能开发中')
+const vendorOptions = [
+  { label: 'Stable Diffusion', value: 'stable_diffusion' },
+  { label: 'OpenAI (DALL-E)', value: 'openai' },
+  { label: 'Kling (快手可灵)', value: 'kling' }
+]
+
+const typeOptions = [
+  { label: '文生图 (Text to Image)', value: 'TEXT_TO_IMAGE' },
+  { label: '图生视频 (Image to Video)', value: 'IMAGE_TO_VIDEO' },
+  { label: '文生视频 (Text to Video)', value: 'TEXT_TO_VIDEO' }
+]
+
+onMounted(async () => {
+  await fetchModels()
+})
+
+async function fetchModels() {
+  loading.value = true
+  try {
+    const res = await post('/mlm-api/api/models/list')
+    if (res._httpError) {
+      ElMessage.error(res.message || '网关错误')
+      return
+    }
+    if (res.code === 200) {
+      modelList.value = res.data || []
+    } else {
+      ElMessage.error(res.message || '获取模型列表失败')
+    }
+  } catch (e) {
+    ElMessage.error('网络错误')
+  } finally {
+    loading.value = false
+  }
 }
 
-function handleDelete(row) {
-  ElMessage.info('删除功能开发中')
+async function createModel() {
+  if (!modelForm.value.name.trim()) {
+    ElMessage.warning('请输入模型名称')
+    return
+  }
+  dialogLoading.value = true
+  try {
+    const res = await post('/mlm-api/api/models/create', {
+      name: modelForm.value.name,
+      vendor: modelForm.value.vendor,
+      type: modelForm.value.type,
+      apiKey: modelForm.value.apiKey,
+      apiUrl: modelForm.value.apiUrl,
+      enabled: modelForm.value.enabled
+    })
+    if (res.code === 200) {
+      ElMessage.success('创建成功')
+      dialogVisible.value = false
+      modelForm.value = { name: '', vendor: 'stable_diffusion', type: 'TEXT_TO_IMAGE', apiKey: '', apiUrl: '', enabled: true }
+      await fetchModels()
+    } else {
+      ElMessage.error(res.message || '创建失败')
+    }
+  } catch (e) {
+    ElMessage.error('网络错误')
+  } finally {
+    dialogLoading.value = false
+  }
+}
+
+async function toggleEnabled(model) {
+  try {
+    // TODO: 调用更新接口
+    ElMessage.info('更新功能开发中')
+  } catch (e) {
+    ElMessage.error('网络错误')
+  }
+}
+
+async function deleteModel(model) {
+  try {
+    ElMessage.info('删除功能开发中')
+  } catch (e) {
+    ElMessage.error('网络错误')
+  }
+}
+
+const vendorText = (vendor) => {
+  const map = {
+    'stable_diffusion': 'Stable Diffusion',
+    'openai': 'OpenAI',
+    'kling': 'Kling'
+  }
+  return map[vendor] || vendor
+}
+
+const typeText = (type) => {
+  const map = {
+    'TEXT_TO_IMAGE': '文生图',
+    'IMAGE_TO_VIDEO': '图生视频',
+    'TEXT_TO_VIDEO': '文生视频'
+  }
+  return map[type] || type
 }
 </script>
 
@@ -36,38 +131,86 @@ function handleDelete(row) {
       <template #header>
         <div class="card-header">
           <span>AI 模型配置</span>
-          <el-button type="primary" :icon="Plus" size="small">添加模型</el-button>
+          <el-button type="primary" :icon="Plus" @click="dialogVisible = true">添加模型</el-button>
         </div>
       </template>
 
-      <el-row :gutter="20">
-        <el-col :xs="24" :sm="12" :md="8" v-for="model in modelList" :key="model.id">
-          <el-card class="model-card" shadow="hover">
-            <div class="model-header">
+      <el-table v-loading="loading" :data="modelList" stripe>
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column label="模型" min-width="200">
+          <template #default="{ row }">
+            <div class="model-info">
               <el-icon size="24" color="#409EFF"><Cpu /></el-icon>
-              <el-tag :type="model.status === 'enabled' ? 'success' : 'info'" size="small">
-                {{ model.status === 'enabled' ? '已启用' : '已禁用' }}
-              </el-tag>
+              <div>
+                <div class="model-name">{{ row.name }}</div>
+                <div class="model-vendor">{{ vendorText(row.vendor) }}</div>
+              </div>
             </div>
-            <h3 class="model-name">{{ model.name }}</h3>
-            <el-tag type="warning" size="small" class="model-type">{{ model.type }}</el-tag>
-            <p class="model-desc">{{ model.description }}</p>
-            <div class="model-actions">
-              <el-button type="primary" size="small" link @click="handleEdit(model)">配置</el-button>
-              <el-button type="danger" size="small" link @click="handleDelete(model)">删除</el-button>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
+          </template>
+        </el-table-column>
+        <el-table-column label="类型" width="120">
+          <template #default="{ row }">
+            <el-tag type="warning" size="small">{{ typeText(row.type) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="apiUrl" label="API地址" min-width="200" show-overflow-tooltip />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
+              {{ row.enabled ? '已启用' : '已禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="toggleEnabled(row)">
+              {{ row.enabled ? '禁用' : '启用' }}
+            </el-button>
+            <el-button link type="danger" size="small" @click="deleteModel(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-      <el-empty v-if="modelList.length === 0" description="暂无模型配置" />
+      <el-empty v-if="!loading && modelList.length === 0" description="暂无模型配置，点击右上角添加" />
     </el-card>
+
+    <!-- 添加模型对话框 -->
+    <el-dialog v-model="dialogVisible" title="添加模型" width="600px">
+      <el-form :model="modelForm" label-width="100px">
+        <el-form-item label="模型名称" required>
+          <el-input v-model="modelForm.name" placeholder="请输入模型名称，如 Stable Diffusion XL" />
+        </el-form-item>
+        <el-form-item label="供应商" required>
+          <el-select v-model="modelForm.vendor" style="width: 100%">
+            <el-option v-for="opt in vendorOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="模型类型" required>
+          <el-select v-model="modelForm.type" style="width: 100%">
+            <el-option v-for="opt in typeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="API地址">
+          <el-input v-model="modelForm.apiUrl" placeholder="可选，指定API endpoint" />
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input v-model="modelForm.apiKey" type="password" placeholder="可选，API密钥" show-password />
+        </el-form-item>
+        <el-form-item label="启用状态">
+          <el-switch v-model="modelForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="dialogLoading" @click="createModel">添加</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .model-list {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 .content-card {
@@ -79,36 +222,17 @@ function handleDelete(row) {
   justify-content: space-between;
   align-items: center;
 }
-.model-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  transition: all 0.3s;
-}
-.model-card:hover {
-  transform: translateY(-4px);
-}
-.model-header {
+.model-info {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 12px;
 }
 .model-name {
-  margin: 0 0 8px 0;
-  font-size: 16px;
   font-weight: 600;
   color: #303133;
 }
-.model-type {
-  margin-bottom: 8px;
-}
-.model-desc {
-  margin: 0 0 12px 0;
-  font-size: 14px;
+.model-vendor {
+  font-size: 12px;
   color: #909399;
-}
-.model-actions {
-  display: flex;
-  gap: 12px;
 }
 </style>
