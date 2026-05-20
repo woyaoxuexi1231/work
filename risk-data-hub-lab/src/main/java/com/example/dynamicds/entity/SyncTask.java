@@ -19,6 +19,7 @@ public class SyncTask {
     private String datasourceType;
     private Integer pageSize;
     private String status;
+    private Integer progress;
     private Integer totalPulledCount;
     private Integer totalSavedCount;
     private String submittedAt;

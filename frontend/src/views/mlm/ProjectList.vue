@@ -1,8 +1,10 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { post } from '../../api/request.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const router = useRouter()
 const projects = ref([])
 const loading = ref(false)
 const tableLoading = ref(false)
@@ -46,7 +48,7 @@ async function fetchProjects() {
     if (res.code === 200) {
       projects.value = res.data || []
     } else {
-      ElMessage.error((res.message || '获取项目列表失败') + ' [' + (res.status || res.code) + ']')
+      ElMessage.error(res.message || '获取项目列表失败')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -79,12 +81,12 @@ async function createProject() {
       resourceId: newProject.value.resourceId
     })
     if (res.code === 200) {
-      ElMessage.success((res.message || '创建成功') + ' [' + res.status + ']')
+      ElMessage.success(res.message || '创建成功')
       dialogVisible.value = false
       newProject.value = { name: '', resourceId: null }
       await fetchProjects()
     } else {
-      ElMessage.error((res.message || '创建失败') + ' [' + (res.status || res.code) + ']')
+      ElMessage.error(res.message || '创建失败')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -100,7 +102,7 @@ async function toggleVisibility(row) {
       ElMessage.success(row.isPublic ? '已设为私有' : '已设为公开')
       await fetchProjects()
     } else {
-      ElMessage.error((res.message || '操作失败') + ' [' + (res.status || res.code) + ']')
+      ElMessage.error(res.message || '操作失败')
     }
   } catch (e) {
     ElMessage.error('网络错误')
@@ -108,7 +110,7 @@ async function toggleVisibility(row) {
 }
 
 function goToDetail(project) {
-  window.location.hash = `#/mlm/project/${project.id}`
+  router.push(`/mlm/project/${project.id}`)
 }
 
 // 获取阶段名称
@@ -168,13 +170,6 @@ function getStageType(episodes) {
   if (maxStatus > 0) return 'primary'
   return 'info'
 }
-
-// 计算项目进度
-function getProjectProgress(episodes) {
-  if (!episodes || episodes.length === 0) return 0
-  const completed = episodes.filter(ep => ep.status === STATUS.COMPLETED).length
-  return Math.round((completed / episodes.length) * 100)
-}
 </script>
 
 <template>
@@ -214,15 +209,6 @@ function getProjectProgress(episodes) {
             <el-tag :type="getStageType(row.episodes)" size="small">
               {{ getStageName(row.episodes) }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="进度" width="120">
-          <template #default="{ row }">
-            <el-progress 
-              :percentage="getProjectProgress(row.episodes)" 
-              :status="getProjectProgress(row.episodes) === 100 ? 'success' : undefined"
-              style="width: 80px"
-            />
           </template>
         </el-table-column>
         <el-table-column label="可见性" width="100">

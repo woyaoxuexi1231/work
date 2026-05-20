@@ -1,6 +1,7 @@
 package com.mlm.notification.controller;
 
 import com.mlm.common.dto.ApiResult;
+import com.mlm.common.dto.NotificationCountVO;
 import com.mlm.notification.entity.ReviewMessage;
 import com.mlm.notification.service.ReviewMessageService;
 import org.slf4j.Logger;
@@ -8,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 审核消息接口 — 全部 POST
@@ -31,13 +31,15 @@ public class ReviewMessageController {
     }
 
     @PostMapping("/count")
-    public ApiResult<Map<String, Long>> count() {
-        return ApiResult.ok(Map.of("count", messageService.countUnread()));
+    public ApiResult<NotificationCountVO> count() {
+        return ApiResult.ok(NotificationCountVO.builder().count(messageService.countUnread()).build());
     }
 
     @PostMapping("/read")
-    public ApiResult<?> markAsRead(@RequestBody List<Long> ids) {
-        messageService.markAsRead(ids.toArray(new Long[0]));
+    public ApiResult<Void> markAsRead(@RequestBody List<Long> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            messageService.markAsRead(ids.toArray(new Long[0]));
+        }
         return ApiResult.ok();
     }
 }

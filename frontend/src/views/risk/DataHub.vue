@@ -17,6 +17,7 @@ const datasourceForm = ref({
   key: '',
   name: '',
   datasourceType: 'MYSQL',
+  upstreamType: '',
   url: '',
   username: '',
   password: '',
@@ -53,12 +54,10 @@ onUnmounted(() => {
 function startTaskRefresh() {
   if (refreshTimer) return
   refreshTimer = setInterval(async () => {
-    // 只在同步任务 tab 活跃时刷新
     if (activeTab.value === 'sync') {
-      await Promise.all([
-        fetchSyncTask(true),
-        fetchInitTask(true)
-      ])
+      await fetchSyncTask(true)
+    } else if (activeTab.value === 'init') {
+      await fetchInitTask(true)
     }
   }, 3000)  // 每 3 秒刷新
 }
@@ -173,8 +172,8 @@ async function fetchInitTask(silent = false) {
 }
 
 async function registerDatasource() {
-  if (!datasourceForm.value.key || !datasourceForm.value.name) {
-    ElMessage.warning('请填写完整信息')
+  if (!datasourceForm.value.key || !datasourceForm.value.name || !datasourceForm.value.upstreamType) {
+    ElMessage.warning('请填写完整信息（数据源标识、名称、上游类型为必填）')
     return
   }
   syncLoading.value = true
@@ -250,22 +249,6 @@ async function startInitData() {
   }
 }
 
-// 手动刷新任务状态
-async function refreshTasks() {
-  await Promise.all([
-    fetchSyncTask(true),
-    fetchInitTask(true)
-  ])
-  ElMessage.success('任务状态已刷新')
-}
-
-const hubRecordCount = computed(() => {
-  if (!overview.value) return 0
-  const stats = overview.value.hubTableStats || {}
-  return (stats.clean_stock || 0) + (stats.clean_trade || 0) + 
-         (stats.clean_position || 0) + (stats.clean_asset || 0)
-})
-
 const businessTableCount = computed(() => {
   if (!overview.value) return 0
   const business = overview.value.businessTableStats || {}
@@ -278,6 +261,12 @@ const datasourceTypeMap = {
   'POSTGRESQL': { text: 'PostgreSQL', type: 'success' },
   'ORACLE': { text: 'Oracle', type: 'warning' },
   'SQLSERVER': { text: 'SQL Server', type: 'danger' }
+}
+
+const upstreamTypeMap = {
+  'TRADE_OMS': { text: '交易 OMS 系统', type: 'primary' },
+  'TRADE_BROKER': { text: '券商 Broker 系统', type: 'success' },
+  'CUSTOM': { text: '自定义上游', type: 'info' }
 }
 
 const taskStatusType = (status) => {
@@ -336,13 +325,6 @@ const taskStatusText = (status) => {
               </el-statistic>
             </el-col>
             <el-col :xs="12" :sm="6">
-              <el-statistic title="中台落库条数" :value="hubRecordCount">
-                <template #prefix>
-                  <el-icon color="#e6a23c"><DocumentCopy /></el-icon>
-                </template>
-              </el-statistic>
-            </el-col>
-            <el-col :xs="12" :sm="6">
               <el-statistic title="业务表数量" :value="businessTableCount">
                 <template #prefix>
                   <el-icon color="#f56c6c"><Grid /></el-icon>
@@ -362,56 +344,28 @@ const taskStatusText = (status) => {
               stripe
               style="width: 100%; margin-top: 12px"
             >
-              <el-table-column prop="name" label="名称" />
-              <el-table-column prop="type" label="类型" width="120" />
-              <el-table-column prop="status" label="状态" width="100">
+              <el-table-column prop="key" label="标识" width="180" />
+              <el-table-column label="类型" width="180">
                 <template #default="{ row }">
-                  <el-tag :type="row.status === 'connected' ? 'success' : 'danger'" size="small">
-                    {{ row.status === 'connected' ? '已连接' : '断开' }}
+                  <el-tag :type="upstreamTypeMap[row.type]?.type || 'info'" size="small">
+                    {{ upstreamTypeMap[row.type]?.text || row.type }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="同步表" min-width="300">
+                <template #default="{ row }">
+                  <el-tag 
+                    v-for="table in (row.syncTables || [])" 
+                    :key="table" 
+                    size="small" 
+                    style="margin-right: 4px; margin-bottom: 2px;"
+                  >
+                    {{ table }}
                   </el-tag>
                 </template>
               </el-table-column>
             </el-table>
             <el-empty v-else description="暂无上游拓扑数据" />
-          </div>
-
-          <!-- 清洗统计 -->
-          <div class="detail-section" v-if="overview?.hubTableStats">
-            <h4>中台落库统计</h4>
-            <el-row :gutter="16" class="stats-cards">
-              <el-col :span="6">
-                <el-card shadow="hover">
-                  <div class="stat-item">
-                    <div class="stat-value">{{ overview.hubTableStats.clean_stock || 0 }}</div>
-                    <div class="stat-label">股票主数据</div>
-                  </div>
-                </el-card>
-              </el-col>
-              <el-col :span="6">
-                <el-card shadow="hover">
-                  <div class="stat-item">
-                    <div class="stat-value">{{ overview.hubTableStats.clean_trade || 0 }}</div>
-                    <div class="stat-label">交易清洗</div>
-                  </div>
-                </el-card>
-              </el-col>
-              <el-col :span="6">
-                <el-card shadow="hover">
-                  <div class="stat-item">
-                    <div class="stat-value">{{ overview.hubTableStats.clean_position || 0 }}</div>
-                    <div class="stat-label">持仓清洗</div>
-                  </div>
-                </el-card>
-              </el-col>
-              <el-col :span="6">
-                <el-card shadow="hover">
-                  <div class="stat-item">
-                    <div class="stat-value">{{ overview.hubTableStats.clean_asset || 0 }}</div>
-                    <div class="stat-label">资产清洗</div>
-                  </div>
-                </el-card>
-              </el-col>
-            </el-row>
           </div>
         </el-card>
       </el-tab-pane>
@@ -431,8 +385,8 @@ const taskStatusText = (status) => {
             <el-table-column prop="name" label="名称" min-width="150" />
             <el-table-column label="类型" width="120">
               <template #default="{ row }">
-                <el-tag :type="datasourceTypeMap[row.type]?.type || 'info'" size="small">
-                  {{ datasourceTypeMap[row.type]?.text || row.type }}
+                <el-tag :type="datasourceTypeMap[row.datasourceType]?.type || 'info'" size="small">
+                  {{ datasourceTypeMap[row.datasourceType]?.text || row.datasourceType }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -468,17 +422,16 @@ const taskStatusText = (status) => {
             <div class="card-header">
               <span>同步任务管理</span>
               <div>
-                <el-button @click="refreshTasks" :loading="syncTaskLoading || initTaskLoading">刷新状态</el-button>
+                <el-button @click="fetchSyncTask()" :loading="syncTaskLoading">刷新状态</el-button>
                 <el-button type="primary" @click="syncDialogVisible = true">发起同步</el-button>
-                <el-button type="success" @click="startInitData" :loading="syncLoading">初始化数据</el-button>
               </div>
             </div>
           </template>
 
           <!-- 实时状态提示 -->
           <el-alert
-            v-if="syncTask?.status === 'RUNNING' || initTask?.status === 'RUNNING'"
-            :title="(syncTask?.status === 'RUNNING' ? '同步任务运行中...' : '') + (initTask?.status === 'RUNNING' ? '初始化任务运行中...' : '')"
+            v-if="syncTask?.status === 'RUNNING'"
+            title="同步任务运行中..."
             type="info"
             :closable="false"
             show-icon
@@ -504,16 +457,53 @@ const taskStatusText = (status) => {
                   {{ taskStatusText(syncTask.status) }}
                 </el-tag>
               </el-descriptions-item>
+              <el-descriptions-item label="进度">
+                <el-progress 
+                  :percentage="syncTask.progress || 0" 
+                  :status="syncTask.status === 'SUCCESS' ? 'success' : undefined"
+                  style="width: 100px"
+                />
+              </el-descriptions-item>
               <el-descriptions-item label="数据源">{{ syncTask.dataSourceKey || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="开始时间">{{ syncTask.startTime || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="结束时间">{{ syncTask.endTime || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="同步条数">{{ syncTask.totalRecords || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="开始时间">{{ syncTask.startedAt || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="结束时间">{{ syncTask.finishedAt || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="拉取条数">{{ syncTask.totalPulledCount || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="落库条数">{{ syncTask.totalSavedCount || 0 }}</el-descriptions-item>
             </el-descriptions>
             <el-empty v-else description="暂无同步任务" />
           </div>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- 初始化任务 (带自动刷新) -->
+      <el-tab-pane label="初始化任务" name="init">
+        <el-card class="content-card">
+          <template #header>
+            <div class="card-header">
+              <span>初始化任务管理</span>
+              <div>
+                <el-button @click="fetchInitTask()" :loading="initTaskLoading">刷新状态</el-button>
+                <el-button type="success" @click="startInitData" :loading="syncLoading">初始化数据</el-button>
+              </div>
+            </div>
+          </template>
+
+          <!-- 实时状态提示 -->
+          <el-alert
+            v-if="initTask?.status === 'RUNNING'"
+            title="初始化任务运行中..."
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 16px"
+          >
+            <template #default>
+              <span>状态每 3 秒自动刷新</span>
+            </template>
+          </el-alert>
 
           <!-- 初始化任务 -->
-          <div class="task-section" style="margin-top: 24px">
+          <div class="task-section">
             <div class="task-header">
               <h4>初始化任务</h4>
               <el-tag v-if="initTask?.status" :type="taskStatusType(initTask.status)" size="small">
@@ -557,6 +547,13 @@ const taskStatusText = (status) => {
             <el-option label="PostgreSQL" value="POSTGRESQL" />
             <el-option label="Oracle" value="ORACLE" />
             <el-option label="SQL Server" value="SQLSERVER" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="上游类型" required>
+          <el-select v-model="datasourceForm.upstreamType" placeholder="请选择上游系统类型" style="width: 100%">
+            <el-option label="交易 OMS 系统" value="TRADE_OMS" />
+            <el-option label="券商 Broker 系统" value="TRADE_BROKER" />
+            <el-option label="自定义上游" value="CUSTOM" />
           </el-select>
         </el-form-item>
         <el-form-item label="连接地址" required>
@@ -624,22 +621,6 @@ const taskStatusText = (status) => {
   margin: 0;
   color: #303133;
   font-size: 16px;
-}
-.stats-cards {
-  margin-top: 12px;
-}
-.stat-item {
-  text-align: center;
-}
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: #409EFF;
-}
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 4px;
 }
 .task-section {
   margin-top: 16px;

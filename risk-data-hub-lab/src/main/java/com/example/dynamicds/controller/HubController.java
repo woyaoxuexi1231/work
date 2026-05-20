@@ -1,7 +1,10 @@
 package com.example.dynamicds.controller;
 
 import com.example.dynamicds.dto.ApiResult;
+import com.example.dynamicds.dto.InitTaskVO;
+import com.example.dynamicds.dto.OverviewVO;
 import com.example.dynamicds.dto.SyncRequest;
+import com.example.dynamicds.dto.SyncTaskDTO;
 import com.example.dynamicds.service.InitDataTaskService;
 import com.example.dynamicds.service.OverviewService;
 import com.example.dynamicds.service.SyncTaskService;
@@ -13,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
+import java.util.List;
 
 /**
  * 核心业务控制器 — 提供中台总览、初始化、同步触发、查询接口。
@@ -32,13 +35,13 @@ public class HubController {
     private final SyncTaskService syncTaskService;
 
     @PostMapping("/overview")
-    public ApiResult<Map<String, Object>> overview() {
+    public ApiResult<OverviewVO> overview() {
         log.info("[控制层] 查询项目总览");
         return ApiResult.ok(overviewService.overview(), "OVERVIEW_LOADED");
     }
 
     @PostMapping("/init-data")
-    public ApiResult<Map<String, Object>> initData() {
+    public ApiResult<InitTaskVO> initData() {
         log.info("[控制层] 提交异步初始化任务");
         try {
             return ApiResult.ok(initDataTaskService.startTask(), "INIT_TASK_STARTED");
@@ -48,12 +51,12 @@ public class HubController {
     }
 
     @PostMapping("/init-task")
-    public ApiResult<Map<String, Object>> initTask() {
+    public ApiResult<InitTaskVO> initTask() {
         return ApiResult.ok(initDataTaskService.currentTask(), "INIT_TASK_STATUS");
     }
 
     @PostMapping("/sync")
-    public ApiResult<Map<String, Object>> sync(@RequestBody SyncRequest request) {
+    public ApiResult<SyncTaskDTO> sync(@RequestBody SyncRequest request) {
         log.info("[控制层] 提交异步同步任务 dataSourceKey={}, pageSize={}", request.getDataSourceKey(), request.getPageSize());
         try {
             return ApiResult.ok(syncTaskService.startTask(request.getDataSourceKey(), request.getPageSize()), "SYNC_TASK_STARTED");
@@ -65,12 +68,12 @@ public class HubController {
     }
 
     @PostMapping("/sync-task")
-    public ApiResult<Map<String, Object>> syncTask() {
+    public ApiResult<SyncTaskDTO> syncTask() {
         return ApiResult.ok(syncTaskService.currentTask(), "SYNC_TASK_STATUS");
     }
 
     @PostMapping("/cleaned-trades")
-    public ApiResult<?> cleanedTrades() {
+    public ApiResult<List<?>> cleanedTrades() {
         return ApiResult.ok(tradeEtlService.cleanedTrades());
     }
 }
