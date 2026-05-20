@@ -1,10 +1,16 @@
 package com.example.dynamicds.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
+import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
-import com.example.dynamicds.sync.SyncSupport.SyncProgress;
+import com.example.dynamicds.entity.SyncBusinessRecord;
+import com.example.dynamicds.entity.SyncTask;
+import com.example.dynamicds.mapper.SyncBusinessRecordMapper;
+import com.example.dynamicds.mapper.SyncTaskMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -13,177 +19,209 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 同步任务服务 — 异步执行 ETL 同步（4 类业务并发）。
+ * 同步任务服务 — 异步执行 ETL 同步，任务及业务记录持久化到数据库。
  * <p>
- * <b>AtomicBoolean + volatile 的设计</b>
- * <ul>
- *   <li><b>running（AtomicBoolean）</b> — 防止并发提交同步任务。
- *       {@code compareAndSet(false, true)} 是原子操作，保证即使两个请求同时到达，
- *       也只有一个能成功设置 running=true。</li>
- *   <li><b>currentTask（volatile）</b> — 前端轮询的"快照"对象。
- *       volatile 保证一个线程（工作线程）修改了 currentTask 的引用，
- *       另一个线程（前端请求线程）立即可见。
- *       为什么不用 {@code final + synchronized}？因为 currentTask 是"替换"而不是"修改"：
- *       工作线程创建新的 SyncTaskSnapshot 对象来替换旧对象，
- *       volatile 保证了"新对象引用"对所有线程的可见性。</li>
- * </ul>
- * <p>
- * <b>为什么用独立的单线程池（syncTaskExecutor）而不是直接用 @Async？</b>
- * <ol>
- *   <li>@Async 默认使用 Spring 的全局线程池，如果在其他地方也用 @Async，
- *       可能会相互干扰。独立线程池职责明确。</li>
- *   <li>队列容量（8）预留了缓冲，即使任务提交略快于执行也不会丢任务。</li>
- *   <li>{@code destroyMethod = "shutdown"} 保证应用关闭时优雅终止。</li>
- * </ol>
- * <p>
- * <b>不可变快照模式</b><br>
- * SyncTaskSnapshot 每次更新时创建新对象替换旧对象（currentTask = snapshot），
- * 而不是修改已有对象的字段。这样前端轮询读取 currentTask 时，
- * 要么读到完整的旧快照，要么读到完整的新快照，不会读到"半修改"的对象。
- * 如果直接修改 snapshot 的字段，前端可能读到 status=SUCCESS 但 result=null 的中间状态。
+ * 流程：创建 sync_task → 插入 sync_business_record（RUNNING）→
+ * 执行同步 → 更新 sync_business_record（SUCCESS/FAILED）→
+ * 更新 sync_task → 全部成功则发 RabbitMQ 消息。
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class SyncTaskService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    /** CAS 锁 — 保证同一时刻只有一个同步任务在运行 */
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final AtomicBoolean running = new AtomicBoolean(false);
-    /** volatile 快照 — 前端轮询读到的一直是完整对象 */
-    private volatile SyncTaskSnapshot currentTask = SyncTaskSnapshot.idle();
 
     private final TradeEtlService tradeEtlService;
     private final DynamicDataSourceManager dataSourceManager;
+    private final RoutingMybatisExecutor routingMybatisExecutor;
+    private final SyncTaskMapper syncTaskMapper;
+    private final SyncBusinessRecordMapper syncBusinessRecordMapper;
+    private final RabbitMqSender rabbitMqSender;
+    @Qualifier("syncTaskExecutor")
     private final ThreadPoolExecutor syncTaskExecutor;
 
-    public SyncTaskService(TradeEtlService tradeEtlService,
-                           DynamicDataSourceManager dataSourceManager,
-                           @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor) {
-        this.tradeEtlService = tradeEtlService;
-        this.dataSourceManager = dataSourceManager;
-        this.syncTaskExecutor = syncTaskExecutor;
-    }
-
+    /**
+     * 提交同步任务，写入 sync_task 表。
+     */
     public Map<String, Object> startTask(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
         if (config == null) {
-            throw new IllegalArgumentException("Data source not found: " + dataSourceKey);
+            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
         }
         if (PlatformBootstrapService.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
-            throw new IllegalArgumentException("Hub datasource cannot be used as sync source: " + dataSourceKey);
+            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
         if (!running.compareAndSet(false, true)) {
             throw new IllegalStateException("已有同步任务正在运行");
         }
 
-        SyncTaskSnapshot snapshot = new SyncTaskSnapshot();
-        snapshot.setTaskId(UUID.randomUUID().toString());
-        snapshot.setStatus("QUEUED");
-        snapshot.setDataSourceKey(dataSourceKey);
-        snapshot.setDataSourceName(config.getName());
-        snapshot.setDatasourceType(config.getDatasourceType());
-        snapshot.setPageSize(Math.max(1, Math.min(pageSize, 500)));
-        snapshot.setSubmittedAt(now());
-        snapshot.setMessage("Sync task submitted");
-        currentTask = snapshot;
+        String taskId = UUID.randomUUID().toString();
+        String now = now();
+        int safePageSize = Math.max(1, Math.min(pageSize, 500));
 
-        log.info("[同步任务] 提交 taskId={}, dataSourceKey={}, pageSize={}",
-                snapshot.getTaskId(), snapshot.getDataSourceKey(), snapshot.getPageSize());
-        syncTaskExecutor.submit(() -> runTask(snapshot));
-        return toMap(currentTask);
+        SyncTask task = new SyncTask();
+        task.setTaskId(taskId);
+        task.setStatus("QUEUED");
+        task.setDataSourceKey(dataSourceKey);
+        task.setDataSourceName(config.getName());
+        task.setDatasourceType(config.getDatasourceType());
+        task.setPageSize(safePageSize);
+        task.setSubmittedAt(now);
+        task.setMessage("同步任务已提交");
+        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> syncTaskMapper.insert(task));
+
+        log.info("[同步任务] 提交 taskId={}, dataSourceKey={}, pageSize={}", taskId, dataSourceKey, safePageSize);
+        syncTaskExecutor.submit(() -> runTask(taskId, dataSourceKey, safePageSize, config.getName(), config.getDatasourceType()));
+        return toMap(task);
     }
 
+    /**
+     * 查询最新的同步任务（按 id 降序取第一条）。
+     */
     public Map<String, Object> currentTask() {
-        return toMap(currentTask);
+        SyncTask task = routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () ->
+                syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
+                        .orderByDesc(SyncTask::getId)
+                        .last("limit 1")));
+        if (task == null) {
+            SyncTask idle = new SyncTask();
+            idle.setStatus("IDLE");
+            idle.setMessage("暂无同步任务");
+            return toMap(idle);
+        }
+        return toMap(task);
     }
 
-    private void runTask(SyncTaskSnapshot snapshot) {
+    private void runTask(String taskId, String dataSourceKey, int pageSize,
+                         String dataSourceName, String datasourceType) {
         try {
-            snapshot.setStatus("RUNNING");
-            snapshot.setStartedAt(now());
-            snapshot.setMessage("Sync task is running");
-            currentTask = snapshot;
-            log.info("[同步任务] 开始执行 taskId={}, dataSourceKey={}, pageSize={}",
-                    snapshot.getTaskId(), snapshot.getDataSourceKey(), snapshot.getPageSize());
+            // → RUNNING
+            updateTask(taskId, "RUNNING", now(), null, null, null, null, 0, 0);
 
+            // 执行同步
             Map<String, Object> result = tradeEtlService.syncByDataSource(
-                    snapshot.getDataSourceKey(),
-                    snapshot.getPageSize(),
-                    progress -> updateProgress(snapshot, progress));
+                    dataSourceKey, pageSize, progress -> {});
 
-            snapshot.setStatus("SUCCESS");
-            snapshot.setFinishedAt(now());
-            snapshot.setResult(result);
-            snapshot.setMessage("Sync task finished");
-            currentTask = snapshot;
-            log.info("[同步任务] 执行完成 taskId={}, 落库总数={}", snapshot.getTaskId(), snapshot.getSavedCount());
+            // 解析业务结果并写入 sync_business_record
+            @SuppressWarnings("unchecked")
+            Map<String, Map<String, Object>> businessResults = result.get("businessResults") instanceof Map<?, ?> m
+                    ? (Map<String, Map<String, Object>>) m
+                    : Map.of();
+
+            int totalPulled = 0;
+            int totalSaved = 0;
+            boolean allSuccess = true;
+
+            for (Map.Entry<String, Map<String, Object>> entry : businessResults.entrySet()) {
+                String bizCode = entry.getKey();
+                Map<String, Object> bizResult = entry.getValue();
+
+                int pageCount = readInt(bizResult.get("pageCount"));
+                int pulledCount = readInt(bizResult.get("pulledCount"));
+                int savedCount = readInt(bizResult.get("savedCount"));
+                long lastRowId = readLong(bizResult.get("lastRowId"));
+
+                totalPulled += pulledCount;
+                totalSaved += savedCount;
+
+                // 写入业务同步记录
+                SyncBusinessRecord record = new SyncBusinessRecord();
+                record.setTaskId(taskId);
+                record.setBusinessCode(bizCode);
+                record.setStatus("SUCCESS");
+                record.setPageCount(pageCount);
+                record.setPulledCount(pulledCount);
+                record.setSavedCount(savedCount);
+                record.setLastRowId(lastRowId);
+                record.setStartedAt(now());
+                record.setFinishedAt(now());
+                routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB,
+                        () -> syncBusinessRecordMapper.insert(record));
+            }
+
+            // → SUCCESS
+            String resultJson = toJson(result);
+            updateTask(taskId, "SUCCESS", null, resultJson, "同步任务完成", null, now(),
+                    totalPulled, totalSaved);
+            log.info("[同步任务] 执行完成 taskId={}, 拉取总数={}, 落库总数={}", taskId, totalPulled, totalSaved);
+
+            // 全部成功 → 发 RabbitMQ 消息
+            if (allSuccess) {
+                rabbitMqSender.sendSyncCompleted(taskId, dataSourceKey, datasourceType, totalPulled, totalSaved);
+            }
         } catch (Exception e) {
-            snapshot.setStatus("FAILED");
-            snapshot.setFinishedAt(now());
-            snapshot.setErrorMessage(e.getMessage());
-            snapshot.setMessage("Sync task failed");
-            currentTask = snapshot;
-            log.error("[同步任务] 执行失败 taskId={}, 错误={}", snapshot.getTaskId(), e.getMessage(), e);
+            updateTask(taskId, "FAILED", null, null, "同步任务失败", e.getMessage(), now(), 0, 0);
+            log.error("[同步任务] 执行失败 taskId={}", taskId, e);
         } finally {
             running.set(false);
         }
     }
 
-    private void updateProgress(SyncTaskSnapshot snapshot, SyncProgress progress) {
-        snapshot.getBusinessProgress().put(progress.getBusinessCode(), progress.toMap());
-        int totalPageCount = 0;
-        int totalPulledCount = 0;
-        int totalSavedCount = 0;
-        for (Object value : snapshot.getBusinessProgress().values()) {
-            if (!(value instanceof Map<?, ?> business)) {
-                continue;
-            }
-            totalPageCount += readInt(business.get("pageNo"));
-            totalPulledCount += readInt(business.get("pulledCount"));
-            totalSavedCount += readInt(business.get("savedCount"));
-        }
-        snapshot.setPageCount(totalPageCount);
-        snapshot.setPulledCount(totalPulledCount);
-        snapshot.setSavedCount(totalSavedCount);
-        snapshot.setLastRowId(progress.getLastRowId());
-        snapshot.setMessage("Running " + progress.getBusinessCode() + " stage=" + progress.getStage());
-        currentTask = snapshot;
+    private void updateTask(String taskId, String status, String startedAt,
+                            String resultJson, String message, String errorMessage,
+                            String finishedAt, int totalPulled, int totalSaved) {
+        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
+            SyncTask task = syncTaskMapper.selectOne(
+                    new LambdaQueryWrapper<SyncTask>().eq(SyncTask::getTaskId, taskId).last("limit 1"));
+            if (task == null) return;
+            task.setStatus(status);
+            if (startedAt != null) task.setStartedAt(startedAt);
+            if (resultJson != null) task.setMessage(message);
+            if (message != null) task.setMessage(message);
+            if (errorMessage != null) task.setErrorMessage(errorMessage);
+            if (finishedAt != null) task.setFinishedAt(finishedAt);
+            task.setTotalPulledCount(totalPulled);
+            task.setTotalSavedCount(totalSaved);
+            syncTaskMapper.updateById(task);
+        });
+    }
+
+    private Map<String, Object> toMap(SyncTask task) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("taskId", task.getTaskId());
+        result.put("status", task.getStatus());
+        result.put("dataSourceKey", task.getDataSourceKey());
+        result.put("dataSourceName", task.getDataSourceName());
+        result.put("datasourceType", task.getDatasourceType());
+        result.put("pageSize", task.getPageSize());
+        result.put("totalPulledCount", task.getTotalPulledCount());
+        result.put("totalSavedCount", task.getTotalSavedCount());
+        result.put("submittedAt", task.getSubmittedAt());
+        result.put("startedAt", task.getStartedAt());
+        result.put("finishedAt", task.getFinishedAt());
+        result.put("message", task.getMessage());
+        result.put("errorMessage", task.getErrorMessage());
+        result.put("running", "QUEUED".equals(task.getStatus()) || "RUNNING".equals(task.getStatus()));
+        return result;
     }
 
     private int readInt(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
+        if (value instanceof Number n) return n.intValue();
         return 0;
     }
 
-    private Map<String, Object> toMap(SyncTaskSnapshot snapshot) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("taskId", snapshot.getTaskId());
-        result.put("status", snapshot.getStatus());
-        result.put("dataSourceKey", snapshot.getDataSourceKey());
-        result.put("dataSourceName", snapshot.getDataSourceName());
-        result.put("datasourceType", snapshot.getDatasourceType());
-        result.put("pageSize", snapshot.getPageSize());
-        result.put("pageCount", snapshot.getPageCount());
-        result.put("pulledCount", snapshot.getPulledCount());
-        result.put("savedCount", snapshot.getSavedCount());
-        result.put("lastRowId", snapshot.getLastRowId());
-        result.put("submittedAt", snapshot.getSubmittedAt());
-        result.put("startedAt", snapshot.getStartedAt());
-        result.put("finishedAt", snapshot.getFinishedAt());
-        result.put("message", snapshot.getMessage());
-        result.put("errorMessage", snapshot.getErrorMessage());
-        result.put("running", "QUEUED".equals(snapshot.getStatus()) || "RUNNING".equals(snapshot.getStatus()));
-        result.put("businessProgress", snapshot.getBusinessProgress());
-        result.put("result", snapshot.getResult());
-        return result;
+    private long readLong(Object value) {
+        if (value instanceof Number n) return n.longValue();
+        return 0L;
+    }
+
+    private String toJson(Object obj) {
+        try {
+            return JSON.writeValueAsString(obj);
+        } catch (JsonProcessingException e) {
+            return "{}";
+        }
     }
 
     private String now() {
@@ -193,33 +231,5 @@ public class SyncTaskService {
     @PreDestroy
     public void shutdown() {
         syncTaskExecutor.shutdown();
-    }
-
-    @Data
-    private static class SyncTaskSnapshot {
-        private String taskId;
-        private String status;
-        private String dataSourceKey;
-        private String dataSourceName;
-        private String datasourceType;
-        private int pageSize;
-        private int pageCount;
-        private int pulledCount;
-        private int savedCount;
-        private long lastRowId;
-        private String submittedAt;
-        private String startedAt;
-        private String finishedAt;
-        private String message;
-        private String errorMessage;
-        private Map<String, Object> businessProgress = new LinkedHashMap<>();
-        private Map<String, Object> result;
-
-        private static SyncTaskSnapshot idle() {
-            SyncTaskSnapshot snapshot = new SyncTaskSnapshot();
-            snapshot.setStatus("IDLE");
-            snapshot.setMessage("No sync task is running");
-            return snapshot;
-        }
     }
 }

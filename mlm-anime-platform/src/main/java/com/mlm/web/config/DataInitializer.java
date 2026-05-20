@@ -3,56 +3,27 @@ package com.mlm.web.config;
 import com.mlm.common.enums.ModelType;
 import com.mlm.model.config.ModelConfigEntity;
 import com.mlm.model.mapper.ModelConfigMapper;
-import com.mlm.user.entity.User;
-import com.mlm.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 /**
- * 数据初始化器
- * <p>
- * 首次启动时插入演示用户和模型配置，已有数据时跳过。
+ * 数据初始化器 — 仅初始化模型配置（用户已迁移至 Gateway）
  */
 @Component
 public class DataInitializer implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
     private final ModelConfigMapper configMapper;
-    private final UserMapper userMapper;
 
-    public DataInitializer(ModelConfigMapper configMapper, UserMapper userMapper) {
+    public DataInitializer(ModelConfigMapper configMapper) {
         this.configMapper = configMapper;
-        this.userMapper = userMapper;
     }
 
     @Override
     public void run(String... args) {
-        initUsers();
         initModelConfigs();
-    }
-
-    private void initUsers() {
-        if (userMapper.selectCount(null) > 0) {
-            log.info("用户已存在，跳过初始化");
-            return;
-        }
-        log.info("初始化演示用户...");
-
-        User admin = new User();
-        admin.setUsername("admin");
-        admin.setPassword("123456");
-        admin.setRole("ADMIN");
-        userMapper.insert(admin);
-
-        User demo = new User();
-        demo.setUsername("demo");
-        demo.setPassword("123456");
-        demo.setRole("USER");
-        userMapper.insert(demo);
-
-        log.info("已初始化 2 个演示用户");
     }
 
     private void initModelConfigs() {

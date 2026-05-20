@@ -1,7 +1,10 @@
 package com.example.dynamicds.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.dynamicds.datasource.RoutingMybatisExecutor;
+import com.example.dynamicds.entity.InitTask;
+import com.example.dynamicds.mapper.InitTaskMapper;
 import jakarta.annotation.PreDestroy;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,102 +21,111 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * 初始化任务服务 — 异步执行平台演示数据初始化。
  * <p>
- * <b>与 SyncTaskService 相同的设计模式</b>
- * <ol>
- *   <li><b>AtomicBoolean CAS 锁</b> — 防止前端连续点击按钮导致并发初始化。</li>
- *   <li><b>volatile 快照</b> — 前端轮询读到的永远是完整对象，不会读到"写了一半"的数据。</li>
- *   <li><b>不可变快照模式（snapshot replacement）</b> — 每个状态更新都是替换引用而非修改字段。</li>
- * </ol>
- * <p>
- * <b>为什么初始化也要异步？</b><br>
- * 初始化需要通过 Marketstack API（或本地兜底）拉取股票数据并写入三个数据库，
- * 耗时可能几十秒到几分钟。如果在 HTTP 请求线程中同步执行，
- * 前端会一直等待超时（浏览器或网关通常 30 秒超时）。
- * 异步任务 + 轮询模式是 Web 应用中处理长时间操作的经典方案。
+ * 任务信息持久化到 {@code init_task} 表，替代原内存快照模式。
+ * 前端通过查询数据库获取最新任务状态。
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class InitDataTaskService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    /** CAS 锁 — 保证同一时刻只有一个初始化任务在运行 */
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    /** volatile 快照 — 前端轮询 init-task 接口时直接读取此对象 */
-    private volatile InitTaskSnapshot currentTask = InitTaskSnapshot.idle();
 
     private final PlatformBootstrapService platformBootstrapService;
+    private final RoutingMybatisExecutor routingMybatisExecutor;
+    private final InitTaskMapper initTaskMapper;
+    @Qualifier("initDataTaskExecutor")
     private final ThreadPoolExecutor initDataTaskExecutor;
 
-    public InitDataTaskService(
-            PlatformBootstrapService platformBootstrapService,
-            @Qualifier("initDataTaskExecutor") ThreadPoolExecutor initDataTaskExecutor) {
-        this.platformBootstrapService = platformBootstrapService;
-        this.initDataTaskExecutor = initDataTaskExecutor;
-    }
+    private final AtomicBoolean running = new AtomicBoolean(false);
 
     /**
-     * 提交初始化任务（幂等：已有运行中的任务则拒绝）
+     * 提交初始化任务，记录到 init_task 表。
      */
     public Map<String, Object> startTask() {
         if (!running.compareAndSet(false, true)) {
             throw new IllegalStateException("已有初始化任务正在运行");
         }
 
-        InitTaskSnapshot snapshot = new InitTaskSnapshot();
-        snapshot.setTaskId(UUID.randomUUID().toString());
-        snapshot.setStatus("QUEUED");
-        snapshot.setSubmittedAt(now());
-        snapshot.setMessage("Init task submitted");
-        currentTask = snapshot;
-        log.info("[InitTask] submitted taskId={}", snapshot.getTaskId());
+        String taskId = UUID.randomUUID().toString();
+        String now = now();
 
-        initDataTaskExecutor.submit(() -> runTask(snapshot));
-        return toMap(snapshot);
+        // 插入任务记录（QUEUED）
+        InitTask task = new InitTask();
+        task.setTaskId(taskId);
+        task.setStatus("QUEUED");
+        task.setSubmittedAt(now);
+        task.setMessage("初始化任务已提交");
+        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> initTaskMapper.insert(task));
+
+        log.info("[InitTask] 提交初始化任务 taskId={}", taskId);
+        initDataTaskExecutor.submit(() -> runTask(taskId));
+        return toMap(task);
     }
 
+    /**
+     * 查询最新的初始化任务（按 id 降序取第一条）。
+     */
     public Map<String, Object> currentTask() {
-        return toMap(currentTask);
+        InitTask task = routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () ->
+                initTaskMapper.selectOne(new LambdaQueryWrapper<InitTask>()
+                        .orderByDesc(InitTask::getId)
+                        .last("limit 1")));
+        if (task == null) {
+            InitTask idle = new InitTask();
+            idle.setStatus("IDLE");
+            idle.setMessage("暂无初始化任务");
+            return toMap(idle);
+        }
+        return toMap(task);
     }
 
-    private void runTask(InitTaskSnapshot snapshot) {
+    private void runTask(String taskId) {
         try {
-            snapshot.setStatus("RUNNING");
-            snapshot.setStartedAt(now());
-            snapshot.setMessage("Init task is running");
-            currentTask = snapshot;
-            log.info("[InitTask] started taskId={}", snapshot.getTaskId());
+            // 更新为 RUNNING
+            updateTask(taskId, "RUNNING", null, "初始化任务执行中...", null, now(), null);
 
             Map<String, Object> result = platformBootstrapService.initDemoData();
-            snapshot.setStatus("SUCCESS");
-            snapshot.setFinishedAt(now());
-            snapshot.setMessage("Init task finished");
-            snapshot.setResult(result);
-            currentTask = snapshot;
-            log.info("[InitTask] finished taskId={}, snapshotCount={}",
-                    snapshot.getTaskId(), result.getOrDefault("snapshotCount", 0));
+            int snapshotCount = ((Number) result.getOrDefault("snapshotCount", 0)).intValue();
+
+            // 更新为 SUCCESS
+            updateTask(taskId, "SUCCESS", null, "初始化任务完成", null, null, now());
+            log.info("[InitTask] 初始化完成 taskId={}, 股票条数={}", taskId, snapshotCount);
         } catch (Exception e) {
-            snapshot.setStatus("FAILED");
-            snapshot.setFinishedAt(now());
-            snapshot.setMessage("Init task failed");
-            snapshot.setErrorMessage(e.getMessage());
-            currentTask = snapshot;
-            log.error("[InitTask] failed taskId={}, message={}", snapshot.getTaskId(), e.getMessage(), e);
+            updateTask(taskId, "FAILED", null, "初始化任务失败", e.getMessage(), null, now());
+            log.error("[InitTask] 初始化失败 taskId={}", taskId, e);
         } finally {
             running.set(false);
         }
     }
 
-    private Map<String, Object> toMap(InitTaskSnapshot snapshot) {
+    private void updateTask(String taskId, String status, String resultJson,
+                            String message, String errorMessage,
+                            String startedAt, String finishedAt) {
+        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
+            InitTask task = initTaskMapper.selectOne(
+                    new LambdaQueryWrapper<InitTask>().eq(InitTask::getTaskId, taskId).last("limit 1"));
+            if (task == null) return;
+            task.setStatus(status);
+            if (resultJson != null) task.setResult(resultJson);
+            if (message != null) task.setMessage(message);
+            if (errorMessage != null) task.setErrorMessage(errorMessage);
+            if (startedAt != null) task.setStartedAt(startedAt);
+            if (finishedAt != null) task.setFinishedAt(finishedAt);
+            initTaskMapper.updateById(task);
+        });
+    }
+
+    private Map<String, Object> toMap(InitTask task) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("taskId", snapshot.getTaskId());
-        result.put("status", snapshot.getStatus());
-        result.put("submittedAt", snapshot.getSubmittedAt());
-        result.put("startedAt", snapshot.getStartedAt());
-        result.put("finishedAt", snapshot.getFinishedAt());
-        result.put("message", snapshot.getMessage());
-        result.put("errorMessage", snapshot.getErrorMessage());
-        result.put("running", "QUEUED".equals(snapshot.getStatus()) || "RUNNING".equals(snapshot.getStatus()));
-        result.put("result", snapshot.getResult());
+        result.put("taskId", task.getTaskId());
+        result.put("status", task.getStatus());
+        result.put("submittedAt", task.getSubmittedAt());
+        result.put("startedAt", task.getStartedAt());
+        result.put("finishedAt", task.getFinishedAt());
+        result.put("message", task.getMessage());
+        result.put("errorMessage", task.getErrorMessage());
+        result.put("running", "QUEUED".equals(task.getStatus()) || "RUNNING".equals(task.getStatus()));
         return result;
     }
 
@@ -124,24 +136,5 @@ public class InitDataTaskService {
     @PreDestroy
     public void shutdown() {
         initDataTaskExecutor.shutdown();
-    }
-
-    @Data
-    private static class InitTaskSnapshot {
-        private String taskId;
-        private String status;
-        private String submittedAt;
-        private String startedAt;
-        private String finishedAt;
-        private String message;
-        private String errorMessage;
-        private Map<String, Object> result;
-
-        private static InitTaskSnapshot idle() {
-            InitTaskSnapshot snapshot = new InitTaskSnapshot();
-            snapshot.setStatus("IDLE");
-            snapshot.setMessage("No init task is running");
-            return snapshot;
-        }
     }
 }

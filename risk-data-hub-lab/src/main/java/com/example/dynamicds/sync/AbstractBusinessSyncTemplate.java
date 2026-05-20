@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -121,6 +123,142 @@ public abstract class AbstractBusinessSyncTemplate<S, T> implements BusinessSync
                 counter.getPulledCount(),
                 counter.getSavedCount(),
                 counter.getLastRowId());
+    }
+
+    // ========== 基于 Semaphore 的交替执行版本 ==========
+
+    /**
+     * 信号量版同步执行 — 使用两个 Semaphore 控制拉取线程和落库线程交替运行。
+     * <p>
+     * <b>与 execute()（生产者-消费者 + BlockingQueue）的区别：</b>
+     * <ul>
+     *   <li>execute()：拉取和落库可同时运行，队列最多缓冲 4 页，适合 IO 密集且上下游速度不均的场景。</li>
+     *   <li>executeWithSemaphore()：拉取一页 → 落库一页 → 拉取下一页 → … 严格交替执行，
+     *       适合内存敏感或需要严格顺序保证的场景。</li>
+     * </ul>
+     * <p>
+     * <b>信号量协调逻辑：</b>
+     * <pre>
+     * fetchTurn (初始 1)          insertTurn (初始 0)
+     *   ↓ acquire()                 ↓ acquire() 阻塞
+     *   拉取一页数据                等待 fetch 释放
+     *   ↓ insertTurn.release()      ↓ 获取到信号 → 落库数据
+     *   等待 insert 完成 ←──────    ↓ fetchTurn.release()
+     *   ↓ acquire() 阻塞            回到顶部等待下一页
+     * </pre>
+     * 最后一批数据取完后，fetch 设置 {@code lastBatch=true} 并退出循环，
+     * insert 处理完最后一批后看到 {@code lastBatch} 也退出。
+     */
+    public BusinessSyncResult executeWithSemaphore(BusinessSyncContext context,
+                                                   SyncProgressListener progressListener) throws Exception {
+        Semaphore fetchTurn = new Semaphore(1);
+        Semaphore insertTurn = new Semaphore(0);
+        AtomicReference<List<S>> pageRef = new AtomicReference<>();
+        AtomicBoolean lastBatch = new AtomicBoolean(false);
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        SyncCounter counter = new SyncCounter();
+
+        log.info("[信号量版] 业务 {} 开始交替执行，数据源={}, 类型={}, 分页大小={}, 批次号={}",
+                businessCode(), context.getDataSourceKey(), context.getDatasourceType(),
+                context.getPageSize(), context.getBatchNo());
+
+        Future<?> fetchFuture = pairExecutor.submit(() -> {
+            long cursor = 0L;
+            int pageNo = 0;
+            try {
+                while (failure.get() == null) {
+                    fetchTurn.acquire();
+                    if (failure.get() != null) break;
+
+                    List<S> rows = fetchPage(context, cursor, context.getPageSize());
+                    if (rows.isEmpty()) {
+                        pageRef.set(List.of());
+                        lastBatch.set(true);
+                        insertTurn.release();
+                        break;
+                    }
+                    long nextCursor = sourceRowId(rows.get(rows.size() - 1));
+                    if (nextCursor <= cursor) {
+                        throw new IllegalStateException(businessCode() + " 游标未推进，已主动终止");
+                    }
+                    cursor = nextCursor;
+                    pageNo++;
+                    counter.setPageCount(pageNo);
+                    counter.setLastRowId(cursor);
+                    counter.addPulledCount(rows.size());
+                    pageRef.set(rows);
+
+                    log.info("[信号量版] 业务 {} 第 {} 页拉取完成，行数={}, 当前游标={}",
+                            businessCode(), pageNo, rows.size(), cursor);
+
+                    insertTurn.release(); // 通知落库线程开始处理
+
+                    if (rows.size() < context.getPageSize()) {
+                        lastBatch.set(true); // 标记最后一批，insert 处理完即止
+                        break;               // fetch 不继续循环，不重新 acquire
+                    }
+                }
+            } catch (Exception e) {
+                recordSemaphoreFailure(failure, pageRef, lastBatch, insertTurn,
+                        new RuntimeException(businessCode() + " 拉取线程失败: " + e.getMessage(), e));
+            }
+        });
+
+        Future<?> insertFuture = pairExecutor.submit(() -> {
+            try {
+                while (failure.get() == null) {
+                    insertTurn.acquire();
+                    if (failure.get() != null) break;
+
+                    List<S> rows = pageRef.get();
+                    if (rows == null || rows.isEmpty()) break;
+
+                    for (S row : rows) {
+                        T target = transform(context, row);
+                        save(target);
+                        markSourceRowSynced(context, sourceRowId(row));
+                        counter.incrementSavedCount();
+                    }
+
+                    log.info("[信号量版] 业务 {} 落库完成，累计落库数={}", businessCode(), counter.getSavedCount());
+
+                    if (lastBatch.get()) break;             // 最后一批，不再 fetch
+                    fetchTurn.release();                     // 通知拉取线程继续
+                }
+            } catch (Exception e) {
+                recordSemaphoreFailure(failure, pageRef, lastBatch, fetchTurn,
+                        new RuntimeException(businessCode() + " 落库线程失败: " + e.getMessage(), e));
+            }
+        });
+
+        fetchFuture.get();
+        insertFuture.get();
+        if (failure.get() != null) throw failure.get();
+
+        publishBusinessSummaryEvent(context, counter);
+        log.info("[信号量版] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}",
+                businessCode(), counter.getPageCount(), counter.getPulledCount(),
+                counter.getSavedCount(), counter.getLastRowId());
+        return new BusinessSyncResult(
+                businessCode(),
+                counter.getPageCount(),
+                counter.getPulledCount(),
+                counter.getSavedCount(),
+                counter.getLastRowId());
+    }
+
+    /** 信号量版的故障通知 — 唤醒对端线程使其能退出 */
+    private void recordSemaphoreFailure(AtomicReference<RuntimeException> failure,
+                                        AtomicReference<List<S>> pageRef,
+                                        AtomicBoolean lastBatch,
+                                        Semaphore peerTurn,
+                                        RuntimeException exception) {
+        if (failure.compareAndSet(null, exception)) {
+            log.error("[信号量版] 业务 {} 异常终止: {}", businessCode(), exception.getMessage(), exception);
+            pageRef.set(List.of());
+            lastBatch.set(true);
+            peerTurn.release(); // 唤醒对端线程（即使没有 permit 也强制释放）
+        }
     }
 
     /**

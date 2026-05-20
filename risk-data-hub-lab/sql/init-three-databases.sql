@@ -252,6 +252,52 @@ create table tx_coordination_log (
     created_at varchar(32) not null
 );
 
+create table init_task (
+    id bigint not null auto_increment primary key,
+    task_id varchar(64) not null,
+    status varchar(32) not null default 'IDLE',
+    submitted_at varchar(32),
+    started_at varchar(32),
+    finished_at varchar(32),
+    message varchar(256),
+    error_message varchar(1024),
+    result text,
+    unique key uk_init_task_id(task_id)
+);
+
+create table sync_task (
+    id bigint not null auto_increment primary key,
+    task_id varchar(64) not null,
+    data_source_key varchar(64),
+    data_source_name varchar(128),
+    datasource_type varchar(32),
+    page_size int default 2,
+    status varchar(32) not null default 'IDLE',
+    total_pulled_count int default 0,
+    total_saved_count int default 0,
+    submitted_at varchar(32),
+    started_at varchar(32),
+    finished_at varchar(32),
+    message varchar(256),
+    error_message varchar(1024),
+    unique key uk_sync_task_id(task_id)
+);
+
+create table sync_business_record (
+    id bigint not null auto_increment primary key,
+    task_id varchar(64) not null,
+    business_code varchar(32) not null,
+    status varchar(32) not null default 'RUNNING',
+    page_count int default 0,
+    pulled_count int default 0,
+    saved_count int default 0,
+    last_row_id bigint default 0,
+    error_message varchar(1024),
+    started_at varchar(32),
+    finished_at varchar(32),
+    key idx_record_task_id(task_id)
+);
+
 insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values
 ('trade_status_oms', 'NEW', '待确认', '交易系统A待确认状态'),
 ('trade_status_oms', 'DONE', '已成交', '交易系统A成交完成'),
