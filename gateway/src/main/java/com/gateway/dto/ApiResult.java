@@ -13,7 +13,7 @@ public class ApiResult<T> {
     private T data;
 
     public static <T> ApiResult<T> ok(T data) {
-        return new ApiResult<>(0, "ok", data);
+        return new ApiResult<>(200, "ok", data);
     }
 
     public static <T> ApiResult<T> fail(int code, String message) {

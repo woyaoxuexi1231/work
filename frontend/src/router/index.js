@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import { post } from '../api/request.js'
 
 const routes = [
@@ -45,7 +45,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes
 })
 
@@ -57,7 +57,7 @@ router.beforeEach(async (to, from, next) => {
   }
   try {
     const data = await post('/api/auth/me')
-    if (data.code === 0 && data.data) {
+    if (data.code === 200 && data.data) {
       next()
     } else {
       next('/login')

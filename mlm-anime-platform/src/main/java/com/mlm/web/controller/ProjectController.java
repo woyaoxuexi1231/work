@@ -283,7 +283,7 @@ public class ProjectController {
             ResponseEntity<Map> resp = restTemplate.exchange(
                 "http://localhost:9000/api/auth/me", HttpMethod.POST, entity, Map.class);
             Map<String, Object> body = resp.getBody();
-            if (body == null || !Integer.valueOf(0).equals(body.get("code"))) {
+            if (body == null || !Integer.valueOf(200).equals(body.get("code"))) {
                 throw new RuntimeException("未登录");
             }
             Map<String, Object> data = (Map<String, Object>) body.get("data");

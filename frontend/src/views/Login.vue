@@ -2,26 +2,32 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { postForm, setToken } from '../api/request.js'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
-const username = ref('')
-const password = ref('')
-const error = ref('')
+const loginForm = ref({
+  username: '',
+  password: ''
+})
 const loading = ref(false)
+const rules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
 
 async function doLogin() {
-  error.value = ''
   loading.value = true
   try {
-    const data = await postForm('/login', { username: username.value, password: password.value })
-    if (data.code === 0) {
+    const data = await postForm('/login', { username: loginForm.value.username, password: loginForm.value.password })
+    if (data.code === 200) {
       setToken(data.data.token)
+      ElMessage.success('登录成功')
       router.push('/dashboard')
     } else {
-      error.value = data.message || '登录失败'
+      ElMessage.error(data.message || '登录失败')
     }
   } catch (e) {
-    error.value = '网络错误'
+    ElMessage.error('网络错误')
   } finally {
     loading.value = false
   }
@@ -29,28 +35,68 @@ async function doLogin() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-100">
-    <div class="bg-white p-8 rounded-2xl shadow-md w-full max-w-sm">
-      <h1 class="text-2xl font-bold text-center mb-2">MLM Anime Platform</h1>
-      <p class="text-sm text-gray-500 text-center mb-6">请登录以继续</p>
-
-      <form @submit.prevent="doLogin" class="space-y-4">
-        <div>
-          <label class="text-xs font-medium text-gray-600">用户名</label>
-          <input v-model="username" type="text" required
-            class="mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
+  <div class="login-container">
+    <el-card class="login-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon size="32" color="#409EFF"><Monitor /></el-icon>
+          <span>MLM Anime Platform</span>
         </div>
-        <div>
-          <label class="text-xs font-medium text-gray-600">密码</label>
-          <input v-model="password" type="password" required
-            class="mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
-        </div>
-        <p v-if="error" class="text-red-500 text-xs">{{ error }}</p>
-        <button type="submit" :disabled="loading"
-          class="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:bg-gray-300">
-          {{ loading ? '登录中...' : '登录' }}
-        </button>
-      </form>
-    </div>
+      </template>
+      <el-form :model="loginForm" :rules="rules" label-position="top" @submit.prevent="doLogin">
+        <el-form-item label="用户名" prop="username">
+          <el-input 
+            v-model="loginForm.username" 
+            placeholder="请输入用户名"
+            prefix-icon="User"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input 
+            v-model="loginForm.password" 
+            type="password" 
+            placeholder="请输入密码"
+            prefix-icon="Lock"
+            show-password
+            @keyup.enter="doLogin"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="loading" class="login-btn" @click="doLogin">
+            {{ loading ? '登录中...' : '登录' }}
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
   </div>
 </template>
+
+<style scoped>
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.login-card {
+  width: 400px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+.login-btn {
+  width: 100%;
+  height: 40px;
+  font-size: 16px;
+}
+</style>
