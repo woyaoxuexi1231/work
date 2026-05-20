@@ -117,8 +117,10 @@
             btn.disabled = true;
 
             try {
-                await fetch(`/api/projects/${PROJECT_ID}/episodes/${EPISODE_ID}/generate-image?sceneIndex=${sceneIndex}&prompt=${encodeURIComponent(SCENES[sceneIndex].label)}`, {
-                    method: 'POST'
+                await fetch('/api/projects/episode/generate-image', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({projectId: PROJECT_ID, episodeId: EPISODE_ID, prompt: SCENES[sceneIndex].label})
                 });
                 // Mock: 2-5分钟后轮询到结果后自动显示
                 SCENES[sceneIndex].img = 'https://picsum.photos/seed/' + EPISODE_ID + '-' + sceneIndex + '/960/540';
@@ -153,8 +155,10 @@
             btn.disabled = true;
 
             try {
-                await fetch(`/api/projects/${PROJECT_ID}/episodes/${EPISODE_ID}/generate-video`, {
-                    method: 'POST'
+                await fetch('/api/projects/episode/generate-video', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({projectId: PROJECT_ID, episodeId: EPISODE_ID})
                 });
                 // 模拟延迟
                 setTimeout(() => {
@@ -173,8 +177,10 @@
             btn.disabled = true;
 
             try {
-                await fetch(`/api/projects/${PROJECT_ID}/episodes/${EPISODE_ID}/complete-generation`, {
-                    method: 'POST'
+                await fetch('/api/projects/episode/complete-generation', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({projectId: PROJECT_ID, episodeId: EPISODE_ID})
                 });
                 btn.textContent = '✅ 已提交终审';
                 setTimeout(() => {
@@ -194,7 +200,7 @@
         // 加载剧集信息
         async function loadEpisode() {
             try {
-                const res = await fetch(`/api/projects/${PROJECT_ID}`);
+                const res = await fetch('/api/projects/get', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: PROJECT_ID})});
                 const data = await res.json();
                 const project = data.data?.project || {};
                 const episodes = data.data?.episodes || [];

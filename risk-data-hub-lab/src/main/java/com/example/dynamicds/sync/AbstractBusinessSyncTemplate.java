@@ -18,18 +18,39 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 同步模板骨架类 — 实现生产者-消费者双线程同步模式。
- *
- * 模板方法 execute() 定义固定流程：
- * 1. 拉取线程（fetchThread）：从上游系统分页拉取未同步数据（sync_flag=0），放入阻塞队列
- * 2. 落库线程（insertThread）：从队列消费数据，逐条转换（transform）并写入中台库
- * 3. 完成后标记源行 sync_flag=1，防止重复同步
- *
- * 不同业务子类只需覆盖：
- * - fetchPage(): 如何拉取数据
- * - transform(): 如何将上游数据转换为中台标准格式
- * - save(): 如何保存到中台库
- * - markSourceRowSynced(): 如何标记已同步
+ * 同步模板骨架类 — 生产者-消费者双线程模式 + 模板方法模式。
+ * <p>
+ * <b>模板方法模式</b><br>
+ * {@code execute()} 用 {@code final} 修饰，固定了同步流程：
+ * 拉取 → 转换 → 落库 → 标记已同步。
+ * 子类通过覆盖 5 个抽象方法定制每个步骤的具体实现。
+ * 这是 GoF 23 种设计模式之一的典型应用。
+ * <p>
+ * <b>生产者-消费者模式</b><br>
+ * 每类业务内部使用两个线程：
+ * <ul>
+ *   <li>拉取线程（生产者）：从上游分页拉取未同步数据，放入 ArrayBlockingQueue</li>
+ *   <li>落库线程（消费者）：从队列读取数据，逐条转换并写入中台库</li>
+ * </ul>
+ * 通过 BlockingQueue 解耦两个线程，拉取速度与落库速度互相独立：
+ * 拉得快 → 队列积压（上限 4 页），落库线程追赶；落库快 → 队列为空，落库线程阻塞在 take() 等待。
+ * <p>
+ * <b>为什么是 {@code ArrayBlockingQueue(4)} 而不是无界队列？</b>
+ * <ol>
+ *   <li><b>背压（back pressure）</b> — 限制队列长度，拉取线程在 {@code queue.put()} 阻塞，
+ *       自然放慢拉取速度，避免内存被未落库的数据撑爆。</li>
+ *   <li><b>4 页 ≈ 4&times;pageSize 行数据</b>，在内存和吞吐之间取平衡。</li>
+ * </ol>
+ * <p>
+ * <b>{@code AtomicReference&lt;RuntimeException&gt; failure} 的设计</b><br>
+ * 两个线程可能任一失败。failure 作为跨线程的"故障信号旗"：
+ * <ul>
+ *   <li>任一线程发现对端失败（{@code failure.get() != null}），立即自我终止。</li>
+ *   <li>CAS（{@code compareAndSet}）保证"第一个失败"的线程写入自己的异常，
+ *       后续失败不再覆盖，保留根因。</li>
+ *   <li>{@code queue.clear() + queue.offer(PageChunk.end())} 确保对端能快速退出，
+ *       不会永远阻塞在 {@code take()} 上。</li>
+ * </ul>
  *
  * @param <S> 上游源数据类型
  * @param <T> 中台目标实体类型
@@ -37,9 +58,17 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 public abstract class AbstractBusinessSyncTemplate<S, T> implements BusinessSyncTemplate {
 
+    /** MyBatis 路由执行器 — 用于在指定数据源上执行 SQL */
     protected final RoutingMybatisExecutor routingMybatisExecutor;
+    /** Leaf 号段 ID 生成器 — 生成中台表全局唯一 ID */
     protected final LeafSegmentService leafSegmentService;
+    /** 消息发件箱 — 同步完成后写入事件消息 */
     private final MessageOutboxService messageOutboxService;
+    /**
+     * 当前业务类型的双线程池（每个业务 2 线程）。
+     * 由 SyncThreadPoolConfig 创建并注入，每个业务模板独立使用各自的线程池，
+     * 避免不同业务类型之间互相干扰。
+     */
     private final ThreadPoolExecutor pairExecutor;
 
     protected AbstractBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
@@ -52,6 +81,16 @@ public abstract class AbstractBusinessSyncTemplate<S, T> implements BusinessSync
         this.pairExecutor = pairExecutor;
     }
 
+    /**
+     * 模板方法 — final 禁止子类重写，确保同步流程一致。
+     *
+     * 执行流程：
+     * 1. 创建容量为 4 的有界阻塞队列（背压控制）
+     * 2. 向 pairExecutor 提交拉取线程和落库线程
+     * 3. 等待两个线程都完成（Future.get() 阻塞等待）
+     * 4. 检查是否有异常（failure 信号旗），有则抛出
+     * 5. 发布同步完成事件（发件箱模式）
+     */
     @Override
     public final BusinessSyncResult execute(BusinessSyncContext context,
                                             SyncProgressListener progressListener) throws Exception {
@@ -84,6 +123,14 @@ public abstract class AbstractBusinessSyncTemplate<S, T> implements BusinessSync
                 counter.getLastRowId());
     }
 
+    /**
+     * 拉取线程（生产者）：
+     * - 基于游标（ID 大小）分页查询，每次取 pageSize 条
+     * - 通过游标推进防御死循环：如果最后一条的 ID <= 当前游标，说明游标没动，立即终止
+     * - 每页放入队列后回调 progressListener，让前端能实时看到进度
+     * - 拉取数量不足 pageSize 说明已到尾页，结束循环
+     * - 异常时通过 recordFailure 通知对端线程
+     */
     private void runFetchThread(BusinessSyncContext context,
                                 BlockingQueue<PageChunk<S>> queue,
                                 SyncCounter counter,
@@ -124,6 +171,13 @@ public abstract class AbstractBusinessSyncTemplate<S, T> implements BusinessSync
         }
     }
 
+    /**
+     * 落库线程（消费者）：
+     * - 阻塞等待队列数据（queue.take() — 无数据时线程挂起，不占 CPU）
+     * - 收到哨兵 end() 对象后退出循环（优雅终止）
+     * - 逐条处理：transform() 转换 → save() 写入中台库 → markSourceRowSynced() 标记已同步
+     * - 每页处理完后回调 progressListener
+     */
     private void runInsertThread(BusinessSyncContext context,
                                  BlockingQueue<PageChunk<S>> queue,
                                  SyncCounter counter,

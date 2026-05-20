@@ -104,7 +104,7 @@
 
             async function loadNotifications() {
                 try {
-                    const res = await fetch('/api/notifications/count');
+                    const res = await fetch('/api/notifications/count', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
                     const data = await res.json();
                     const count = data.data?.count || 0;
                     const badge = document.getElementById('notifBadge');
@@ -124,7 +124,7 @@
 
                 if (notifVisible) {
                     try {
-                        const res = await fetch('/api/notifications');
+                        const res = await fetch('/api/notifications/list', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
                         const data = await res.json();
                         const msgs = data.data || [];
                         const list = document.getElementById('notifList');

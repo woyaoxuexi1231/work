@@ -17,34 +17,33 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 动态数据源管理器 — 核心职责：
- * 1. 运行时注册新数据源（创建 HikariCP 连接池 + 注入路由表）
- * 2. 运行时移除数据源（检测连接状态 → 软关闭 → 硬关闭）
- * 3. 连接池指标查询
- *
- * 线程安全设计：
- * - dataSources 本身是 ConcurrentHashMap，保证 add/remove/get 原子性
- * - register / remove 方法内部对单个 key 的操作有 synchronized 保护，
- *   防止同一 key 被并发注册两次
- * - RoutingDataSource 内部的 targetDataSources 刷新由 ReadWriteLock 保护
- *
- * 优雅下线策略：
- * - 先将数据源从路由表移除（新请求不再路由到此数据源）
- * - 标记为 offline，等待活跃连接排空（HikariCP HikariPoolMXBean 可查）
- * - 超时后强制 close，避免无限等待
- */
-/**
- * 动态数据源管理器 — 运行时注册/移除 HikariCP 数据源的核心入口。
- *
- * 职责：
- * 1. 运行时注册新数据源（创建 HikariCP 连接池并注入路由表）
- * 2. 运行时优雅下线数据源（摘除路由表 → 等待连接排空 → 关闭连接池）
- * 3. 查询数据源连接池指标
- *
- * 线程安全设计：
- * - dataSources 使用 ConcurrentHashMap，保证 add/remove/get 原子性
- * - register / remove 方法内部对单个 key 有 synchronized 保护，防止同一 key 被并发注册
- * - 路由表刷新由 DynamicRoutingDataSource 的 ReadWriteLock 保护
+ * 动态数据源管理器 — 运行时管理 HikariCP 连接池的核心入口。
+ * <p>
+ * <b>线程安全：双重锁策略</b><br>
+ * 为什么 {@code ConcurrentHashMap + synchronized} 两把锁？
+ * <ul>
+ *   <li><b>ConcurrentHashMap</b> — 保证 {@code listAll()}、{@code exists()}、{@code getDataSource()} 等
+ *       纯查询方法无锁并发，多个线程同时查询数据源列表不会阻塞。</li>
+ *   <li><b>synchronized register/remove</b> — 保证同一个 key 不会被并发注册两次。
+ *       如果只用 {@code ConcurrentHashMap.putIfAbsent}，注册和路由表刷新不是原子操作：
+ *       {@code putIfAbsent} 成功 → 路由表刷新前 → 另一个线程查询路由表会找不到这个数据源。
+ *       synchronized 保证了 {@code dataSources.put + routingDataSource.register} 的原子性。</li>
+ * </ul>
+ * <p>
+ * <b>优雅下线三步走</b>
+ * <ol>
+ *   <li><b>从路由表移除</b> — 新请求通过 {@code determineCurrentLookupKey} 已查不到此 key，
+ *       自然路由到默认数据源，不会拿到已关闭的连接。</li>
+ *   <li><b>排空活跃连接</b> — 已发起的查询在 30 秒内完成（HikariCP 默认连接超时 30 秒），
+ *       通过 {@code HikariPoolMXBean.getActiveConnections()} 轮询等待。</li>
+ *   <li><b>强制关闭</b> — 超时后仍有连接在处理中，HikariCP 会等待它们完成后再物理关闭，
+ *       {@code close()} 本身不是"暴力杀连接"，而是发送中断信号。</li>
+ * </ol>
+ * <p>
+ * <b>为什么用 HikariPoolMXBean 而不是 {@code connection.isClosed()}？</b><br>
+ * {@code connection.isClosed()} 只能判断"连接是否已关闭"，但无法知道"还有多少查询在执行"。
+ * HikariPoolMXBean.getActiveConnections() 返回当前正在执行 SQL 的连接数，
+ * 这个值降到 0 才说明"没有活跃查询了"，可以安全关闭池。
  */
 @Component
 @Slf4j
@@ -63,11 +62,14 @@ public class DynamicDataSourceManager {
     // ==================== 注册数据源 ====================
 
     /**
-     * 动态注册数据源. 连接池参数全部由调用方指定，不写死.
-     */
-    /**
-     * 注册数据源：创建连接池 → 测试连接 → 加入路由表
-     * 注册失败时自动关闭已创建的连接池，避免连接泄露
+     * 注册数据源：创建连接池 → 测试连接 → 加入路由表。
+     *
+     * 设计要点：
+     * - synchronized 防止并发注册相同 key
+     * - 测试连接（getConnection → close）确保 URL/账号密码有效后才加入路由表
+     * - 连接测试失败时立即 close 掉已创建的 HikariCP 连接池，避免连接泄露
+     * - DataSourceConfigDTO 不直接存入，而是通过 copyConfig 深拷贝保存，
+     *   防止调用方后续修改 DTO 对象影响内部状态
      */
     public synchronized void register(DataSourceConfigDTO config) {
         String key = config.getKey();
@@ -95,12 +97,15 @@ public class DynamicDataSourceManager {
     // ==================== 移除数据源（优雅下线） ====================
 
     /**
-     * 优雅下线：先从路由表摘除 → 等待活跃连接排空 → 关闭连接池.
-     * 如果超时仍有关键连接，强制关闭并记录告警.
-     */
-    /**
-     * 优雅下线数据源：从路由表摘除 → 等待活跃连接排空 → 关闭连接池
-     * 超时后强制关闭并记录告警，避免线程永远阻塞
+     * 优雅下线数据源：摘除路由 → 排空连接 → 关闭连接池。
+     *
+     * 三步策略详见类注释。
+     * 注意：
+     * - DRAIN_TIMEOUT_MS（30 秒）通常足够等所有查询完成
+     * - 如果线程被中断（InterruptedException），立即跳出循环进入强制关闭，
+     *   避免 shutdown 钩子被无限阻塞
+     * - 即使仍有活跃连接，HikariCP 的 close() 也会等待它们自然结束，
+     *   不会中断正在执行的 SQL
      */
     public synchronized void remove(String key) {
         HikariDataSource ds = dataSources.get(key);

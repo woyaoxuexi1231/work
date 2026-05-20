@@ -61,7 +61,7 @@
         let allUsers = [];
 
         async function loadProjects() {
-            const res = await fetch('/api/projects');
+            const res = await fetch('/api/projects/list', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
             const data = await res.json();
             const projects = data.data || [];
             const el = document.getElementById('projectList');
@@ -93,7 +93,7 @@
 
         async function loadResources() {
             try {
-                const res = await fetch('/api/resources');
+                const res = await fetch('/api/resources/list', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
                 const data = await res.json();
                 const select = document.getElementById('resourceId');
                 select.innerHTML = '<option value="">选择资源...</option>';
@@ -107,7 +107,7 @@
 
         async function loadUsers() {
             try {
-                const res = await fetch('/api/users');
+                const res = await fetch('/api/users/list', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
                 const data = await res.json();
                 allUsers = data.data || [];
             } catch (e) {}
@@ -149,19 +149,23 @@
             });
 
             // 1. 创建项目
-            let url = `/api/projects?name=${encodeURIComponent(name)}`;
-            if (resourceId) url += `&resourceId=${resourceId}`;
-            const res = await fetch(url, { method: 'POST' });
+            const body = { name };
+            if (resourceId) body.resourceId = parseInt(resourceId);
+            const res = await fetch('/api/projects/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
             const data = await res.json();
             const projectId = data.data?.id;
             if (!projectId) return alert('创建失败');
 
             // 2. 设置阶段负责人(如果有)
             if (members.length > 0) {
-                await fetch(`/api/projects/${projectId}/stage-members`, {
-                    method: 'PUT',
+                await fetch('/api/projects/stage-members/set', {
+                    method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(members)
+                    body: JSON.stringify({projectId, members})
                 });
             }
 

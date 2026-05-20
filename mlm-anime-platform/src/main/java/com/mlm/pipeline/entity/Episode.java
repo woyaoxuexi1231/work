@@ -39,11 +39,11 @@ public class Episode {
     /** 本集标题 */
     private String title;
 
-    /** Pipeline 主状态 */
-    private EpisodeStatus status = EpisodeStatus.SCRIPT_DRAFT;
+    /** Pipeline 主状态（int 码, 见 EpisodeStatus 枚举说明） */
+    private Integer status = 2;
 
-    /** 当前步骤的子状态：PENDING / PROCESSING / SUCCESS / FAILED */
-    private StepStatus stepStatus = StepStatus.PENDING;
+    /** 步骤子状态（int 码, -1=失败, 0=待处理, 1=成功, 2=处理中） */
+    private Integer stepStatus = 0;
 
     /** 剧本原始内容（用户提交或 AI 生成） */
     private String scriptContent;

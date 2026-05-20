@@ -42,8 +42,8 @@ public class Task {
     /** 厂商侧的任务 ID（submit 后返回） */
     private String vendorTaskId;
 
-    /** 任务状态：PENDING → PROCESSING → SUCCESS / FAILED */
-    private StepStatus status = StepStatus.PENDING;
+    /** 任务状态（int 码, -1=失败, 0=待处理, 1=成功, 2=处理中） */
+    private Integer status = 0;
 
     /** 提交给厂商的请求参数 JSON */
     private String requestJson;

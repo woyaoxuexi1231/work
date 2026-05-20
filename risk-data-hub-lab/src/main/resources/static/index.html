@@ -122,15 +122,16 @@
 
 <script>
 const API = {
-  overview: () => fetch('/api/hub/overview').then(r => r.json()),
+  overview: () => fetch('/api/hub/overview', { method: 'POST' }).then(r => r.json()),
   initData: () => fetch('/api/hub/init-data', { method: 'POST' }).then(r => r.json()),
-  initTask: () => fetch('/api/hub/init-task').then(r => r.json()),
-  sync: (dataSourceKey, pageSize) => fetch('/api/hub/sync?dataSourceKey=' + encodeURIComponent(dataSourceKey) + '&pageSize=' + pageSize, { method: 'POST' }).then(r => r.json()),
-  syncTask: () => fetch('/api/hub/sync-task').then(r => r.json()),
-  cleanedTrades: () => fetch('/api/hub/cleaned-trades').then(r => r.json()),
-  dsList: () => fetch('/api/datasource').then(r => r.json()),
-  dsAdd: (body) => fetch('/api/datasource', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
-  dsRemove: (key) => fetch('/api/datasource/' + encodeURIComponent(key), { method: 'DELETE' }).then(r => r.json())
+  initTask: () => fetch('/api/hub/init-task', { method: 'POST' }).then(r => r.json()),
+  sync: (body) => fetch('/api/hub/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
+  syncTask: () => fetch('/api/hub/sync-task', { method: 'POST' }).then(r => r.json()),
+  cleanedTrades: () => fetch('/api/hub/cleaned-trades', { method: 'POST' }).then(r => r.json()),
+  dsList: () => fetch('/api/datasource/list', { method: 'POST' }).then(r => r.json()),
+  dsGet: (body) => fetch('/api/datasource/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
+  dsAdd: (body) => fetch('/api/datasource/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
+  dsRemove: (body) => fetch('/api/datasource/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json())
 };
 
 let syncTaskTimer = null;
@@ -249,7 +250,7 @@ async function saveDataSource(event) {
 }
 
 async function removeDataSource(key) {
-  const res = await API.dsRemove(key);
+  const res = await API.dsRemove({ key: key });
   if (res.code === 0) {
     toast(key + ' 已删除');
     await Promise.all([loadSummary(), loadDataSources()]);
@@ -260,12 +261,12 @@ async function removeDataSource(key) {
 
 async function syncData() {
   const dataSourceKey = document.getElementById('syncDataSourceKey').value;
-  const pageSize = document.getElementById('pageSize').value || 2;
+  const pageSize = parseInt(document.getElementById('pageSize').value) || 2;
   if (!dataSourceKey) {
     toast('请先选择要同步的数据源', 'warn');
     return;
   }
-  const res = await API.sync(dataSourceKey, pageSize);
+  const res = await API.sync({ dataSourceKey: dataSourceKey, pageSize: pageSize });
   if (res.code !== 0) {
     toast(res.message || '同步失败', 'error');
     return;

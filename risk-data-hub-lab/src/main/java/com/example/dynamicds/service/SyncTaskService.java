@@ -20,16 +20,42 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 同步任务服务 — 异步执行 ETL 同步（4 类业务并发）。
- * 使用独立的单线程池（syncTaskExecutor）顺序执行，
- * 保证同一时刻只有一个同步任务在运行。
- * 前端 POST /api/hub/sync 触发，通过轮询 /api/hub/sync-task 获取进度。
+ * <p>
+ * <b>AtomicBoolean + volatile 的设计</b>
+ * <ul>
+ *   <li><b>running（AtomicBoolean）</b> — 防止并发提交同步任务。
+ *       {@code compareAndSet(false, true)} 是原子操作，保证即使两个请求同时到达，
+ *       也只有一个能成功设置 running=true。</li>
+ *   <li><b>currentTask（volatile）</b> — 前端轮询的"快照"对象。
+ *       volatile 保证一个线程（工作线程）修改了 currentTask 的引用，
+ *       另一个线程（前端请求线程）立即可见。
+ *       为什么不用 {@code final + synchronized}？因为 currentTask 是"替换"而不是"修改"：
+ *       工作线程创建新的 SyncTaskSnapshot 对象来替换旧对象，
+ *       volatile 保证了"新对象引用"对所有线程的可见性。</li>
+ * </ul>
+ * <p>
+ * <b>为什么用独立的单线程池（syncTaskExecutor）而不是直接用 @Async？</b>
+ * <ol>
+ *   <li>@Async 默认使用 Spring 的全局线程池，如果在其他地方也用 @Async，
+ *       可能会相互干扰。独立线程池职责明确。</li>
+ *   <li>队列容量（8）预留了缓冲，即使任务提交略快于执行也不会丢任务。</li>
+ *   <li>{@code destroyMethod = "shutdown"} 保证应用关闭时优雅终止。</li>
+ * </ol>
+ * <p>
+ * <b>不可变快照模式</b><br>
+ * SyncTaskSnapshot 每次更新时创建新对象替换旧对象（currentTask = snapshot），
+ * 而不是修改已有对象的字段。这样前端轮询读取 currentTask 时，
+ * 要么读到完整的旧快照，要么读到完整的新快照，不会读到"半修改"的对象。
+ * 如果直接修改 snapshot 的字段，前端可能读到 status=SUCCESS 但 result=null 的中间状态。
  */
 @Service
 @Slf4j
 public class SyncTaskService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    /** CAS 锁 — 保证同一时刻只有一个同步任务在运行 */
     private final AtomicBoolean running = new AtomicBoolean(false);
+    /** volatile 快照 — 前端轮询读到的一直是完整对象 */
     private volatile SyncTaskSnapshot currentTask = SyncTaskSnapshot.idle();
 
     private final TradeEtlService tradeEtlService;
