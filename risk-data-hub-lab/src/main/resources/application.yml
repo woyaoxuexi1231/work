@@ -53,6 +53,7 @@ hub:
 
 marketstack:
   enabled: true
+  fallback-enabled: true
   base-url: https://api.marketstack.com/v2
   access-key: 64d9883d55cec83b567a4d48743532f3
   lookback-days: 120

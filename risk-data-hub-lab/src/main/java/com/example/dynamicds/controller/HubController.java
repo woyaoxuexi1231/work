@@ -3,6 +3,7 @@ package com.example.dynamicds.controller;
 import com.example.dynamicds.dto.ApiResult;
 import com.example.dynamicds.service.OverviewService;
 import com.example.dynamicds.service.PlatformBootstrapService;
+import com.example.dynamicds.service.SyncTaskService;
 import com.example.dynamicds.service.TradeEtlService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,7 @@ public class HubController {
     private final OverviewService overviewService;
     private final PlatformBootstrapService bootstrapService;
     private final TradeEtlService tradeEtlService;
+    private final SyncTaskService syncTaskService;
 
     @GetMapping("/overview")
     public ApiResult<Map<String, Object>> overview() {
@@ -40,8 +42,19 @@ public class HubController {
     @PostMapping("/sync")
     public ApiResult<Map<String, Object>> sync(@RequestParam String dataSourceKey,
                                                @RequestParam(defaultValue = "2") int pageSize) {
-        log.info("[控制层] 触发分页同步 dataSourceKey={}, pageSize={}", dataSourceKey, pageSize);
-        return ApiResult.ok(tradeEtlService.syncByDataSource(dataSourceKey, pageSize));
+        log.info("[控制层] 提交异步同步任务 dataSourceKey={}, pageSize={}", dataSourceKey, pageSize);
+        try {
+            return ApiResult.ok(syncTaskService.startTask(dataSourceKey, pageSize));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.fail(400, e.getMessage());
+        } catch (IllegalStateException e) {
+            return ApiResult.fail(409, e.getMessage());
+        }
+    }
+
+    @GetMapping("/sync-task")
+    public ApiResult<Map<String, Object>> syncTask() {
+        return ApiResult.ok(syncTaskService.currentTask());
     }
 
     @GetMapping("/cleaned-trades")

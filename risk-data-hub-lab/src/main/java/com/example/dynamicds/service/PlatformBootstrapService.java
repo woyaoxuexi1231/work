@@ -34,6 +34,7 @@ public class PlatformBootstrapService {
     private static final List<String> BROKER_CLIENTS = List.of("华泰资管账户", "中信机构账户", "国君量化账户", "招商自营账户", "东方财富量化户");
     private static final int OMS_ORDER_REPEAT = 3;
     private static final int BROKER_DEAL_REPEAT = 4;
+    private static final int BOOTSTRAP_PROGRESS_STEP = 200;
 
     public static final String DS_HUB = "risk_hub";
     public static final String DS_TRADE_OMS = "trade_oms";
@@ -172,6 +173,7 @@ public class PlatformBootstrapService {
     }
 
     private void seedTradeSystemsFromMarketData(List<MarketstackService.StockSnapshot> snapshots) {
+        log.info("[平台初始化] 开始写入交易系统A业务表，股票样本数={}", snapshots.size());
         jdbcExecutor.run(DS_TRADE_OMS, jdbc -> {
             for (int i = 0; i < snapshots.size(); i++) {
                 MarketstackService.StockSnapshot snapshot = snapshots.get(i);
@@ -183,9 +185,12 @@ public class PlatformBootstrapService {
                 if (i % 3 == 0) {
                     insertOmsCashSeed(jdbc, snapshot, i + 1);
                 }
+                logBootstrapProgress("交易系统A", i + 1, snapshots.size());
             }
         });
+        log.info("[平台初始化] 交易系统A业务表写入完成");
 
+        log.info("[平台初始化] 开始写入交易系统B业务表，股票样本数={}", snapshots.size());
         jdbcExecutor.run(DS_TRADE_BROKER, jdbc -> {
             for (int i = 0; i < snapshots.size(); i++) {
                 MarketstackService.StockSnapshot snapshot = snapshots.get(i);
@@ -197,8 +202,16 @@ public class PlatformBootstrapService {
                 if (i % 3 == 0) {
                     insertBrokerFundSeed(jdbc, snapshot, i + 1);
                 }
+                logBootstrapProgress("交易系统B", i + 1, snapshots.size());
             }
         });
+        log.info("[平台初始化] 交易系统B业务表写入完成");
+    }
+
+    private void logBootstrapProgress(String systemName, int current, int total) {
+        if (current == total || current % BOOTSTRAP_PROGRESS_STEP == 0) {
+            log.info("[平台初始化] {} 灌数进度 {}/{}", systemName, current, total);
+        }
     }
 
     private void dropHubTables() {

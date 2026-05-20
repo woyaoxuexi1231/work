@@ -9,6 +9,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "marketstack")
 public class MarketstackProperties {
     private boolean enabled = true;
+    private boolean fallbackEnabled = true;
     private String baseUrl = "https://api.marketstack.com/v2";
     private String accessKey;
     private int lookbackDays = 120;
