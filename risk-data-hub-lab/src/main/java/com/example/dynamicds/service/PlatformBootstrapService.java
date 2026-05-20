@@ -43,6 +43,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntConsumer;
 
 /**
  * 平台初始化服务 — 系统启动引导 + 演示数据灌数。
@@ -130,6 +131,48 @@ public class PlatformBootstrapService {
         List<StockSnapshot> snapshots = generateFallbackStocks();
         seedTradeSystemsFromMarketData(snapshots);
         leafSegmentService.clearLocalCache();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("snapshotCount", snapshots.size());
+        result.put("businessTableStats", currentBusinessTableStats());
+        result.put("hubTableStats", currentHubTableStats());
+        log.info("[平台初始化] 演示数据初始化完成，股票基础样本条数={}, 业务表统计={}", snapshots.size(), currentBusinessTableStats());
+        return result;
+    }
+
+    /**
+     * 带进度回调的初始化方法 - 用于实时更新任务进度
+     * 进度分配：
+     * - 0-5%: 清空表 + 基础数据
+     * - 5-15%: 生成股票数据
+     * - 15-60%: 写入交易系统A (oms_*)
+     * - 60-95%: 写入交易系统B (broker_*)
+     * - 95-100%: 清理缓存 + 汇总
+     */
+    public synchronized Map<String, Object> initDemoDataWithProgress(IntConsumer progressCallback) {
+        log.info("[平台初始化] 开始按当前表结构初始化演示数据（带进度）");
+        
+        // 阶段1: 清空表 (0-5%)
+        progressCallback.accept(0);
+        clearAllTableData();
+        progressCallback.accept(3);
+        initHubBaseData();
+        progressCallback.accept(5);
+        
+        // 阶段2: 生成股票数据 (5-15%)
+        List<StockSnapshot> snapshots = generateFallbackStocks();
+        progressCallback.accept(15);
+        
+        // 阶段3: 写入交易系统A (15-60%)
+        seedTradeSystemsFromMarketDataWithProgress(snapshots, progressCallback, 15, 60);
+        
+        // 阶段4: 写入交易系统B (60-95%)
+        seedBrokerSystemsFromMarketDataWithProgress(snapshots, progressCallback, 60, 95);
+        
+        // 阶段5: 清理缓存 + 汇总 (95-100%)
+        progressCallback.accept(95);
+        leafSegmentService.clearLocalCache();
+        progressCallback.accept(100);
+        
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("snapshotCount", snapshots.size());
         result.put("businessTableStats", currentBusinessTableStats());
@@ -320,6 +363,60 @@ public class PlatformBootstrapService {
         log.info("[平台初始化] 交易系统B业务表写入完成");
     }
 
+    /**
+     * 带进度的交易系统A写入方法
+     */
+    private void seedTradeSystemsFromMarketDataWithProgress(List<StockSnapshot> snapshots, 
+                                                            IntConsumer progressCallback,
+                                                            int progressStart, int progressEnd) {
+        log.info("[平台初始化] 开始写入交易系统A业务表（带进度），股票样本数={}", snapshots.size());
+        routingMybatisExecutor.run(DS_TRADE_OMS, () -> {
+            int totalSteps = snapshots.size();
+            for (int i = 0; i < snapshots.size(); i++) {
+                StockSnapshot snapshot = snapshots.get(i);
+                insertOmsStockSnapshot(snapshot, i + 1);
+                for (int j = 0; j < OMS_ORDER_REPEAT; j++) {
+                    insertOmsTradeSeed(snapshot, i + 1, j + 1);
+                }
+                insertOmsPositionSeed(snapshot, i + 1);
+                if (i % 3 == 0) {
+                    insertOmsCashSeed(snapshot, i + 1);
+                }
+                // 更新进度
+                int progress = progressStart + (int) ((i + 1) / (double) totalSteps * (progressEnd - progressStart));
+                progressCallback.accept(progress);
+            }
+        });
+        log.info("[平台初始化] 交易系统A业务表写入完成");
+    }
+
+    /**
+     * 带进度的交易系统B写入方法
+     */
+    private void seedBrokerSystemsFromMarketDataWithProgress(List<StockSnapshot> snapshots,
+                                                              IntConsumer progressCallback,
+                                                              int progressStart, int progressEnd) {
+        log.info("[平台初始化] 开始写入交易系统B业务表（带进度），股票样本数={}", snapshots.size());
+        routingMybatisExecutor.run(DS_TRADE_BROKER, () -> {
+            int totalSteps = snapshots.size();
+            for (int i = 0; i < snapshots.size(); i++) {
+                StockSnapshot snapshot = snapshots.get(i);
+                insertBrokerStockQuote(snapshot, i + 1);
+                for (int j = 0; j < BROKER_DEAL_REPEAT; j++) {
+                    insertBrokerTradeSeed(snapshot, i + 1, j + 1);
+                }
+                insertBrokerPositionSeed(snapshot, i + 1);
+                if (i % 3 == 0) {
+                    insertBrokerFundSeed(snapshot, i + 1);
+                }
+                // 更新进度
+                int progress = progressStart + (int) ((i + 1) / (double) totalSteps * (progressEnd - progressStart));
+                progressCallback.accept(progress);
+            }
+        });
+        log.info("[平台初始化] 交易系统B业务表写入完成");
+    }
+
     private void logBootstrapProgress(String systemName, int current, int total) {
         if (current == total || current % BOOTSTRAP_PROGRESS_STEP == 0) {
             log.info("[平台初始化] {} 灌数进度 {}/{}", systemName, current, total);
@@ -452,6 +549,7 @@ public class PlatformBootstrapService {
                     "submitted_at varchar(32)," +
                     "started_at varchar(32)," +
                     "finished_at varchar(32)," +
+                    "progress int default 0," +
                     "message varchar(256)," +
                     "error_message varchar(1024)," +
                     "result text," +
@@ -464,6 +562,7 @@ public class PlatformBootstrapService {
                     "datasource_type varchar(32)," +
                     "page_size int default 2," +
                     "status varchar(32) not null default 'IDLE'," +
+                    "progress int default 0," +
                     "total_pulled_count int default 0," +
                     "total_saved_count int default 0," +
                     "submitted_at varchar(32)," +
@@ -485,6 +584,10 @@ public class PlatformBootstrapService {
                     "started_at varchar(32)," +
                     "finished_at varchar(32)," +
                     "key idx_record_task_id(task_id))");
+            // 确保已存在的 init_task 表有 progress 字段
+            executeSql("ALTER TABLE init_task ADD COLUMN IF NOT EXISTS progress int default 0");
+            // 确保已存在的 sync_task 表有 progress 字段
+            executeSql("ALTER TABLE sync_task ADD COLUMN IF NOT EXISTS progress int default 0");
         });
     }
 

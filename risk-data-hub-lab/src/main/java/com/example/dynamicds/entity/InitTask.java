@@ -18,6 +18,7 @@ public class InitTask {
     private String submittedAt;
     private String startedAt;
     private String finishedAt;
+    private Integer progress;
     private String message;
     private String errorMessage;
     private String result;

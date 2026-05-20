@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { post } from '../../api/request.js'
 import { ElMessage } from 'element-plus'
 
@@ -11,7 +11,7 @@ const uploadLoading = ref(false)
 
 const uploadForm = ref({
   name: '',
-  type: 'image'
+  type: 'IMAGE'
 })
 
 const resourceTypeMap = {
@@ -62,8 +62,6 @@ const filteredResources = () => {
 }
 
 watch(resourceList, () => filteredResources(), { immediate: true })
-
-import { watch } from 'vue'
 
 function handleUpload() {
   uploadDialogVisible.value = true
@@ -207,10 +205,10 @@ function formatSize(size) {
         </el-form-item>
         <el-form-item label="资源类型">
           <el-select v-model="uploadForm.type" style="width: 100%">
-            <el-option label="图片" value="image" />
-            <el-option label="视频" value="video" />
-            <el-option label="音频" value="audio" />
-            <el-option label="模型文件" value="model" />
+            <el-option label="图片" value="IMAGE" />
+            <el-option label="视频" value="VIDEO" />
+            <el-option label="音频" value="AUDIO" />
+            <el-option label="模型文件" value="MODEL" />
           </el-select>
         </el-form-item>
         <el-form-item label="上传文件">

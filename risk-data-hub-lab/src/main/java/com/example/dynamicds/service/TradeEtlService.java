@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
+import com.example.dynamicds.dto.SyncResultDTO;
 import com.example.dynamicds.entity.CleanTrade;
 import com.example.dynamicds.mapper.CleanTradeMapper;
 import com.example.dynamicds.sync.BusinessSyncContext;
@@ -67,7 +68,7 @@ public class TradeEtlService {
     @Qualifier("syncBusinessExecutor")
     private final ThreadPoolExecutor syncBusinessExecutor;
 
-    public Map<String, Object> syncByDataSource(String dataSourceKey, int pageSize) {
+    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize) {
         return syncByDataSource(dataSourceKey, pageSize, progress -> {
         });
     }
@@ -76,9 +77,9 @@ public class TradeEtlService {
      * 执行同步：校验 → 并发派发 4 类业务 → 合并结果。
      * 每类业务使用独立的生产者-消费者线程对，不同业务类型之间通过 syncBusinessExecutor 并发执行。
      */
-    public Map<String, Object> syncByDataSource(String dataSourceKey,
-                                                int pageSize,
-                                                SyncProgressListener progressListener) {
+    public SyncResultDTO syncByDataSource(String dataSourceKey,
+                                         int pageSize,
+                                         SyncProgressListener progressListener) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
         String batchNo = "SYNC-" + System.currentTimeMillis();
@@ -107,28 +108,29 @@ public class TradeEtlService {
             // 等待所有业务模板执行完毕
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
 
-            Map<String, Object> businessResults = new LinkedHashMap<>();
+            Map<String, BusinessSyncResult> businessResults = new LinkedHashMap<>();
             int totalPulled = 0;
             int totalSaved = 0;
             int maxPageCount = 0;
             for (CompletableFuture<BusinessSyncResult> future : futures) {
                 BusinessSyncResult result = future.get(); // 不阻塞，allOf 已确保全部完成
-                businessResults.put(result.getBusinessCode(), result.toMap());
+                businessResults.put(result.getBusinessCode(), result);
                 totalPulled += result.getPulledCount();
                 totalSaved += result.getSavedCount();
                 maxPageCount = Math.max(maxPageCount, result.getPageCount());
             }
 
-            Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("dataSourceKey", dataSourceKey);
-            summary.put("dataSourceName", config.getName());
-            summary.put("datasourceType", config.getDatasourceType());
-            summary.put("pageSize", safePageSize);
-            summary.put("batchNo", batchNo);
-            summary.put("pageCount", maxPageCount);
-            summary.put("pulledCount", totalPulled);
-            summary.put("savedCount", totalSaved);
-            summary.put("businessResults", businessResults);
+            SyncResultDTO summary = new SyncResultDTO(
+                    dataSourceKey,
+                    config.getName(),
+                    config.getDatasourceType(),
+                    safePageSize,
+                    batchNo,
+                    maxPageCount,
+                    totalPulled,
+                    totalSaved,
+                    businessResults
+            );
             log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
                     dataSourceKey, batchNo, totalPulled, totalSaved);
             return summary;
