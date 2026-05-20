@@ -61,29 +61,6 @@ public class DynamicDataSourceManager {
 
     // ==================== 注册数据源 ====================
 
-    /** 注册中台默认数据源（使用 Spring Boot 自动配置的 DataSource） */
-    public synchronized void registerHub(String key, String name, DataSource ds) {
-        if (!(ds instanceof HikariDataSource)) {
-            throw new IllegalArgumentException("默认数据源必须是 HikariDataSource");
-        }
-        HikariDataSource hds = (HikariDataSource) ds;
-        dataSources.put(key, hds);
-        DataSourceConfigDTO config = new DataSourceConfigDTO();
-        config.setKey(key);
-        config.setName(name);
-        config.setDatasourceType("HUB");
-        config.setUrl(hds.getJdbcUrl());
-        config.setUsername(hds.getUsername());
-        config.setPassword(hds.getPassword());
-        config.setDriverClassName(hds.getDriverClassName());
-        config.setMaxPoolSize(hds.getMaximumPoolSize());
-        config.setMinIdle(hds.getMinimumIdle());
-        config.setPoolName(hds.getPoolName());
-        dataSourceConfigs.put(key, config);
-        routingDataSource.register(key, hds, new ConcurrentHashMap<>(dataSources));
-        log.info("[数据源管理] 已注册默认数据源 '{}' — {}", key, hds.getJdbcUrl());
-    }
-
     public synchronized void register(DataSourceConfigDTO config) {
         String key = config.getKey();
         if (dataSources.containsKey(key)) {
@@ -162,20 +139,20 @@ public class DynamicDataSourceManager {
 
     public List<DataSourceVO> listAll() {
         List<DataSourceVO> list = new ArrayList<>();
-        for (Map.Entry<String, HikariDataSource> entry : dataSources.entrySet()) {
-            list.add(toVO(entry.getKey(), entry.getValue()));
+        for (Map.Entry<String, DataSourceConfigDTO> entry : dataSourceConfigs.entrySet()) {
+            HikariDataSource ds = dataSources.get(entry.getKey());
+            list.add(toVO(entry.getKey(), ds));
         }
         return list;
     }
 
     public DataSourceVO get(String key) {
         HikariDataSource ds = dataSources.get(key);
-        if (ds == null) return null;
         return toVO(key, ds);
     }
 
     public boolean exists(String key) {
-        return dataSources.containsKey(key);
+        return dataSources.containsKey(key) || dataSourceConfigs.containsKey(key);
     }
 
     public DataSourceConfigDTO getConfig(String key) {
@@ -184,13 +161,24 @@ public class DynamicDataSourceManager {
     }
 
     public DataSource getDataSource(String key) {
-        return dataSources.get(key);
+        HikariDataSource ds = dataSources.get(key);
+        return ds != null ? ds : routingDataSource;
     }
 
     public List<String> keys() {
-        List<String> keys = new ArrayList<>(dataSources.keySet());
+        List<String> keys = new ArrayList<>(dataSourceConfigs.keySet());
         Collections.sort(keys);
         return keys;
+    }
+
+    /** 注册 hub 配置元数据（不含连接池，hub 由 spring.datasource 管理） */
+    public synchronized void putHubConfig(String key, String name, String url) {
+        DataSourceConfigDTO cfg = new DataSourceConfigDTO();
+        cfg.setKey(key);
+        cfg.setName(name);
+        cfg.setDatasourceType("HUB");
+        cfg.setUrl(url);
+        dataSourceConfigs.put(key, cfg);
     }
 
     // ==================== 内部方法 ====================
@@ -243,14 +231,19 @@ public class DynamicDataSourceManager {
         vo.setKey(key);
         vo.setName(config == null ? key : config.getName());
         vo.setDatasourceType(config == null ? "UNKNOWN" : config.getDatasourceType());
-        vo.setUrl(ds.getJdbcUrl());
-        vo.setPoolName(ds.getPoolName());
-        vo.setMaxPoolSize(ds.getMaximumPoolSize());
-        vo.setMinIdle(ds.getMinimumIdle());
-        vo.setActiveConnections(getActiveConnections(ds));
-        vo.setIdleConnections(getIdleConnections(ds));
-        vo.setTotalConnections(getTotalConnections(ds));
-        vo.setOnline(!ds.isClosed());
+        if (ds != null) {
+            vo.setUrl(ds.getJdbcUrl());
+            vo.setPoolName(ds.getPoolName());
+            vo.setMaxPoolSize(ds.getMaximumPoolSize());
+            vo.setMinIdle(ds.getMinimumIdle());
+            vo.setActiveConnections(getActiveConnections(ds));
+            vo.setIdleConnections(getIdleConnections(ds));
+            vo.setTotalConnections(getTotalConnections(ds));
+            vo.setOnline(!ds.isClosed());
+        } else if (config != null) {
+            vo.setUrl(config.getUrl());
+            vo.setOnline(true);
+        }
         return vo;
     }
 

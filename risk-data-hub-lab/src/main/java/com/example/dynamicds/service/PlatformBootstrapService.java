@@ -31,8 +31,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.sql.DataSource;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Connection;
@@ -80,7 +78,6 @@ public class PlatformBootstrapService {
     public static final String TYPE_TRADE_OMS = "TRADE_OMS";
     public static final String TYPE_TRADE_BROKER = "TRADE_BROKER";
 
-    private final DataSource dataSource;
     private final DynamicDataSourceManager manager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final LeafSegmentService leafSegmentService;
@@ -97,13 +94,16 @@ public class PlatformBootstrapService {
     private final BrokerPositionBalanceMapper brokerPositionBalanceMapper;
     private final BrokerFundAccountMapper brokerFundAccountMapper;
 
+    @Value("${spring.datasource.url}")
+    private String hubUrl;
+
     @Value("${app.ddl.enabled:true}")
     private boolean ddlEnabled;
 
     @PostConstruct
     public void init() {
         log.info("[平台初始化] ddl.enabled={}", ddlEnabled);
-        manager.registerHub(DS_HUB, "中台库", dataSource);
+        manager.putHubConfig(DS_HUB, "中台库", hubUrl);
         ensureTradeSchemas();
         ensureDataSource(DS_TRADE_OMS);
         ensureDataSource(DS_TRADE_BROKER);
