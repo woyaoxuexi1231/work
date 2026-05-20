@@ -8,11 +8,8 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * RabbitMQ 消息发送服务 — 同步任务全部成功时向下游发送完成通知。
- */
-@Service
 @Slf4j
+@Service
 @RequiredArgsConstructor
 public class RabbitMqSender {
 
@@ -21,10 +18,7 @@ public class RabbitMqSender {
     private static final String EXCHANGE = "risk.sync.exchange";
     private static final String ROUTING_KEY = "risk.sync.completed";
 
-    /**
-     * 发送同步完成消息。
-     */
-    public void sendSyncCompleted(String taskId, String dataSourceKey,
+    public void sendSyncCompleted(Long taskId, String dataSourceKey,
                                   String datasourceType, int totalPulled, int totalSaved) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("taskId", taskId);
@@ -37,10 +31,10 @@ public class RabbitMqSender {
 
         try {
             rabbitTemplate.convertAndSend(EXCHANGE, ROUTING_KEY, message);
-            log.info("[RabbitMQ] 同步完成消息已发送 taskId={}, dataSourceKey={}, pulled={}, saved={}",
+            log.info("[RabbitMQ] sent taskId={}, dataSourceKey={}, pulled={}, saved={}",
                     taskId, dataSourceKey, totalPulled, totalSaved);
         } catch (Exception e) {
-            log.error("[RabbitMQ] 发送同步完成消息失败 taskId={}", taskId, e);
+            log.error("[RabbitMQ] failed taskId={}", taskId, e);
         }
     }
 }

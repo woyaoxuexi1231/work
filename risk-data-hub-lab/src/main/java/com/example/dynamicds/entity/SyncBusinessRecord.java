@@ -13,7 +13,7 @@ import lombok.Data;
 public class SyncBusinessRecord {
     @TableId(type = IdType.INPUT)
     private Long id;
-    private String taskId;
+    private Long taskId;
     private String businessCode;
     private String status;
     private Integer pageCount;
