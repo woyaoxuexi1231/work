@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>MLM 动漫平台 - 仪表盘</title>
+    <th:block th:replace="~{fragments :: head}"></th:block>
+</head>
+<body>
+    <th:block th:replace="~{fragments :: nav}"></th:block>
+    <main class="p-6">
+        <h1 class="text-3xl font-bold mb-6 text-white">仪表盘</h1>
+
+        <!-- 统计卡片 -->
+        <div class="grid grid-cols-4 gap-4 mb-8">
+            <div class="glass p-5">
+                <div class="text-3xl font-bold text-indigo-400" id="totalProjects">-</div>
+                <div class="text-gray-400 text-sm mt-1">项目总数</div>
+            </div>
+            <div class="glass p-5">
+                <div class="text-3xl font-bold text-amber-400" id="totalEpisodes">-</div>
+                <div class="text-gray-400 text-sm mt-1">总剧集</div>
+            </div>
+            <div class="glass p-5">
+                <div class="text-3xl font-bold text-green-400" id="completedEpisodes">-</div>
+                <div class="text-gray-400 text-sm mt-1">已完成剧集</div>
+            </div>
+            <div class="glass p-5">
+                <div class="text-3xl font-bold text-red-400" id="failedEpisodes">-</div>
+                <div class="text-gray-400 text-sm mt-1">失败剧集</div>
+            </div>
+        </div>
+
+        <!-- 最近项目 -->
+        <div class="glass p-5">
+            <h2 class="text-lg font-bold text-white mb-4">最近项目</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-gray-400 border-b border-white/10">
+                            <th class="text-left py-2">ID</th>
+                            <th class="text-left py-2">项目名称</th>
+                            <th class="text-left py-2">总集数</th>
+                            <th class="text-left py-2">已完成</th>
+                            <th class="text-left py-2">创建时间</th>
+                            <th class="text-left py-2">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="projectTableBody">
+                        <tr><td colspan="6" class="py-4 text-center text-gray-500">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        async function loadDashboard() {
+            const res = await fetch('/api/projects');
+            const data = await res.json();
+            const projects = data.data || [];
+
+            document.getElementById('totalProjects').textContent = projects.length;
+
+            let totalEpisodes = 0, completedEpisodes = 0, failedEpisodes = 0;
+
+            // 为每个项目加载剧集统计
+            for (const p of projects) {
+                try {
+                    const detail = await fetch(`/api/projects/${p.id}`);
+                    const detailData = await detail.json();
+                    const episodes = detailData.data?.episodes || [];
+                    totalEpisodes += episodes.length;
+                    completedEpisodes += episodes.filter(e => e.status === 'COMPLETED').length;
+                    failedEpisodes += episodes.filter(e => e.stepStatus === 'FAILED').length;
+                } catch (e) {}
+            }
+
+            document.getElementById('totalEpisodes').textContent = totalEpisodes;
+            document.getElementById('completedEpisodes').textContent = completedEpisodes;
+            document.getElementById('failedEpisodes').textContent = failedEpisodes;
+
+            const tbody = document.getElementById('projectTableBody');
+            if (projects.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-500">暂无项目</td></tr>';
+                return;
+            }
+            tbody.innerHTML = projects.slice(0, 10).map(p => `
+                <tr class="border-b border-white/5 hover:bg-white/5">
+                    <td class="py-2">${p.id}</td>
+                    <td class="py-2">
+                        <a href="/projects/${p.id}" class="text-indigo-400 hover:text-indigo-300">${p.name}</a>
+                    </td>
+                    <td class="py-2">${p.episodesCount || 0}</td>
+                    <td class="py-2 text-green-400">${p.completedCount || 0}</td>
+                    <td class="py-2 text-gray-400">${p.createdAt ? p.createdAt.substring(0,10) : '-'}</td>
+                    <td class="py-2">
+                        <a href="/projects/${p.id}" class="btn-glass text-white px-2 py-1 rounded text-xs">查看流水线</a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        loadDashboard();
+    </script>
+</body>
+</html>

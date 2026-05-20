@@ -3,168 +3,115 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>金融交易数据中台实验室</title>
+  <title>精简版数据中台同步实验室</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-800">
-<div class="max-w-7xl mx-auto px-6 py-8 space-y-6">
-  <section class="rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white p-8 shadow-xl">
+<div class="mx-auto max-w-6xl px-6 py-8 space-y-6">
+  <section class="rounded-3xl bg-slate-900/85 p-8 text-white shadow-xl backdrop-blur">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <div class="text-sm uppercase tracking-[0.3em] text-slate-300">Risk Data Hub Lab</div>
-        <h1 class="text-3xl font-bold mt-3">金融交易数据中台实验室</h1>
-        <p class="mt-3 text-slate-200 max-w-3xl">
-          一个微服务同时接入多个交易系统，运行时动态切换数据源，按业务线程做 ETL 清洗，
-          用 Leaf-segment 发号，用事件消息把标准化结果推给下游风控。
+        <h1 class="mt-3 text-3xl font-bold">精简版数据中台同步实验室</h1>
+        <p class="mt-3 max-w-3xl text-slate-200">
+          页面只保留两件事：维护数据源，以及手动触发指定数据源同步。
+          ETL 固定走一条链路：分页拉取上游数据 -> 按数据源类型转换 -> 落到中台库。
         </p>
       </div>
-      <div class="flex gap-3">
-        <button onclick="resetDemo()" class="rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold hover:bg-white/20">重置演示数据</button>
-        <button onclick="loadAll()" class="rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-emerald-300">刷新全局看板</button>
-      </div>
+      <button onclick="loadAll()" class="rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-emerald-300">
+        刷新页面数据
+      </button>
     </div>
   </section>
 
-  <section class="grid gap-4 md:grid-cols-4" id="statCards"></section>
+  <section class="grid gap-4 md:grid-cols-3" id="summaryCards"></section>
 
-  <section class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-    <div class="space-y-6">
-      <div class="rounded-3xl bg-white p-6 shadow-sm">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-xl font-bold">核心设计回答</h2>
-            <p class="text-sm text-slate-500 mt-1">把你面试里最容易被追问的实现细节直接放在页面上。</p>
-          </div>
+  <section class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+    <div class="rounded-3xl bg-white p-6 shadow-sm">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold">数据源维护</h2>
+          <p class="mt-1 text-sm text-slate-500">两个上游都是交易系统库，只是字段结构不一致，所以必须用 `datasourceType` 选择对应转换规则。</p>
         </div>
-        <div id="answers" class="mt-5 space-y-3"></div>
       </div>
 
-      <div class="rounded-3xl bg-white p-6 shadow-sm">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-xl font-bold">多数据源接入情况</h2>
-            <p class="text-sm text-slate-500 mt-1">运行时动态接入 / 下线，底层仍然是你自己改造过的 RoutingDataSource。</p>
-          </div>
-          <div class="flex gap-3">
-            <button onclick="registerAdhocDs()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">注册临时报表库</button>
-            <button onclick="refreshDataSources()" class="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50">刷新数据源</button>
-          </div>
-        </div>
-        <div class="mt-4 flex gap-3">
-          <input id="removeDsKey" class="flex-1 rounded-xl border px-3 py-2 text-sm" placeholder="输入要下线的数据源 key，例如 adhoc_report_xxx">
-          <button onclick="removeDataSource()" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">下线指定数据源</button>
-        </div>
-        <div id="dsList" class="mt-5 grid gap-4 md:grid-cols-2"></div>
-      </div>
+      <form class="mt-5 grid gap-3 md:grid-cols-2" onsubmit="saveDataSource(event)">
+        <input name="key" class="rounded-2xl border px-3 py-2 text-sm" placeholder="key，例如 trade_oms_copy">
+        <input name="name" class="rounded-2xl border px-3 py-2 text-sm" placeholder="名称，例如 交易系统A备库">
+        <select name="datasourceType" class="rounded-2xl border px-3 py-2 text-sm">
+          <option value="TRADE_OMS">TRADE_OMS</option>
+          <option value="TRADE_BROKER">TRADE_BROKER</option>
+          <option value="HUB">HUB</option>
+        </select>
+        <input name="url" class="rounded-2xl border px-3 py-2 text-sm" placeholder="jdbc:mysql://127.0.0.1:3306/trade_oms">
+        <input name="username" value="root" class="rounded-2xl border px-3 py-2 text-sm" placeholder="username">
+        <input name="password" value="root" class="rounded-2xl border px-3 py-2 text-sm" placeholder="password">
+        <button class="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700">
+          保存数据源
+        </button>
+      </form>
 
-      <div class="rounded-3xl bg-white p-6 shadow-sm">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-xl font-bold">ETL 清洗控制台</h2>
-            <p class="text-sm text-slate-500 mt-1">交易前初始化清洗 + 交易中实时清洗，线程池按业务类型拆分。</p>
-          </div>
-          <div class="flex gap-3">
-            <button onclick="runInitClean()" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">初始化清洗</button>
-            <select id="realtimeSystem" class="rounded-xl border px-3 py-2 text-sm">
-              <option value="trade_equity">trade_equity</option>
-              <option value="trade_futures">trade_futures</option>
-              <option value="trade_bond">trade_bond</option>
-            </select>
-            <button onclick="runRealtimeClean()" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">实时清洗</button>
-          </div>
-        </div>
-        <pre id="etlResult" class="mt-5 rounded-2xl bg-slate-900 p-4 text-xs text-emerald-200 overflow-auto min-h-[120px]">等待触发...</pre>
-        <div class="mt-5">
-          <div class="text-sm font-semibold">最近清洗结果</div>
-          <div class="mt-3 overflow-auto">
-            <table class="min-w-full text-sm">
-              <thead class="bg-slate-50 text-slate-500">
-              <tr>
-                <th class="px-3 py-2 text-left">globalId</th>
-                <th class="px-3 py-2 text-left">source</th>
-                <th class="px-3 py-2 text-left">vendorTradeNo</th>
-                <th class="px-3 py-2 text-left">status</th>
-                <th class="px-3 py-2 text-left">mode</th>
-              </tr>
-              </thead>
-              <tbody id="tradeRows"></tbody>
-            </table>
-          </div>
-        </div>
+      <div class="mt-6 overflow-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left">key</th>
+            <th class="px-3 py-2 text-left">名称</th>
+            <th class="px-3 py-2 text-left">类型</th>
+            <th class="px-3 py-2 text-left">状态</th>
+            <th class="px-3 py-2 text-left">操作</th>
+          </tr>
+          </thead>
+          <tbody id="dsRows"></tbody>
+        </table>
       </div>
     </div>
 
     <div class="space-y-6">
       <div class="rounded-3xl bg-white p-6 shadow-sm">
-        <h2 class="text-xl font-bold">跨库事务协调</h2>
-        <p class="text-sm text-slate-500 mt-1">两个线程各持有一个本地连接，先 prepare，再由总控线程用信号量统一放行。</p>
-        <div class="mt-4 space-y-3">
-          <select id="txSourceSystem" class="w-full rounded-xl border px-3 py-2 text-sm">
-            <option value="trade_equity">trade_equity</option>
-            <option value="trade_futures">trade_futures</option>
-            <option value="trade_bond">trade_bond</option>
-          </select>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" id="simulateFailure" class="rounded">
-            模拟一边 prepare 完后总控决定回滚
-          </label>
-          <button onclick="runTxDemo()" class="w-full rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-500">执行协调事务</button>
+        <div>
+          <h2 class="text-xl font-bold">同步数据</h2>
+          <p class="mt-1 text-sm text-slate-500">这里只保留一个按钮。后台会从指定交易系统分页拉取数据，再按来源结构做字段映射后落库。</p>
         </div>
-        <pre id="txResult" class="mt-4 rounded-2xl bg-slate-900 p-4 text-xs text-sky-200 overflow-auto min-h-[160px]">等待触发...</pre>
+        <div class="mt-5 flex flex-col gap-3">
+          <select id="syncDataSourceKey" class="rounded-2xl border px-3 py-2 text-sm"></select>
+          <input id="pageSize" type="number" value="2" min="1" max="200" class="rounded-2xl border px-3 py-2 text-sm" placeholder="分页大小">
+          <button onclick="syncData()" class="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500">
+            同步数据
+          </button>
+        </div>
+        <pre id="syncResult" class="mt-5 min-h-[180px] overflow-auto rounded-2xl bg-slate-900 p-4 text-xs text-emerald-200">等待触发...</pre>
       </div>
 
       <div class="rounded-3xl bg-white p-6 shadow-sm">
-        <h2 class="text-xl font-bold">Leaf Segment 发号</h2>
-        <p class="text-sm text-slate-500 mt-1">中心库行锁分配号段，剩余 20% 时异步预加载 next buffer。</p>
-        <div class="mt-4 flex gap-3">
-          <select id="leafTag" class="rounded-xl border px-3 py-2 text-sm">
-            <option value="clean_trade">clean_trade</option>
-            <option value="event_message">event_message</option>
-            <option value="tx_audit">tx_audit</option>
-          </select>
-          <input id="leafCount" type="number" value="10" min="1" max="30" class="w-24 rounded-xl border px-3 py-2 text-sm">
-          <button onclick="nextIds()" class="flex-1 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">发号</button>
-        </div>
-        <pre id="leafResult" class="mt-4 rounded-2xl bg-slate-900 p-4 text-xs text-amber-200 overflow-auto min-h-[160px]">等待触发...</pre>
-      </div>
-
-      <div class="rounded-3xl bg-white p-6 shadow-sm">
-        <h2 class="text-xl font-bold">字典与事件消息</h2>
-        <p class="text-sm text-slate-500 mt-1">字典用于清洗映射，事件消息用于对接下游风控。</p>
-        <form class="mt-4 grid grid-cols-2 gap-3" onsubmit="saveDict(event)">
-          <input name="dictType" value="counterparty" class="rounded-xl border px-3 py-2 text-sm" placeholder="dictType">
-          <input name="dictCode" class="rounded-xl border px-3 py-2 text-sm" placeholder="dictCode">
-          <input name="dictName" class="rounded-xl border px-3 py-2 text-sm" placeholder="dictName">
-          <input name="dictDesc" class="rounded-xl border px-3 py-2 text-sm" placeholder="dictDesc">
-          <button class="col-span-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">保存字典</button>
-        </form>
-        <div class="mt-4">
-          <div class="text-sm font-semibold">字典</div>
-          <div id="dictList" class="mt-2 space-y-2 text-sm"></div>
-        </div>
-        <div class="mt-4">
-          <div class="text-sm font-semibold">最近消息</div>
-          <div id="messageList" class="mt-2 space-y-2 text-sm"></div>
+        <h2 class="text-xl font-bold">最近落库结果</h2>
+        <p class="mt-1 text-sm text-slate-500">这里展示中台库 `clean_trade` 最近 30 条标准化数据。</p>
+        <div class="mt-4 overflow-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left">globalId</th>
+              <th class="px-3 py-2 text-left">source</th>
+              <th class="px-3 py-2 text-left">type</th>
+              <th class="px-3 py-2 text-left">bizNo</th>
+              <th class="px-3 py-2 text-left">status</th>
+            </tr>
+            </thead>
+            <tbody id="tradeRows"></tbody>
+          </table>
         </div>
       </div>
     </div>
   </section>
 </div>
 
-<div id="toast" class="fixed top-6 right-6 hidden rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl"></div>
+<div id="toast" class="fixed right-6 top-6 hidden rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl"></div>
 
 <script>
 const API = {
   overview: () => fetch('/api/hub/overview').then(r => r.json()),
-  reset: () => fetch('/api/hub/reset', { method: 'POST' }).then(r => r.json()),
-  etlInit: () => fetch('/api/hub/etl/init', { method: 'POST' }).then(r => r.json()),
-  etlRealtime: (systemKey) => fetch('/api/hub/etl/realtime?systemKey=' + encodeURIComponent(systemKey), { method: 'POST' }).then(r => r.json()),
+  sync: (dataSourceKey, pageSize) => fetch('/api/hub/sync?dataSourceKey=' + encodeURIComponent(dataSourceKey) + '&pageSize=' + pageSize, { method: 'POST' }).then(r => r.json()),
   cleanedTrades: () => fetch('/api/hub/cleaned-trades').then(r => r.json()),
-  tx: (sourceSystem, simulateFailure) => fetch('/api/hub/tx/coordinate?sourceSystem=' + encodeURIComponent(sourceSystem) + '&simulateFailure=' + simulateFailure, { method: 'POST' }).then(r => r.json()),
-  nextIds: (tag, count) => fetch('/api/hub/id/next?tag=' + encodeURIComponent(tag) + '&count=' + count, { method: 'POST' }).then(r => r.json()),
-  dictList: () => fetch('/api/hub/dict').then(r => r.json()),
-  dictSave: (body) => fetch('/api/hub/dict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
-  messages: () => fetch('/api/hub/messages').then(r => r.json()),
   dsList: () => fetch('/api/datasource').then(r => r.json()),
   dsAdd: (body) => fetch('/api/datasource', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
   dsRemove: (key) => fetch('/api/datasource/' + encodeURIComponent(key), { method: 'DELETE' }).then(r => r.json())
@@ -173,78 +120,111 @@ const API = {
 function toast(message, type = 'success') {
   const el = document.getElementById('toast');
   const color = type === 'error' ? 'bg-rose-500' : type === 'warn' ? 'bg-amber-500' : 'bg-emerald-500';
-  el.className = 'fixed top-6 right-6 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl ' + color;
+  el.className = 'fixed right-6 top-6 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl ' + color;
   el.textContent = message;
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 2500);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function renderJson(id, data) {
   document.getElementById(id).textContent = JSON.stringify(data, null, 2);
 }
 
-async function loadOverview() {
+async function loadSummary() {
   const res = await API.overview();
-  const data = res.data;
-  document.getElementById('statCards').innerHTML = [
-    card('动态数据源', data.datasourceCount, '运行时热注册 / 热下线'),
-    card('清洗后交易', data.cleanTradeCount, '风控底座当前条数'),
-    card('事件消息', data.eventCount, '标准化消息出站'),
-    card('Leaf 当前号段', data.leafState.currentNext + ' / ' + data.leafState.currentEnd, '观察双 Buffer 水位')
+  const data = res.data || {};
+  const topology = data.topology || {};
+  const upstreamCount = (topology.upstreams || []).length;
+  document.getElementById('summaryCards').innerHTML = [
+    card('数据源数量', data.datasourceCount || 0, '当前已注册的数据源'),
+    card('上游库数量', upstreamCount, '当前页面可选同步来源'),
+    card('中台落库条数', data.cleanTradeCount || 0, 'clean_trade 当前总量')
   ].join('');
-  document.getElementById('answers').innerHTML = (data.architectureAnswers || []).map((item, idx) =>
-    `<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div class="text-xs font-semibold text-indigo-600">Q${idx + 1}</div><div class="mt-1 text-sm leading-6">${escapeHtml(item)}</div></div>`
-  ).join('');
 }
 
-async function refreshDataSources() {
+async function loadDataSources() {
   const res = await API.dsList();
   const list = res.data || [];
-  document.getElementById('dsList').innerHTML = list.map(ds => `
-    <div class="rounded-2xl border border-slate-200 p-4">
-      <div class="flex items-center justify-between">
-        <div class="font-semibold">${escapeHtml(ds.key)}</div>
-        <div class="text-xs ${ds.online ? 'text-emerald-600' : 'text-rose-600'}">${ds.online ? 'ONLINE' : 'OFFLINE'}</div>
-      </div>
-      <div class="mt-2 text-xs text-slate-500 break-all">${escapeHtml(ds.url)}</div>
-      <div class="mt-3 text-sm text-slate-600">连接池: ${ds.activeConnections}/${ds.maxPoolSize}，空闲 ${ds.idleConnections}</div>
-    </div>`).join('');
+  document.getElementById('dsRows').innerHTML = list.map(ds => `
+    <tr class="border-b border-slate-100">
+      <td class="px-3 py-3 font-medium">${escapeHtml(ds.key)}</td>
+      <td class="px-3 py-3">${escapeHtml(ds.name)}</td>
+      <td class="px-3 py-3">${escapeHtml(ds.datasourceType)}</td>
+      <td class="px-3 py-3 ${ds.online ? 'text-emerald-600' : 'text-rose-600'}">${ds.online ? 'ONLINE' : 'OFFLINE'}</td>
+      <td class="px-3 py-3">
+        <button onclick="removeDataSource('${escapeHtml(ds.key)}')" class="rounded-xl bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500">
+          删除
+        </button>
+      </td>
+    </tr>
+  `).join('');
+
+  const syncOptions = list
+    .filter(ds => ds.datasourceType !== 'HUB')
+    .map(ds => `<option value="${escapeHtml(ds.key)}">${escapeHtml(ds.name)} (${escapeHtml(ds.datasourceType)})</option>`)
+    .join('');
+  document.getElementById('syncDataSourceKey').innerHTML = syncOptions || '<option value="">暂无可同步数据源</option>';
 }
 
-async function registerAdhocDs() {
-  const key = 'adhoc_report_' + Date.now();
+async function saveDataSource(event) {
+  event.preventDefault();
+  const form = event.target;
   const body = {
-    key,
-    url: 'jdbc:h2:mem:' + key + ';DB_CLOSE_DELAY=-1;MODE=MySQL',
-    username: 'sa',
-    password: '',
-    driverClassName: 'org.h2.Driver',
+    key: form.key.value.trim(),
+    name: form.name.value.trim(),
+    datasourceType: form.datasourceType.value.trim(),
+    url: form.url.value.trim(),
+    username: form.username.value.trim(),
+    password: form.password.value.trim(),
+    driverClassName: 'com.mysql.cj.jdbc.Driver',
     maxPoolSize: 5,
     minIdle: 1
   };
   const res = await API.dsAdd(body);
   if (res.code === 0) {
-    toast('已注册 ' + key);
-    await refreshDataSources();
-  } else {
-    toast(res.message, 'error');
-  }
-}
-
-async function removeDataSource() {
-  const key = document.getElementById('removeDsKey').value.trim();
-  if (!key) {
-    toast('请先输入要下线的 key', 'warn');
+    toast('数据源已保存');
+    form.reset();
+    form.username.value = 'root';
+    form.password.value = 'root';
+    await Promise.all([loadSummary(), loadDataSources()]);
     return;
   }
+  toast(res.message || '保存失败', 'error');
+}
+
+async function removeDataSource(key) {
   const res = await API.dsRemove(key);
   if (res.code === 0) {
-    toast(key + ' 已下线');
-    document.getElementById('removeDsKey').value = '';
-    await refreshDataSources();
-  } else {
-    toast(res.message, 'error');
+    toast(key + ' 已删除');
+    await Promise.all([loadSummary(), loadDataSources()]);
+    return;
   }
+  toast(res.message || '删除失败', 'error');
+}
+
+async function syncData() {
+  const dataSourceKey = document.getElementById('syncDataSourceKey').value;
+  const pageSize = document.getElementById('pageSize').value || 2;
+  if (!dataSourceKey) {
+    toast('请先选择要同步的数据源', 'warn');
+    return;
+  }
+  const res = await API.sync(dataSourceKey, pageSize);
+  if (res.code !== 0) {
+    toast(res.message || '同步失败', 'error');
+    return;
+  }
+  renderJson('syncResult', res.data);
+  toast('同步完成');
+  await Promise.all([loadSummary(), loadTrades(), loadDataSources()]);
 }
 
 async function loadTrades() {
@@ -252,91 +232,13 @@ async function loadTrades() {
   const rows = res.data || [];
   document.getElementById('tradeRows').innerHTML = rows.map(row => `
     <tr class="border-b border-slate-100">
-      <td class="px-3 py-2">${row.GLOBAL_ID ?? row.global_id}</td>
-      <td class="px-3 py-2">${row.SOURCE_SYSTEM ?? row.source_system}</td>
-      <td class="px-3 py-2">${row.VENDOR_TRADE_NO ?? row.vendor_trade_no}</td>
-      <td class="px-3 py-2">${row.STATUS_NAME ?? row.status_name}</td>
-      <td class="px-3 py-2">${row.CLEAN_MODE ?? row.clean_mode}</td>
-    </tr>`).join('');
-}
-
-async function loadDicts() {
-  const res = await API.dictList();
-  const list = res.data || [];
-  document.getElementById('dictList').innerHTML = list.map(item => `
-    <div class="rounded-xl bg-slate-50 px-3 py-2">
-      <span class="font-semibold">${escapeHtml(item.DICT_TYPE ?? item.dict_type)}</span>
-      <span class="mx-2 text-slate-400">/</span>
-      <span>${escapeHtml(item.DICT_CODE ?? item.dict_code)}</span>
-      <span class="mx-2 text-slate-400">=</span>
-      <span>${escapeHtml(item.DICT_NAME ?? item.dict_name)}</span>
-    </div>`).join('');
-}
-
-async function loadMessages() {
-  const res = await API.messages();
-  const list = res.data || [];
-  document.getElementById('messageList').innerHTML = list.map(item => `
-    <div class="rounded-xl bg-slate-50 px-3 py-2">
-      <div class="font-semibold">${escapeHtml(item.TOPIC ?? item.topic)} - ${escapeHtml(String(item.MESSAGE_ID ?? item.message_id))}</div>
-      <div class="mt-1 text-xs text-slate-500">${escapeHtml(item.PAYLOAD ?? item.payload)}</div>
-    </div>`).join('');
-}
-
-async function runInitClean() {
-  const res = await API.etlInit();
-  renderJson('etlResult', res.data);
-  toast('初始化清洗完成');
-  await loadAll();
-}
-
-async function runRealtimeClean() {
-  const systemKey = document.getElementById('realtimeSystem').value;
-  const res = await API.etlRealtime(systemKey);
-  renderJson('etlResult', res.data);
-  toast(systemKey + ' 实时清洗完成');
-  await loadAll();
-}
-
-async function runTxDemo() {
-  const sourceSystem = document.getElementById('txSourceSystem').value;
-  const simulateFailure = document.getElementById('simulateFailure').checked;
-  const res = await API.tx(sourceSystem, simulateFailure);
-  renderJson('txResult', res.data);
-  toast('跨库协调事务已执行');
-}
-
-async function nextIds() {
-  const tag = document.getElementById('leafTag').value;
-  const count = document.getElementById('leafCount').value || 10;
-  const res = await API.nextIds(tag, count);
-  renderJson('leafResult', res.data);
-  await loadOverview();
-}
-
-async function saveDict(event) {
-  event.preventDefault();
-  const form = event.target;
-  const body = {
-    dictType: form.dictType.value.trim(),
-    dictCode: form.dictCode.value.trim(),
-    dictName: form.dictName.value.trim(),
-    dictDesc: form.dictDesc.value.trim()
-  };
-  const res = await API.dictSave(body);
-  if (res.code === 0) {
-    toast('字典已保存');
-    form.reset();
-    await loadDicts();
-  } else {
-    toast(res.message, 'error');
-  }
-}
-
-async function resetDemo() {
-  await API.reset();
-  toast('演示数据已重置');
-  await loadAll();
+      <td class="px-3 py-2">${row.globalId ?? row.GLOBAL_ID}</td>
+      <td class="px-3 py-2">${escapeHtml(row.sourceSystem ?? row.SOURCE_SYSTEM)}</td>
+      <td class="px-3 py-2">${escapeHtml(row.sourceType ?? row.SOURCE_TYPE)}</td>
+      <td class="px-3 py-2">${escapeHtml(row.vendorTradeNo ?? row.VENDOR_TRADE_NO)}</td>
+      <td class="px-3 py-2">${escapeHtml(row.statusName ?? row.STATUS_NAME)}</td>
+    </tr>
+  `).join('');
 }
 
 function card(title, value, desc) {
@@ -347,13 +249,9 @@ function card(title, value, desc) {
   </div>`;
 }
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 async function loadAll() {
   try {
-    await Promise.all([loadOverview(), refreshDataSources(), loadTrades(), loadDicts(), loadMessages()]);
+    await Promise.all([loadSummary(), loadDataSources(), loadTrades()]);
   } catch (e) {
     toast('加载失败: ' + e.message, 'error');
   }

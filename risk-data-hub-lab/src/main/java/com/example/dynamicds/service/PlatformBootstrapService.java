@@ -1,139 +1,193 @@
 package com.example.dynamicds.service;
 
+import com.example.dynamicds.config.HubDataSourceProperties;
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.datasource.RoutingJdbcExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
+@RequiredArgsConstructor
 public class PlatformBootstrapService {
 
-    public static final String DS_META = "meta_center";
-    public static final String DS_WAREHOUSE = "risk_warehouse";
-    public static final String DS_EQUITY = "trade_equity";
-    public static final String DS_FUTURES = "trade_futures";
-    public static final String DS_BOND = "trade_bond";
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final List<String> OMS_STATUSES = List.of("NEW", "DONE", "CANCEL");
+    private static final List<String> BROKER_STATUSES = List.of("A", "S", "X");
+
+    public static final String DS_HUB = "risk_hub";
+    public static final String DS_TRADE_OMS = "trade_oms";
+    public static final String DS_TRADE_BROKER = "trade_broker";
+
+    public static final String TYPE_HUB = "HUB";
+    public static final String TYPE_TRADE_OMS = "TRADE_OMS";
+    public static final String TYPE_TRADE_BROKER = "TRADE_BROKER";
 
     private final DynamicDataSourceManager manager;
     private final RoutingJdbcExecutor jdbcExecutor;
     private final LeafSegmentService leafSegmentService;
-
-    public PlatformBootstrapService(DynamicDataSourceManager manager,
-                                    RoutingJdbcExecutor jdbcExecutor,
-                                    LeafSegmentService leafSegmentService) {
-        this.manager = manager;
-        this.jdbcExecutor = jdbcExecutor;
-        this.leafSegmentService = leafSegmentService;
-    }
+    private final HubDataSourceProperties properties;
+    private final MarketstackService marketstackService;
 
     @PostConstruct
     public void init() {
-        ensureDataSource(DS_META, "元数据中心");
-        ensureDataSource(DS_WAREHOUSE, "风控底座");
-        ensureDataSource(DS_EQUITY, "股票交易");
-        ensureDataSource(DS_FUTURES, "期货交易");
-        ensureDataSource(DS_BOND, "债券交易");
+        log.info("[平台初始化] 开始自动创建 schema、注册数据源并加载初始股票数据");
+        ensureSchemas();
+        ensureDataSource(DS_HUB);
+        ensureDataSource(DS_TRADE_OMS);
+        ensureDataSource(DS_TRADE_BROKER);
         initializeSchema();
         resetDemoData();
+        log.info("[平台初始化] schema、表结构和初始股票数据准备完成");
     }
 
     public synchronized void resetDemoData() {
-        createMetaTables();
-        createWarehouseTables();
-        createTradeTables(DS_EQUITY);
-        createTradeTables(DS_FUTURES);
-        createTradeTables(DS_BOND);
-
-        jdbcExecutor.run(DS_META, jdbc -> {
-            jdbc.execute("delete from dict_item");
-            jdbc.execute("delete from leaf_alloc");
-            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values " +
-                    "('trade_status','0','待报','交易所回执前状态')," +
-                    "('trade_status','1','已报','订单已送交易所')," +
-                    "('trade_status','2','已成','成交完成')," +
-                    "('trade_status','9','废单','异常或撤单')," +
-                    "('counterparty','C001','中信证券','券商侧简称')," +
-                    "('counterparty','C002','国泰君安','券商侧简称')," +
-                    "('counterparty','C003','招商证券','券商侧简称')");
-            jdbc.update("insert into leaf_alloc(biz_tag, max_id, step, description) values " +
-                    "('clean_trade', 100000, 20, '清洗后交易主键')," +
-                    "('event_message', 500000, 50, '标准事件消息')," +
-                    "('tx_audit', 900000, 10, '跨库事务审计')");
-        });
-
-        jdbcExecutor.run(DS_WAREHOUSE, jdbc -> {
-            jdbc.execute("delete from clean_trade");
-            jdbc.execute("delete from event_message");
-            jdbc.execute("delete from tx_coordination_log");
-        });
-
-        seedTradeRows(DS_EQUITY, "EQT", "股票");
-        seedTradeRows(DS_FUTURES, "FUT", "期货");
-        seedTradeRows(DS_BOND, "BND", "债券");
+        log.info("[平台初始化] 开始重置演示数据");
+        initializeSchema();
+        initHubBaseData();
+        List<MarketstackService.StockSnapshot> snapshots = marketstackService.fetchLatestStocks();
+        seedTradeSystemsFromMarketData(snapshots);
         leafSegmentService.clearLocalCache();
+        log.info("[平台初始化] 演示数据重置完成，上游股票条数={}", snapshots.size());
     }
 
     public Map<String, Object> currentTopology() {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("metaCenter", DS_META);
-        map.put("warehouse", DS_WAREHOUSE);
-        map.put("tradeSystems", new String[]{DS_EQUITY, DS_FUTURES, DS_BOND});
+        map.put("hub", DS_HUB);
+        map.put("upstreams", List.of(
+                Map.of("key", DS_TRADE_OMS, "type", TYPE_TRADE_OMS, "table", "oms_trade_order"),
+                Map.of("key", DS_TRADE_BROKER, "type", TYPE_TRADE_BROKER, "table", "broker_trade_deal")
+        ));
         return map;
     }
 
-    private void initializeSchema() {
-        createMetaTables();
-        createWarehouseTables();
-        createTradeTables(DS_EQUITY);
-        createTradeTables(DS_FUTURES);
-        createTradeTables(DS_BOND);
+    private void ensureSchemas() {
+        HubDataSourceProperties.Item adminItem = properties.findRequired(properties.getDefaultKey());
+        String bootstrapUrl = toBootstrapUrl(adminItem.getUrl());
+        try (Connection connection = DriverManager.getConnection(
+                bootstrapUrl,
+                adminItem.getUsername(),
+                adminItem.getPassword());
+             Statement statement = connection.createStatement()) {
+            for (HubDataSourceProperties.Item item : properties.getItems()) {
+                String schemaName = extractSchemaName(item.getUrl());
+                statement.execute("create database if not exists `" + schemaName + "` default character set utf8mb4");
+                log.info("[平台初始化] schema 已确认存在 schemaName={}", schemaName);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("自动创建 schema 失败: " + e.getMessage(), e);
+        }
     }
 
-    private void ensureDataSource(String key, String poolAlias) {
+    private void initializeSchema() {
+        createHubTables();
+        createOmsTradeTables();
+        createBrokerTradeTables();
+    }
+
+    private void ensureDataSource(String key) {
         if (manager.exists(key)) {
             return;
         }
+        HubDataSourceProperties.Item item = properties.findRequired(key);
         DataSourceConfigDTO config = new DataSourceConfigDTO();
         config.setKey(key);
-        config.setUsername("sa");
-        config.setPassword("");
-        config.setDriverClassName("org.h2.Driver");
-        config.setPoolName("HikariPool-" + poolAlias);
-        config.setMaxPoolSize(8);
-        config.setMinIdle(1);
-        config.setUrl("jdbc:h2:mem:" + key + ";DB_CLOSE_DELAY=-1;MODE=MySQL");
+        config.setName(item.getName());
+        config.setDatasourceType(item.getDatasourceType());
+        config.setUsername(item.getUsername());
+        config.setPassword(item.getPassword());
+        config.setDriverClassName(item.getDriverClassName());
+        config.setPoolName("HikariPool-" + item.getName());
+        config.setMaxPoolSize(item.getMaxPoolSize());
+        config.setMinIdle(item.getMinIdle());
+        config.setConnectionTimeout(item.getConnectionTimeout());
+        config.setIdleTimeout(item.getIdleTimeout());
+        config.setMaxLifetime(item.getMaxLifetime());
+        config.setUrl(item.getUrl());
+        log.info("[平台初始化] 注册数据源 key={}, type={}, url={}", key, item.getDatasourceType(), item.getUrl());
         manager.register(config);
     }
 
-    private void createMetaTables() {
-        jdbcExecutor.run(DS_META, jdbc -> {
+    private void initHubBaseData() {
+        jdbcExecutor.run(DS_HUB, jdbc -> {
+            jdbc.execute("delete from dict_item");
+            jdbc.execute("delete from leaf_alloc");
+            jdbc.execute("delete from clean_trade");
+            jdbc.execute("delete from event_message");
+            jdbc.execute("delete from tx_coordination_log");
+
+            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values (?, ?, ?, ?)",
+                    "trade_status_oms", "NEW", "待确认", "交易系统A待确认状态");
+            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values (?, ?, ?, ?)",
+                    "trade_status_oms", "DONE", "已成交", "交易系统A成交完成");
+            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values (?, ?, ?, ?)",
+                    "trade_status_oms", "CANCEL", "已撤单", "交易系统A撤单状态");
+            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values (?, ?, ?, ?)",
+                    "trade_status_broker", "A", "待确认", "交易系统B待确认状态");
+            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values (?, ?, ?, ?)",
+                    "trade_status_broker", "S", "已成交", "交易系统B成交完成");
+            jdbc.update("insert into dict_item(dict_type, dict_code, dict_name, dict_desc) values (?, ?, ?, ?)",
+                    "trade_status_broker", "X", "已撤单", "交易系统B撤单状态");
+
+            jdbc.update("insert into leaf_alloc(biz_tag, max_id, step, description) values (?, ?, ?, ?)",
+                    "clean_trade", 100000L, 20, "中台标准交易主键");
+            jdbc.update("insert into leaf_alloc(biz_tag, max_id, step, description) values (?, ?, ?, ?)",
+                    "event_message", 500000L, 20, "同步事件主键");
+            jdbc.update("insert into leaf_alloc(biz_tag, max_id, step, description) values (?, ?, ?, ?)",
+                    "tx_audit", 900000L, 10, "事务审计主键");
+        });
+    }
+
+    private void seedTradeSystemsFromMarketData(List<MarketstackService.StockSnapshot> snapshots) {
+        jdbcExecutor.run(DS_TRADE_OMS, jdbc -> {
+            jdbc.execute("delete from oms_trade_order");
+            for (int i = 0; i < snapshots.size(); i++) {
+                insertOmsTradeSeed(jdbc, snapshots.get(i), i + 1);
+            }
+        });
+
+        jdbcExecutor.run(DS_TRADE_BROKER, jdbc -> {
+            jdbc.execute("delete from broker_trade_deal");
+            for (int i = 0; i < snapshots.size(); i++) {
+                insertBrokerTradeSeed(jdbc, snapshots.get(i), i + 1);
+            }
+        });
+    }
+
+    private void createHubTables() {
+        jdbcExecutor.run(DS_HUB, jdbc -> {
             jdbc.execute("create table if not exists dict_item (" +
-                    "id bigint auto_increment primary key," +
+                    "id bigint not null auto_increment primary key," +
                     "dict_type varchar(64) not null," +
                     "dict_code varchar(64) not null," +
                     "dict_name varchar(128) not null," +
                     "dict_desc varchar(256)," +
-                    "unique(dict_type, dict_code))");
+                    "unique key uk_dict_type_code(dict_type, dict_code))");
             jdbc.execute("create table if not exists leaf_alloc (" +
                     "biz_tag varchar(64) primary key," +
                     "max_id bigint not null," +
                     "step int not null," +
                     "description varchar(256))");
-        });
-    }
-
-    private void createWarehouseTables() {
-        jdbcExecutor.run(DS_WAREHOUSE, jdbc -> {
             jdbc.execute("create table if not exists clean_trade (" +
                     "global_id bigint primary key," +
                     "source_system varchar(64) not null," +
+                    "source_type varchar(32) not null," +
+                    "source_row_id bigint not null," +
                     "vendor_trade_no varchar(64) not null," +
                     "biz_type varchar(64) not null," +
                     "direction varchar(32) not null," +
@@ -148,7 +202,7 @@ public class PlatformBootstrapService {
                     "message_id bigint primary key," +
                     "topic varchar(64) not null," +
                     "biz_key varchar(128) not null," +
-                    "payload clob not null," +
+                    "payload text not null," +
                     "status varchar(32) not null," +
                     "created_at varchar(32) not null)");
             jdbc.execute("create table if not exists tx_coordination_log (" +
@@ -160,34 +214,88 @@ public class PlatformBootstrapService {
         });
     }
 
-    private void createTradeTables(String dataSourceKey) {
-        jdbcExecutor.run(dataSourceKey, jdbc -> jdbc.execute(
-                "create table if not exists raw_trade (" +
-                        "id bigint auto_increment primary key," +
-                        "vendor_trade_no varchar(64) not null," +
-                        "biz_type varchar(64) not null," +
-                        "direction_code varchar(8) not null," +
-                        "amount decimal(18,2) not null," +
-                        "status_code varchar(8) not null," +
-                        "counterparty_code varchar(16) not null," +
+    private void createOmsTradeTables() {
+        jdbcExecutor.run(DS_TRADE_OMS, jdbc -> jdbc.execute(
+                "create table if not exists oms_trade_order (" +
+                        "id bigint not null auto_increment primary key," +
+                        "order_no varchar(64) not null," +
+                        "investor_name varchar(64) not null," +
+                        "side_code varchar(8) not null," +
+                        "order_amount decimal(18,2) not null," +
+                        "trade_status varchar(32) not null," +
                         "trade_time varchar(32) not null," +
-                        "cleaned int default 0 not null)"));
+                        "sync_flag int default 0 not null)"));
     }
 
-    private void seedTradeRows(String ds, String prefix, String bizType) {
-        jdbcExecutor.run(ds, jdbc -> {
-            jdbc.execute("delete from raw_trade");
-            for (int i = 1; i <= 5; i++) {
-                jdbc.update("insert into raw_trade(vendor_trade_no, biz_type, direction_code, amount, status_code, counterparty_code, trade_time, cleaned) " +
-                                "values (?,?,?,?,?,?,?,0)",
-                        prefix + "-" + i,
-                        bizType,
-                        i % 2 == 0 ? "S" : "B",
-                        BigDecimal.valueOf(1000 + i * 137L),
-                        i % 4 == 0 ? "2" : String.valueOf(i % 3),
-                        "C00" + ((i % 3) + 1),
-                        LocalDateTime.now().minusMinutes(i).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            }
-        });
+    private void createBrokerTradeTables() {
+        jdbcExecutor.run(DS_TRADE_BROKER, jdbc -> jdbc.execute(
+                "create table if not exists broker_trade_deal (" +
+                        "id bigint not null auto_increment primary key," +
+                        "deal_code varchar(64) not null," +
+                        "client_full_name varchar(64) not null," +
+                        "bs_flag varchar(8) not null," +
+                        "turnover_amount decimal(18,2) not null," +
+                        "status_mark varchar(32) not null," +
+                        "deal_at varchar(32) not null," +
+                        "sync_flag int default 0 not null)"));
+    }
+
+    private void insertOmsTradeSeed(JdbcTemplate jdbc, MarketstackService.StockSnapshot snapshot, int index) {
+        jdbc.update("insert into oms_trade_order(order_no, investor_name, side_code, order_amount, trade_status, trade_time, sync_flag) values (?, ?, ?, ?, ?, ?, ?)",
+                "OMS-" + snapshot.getSymbol() + "-" + String.format("%03d", index),
+                "策略账户-" + snapshot.getSymbol(),
+                index % 2 == 0 ? "S" : "B",
+                resolveAmount(snapshot),
+                OMS_STATUSES.get(index % OMS_STATUSES.size()),
+                normalizeTradeTime(snapshot.getDate()),
+                0);
+    }
+
+    private void insertBrokerTradeSeed(JdbcTemplate jdbc, MarketstackService.StockSnapshot snapshot, int index) {
+        jdbc.update("insert into broker_trade_deal(deal_code, client_full_name, bs_flag, turnover_amount, status_mark, deal_at, sync_flag) values (?, ?, ?, ?, ?, ?, ?)",
+                "BRK-" + snapshot.getSymbol() + "-" + String.format("%03d", index),
+                "券商通道-" + snapshot.getSymbol(),
+                index % 2 == 0 ? "2" : "1",
+                resolveAmount(snapshot),
+                BROKER_STATUSES.get(index % BROKER_STATUSES.size()),
+                normalizeTradeTime(snapshot.getDate()),
+                0);
+    }
+
+    private BigDecimal resolveAmount(MarketstackService.StockSnapshot snapshot) {
+        BigDecimal price = snapshot.getClose() != null ? snapshot.getClose() : snapshot.getOpen();
+        if (price == null) {
+            return BigDecimal.valueOf(10000);
+        }
+        return price.multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String normalizeTradeTime(String marketstackDate) {
+        if (marketstackDate == null || marketstackDate.isBlank()) {
+            return LocalDateTime.now().format(FORMATTER);
+        }
+        String normalized = marketstackDate.replace('T', ' ');
+        return normalized.length() >= 19 ? normalized.substring(0, 19) : normalized;
+    }
+
+    private String extractSchemaName(String jdbcUrl) {
+        int queryIndex = jdbcUrl.indexOf('?');
+        String base = queryIndex >= 0 ? jdbcUrl.substring(0, queryIndex) : jdbcUrl;
+        int start = base.lastIndexOf('/') + 1;
+        if (start <= 0 || start >= base.length()) {
+            throw new IllegalArgumentException("无法从 JDBC URL 提取 schema: " + jdbcUrl);
+        }
+        return base.substring(start);
+    }
+
+    private String toBootstrapUrl(String originalUrl) {
+        int queryIndex = originalUrl.indexOf('?');
+        String base = queryIndex >= 0 ? originalUrl.substring(0, queryIndex) : originalUrl;
+        String query = queryIndex >= 0 ? originalUrl.substring(queryIndex) : "";
+        int slashAfterHost = base.indexOf('/', "jdbc:mysql://".length());
+        if (slashAfterHost < 0) {
+            return base + "/" + query;
+        }
+        return base.substring(0, slashAfterHost) + "/" + query;
     }
 }

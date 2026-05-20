@@ -1,36 +1,48 @@
 package com.example.dynamicds.service;
 
-import com.example.dynamicds.datasource.RoutingJdbcExecutor;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.dynamicds.datasource.RoutingMybatisExecutor;
+import com.example.dynamicds.entity.EventMessage;
+import com.example.dynamicds.mapper.EventMessageMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 
 @Service
+@Slf4j
+@RequiredArgsConstructor
 public class MessageOutboxService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private final RoutingJdbcExecutor jdbcExecutor;
+    private final RoutingMybatisExecutor routingMybatisExecutor;
     private final LeafSegmentService leafSegmentService;
-
-    public MessageOutboxService(RoutingJdbcExecutor jdbcExecutor, LeafSegmentService leafSegmentService) {
-        this.jdbcExecutor = jdbcExecutor;
-        this.leafSegmentService = leafSegmentService;
-    }
+    private final EventMessageMapper eventMessageMapper;
 
     public long publish(String topic, String bizKey, String payload) {
         long messageId = leafSegmentService.nextId("event_message");
-        jdbcExecutor.run(PlatformBootstrapService.DS_WAREHOUSE, jdbc -> jdbc.update(
-                "insert into event_message(message_id, topic, biz_key, payload, status, created_at) values (?,?,?,?,?,?)",
-                messageId, topic, bizKey, payload, "NEW", LocalDateTime.now().format(FORMATTER)));
+        log.info("[消息模块] 生成标准事件 messageId={}, topic={}, bizKey={}", messageId, topic, bizKey);
+        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
+            EventMessage message = new EventMessage();
+            message.setMessageId(messageId);
+            message.setTopic(topic);
+            message.setBizKey(bizKey);
+            message.setPayload(payload);
+            message.setStatus("NEW");
+            message.setCreatedAt(LocalDateTime.now().format(FORMATTER));
+            eventMessageMapper.insert(message);
+        });
         return messageId;
     }
 
-    public List<Map<String, Object>> recentMessages() {
-        return jdbcExecutor.query(PlatformBootstrapService.DS_WAREHOUSE, jdbc ->
-                jdbc.queryForList("select message_id, topic, biz_key, status, created_at, payload from event_message order by message_id desc limit 20"));
+    public List<EventMessage> recentMessages() {
+        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB,
+                () -> eventMessageMapper.selectList(new LambdaQueryWrapper<EventMessage>()
+                        .orderByDesc(EventMessage::getMessageId)
+                        .last("limit 20")));
     }
 }

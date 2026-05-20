@@ -4,19 +4,17 @@ import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.dto.ApiResult;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
 import com.example.dynamicds.dto.DataSourceVO;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/datasource")
+@RequiredArgsConstructor
 public class DataSourceController {
 
     private final DynamicDataSourceManager manager;
-
-    public DataSourceController(DynamicDataSourceManager manager) {
-        this.manager = manager;
-    }
 
     /** 查询所有已注册数据源及其连接池状态 */
     @GetMapping
@@ -39,6 +37,12 @@ public class DataSourceController {
     public ApiResult<Void> register(@RequestBody DataSourceConfigDTO config) {
         if (config.getKey() == null || config.getKey().isBlank()) {
             return ApiResult.fail(400, "key 不能为空");
+        }
+        if (config.getName() == null || config.getName().isBlank()) {
+            return ApiResult.fail(400, "name 不能为空");
+        }
+        if (config.getDatasourceType() == null || config.getDatasourceType().isBlank()) {
+            return ApiResult.fail(400, "datasourceType 不能为空");
         }
         if (config.getUrl() == null || config.getUrl().isBlank()) {
             return ApiResult.fail(400, "url 不能为空");

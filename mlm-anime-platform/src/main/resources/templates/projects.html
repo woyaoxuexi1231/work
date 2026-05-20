@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>项目列表 - MLM</title>
+    <th:block th:replace="~{fragments :: head}"></th:block>
+</head>
+<body>
+    <th:block th:replace="~{fragments :: nav}"></th:block>
+    <main class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-white">项目列表</h1>
+            <button onclick="showCreateModal()" class="btn-glass text-white px-4 py-2 rounded-lg font-medium">
+                + 新建项目
+            </button>
+        </div>
+
+        <!-- 项目列表卡片 -->
+        <div id="projectList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="col-span-full text-center text-gray-500 py-8">加载中...</div>
+        </div>
+
+        <!-- 新建项目弹窗 -->
+        <div id="createModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="glass p-6 w-96">
+                <h2 class="text-xl font-bold text-white mb-4">新建项目</h2>
+                <input id="projectName" class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white mb-3" placeholder="项目名称">
+                <div class="flex items-center gap-2 mb-4">
+                    <input type="checkbox" id="useResource" onchange="toggleResource()" class="accent-indigo-500">
+                    <label for="useResource" class="text-gray-400 text-sm">从资源库创建</label>
+                </div>
+                <div id="resourcePicker" class="hidden mb-4">
+                    <select id="resourceId" class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white">
+                        <option value="">选择资源...</option>
+                    </select>
+                </div>
+                <div class="flex gap-3 justify-end">
+                    <button onclick="hideCreateModal()" class="px-4 py-2 text-gray-400">取消</button>
+                    <button onclick="createProject()" class="btn-glass text-white px-4 py-2 rounded-lg">创建</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        async function loadProjects() {
+            const res = await fetch('/api/projects');
+            const data = await res.json();
+            const projects = data.data || [];
+            const el = document.getElementById('projectList');
+            if (projects.length === 0) {
+                el.innerHTML = '<div class="col-span-full text-center text-gray-500 py-8">暂无项目，点击右上角新建</div>';
+                return;
+            }
+            el.innerHTML = projects.map(p => `
+                <a href="/projects/${p.id}" class="glass p-5 glass-hover block no-underline">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-bold text-white">${p.name}</h3>
+                        <span class="text-xs text-gray-500">#${p.id}</span>
+                    </div>
+                    <div class="flex gap-4 text-sm text-gray-400">
+                        <span>📺 ${p.episodesCount || 0} 集</span>
+                        <span>✅ ${p.completedCount || 0} 集完成</span>
+                    </div>
+                    ${p.resourceId ? `<div class="mt-2 text-xs text-indigo-400">📎 引用资源 #${p.resourceId}</div>` : ''}
+                    <div class="mt-2 text-xs text-gray-500">${p.createdAt ? p.createdAt.substring(0, 10) : ''}</div>
+                </a>
+            `).join('');
+        }
+
+        function showCreateModal() {
+            document.getElementById('createModal').classList.remove('hidden');
+            loadResources();
+        }
+        function hideCreateModal() { document.getElementById('createModal').classList.add('hidden'); }
+        function toggleResource() {
+            document.getElementById('resourcePicker').classList.toggle('hidden');
+        }
+
+        async function loadResources() {
+            try {
+                const res = await fetch('/api/resources');
+                const data = await res.json();
+                const select = document.getElementById('resourceId');
+                (data.data || []).forEach(r => {
+                    const opt = document.createElement('option');
+                    opt.value = r.id;
+                    opt.textContent = r.name + ' (' + r.type + ')';
+                    select.appendChild(opt);
+                });
+            } catch (e) {}
+        }
+
+        async function createProject() {
+            const name = document.getElementById('projectName').value.trim();
+            if (!name) return alert('请输入项目名称');
+            const resourceId = document.getElementById('useResource').checked
+                ? document.getElementById('resourceId').value : '';
+
+            let url = `/api/projects?name=${encodeURIComponent(name)}`;
+            if (resourceId) url += `&resourceId=${resourceId}`;
+
+            await fetch(url, { method: 'POST' });
+            hideCreateModal();
+            document.getElementById('projectName').value = '';
+            loadProjects();
+        }
+
+        loadProjects();
+    </script>
+</body>
+</html>

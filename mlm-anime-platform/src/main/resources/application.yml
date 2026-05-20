@@ -1,0 +1,69 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: mlm-anime-platform
+
+  # MySQL
+  datasource:
+    url: jdbc:mysql://192.168.2.102:3306/mlm_anime?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
+
+  # Auto-execute schema.sql on startup
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+  # RabbitMQ
+  rabbitmq:
+    host: 192.168.2.102
+    port: 5672
+    username: admin
+    password: admin
+    listener:
+      simple:
+        concurrency: 1           # 单消费者保证顺序
+        max-concurrency: 1
+        prefetch: 1              # 每次只取一条
+        acknowledge-mode: manual # 手动ACK
+        retry:
+          enabled: false         # 关闭自动重试，由业务层控制
+
+  # Thymeleaf
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    cache: false
+
+# MyBatis-Plus
+mybatis-plus:
+  type-enums-package: com.mlm.common.enums
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      table-underline: true
+
+# MinIO
+minio:
+  endpoint: http://192.168.2.102:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket: mlm-resources
+
+# Pipeline config
+pipeline:
+  polling:
+    default-interval: 30
+    default-max-poll-count: 60
+  retry:
+    max-retries: 3
+
+#logging:
+#  level:
+#    com.mlm: DEBUG
