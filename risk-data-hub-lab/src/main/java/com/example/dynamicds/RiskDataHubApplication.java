@@ -25,9 +25,9 @@ import org.springframework.context.annotation.Bean;
 @SpringBootApplication
 @MapperScan("com.example.dynamicds.mapper")
 @EnableConfigurationProperties({HubDataSourceProperties.class})
-public class DynamicDatasourceApplication {
+public class RiskDataHubApplication {
     public static void main(String[] args) {
-        SpringApplication.run(DynamicDatasourceApplication.class, args);
+        SpringApplication.run(RiskDataHubApplication.class, args);
     }
 
     @Bean

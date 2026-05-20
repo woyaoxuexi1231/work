@@ -7,9 +7,6 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
-/**
- * 生成结果响应
- */
 @Data
 @Builder
 @NoArgsConstructor

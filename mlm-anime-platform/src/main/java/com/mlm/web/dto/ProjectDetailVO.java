@@ -9,9 +9,6 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
-/**
- * 项目详情响应
- */
 @Data
 @Builder
 @NoArgsConstructor

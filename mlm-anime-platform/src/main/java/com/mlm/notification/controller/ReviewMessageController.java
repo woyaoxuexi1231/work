@@ -32,7 +32,9 @@ public class ReviewMessageController {
 
     @PostMapping("/count")
     public ApiResult<NotificationCountVO> count() {
-        return ApiResult.ok(NotificationCountVO.builder().count(messageService.countUnread()).build());
+        NotificationCountVO vo = new NotificationCountVO();
+        vo.setCount(messageService.countUnread());
+        return ApiResult.ok(vo);
     }
 
     @PostMapping("/read")

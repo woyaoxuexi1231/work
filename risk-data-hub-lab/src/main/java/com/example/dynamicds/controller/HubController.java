@@ -1,10 +1,10 @@
 package com.example.dynamicds.controller;
 
 import com.example.dynamicds.dto.ApiResult;
-import com.example.dynamicds.dto.InitTaskVO;
 import com.example.dynamicds.dto.OverviewVO;
 import com.example.dynamicds.dto.SyncRequest;
-import com.example.dynamicds.dto.SyncTaskDTO;
+import com.example.dynamicds.entity.InitTask;
+import com.example.dynamicds.entity.SyncTask;
 import com.example.dynamicds.service.InitDataTaskService;
 import com.example.dynamicds.service.OverviewService;
 import com.example.dynamicds.service.SyncTaskService;
@@ -19,9 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 核心业务控制器 — 提供中台总览、初始化、同步触发、查询接口。
- * <p>
- * <b>接口风格：全部 POST + 请求体对象</b>，无路径参数、无 Query 参数。
+ * 核心业务控制器 — 全部 POST + 请求体对象。
  */
 @RestController
 @RequestMapping("/api/hub")
@@ -41,7 +39,7 @@ public class HubController {
     }
 
     @PostMapping("/init-data")
-    public ApiResult<InitTaskVO> initData() {
+    public ApiResult<InitTask> initData() {
         log.info("[控制层] 提交异步初始化任务");
         try {
             return ApiResult.ok(initDataTaskService.startTask(), "INIT_TASK_STARTED");
@@ -51,12 +49,12 @@ public class HubController {
     }
 
     @PostMapping("/init-task")
-    public ApiResult<InitTaskVO> initTask() {
+    public ApiResult<InitTask> initTask() {
         return ApiResult.ok(initDataTaskService.currentTask(), "INIT_TASK_STATUS");
     }
 
     @PostMapping("/sync")
-    public ApiResult<SyncTaskDTO> sync(@RequestBody SyncRequest request) {
+    public ApiResult<SyncTask> sync(@RequestBody SyncRequest request) {
         log.info("[控制层] 提交异步同步任务 dataSourceKey={}, pageSize={}", request.getDataSourceKey(), request.getPageSize());
         try {
             return ApiResult.ok(syncTaskService.startTask(request.getDataSourceKey(), request.getPageSize()), "SYNC_TASK_STARTED");
@@ -68,7 +66,7 @@ public class HubController {
     }
 
     @PostMapping("/sync-task")
-    public ApiResult<SyncTaskDTO> syncTask() {
+    public ApiResult<SyncTask> syncTask() {
         return ApiResult.ok(syncTaskService.currentTask(), "SYNC_TASK_STATUS");
     }
 

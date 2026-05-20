@@ -8,9 +8,6 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 中台总览响应对象
- */
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,8 +15,8 @@ import java.util.Map;
 public class OverviewVO {
     private String project;
     private String summary;
-    private List<String> topology;
-    private Map<String, Integer> businessTableStats;
+    private Map<String, Object> topology;
+    private Map<String, Object> businessTableStats;
     private Map<String, Integer> hubTableStats;
     private int datasourceCount;
     private int cleanTradeCount;

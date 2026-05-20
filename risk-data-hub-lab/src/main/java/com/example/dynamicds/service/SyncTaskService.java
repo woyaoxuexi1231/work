@@ -5,59 +5,58 @@ import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
 import com.example.dynamicds.dto.SyncResultDTO;
-import com.example.dynamicds.dto.SyncTaskDTO;
 import com.example.dynamicds.entity.SyncBusinessRecord;
 import com.example.dynamicds.entity.SyncTask;
 import com.example.dynamicds.mapper.SyncBusinessRecordMapper;
 import com.example.dynamicds.mapper.SyncTaskMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 同步任务服务 — 异步执行 ETL 同步，任务及业务记录持久化到数据库。
- * <p>
- * 流程：创建 sync_task → 插入 sync_business_record（RUNNING）→
- * 执行同步 → 更新 sync_business_record（SUCCESS/FAILED）→
- * 更新 sync_task → 全部成功则发 RabbitMQ 消息。
- */
-@Service
 @Slf4j
-@RequiredArgsConstructor
+@Service
 public class SyncTaskService {
 
+    private static final String LOCK_KEY = "risk-hub:sync:task:lock";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final ObjectMapper JSON = new ObjectMapper();
 
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicInteger currentProgress = new AtomicInteger(0);
-
+    private final RedissonClient redissonClient;
     private final TradeEtlService tradeEtlService;
     private final DynamicDataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final SyncTaskMapper syncTaskMapper;
     private final SyncBusinessRecordMapper syncBusinessRecordMapper;
     private final RabbitMqSender rabbitMqSender;
-    @Qualifier("syncTaskExecutor")
     private final ThreadPoolExecutor syncTaskExecutor;
 
-    /**
-     * 提交同步任务，写入 sync_task 表。
-     */
-    public SyncTaskDTO startTask(String dataSourceKey, int pageSize) {
+    public SyncTaskService(RedissonClient redissonClient,
+                           TradeEtlService tradeEtlService,
+                           DynamicDataSourceManager dataSourceManager,
+                           RoutingMybatisExecutor routingMybatisExecutor,
+                           SyncTaskMapper syncTaskMapper,
+                           SyncBusinessRecordMapper syncBusinessRecordMapper,
+                           RabbitMqSender rabbitMqSender,
+                           @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor) {
+        this.redissonClient = redissonClient;
+        this.tradeEtlService = tradeEtlService;
+        this.dataSourceManager = dataSourceManager;
+        this.routingMybatisExecutor = routingMybatisExecutor;
+        this.syncTaskMapper = syncTaskMapper;
+        this.syncBusinessRecordMapper = syncBusinessRecordMapper;
+        this.rabbitMqSender = rabbitMqSender;
+        this.syncTaskExecutor = syncTaskExecutor;
+    }
+
+    public SyncTask startTask(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
         if (config == null) {
             throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
@@ -65,10 +64,11 @@ public class SyncTaskService {
         if (PlatformBootstrapService.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
-        if (!running.compareAndSet(false, true)) {
+
+        RLock lock = redissonClient.getLock(LOCK_KEY);
+        if (!lock.tryLock()) {
             throw new IllegalStateException("已有同步任务正在运行");
         }
-        currentProgress.set(0);
 
         String taskId = UUID.randomUUID().toString();
         String now = now();
@@ -84,17 +84,15 @@ public class SyncTaskService {
         task.setPageSize(safePageSize);
         task.setSubmittedAt(now);
         task.setMessage("同步任务已提交");
+        task.setRunning(true);
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> syncTaskMapper.insert(task));
 
-        log.info("[同步任务] 提交 taskId={}, dataSourceKey={}, pageSize={}", taskId, dataSourceKey, safePageSize);
-        syncTaskExecutor.submit(() -> runTask(taskId, dataSourceKey, safePageSize, config.getName(), config.getDatasourceType()));
-        return toDTO(task);
+        log.info("[SyncTask] submit taskId={}, dataSourceKey={}, pageSize={}", taskId, dataSourceKey, safePageSize);
+        syncTaskExecutor.submit(() -> runTask(taskId, dataSourceKey, safePageSize, config.getName(), config.getDatasourceType(), lock));
+        return task;
     }
 
-    /**
-     * 查询最新的同步任务（按 id 降序取第一条）。
-     */
-    public SyncTaskDTO currentTask() {
+    public SyncTask currentTask() {
         SyncTask task = routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () ->
                 syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
                         .orderByDesc(SyncTask::getId)
@@ -104,26 +102,22 @@ public class SyncTaskService {
             idle.setStatus("IDLE");
             idle.setProgress(0);
             idle.setMessage("暂无同步任务");
-            return toDTO(idle);
+            idle.setRunning(false);
+            return idle;
         }
-        // 同步内存中的进度到数据库
-        if ("RUNNING".equals(task.getStatus())) {
-            task.setProgress(currentProgress.get());
-        }
-        return toDTO(task);
+        task.setRunning("QUEUED".equals(task.getStatus()) || "RUNNING".equals(task.getStatus()));
+        return task;
     }
 
     private void runTask(String taskId, String dataSourceKey, int pageSize,
-                         String dataSourceName, String datasourceType) {
+                         String dataSourceName, String datasourceType, RLock lock) {
         try {
-            // → RUNNING
-            updateTask(taskId, "RUNNING", now(), null, null, null, null, 0, 0, 0);
+            updateTask(taskId, "RUNNING", now(), null, null, null, 0, 0, 0);
 
-            // 执行同步（带进度回调）
             SyncResultDTO result = tradeEtlService.syncByDataSource(
-                    dataSourceKey, pageSize, currentProgress::set);
+                    dataSourceKey, pageSize, p -> {
+                    });
 
-            // 解析业务结果并写入 sync_business_record
             int totalPulled = 0;
             int totalSaved = 0;
 
@@ -132,7 +126,6 @@ public class SyncTaskService {
                 String bizCode = entry.getKey();
                 com.example.dynamicds.sync.SyncSupport.BusinessSyncResult bizResult = entry.getValue();
 
-                // 写入业务同步记录
                 SyncBusinessRecord record = new SyncBusinessRecord();
                 record.setTaskId(taskId);
                 record.setBusinessCode(bizCode);
@@ -150,24 +143,23 @@ public class SyncTaskService {
                 totalSaved += bizResult.getSavedCount();
             }
 
-            // → SUCCESS
-            String resultJson = toJson(result);
-            updateTask(taskId, "SUCCESS", null, resultJson, "同步任务完成", null, now(),
+            updateTask(taskId, "SUCCESS", null, "同步任务完成", null, now(),
                     totalPulled, totalSaved, 100);
-            log.info("[同步任务] 执行完成 taskId={}, 拉取总数={}, 落库总数={}", taskId, totalPulled, totalSaved);
+            log.info("[SyncTask] done taskId={}, pulled={}, saved={}", taskId, totalPulled, totalSaved);
 
-            // 发 RabbitMQ 消息
             rabbitMqSender.sendSyncCompleted(taskId, dataSourceKey, datasourceType, totalPulled, totalSaved);
         } catch (Exception e) {
-            updateTask(taskId, "FAILED", null, null, "同步任务失败", e.getMessage(), now(), 0, 0, currentProgress.get());
-            log.error("[同步任务] 执行失败 taskId={}", taskId, e);
+            updateTask(taskId, "FAILED", null, "同步任务失败", e.getMessage(), now(), 0, 0, 0);
+            log.error("[SyncTask] failed taskId={}", taskId, e);
         } finally {
-            running.set(false);
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
     }
 
     private void updateTask(String taskId, String status, String startedAt,
-                            String resultJson, String message, String errorMessage,
+                            String message, String errorMessage,
                             String finishedAt, int totalPulled, int totalSaved, Integer progress) {
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
             SyncTask task = syncTaskMapper.selectOne(
@@ -175,7 +167,6 @@ public class SyncTaskService {
             if (task == null) return;
             task.setStatus(status);
             if (startedAt != null) task.setStartedAt(startedAt);
-            if (resultJson != null) task.setResult(resultJson);
             if (message != null) task.setMessage(message);
             if (errorMessage != null) task.setErrorMessage(errorMessage);
             if (finishedAt != null) task.setFinishedAt(finishedAt);
@@ -184,35 +175,6 @@ public class SyncTaskService {
             if (progress != null) task.setProgress(progress);
             syncTaskMapper.updateById(task);
         });
-    }
-
-    private SyncTaskDTO toDTO(SyncTask task) {
-        boolean isRunning = "QUEUED".equals(task.getStatus()) || "RUNNING".equals(task.getStatus());
-        return new SyncTaskDTO(
-                task.getTaskId(),
-                task.getStatus(),
-                task.getProgress() != null ? task.getProgress() : 0,
-                task.getDataSourceKey(),
-                task.getDataSourceName(),
-                task.getDatasourceType(),
-                task.getPageSize(),
-                task.getTotalPulledCount(),
-                task.getTotalSavedCount(),
-                task.getSubmittedAt(),
-                task.getStartedAt(),
-                task.getFinishedAt(),
-                task.getMessage(),
-                task.getErrorMessage(),
-                isRunning
-        );
-    }
-
-    private String toJson(Object obj) {
-        try {
-            return JSON.writeValueAsString(obj);
-        } catch (JsonProcessingException e) {
-            return "{}";
-        }
     }
 
     private String now() {

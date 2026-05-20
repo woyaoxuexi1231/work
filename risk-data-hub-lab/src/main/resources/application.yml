@@ -6,11 +6,17 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
   rabbitmq:
-    host: 127.0.0.1
+    host: 192.168.2.102
     port: 5672
-    username: guest
-    password: guest
+    username: admin
+    password: admin
     virtual-host: /
+  data:
+    redis:
+      host: 192.168.2.102
+      port: 6379
+      password: 123456
+
 
 server:
   port: 8501
