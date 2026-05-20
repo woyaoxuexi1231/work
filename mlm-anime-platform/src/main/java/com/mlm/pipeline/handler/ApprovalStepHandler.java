@@ -36,7 +36,7 @@ public class ApprovalStepHandler implements StepHandler {
     @Override
     public void handle(Episode episode) {
         episodeMapper.updateStatus(episode.getId(),
-            EpisodeStatus.EPISODE_APPROVAL.name(), EpisodeStatus.EPISODE_APPROVAL.name(), StepStatus.PENDING.name());
+            EpisodeStatus.EPISODE_APPROVAL.getCode(), EpisodeStatus.EPISODE_APPROVAL.getCode(), StepStatus.PENDING.getCode());
 
         // 插入终审消息
         ReviewMessage msg = new ReviewMessage();

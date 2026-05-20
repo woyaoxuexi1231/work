@@ -1,59 +1,56 @@
 package com.mlm.pipeline.engine;
 
 import com.mlm.common.enums.EpisodeStatus;
-import java.util.Map;
+import java.util.List;
 import java.util.Set;
 
 /**
- * Pipeline 状态机 — 定义剧集状态的合法流转路径（每集独立）
+ * Pipeline 状态机 — 定义剧集状态的合法流转路径（按值）
  * <p>
- * 主线流转（自动推进）：
+ * 主线流转：
  * <pre>
- * SCRIPT_DRAFT → SCRIPT_REVIEW → STORYBOARD → GENERATING → EPISODE_APPROVAL → COMPLETED
+ * 2(剧本创作) → 3(审核) → 4(拆分镜) → 5(AI成片) → 6(终审) → 7(完成)
  * </pre>
- * 驳回路径（人工操作）：
+ * 驳回：
  * <pre>
- * SCRIPT_REVIEW → SCRIPT_DRAFT    （剧本驳回，退回重写）
- * EPISODE_APPROVAL → GENERATING   （成片终审驳回，退回重做）
+ * 3 → 2 (剧本驳回)  |  6 → 5 (终审驳回)
  * </pre>
  */
 public class StateMachine {
 
-    /** 正常流转: 当前状态 → 下一个状态 */
-    private static final Map<EpisodeStatus, EpisodeStatus> TRANSITIONS = Map.of(
-        EpisodeStatus.SCRIPT_DRAFT,      EpisodeStatus.SCRIPT_REVIEW,
-        EpisodeStatus.SCRIPT_REVIEW,     EpisodeStatus.STORYBOARD,
-        EpisodeStatus.STORYBOARD,        EpisodeStatus.GENERATING,
-        EpisodeStatus.GENERATING,        EpisodeStatus.EPISODE_APPROVAL,
-        EpisodeStatus.EPISODE_APPROVAL,  EpisodeStatus.COMPLETED
+    private static final List<EpisodeStatus> ORDER = List.of(
+        EpisodeStatus.SCRIPT_DRAFT,      // 2
+        EpisodeStatus.SCRIPT_REVIEW,     // 3
+        EpisodeStatus.STORYBOARD,        // 4
+        EpisodeStatus.GENERATING,        // 5
+        EpisodeStatus.EPISODE_APPROVAL,  // 6
+        EpisodeStatus.COMPLETED          // 7
     );
 
-    /** 允许的驳回路径 */
-    private static final Set<Map.Entry<EpisodeStatus, EpisodeStatus>> REJECTIONS = Set.of(
-        Map.entry(EpisodeStatus.SCRIPT_REVIEW,    EpisodeStatus.SCRIPT_DRAFT),
-        Map.entry(EpisodeStatus.EPISODE_APPROVAL, EpisodeStatus.GENERATING)
+    private static final Set<Pair> REJECTIONS = Set.of(
+        new Pair(EpisodeStatus.SCRIPT_REVIEW, EpisodeStatus.SCRIPT_DRAFT),
+        new Pair(EpisodeStatus.EPISODE_APPROVAL, EpisodeStatus.GENERATING)
     );
 
-    /**
-     * 获取下一个合法状态
-     *
-     * @param current 当前状态
-     * @return 下一步状态
-     */
+    /** 获取下一步，不需要外抛异常了（状态机内部可判） */
     public static EpisodeStatus next(EpisodeStatus current) {
-        EpisodeStatus next = TRANSITIONS.get(current);
-        if (next == null) {
+        if (current == EpisodeStatus.COMPLETED || current == EpisodeStatus.FAILED) {
             throw new IllegalStateException("当前状态无法流转: " + current);
         }
-        return next;
+        int idx = ORDER.indexOf(current);
+        if (idx < 0 || idx == ORDER.size() - 1) {
+            throw new IllegalStateException("当前状态无法流转: " + current);
+        }
+        return ORDER.get(idx + 1);
     }
 
-    /**
-     * 校验从 from 到 to 的跳转是否合法
-     */
     public static boolean canTransition(EpisodeStatus from, EpisodeStatus to) {
-        EpisodeStatus expectedNext = TRANSITIONS.get(from);
-        if (expectedNext == to) return true;
-        return REJECTIONS.contains(Map.entry(from, to));
+        EpisodeStatus expected = ORDER.indexOf(from) < ORDER.size() - 1
+            ? ORDER.get(ORDER.indexOf(from) + 1) : null;
+        if (expected == to) return true;
+        return REJECTIONS.contains(new Pair(from, to));
     }
+
+    /** 简单 pair，内部使用 */
+    private record Pair(EpisodeStatus from, EpisodeStatus to) {}
 }

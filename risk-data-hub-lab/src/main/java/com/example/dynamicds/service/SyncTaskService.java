@@ -1,10 +1,13 @@
 package com.example.dynamicds.service;
 
+import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
+import com.example.dynamicds.sync.SyncSupport.SyncProgress;
 import jakarta.annotation.PreDestroy;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -12,8 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -24,27 +26,23 @@ public class SyncTaskService {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final TradeEtlService tradeEtlService;
-    private final com.example.dynamicds.datasource.DynamicDataSourceManager dataSourceManager;
+    private final DynamicDataSourceManager dataSourceManager;
+    @Qualifier("syncTaskExecutor")
+    private final ThreadPoolExecutor syncTaskExecutor;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "risk-hub-sync-task");
-        thread.setDaemon(true);
-        return thread;
-    });
     private final AtomicBoolean running = new AtomicBoolean(false);
-
     private volatile SyncTaskSnapshot currentTask = SyncTaskSnapshot.idle();
 
     public Map<String, Object> startTask(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
         if (config == null) {
-            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
+            throw new IllegalArgumentException("Data source not found: " + dataSourceKey);
         }
         if (PlatformBootstrapService.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
-            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
+            throw new IllegalArgumentException("Hub datasource cannot be used as sync source: " + dataSourceKey);
         }
         if (!running.compareAndSet(false, true)) {
-            throw new IllegalStateException("当前已有同步任务运行中，同一时间只能有一条");
+            throw new IllegalStateException("Another sync task is already running");
         }
 
         SyncTaskSnapshot snapshot = new SyncTaskSnapshot();
@@ -53,12 +51,14 @@ public class SyncTaskService {
         snapshot.setDataSourceKey(dataSourceKey);
         snapshot.setDataSourceName(config.getName());
         snapshot.setDatasourceType(config.getDatasourceType());
-        snapshot.setPageSize(Math.max(1, Math.min(pageSize, 200)));
+        snapshot.setPageSize(Math.max(1, Math.min(pageSize, 500)));
         snapshot.setSubmittedAt(now());
-        snapshot.setMessage("同步任务已提交，等待后台执行");
+        snapshot.setMessage("Sync task submitted");
         currentTask = snapshot;
 
-        executor.submit(() -> runTask(snapshot));
+        log.info("[SyncTask] submitted taskId={}, dataSourceKey={}, pageSize={}",
+                snapshot.getTaskId(), snapshot.getDataSourceKey(), snapshot.getPageSize());
+        syncTaskExecutor.submit(() -> runTask(snapshot));
         return toMap(currentTask);
     }
 
@@ -70,9 +70,9 @@ public class SyncTaskService {
         try {
             snapshot.setStatus("RUNNING");
             snapshot.setStartedAt(now());
-            snapshot.setMessage("同步任务执行中");
+            snapshot.setMessage("Sync task is running");
             currentTask = snapshot;
-            log.info("[同步任务] 开始执行 taskId={}, dataSourceKey={}, pageSize={}",
+            log.info("[SyncTask] started taskId={}, dataSourceKey={}, pageSize={}",
                     snapshot.getTaskId(), snapshot.getDataSourceKey(), snapshot.getPageSize());
 
             Map<String, Object> result = tradeEtlService.syncByDataSource(
@@ -83,28 +83,47 @@ public class SyncTaskService {
             snapshot.setStatus("SUCCESS");
             snapshot.setFinishedAt(now());
             snapshot.setResult(result);
-            snapshot.setMessage("同步任务执行完成");
+            snapshot.setMessage("Sync task finished");
             currentTask = snapshot;
-            log.info("[同步任务] 执行完成 taskId={}, savedCount={}", snapshot.getTaskId(), snapshot.getSavedCount());
+            log.info("[SyncTask] finished taskId={}, savedCount={}", snapshot.getTaskId(), snapshot.getSavedCount());
         } catch (Exception e) {
             snapshot.setStatus("FAILED");
             snapshot.setFinishedAt(now());
             snapshot.setErrorMessage(e.getMessage());
-            snapshot.setMessage("同步任务执行失败");
+            snapshot.setMessage("Sync task failed");
             currentTask = snapshot;
-            log.error("[同步任务] 执行失败 taskId={}, message={}", snapshot.getTaskId(), e.getMessage(), e);
+            log.error("[SyncTask] failed taskId={}, message={}", snapshot.getTaskId(), e.getMessage(), e);
         } finally {
             running.set(false);
         }
     }
 
-    private void updateProgress(SyncTaskSnapshot snapshot, TradeEtlService.SyncProgress progress) {
-        snapshot.setPageCount(progress.getPageNo());
-        snapshot.setPulledCount(progress.getPulledCount());
-        snapshot.setSavedCount(progress.getSavedCount());
+    private void updateProgress(SyncTaskSnapshot snapshot, SyncProgress progress) {
+        snapshot.getBusinessProgress().put(progress.getBusinessCode(), progress.toMap());
+        int totalPageCount = 0;
+        int totalPulledCount = 0;
+        int totalSavedCount = 0;
+        for (Object value : snapshot.getBusinessProgress().values()) {
+            if (!(value instanceof Map<?, ?> business)) {
+                continue;
+            }
+            totalPageCount += readInt(business.get("pageNo"));
+            totalPulledCount += readInt(business.get("pulledCount"));
+            totalSavedCount += readInt(business.get("savedCount"));
+        }
+        snapshot.setPageCount(totalPageCount);
+        snapshot.setPulledCount(totalPulledCount);
+        snapshot.setSavedCount(totalSavedCount);
         snapshot.setLastRowId(progress.getLastRowId());
-        snapshot.setMessage("同步任务执行中，第 " + progress.getPageNo() + " 页已完成");
+        snapshot.setMessage("Running " + progress.getBusinessCode() + " stage=" + progress.getStage());
         currentTask = snapshot;
+    }
+
+    private int readInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
     }
 
     private Map<String, Object> toMap(SyncTaskSnapshot snapshot) {
@@ -125,6 +144,7 @@ public class SyncTaskService {
         result.put("message", snapshot.getMessage());
         result.put("errorMessage", snapshot.getErrorMessage());
         result.put("running", "QUEUED".equals(snapshot.getStatus()) || "RUNNING".equals(snapshot.getStatus()));
+        result.put("businessProgress", snapshot.getBusinessProgress());
         result.put("result", snapshot.getResult());
         return result;
     }
@@ -135,7 +155,7 @@ public class SyncTaskService {
 
     @PreDestroy
     public void shutdown() {
-        executor.shutdownNow();
+        syncTaskExecutor.shutdown();
     }
 
     @Data
@@ -155,12 +175,13 @@ public class SyncTaskService {
         private String finishedAt;
         private String message;
         private String errorMessage;
+        private Map<String, Object> businessProgress = new LinkedHashMap<>();
         private Map<String, Object> result;
 
         private static SyncTaskSnapshot idle() {
             SyncTaskSnapshot snapshot = new SyncTaskSnapshot();
             snapshot.setStatus("IDLE");
-            snapshot.setMessage("当前没有运行中的同步任务");
+            snapshot.setMessage("No sync task is running");
             return snapshot;
         }
     }

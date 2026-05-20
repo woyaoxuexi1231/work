@@ -41,6 +41,7 @@
                 </div>
             </div>
             <div class="flex gap-2">
+                <button id="visibilityBtn" onclick="toggleVisibility()" class="text-white px-3 py-2 rounded-lg text-sm hidden"></button>
                 <button onclick="showAddEpisodeModal()" class="btn-glass text-white px-3 py-2 rounded-lg text-sm">+ 添加剧集</button>
             </div>
         </div>
@@ -97,14 +98,19 @@
     <script>
         const PROJECT_ID = [[${projectId}]];
         const STEPS = [
-            { key: 'SCRIPT_DRAFT', label: '剧本创作', icon: '📝' },
-            { key: 'SCRIPT_REVIEW', label: '剧本审核', icon: '🔍' },
-            { key: 'STORYBOARD', label: '拆分镜', icon: '🎬' },
-            { key: 'GENERATING', label: 'AI成片', icon: '🤖' },
-            { key: 'EPISODE_APPROVAL', label: '终审', icon: '✅' },
-            { key: 'COMPLETED', label: '已完成', icon: '🏁' }
+            { key: 2, label: '剧本创作', icon: '📝' },
+            { key: 3, label: '剧本审核', icon: '🔍' },
+            { key: 4, label: '拆分镜', icon: '🎬' },
+            { key: 5, label: 'AI成片', icon: '🤖' },
+            { key: 6, label: '终审', icon: '✅' },
+            { key: 7, label: '已完成', icon: '🏁' }
         ];
         const STEP_KEYS = STEPS.map(s => s.key);
+        const STATUS_COMPLETED = 7;
+        const STATUS_SCRIPT_DRAFT = 2;
+        const STATUS_SCRIPT_REVIEW = 3;
+        const STATUS_GENERATING = 5;
+        const STATUS_EPISODE_APPROVAL = 6;
         let currentEpisodeId = null;
 
         async function loadProject() {
@@ -122,16 +128,26 @@
                 document.getElementById('resourceId').textContent = project.resourceId;
             }
 
+            // 可见性按钮
+            const vb = document.getElementById('visibilityBtn');
+            const vLabel = project.isPublic ? '🌍 公开' : '🔒 私有';
+            const vColor = project.isPublic ? 'border border-green-500/30 text-green-400' : 'border border-amber-500/30 text-amber-400';
+            vb.className = vColor + ' px-3 py-1.5 rounded-lg text-xs';
+            vb.textContent = vLabel;
+
+            // 仅创建者显示切换按钮
+            fetch('/api/auth/me').then(r => r.json()).then(d => {
+                if (d.data && d.data.id === project.createdBy) {
+                    vb.classList.remove('hidden');
+                    vb.onclick = toggleVisibility;
+                }
+            }).catch(() => {});
+
             renderEpisodes(episodes);
         }
 
         function renderEpisodes(episodes) {
             const el = document.getElementById('episodeList');
-            if (episodes.length === 0) {
-                el.innerHTML = '<div class="text-center text-gray-500 py-8">暂无剧集，点击右上角添加</div>';
-                return;
-            }
-
             if (episodes.length === 0) {
                 el.innerHTML = `
                     <div class="glass p-8 text-center">
@@ -145,8 +161,8 @@
 
             el.innerHTML = episodes.map(ep => {
                 const currentIdx = STEP_KEYS.indexOf(ep.status);
-                const isCompleted = ep.status === 'COMPLETED';
-                const isFailed = ep.stepStatus === 'FAILED';
+                const isCompleted = ep.status === STATUS_COMPLETED;
+                const isFailed = ep.stepStatus === -1;
 
                 return `
                     <div class="glass p-4 episode-card">
@@ -154,7 +170,7 @@
                             <div class="flex items-center gap-3">
                                 <span class="text-lg font-bold text-white">第 ${ep.episodeNumber} 集</span>
                                 <span class="text-gray-400">${ep.title || ''}</span>
-                                <span class="status-badge status-${isFailed ? 'failed' : ep.status.toLowerCase()}">
+                                <span class="status-badge ${isFailed ? 'status-failed' : 'status-draft'}">
                                     ${isFailed ? '失败' : (STEPS[currentIdx]?.label || ep.status)}
                                 </span>
                             </div>
@@ -185,24 +201,29 @@
         }
 
         function renderActions(ep) {
-            const isFailed = ep.stepStatus === 'FAILED';
-            const isPending = ep.stepStatus === 'PENDING';
-            const isCompleted = ep.status === 'COMPLETED';
+            const isFailed = ep.stepStatus === -1;
+            const isPending = ep.stepStatus === 0;
+            const isCompleted = ep.status === STATUS_COMPLETED;
 
             if (isCompleted) return '<span class="text-xs text-green-400">✅ 已完成</span>';
 
             let html = '';
 
-            if (ep.status === 'SCRIPT_DRAFT' && isPending) {
+            // GENERATING：进入生成工作台
+            if (ep.status === STATUS_GENERATING) {
+                html += `<a href="/projects/${PROJECT_ID}/episodes/${ep.id}/generate" class="btn-glass text-white px-2 py-1 rounded text-xs no-underline">🤖 进入生成工作台</a>`;
+            }
+
+            if (ep.status === STATUS_SCRIPT_DRAFT && isPending) {
                 html += `<button onclick="openScriptModal(${ep.id}, ${ep.episodeNumber})" class="btn-glass text-white px-2 py-1 rounded text-xs">✏️ 写剧本</button>`;
             }
 
-            if (ep.status === 'SCRIPT_REVIEW' && isPending) {
+            if (ep.status === STATUS_SCRIPT_REVIEW && isPending) {
                 html += `<button onclick="approveScript(${ep.id})" class="btn-success text-white px-2 py-1 rounded text-xs">✅ 通过</button>`;
                 html += `<button onclick="rejectScript(${ep.id})" class="btn-danger text-white px-2 py-1 rounded text-xs">❌ 驳回</button>`;
             }
 
-            if (ep.status === 'EPISODE_APPROVAL' && isPending) {
+            if (ep.status === STATUS_EPISODE_APPROVAL && isPending) {
                 html += `<button onclick="approveEpisode(${ep.id})" class="btn-success text-white px-2 py-1 rounded text-xs">✅ 终审通过</button>`;
                 html += `<button onclick="rejectEpisode(${ep.id})" class="btn-danger text-white px-2 py-1 rounded text-xs">❌ 驳回</button>`;
             }
@@ -212,6 +233,35 @@
             }
 
             return html || '<span class="text-xs text-gray-500">处理中...</span>';
+        }
+
+        // 查看成片弹窗
+        async function showResults(episodeId) {
+            try {
+                const res = await fetch(`/api/projects/${PROJECT_ID}/episodes/${episodeId}/results`);
+                const data = await res.json();
+                const imgs = data.data || [];
+                let html = '<div class="grid grid-cols-2 gap-3">';
+                imgs.forEach(img => {
+                    html += `<div class="text-center"><img src="${img.url}" class="rounded-lg" onerror="this.src='https://via.placeholder.com/960x540?text='+encodeURIComponent(img.label)"/><div class=\"text-xs text-gray-400 mt-1\">${img.label}</div></div>`;
+                });
+                html += '</div>';
+                showModal('🖼 成片预览', html);
+            } catch(e) {}
+        }
+
+        function showModal(title, bodyHtml) {
+            let modal = document.getElementById('resultsModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'resultsModal';
+                modal.className = 'hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+                modal.innerHTML = `<div class="glass p-6 w-[800px] max-w-[95vw]"><h2 id="modalTitle" class="text-xl font-bold text-white mb-4"></h2><div id="modalBody"></div><div class="mt-4 text-right"><button onclick="document.getElementById('resultsModal').classList.add('hidden')" class="px-4 py-2 text-gray-400">关闭</button></div></div>`;
+                document.body.appendChild(modal);
+            }
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalBody').innerHTML = bodyHtml;
+            modal.classList.remove('hidden');
         }
 
         // ---- Actions ----
@@ -274,6 +324,12 @@
             hideAddEpisodeModal();
             document.getElementById('newEpisodeTitle').value = '';
             document.getElementById('newEpisodeNumber').value = '';
+            loadProject();
+        }
+
+        // ---- 可见性切换 ----
+        async function toggleVisibility() {
+            await fetch(`/api/projects/${PROJECT_ID}/toggle-visibility`, { method: 'POST' });
             loadProject();
         }
 

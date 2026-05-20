@@ -1,35 +1,54 @@
--- MLM 动漫平台 数据库建表脚本
+-- MLM 动漫平台 数据库建表脚本（int 编码状态）
 
--- 项目表（容器，不走 Pipeline）
+-- 用户表
+CREATE TABLE IF NOT EXISTS mlm_user (
+    id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username    VARCHAR(50)  NOT NULL UNIQUE COMMENT '用户名',
+    password    VARCHAR(100) NOT NULL COMMENT '密码',
+    role        VARCHAR(20)  DEFAULT 'USER' COMMENT '角色',
+    INDEX idx_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+-- 项目表
 CREATE TABLE IF NOT EXISTS project (
     id           BIGINT PRIMARY KEY AUTO_INCREMENT,
     name         VARCHAR(200)  NOT NULL COMMENT '项目名称',
-    resource_id  BIGINT        COMMENT '可选的引用资源ID（从资源库创建时）',
+    resource_id  BIGINT        COMMENT '引用资源ID',
     episodes_count     INT     DEFAULT 0 COMMENT '总集数',
     completed_count    INT     DEFAULT 0 COMMENT '已完成集数',
+    created_by   BIGINT        COMMENT '创建者用户ID',
+    is_public    TINYINT       DEFAULT 1 COMMENT '是否公开',
     created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目表';
 
--- 剧集表（每集独立走 Pipeline）
+-- 项目阶段负责人表
+CREATE TABLE IF NOT EXISTS project_stage_member (
+    id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+    project_id  BIGINT NOT NULL COMMENT '项目ID',
+    stage       INT    NOT NULL COMMENT '阶段(2=剧本创作,3=剧本审核,4=拆分镜,5=AI成片,6=终审)',
+    user_id     BIGINT NOT NULL COMMENT '负责人用户ID',
+    UNIQUE KEY uk_project_stage (project_id, stage)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目阶段负责人';
+
+-- 剧集表
 CREATE TABLE IF NOT EXISTS episode (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     project_id      BIGINT        NOT NULL COMMENT '所属项目ID',
     episode_number  INT           NOT NULL COMMENT '集号',
     title           VARCHAR(200)  COMMENT '本集标题',
-    status          VARCHAR(30)   NOT NULL DEFAULT 'SCRIPT_DRAFT' COMMENT 'Pipeline主状态',
-    step_status     VARCHAR(30)   NOT NULL DEFAULT 'PENDING' COMMENT '当前步骤子状态',
+    status          INT           NOT NULL DEFAULT 2 COMMENT 'Pipeline主状态(-1失败,0初始,1成功,2=剧本创作,3=审核,4=拆分镜,5=AI成片,6=终审,7=完成)',
+    step_status     INT           NOT NULL DEFAULT 0 COMMENT '步骤子状态(-1失败,0待处理,1成功,2处理中)',
     script_content  TEXT          COMMENT '剧本内容',
     storyboard_content TEXT       COMMENT '分镜JSON',
     result_resource_id BIGINT    COMMENT '成片资源ID',
     error_msg       VARCHAR(500)  COMMENT '失败原因',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_project (project_id),
-    INDEX idx_project_episode (project_id, episode_number)
+    INDEX idx_project (project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='剧集表';
 
--- 生成任务表（关联 episode 而非 project）
+-- 生成任务表
 CREATE TABLE IF NOT EXISTS task (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     episode_id      BIGINT        NOT NULL COMMENT '所属剧集ID',
@@ -37,7 +56,7 @@ CREATE TABLE IF NOT EXISTS task (
     model_type      VARCHAR(30)   NOT NULL COMMENT '模型类型',
     vendor          VARCHAR(30)   NOT NULL COMMENT '厂商标识',
     vendor_task_id  VARCHAR(100)  COMMENT '厂商任务ID',
-    status          VARCHAR(30)   NOT NULL DEFAULT 'PENDING' COMMENT '任务状态',
+    status          INT           NOT NULL DEFAULT 0 COMMENT '任务状态(-1失败,0待处理,1成功,2处理中)',
     request_json    TEXT          COMMENT '请求参数JSON',
     result_json     TEXT          COMMENT '结果JSON',
     poll_count      INT           DEFAULT 0 COMMENT '已轮询次数',
@@ -75,13 +94,13 @@ CREATE TABLE IF NOT EXISTS resource (
     created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='资源表';
 
--- 审核消息表（取代 MQ，纯数据库通知）
+-- 审核消息表
 CREATE TABLE IF NOT EXISTS review_message (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     episode_id      BIGINT        NOT NULL COMMENT '关联剧集ID',
     project_id      BIGINT        NOT NULL COMMENT '关联项目ID',
     episode_number  INT           COMMENT '集号',
-    type            VARCHAR(30)   NOT NULL COMMENT '消息类型: SCRIPT_REVIEW/EPISODE_REVIEW',
+    type            VARCHAR(30)   NOT NULL COMMENT '消息类型',
     title           VARCHAR(200)  COMMENT '消息标题',
     content         TEXT          COMMENT '消息正文',
     is_read         TINYINT       DEFAULT 0 COMMENT '是否已读',

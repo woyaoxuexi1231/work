@@ -29,6 +29,14 @@ public class PageController {
         return "project-detail";
     }
 
+    /** AI 成片生成工作台 */
+    @GetMapping("/projects/{pid}/episodes/{eid}/generate")
+    public String generatePage(@PathVariable Long pid, @PathVariable Long eid, Model model) {
+        model.addAttribute("projectId", pid);
+        model.addAttribute("episodeId", eid);
+        return "generate";
+    }
+
     /** 资源库页 */
     @GetMapping("/resources")
     public String resources() { return "resources"; }

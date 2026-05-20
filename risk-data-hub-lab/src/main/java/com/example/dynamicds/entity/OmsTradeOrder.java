@@ -1,0 +1,25 @@
+package com.example.dynamicds.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+@Data
+@TableName("oms_trade_order")
+public class OmsTradeOrder {
+    @TableId(type = IdType.AUTO)
+    private Long id;
+    private String orderNo;
+    private String stockCode;
+    private String investorName;
+    private String sideCode;
+    private Long tradeQty;
+    private BigDecimal tradePrice;
+    private BigDecimal orderAmount;
+    private String tradeStatus;
+    private String tradeTime;
+    private Integer syncFlag;
+}
