@@ -65,7 +65,7 @@ async function fetchResources() {
       resourceList.value = res.data || []
     }
   } catch (e) {
-    // 静默失败
+    console.error('[ProjectList] fetchResources failed:', e)
   }
 }
 

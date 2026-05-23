@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>ReentrantReadWriteLock 实现原理 · 读写锁深度剖析 | 大厂面试必备</title>
+    <!-- Tailwind CSS + Font Awesome + Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+        body { background: linear-gradient(145deg, #f7fafc 0%, #edf2f7 100%); }
+        .card-hover { transition: all 0.2s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.12); }
+        .code-block { background: #1e293b; border-radius: 1rem; padding: 1rem; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; overflow-x: auto; }
+        .interview-badge { background: #ffedd5; color: #b45309; border-radius: 9999px; font-size: 0.7rem; padding: 0.2rem 0.7rem; font-weight: 600; }
+        .step-item { border-left: 3px solid #3b82f6; padding-left: 1rem; margin-bottom: 0.75rem; }
+        .state-bits { background: #f1f5f9; border-radius: 1rem; padding: 0.75rem; font-family: monospace; }
+    </style>
+</head>
+<body class="antialiased">
+
+<div class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <!-- 头部 -->
+    <div class="text-center mb-10">
+        <div class="inline-flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 shadow-sm mb-4">
+            <i class="fab fa-java text-red-500 text-sm"></i>
+            <span class="text-xs font-medium text-gray-700">JUC · 读写锁</span>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-slate-800 to-teal-700 bg-clip-text text-transparent tracking-tight">
+            ReentrantReadWriteLock 实现原理
+        </h1>
+        <p class="text-gray-600 max-w-2xl mx-auto mt-3 text-base md:text-lg">
+            读锁共享 · 写锁独占 · 32位 state 拆分 · 锁降级 · 公平与非公平策略
+        </p>
+    </div>
+
+    <!-- 核心概念卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+            <div class="flex items-center gap-3 mb-3"><i class="fas fa-object-group text-2xl text-blue-600"></i><h2 class="text-xl font-bold">state 拆分设计</h2></div>
+            <p class="text-sm text-gray-700">AQS 的 <span class="font-mono bg-gray-100 px-1">state</span> 是 32 位 int，高 16 位表示读锁重入次数（共享计数），低 16 位表示写锁重入次数（独占计数）。通过 <span class="font-mono">c >>> 16</span> 获取读计数，<span class="font-mono">c & 0xFFFF</span> 获取写计数。</p>
+            <div class="mt-2 text-xs text-gray-500">面试要点：为什么用 32 位？单个锁重入深度理论 65535，足够实际应用。</div>
+        </div>
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+            <div class="flex items-center gap-3 mb-3"><i class="fas fa-book-open text-2xl text-emerald-600"></i><h2 class="text-xl font-bold">读锁 · 共享模式</h2></div>
+            <ul class="text-sm space-y-1 list-disc pl-4">
+                <li>共享锁，多个线程可同时持有</li>
+                <li>每个线程维护自己的读锁重入计数（ThreadLocal HoldCounter）</li>
+                <li>获取条件：无写锁且无写请求（或公平策略下不插队）</li>
+            </ul>
+        </div>
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+            <div class="flex items-center gap-3 mb-3"><i class="fas fa-pen-fancy text-2xl text-rose-600"></i><h2 class="text-xl font-bold">写锁 · 独占模式</h2></div>
+            <ul class="text-sm space-y-1 list-disc pl-4">
+                <li>独占锁，同一时刻只有一个线程能获取</li>
+                <li>获取条件：无读锁 && 无其他写锁</li>
+                <li>支持重入（低16位计数）</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========== state 位域示意图 ========== -->
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-gray-200 mb-12">
+        <div class="flex items-center gap-3 mb-4"><i class="fas fa-microchip text-2xl text-indigo-600"></i><h2 class="text-2xl font-bold">📐 32 位 state 结构图</h2><span class="interview-badge">核心设计</span></div>
+        <div class="bg-slate-100 rounded-xl p-4 text-center">
+            <div class="flex flex-wrap justify-center gap-0 text-sm font-mono">
+                <div class="bg-blue-200 p-2 rounded-l-lg border-r border-white w-1/2 text-center"><span class="font-bold">高16位：读锁计数 (shared count)</span><br>每次读锁重入 +1，支持最多 65535</div>
+                <div class="bg-rose-200 p-2 rounded-r-lg w-1/2 text-center"><span class="font-bold">低16位：写锁计数 (exclusive count)</span><br>写锁重入次数，最多 65535</div>
+            </div>
+            <div class="text-xs text-gray-600 mt-3">示例：state = (读计数 << 16) + 写计数。通过 <span class="font-mono">sharedCount(c)</span> 和 <span class="font-mono">exclusiveCount(c)</span> 快速分解。</div>
+        </div>
+        <div class="mt-4 text-sm text-gray-700"><i class="fas fa-lightbulb text-yellow-500"></i> 面试金句：读写锁用一个原子 int 同时管理两种锁状态，避免了额外的字段或锁竞争，是 AQS 精巧设计的典范。</div>
+    </div>
+
+    <!-- ========== 读写锁获取/释放流程图 ========== -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <!-- 写锁获取流程 -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+            <div class="bg-gradient-to-r from-rose-700 to-rose-800 px-5 py-3 text-white flex items-center gap-2"><i class="fas fa-lock"></i><span class="font-bold">写锁获取 (tryAcquire) 逻辑</span><span class="ml-auto text-xs bg-rose-600 px-2 py-0.5 rounded-full">独占模式</span></div>
+            <div class="p-5 space-y-3 text-sm">
+                <div class="step-item">1️⃣ 获取当前 state 和写锁计数。如果 state != 0，进入下一步；否则尝试 CAS 直接获取写锁。</div>
+                <div class="step-item">2️⃣ 如果写锁计数为 0 但有读锁（state≠0 且写计数=0），则获取失败（读锁优先于写锁，避免写饥饿）。</div>
+                <div class="step-item">3️⃣ 如果写锁计数不为 0，判断当前线程是否是写锁持有者：是则重入（state + 1），否则失败。</div>
+                <div class="step-item">4️⃣ 非公平模式下直接 CAS 竞争；公平模式下需检查队列中是否有前驱节点，有则失败排队。</div>
+                <div class="mt-2 bg-rose-50 p-2 rounded-lg text-xs font-mono">关键源码：if (w == 0 && current != getExclusiveOwnerThread()) return false;  // 读锁存在时阻塞写锁</div>
+            </div>
+        </div>
+        <!-- 读锁获取流程 -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+            <div class="bg-gradient-to-r from-blue-700 to-blue-800 px-5 py-3 text-white flex items-center gap-2"><i class="fas fa-book"></i><span class="font-bold">读锁获取 (tryAcquireShared) 逻辑</span><span class="ml-auto text-xs bg-blue-600 px-2 py-0.5 rounded-full">共享模式</span></div>
+            <div class="p-5 space-y-3 text-sm">
+                <div class="step-item">1️⃣ 如果写锁被其他线程持有，则获取失败（写锁排他）。</div>
+                <div class="step-item">2️⃣ 如果当前线程持有写锁，允许获取读锁（锁降级的关键）。</div>
+                <div class="step-item">3️⃣ 检查是否需要阻塞（公平模式下队列有等待者则阻塞，非公平模式可能会让读锁插队）。</div>
+                <div class="step-item">4️⃣ CAS 更新高16位 (读计数+1)，成功则记录 HoldCounter（线程本地重入计数），失败则重试。</div>
+                <div class="mt-2 bg-blue-50 p-2 rounded-lg text-xs font-mono">注意：每个线程读锁重入数存在 ThreadLocal 中，不占用 state 高16位（state高16位是总读锁重入次数）。</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 锁降级详解 (重点) ========== -->
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 md:p-6 border border-gray-200 mb-12">
+        <div class="flex items-center gap-3 flex-wrap mb-4"><i class="fas fa-arrow-down text-2xl text-amber-600"></i><h2 class="text-2xl font-bold">⬇️ 锁降级 (Lock Downgrade)</h2><span class="interview-badge">超高频面试题</span></div>
+        <p class="text-gray-700 text-sm mb-4">锁降级是指 <strong>写锁 → 读锁</strong> 的转换：当前线程持有写锁，再获取读锁，然后释放写锁，最终降级为读锁。这种机制允许在写操作后继续持有读锁，保证数据可见性，避免其他写线程干扰。</p>
+        <div class="bg-amber-50 rounded-xl p-4 border-l-4 border-amber-500">
+            <div class="font-mono text-xs whitespace-pre-wrap">
+                // 标准锁降级代码示例
+                ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+                rwl.writeLock().lock();  // 获取写锁
+                try {
+                // 修改数据...
+                rwl.readLock().lock(); // 获取读锁 (降级)
+                } finally {
+                rwl.writeLock().unlock(); // 释放写锁，此时降级为读锁
+                }
+                // 继续持有读锁进行后续读操作
+                try {
+                // 读取数据...
+                } finally {
+                rwl.readLock().unlock();
+                }
+            </div>
+            <p class="text-xs text-gray-600 mt-2">⚠️ 注意：不支持锁升级（读锁 → 写锁），因为读锁被多个线程持有时，升级为写锁会造成死锁风险。</p>
+        </div>
+        <div class="mt-4 text-sm text-gray-700"><i class="fas fa-question-circle"></i> 面试追问：锁降级的价值？保证写操作之后的数据一致性，避免释放写锁后其他写线程修改导致读数据不一致。常见于缓存读写场景。</div>
+    </div>
+
+    <!-- ========== 公平与非公平策略对比 ========== -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-200">
+            <div class="flex items-center gap-2 mb-3"><i class="fas fa-balance-scale text-green-600"></i><h3 class="text-lg font-bold">公平读写锁</h3></div>
+            <ul class="text-sm space-y-1 list-disc pl-4">
+                <li>线程按照请求顺序获取锁，避免写饥饿</li>
+                <li>读锁和写锁都遵循 FIFO 队列</li>
+                <li>性能相对非公平稍低，但公平性有保障</li>
+                <li>实现：调用 <span class="font-mono">hasQueuedPredecessors()</span> 检查队列中是否有等待更久的线程</li>
+            </ul>
+        </div>
+        <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-200">
+            <div class="flex items-center gap-2 mb-3"><i class="fas fa-tachometer-alt text-orange-600"></i><h3 class="text-lg font-bold">非公平读写锁</h3></div>
+            <ul class="text-sm space-y-1 list-disc pl-4">
+                <li>写锁、读锁均可插队，提高吞吐量</li>
+                <li>可能导致写线程长时间等待（写饥饿）</li>
+                <li>读锁插队：如果队列头节点不是写锁等待，读锁可以直接获取</li>
+                <li>默认策略，适用于读多写少、短暂竞争场景</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========== 重入计数原理 + HoldCounter 机制 ========== -->
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-gray-200 mb-12">
+        <div class="flex items-center gap-3 mb-4"><i class="fas fa-redo-alt text-2xl text-purple-600"></i><h2 class="text-2xl font-bold">重入计数：state 低位 + ThreadLocal HoldCounter</h2></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+                <h3 class="font-semibold text-indigo-800">写锁重入</h3>
+                <p class="text-sm text-gray-700 mt-1">写锁重入次数直接记录在 state 低 16 位，因为写锁是独占的，一个线程可多次重入，释放时逐次递减。</p>
+                <div class="code-block text-xs mt-2">state += 1;   // 每次重入增加写计数</div>
+            </div>
+            <div>
+                <h3 class="font-semibold text-indigo-800">读锁重入</h3>
+                <p class="text-sm text-gray-700 mt-1">每个线程的读锁重入数通过 <span class="font-mono">HoldCounter</span> 存储于 ThreadLocal，state 高16位记录全局读锁重入总数（便于快速判断有无读锁）。</p>
+                <div class="code-block text-xs mt-2">// 每个线程的 HoldCounter 缓存读重入次数<br>static final class HoldCounter {<br>    int count; long tid;<br>}</div>
+            </div>
+        </div>
+        <div class="mt-4 text-xs text-gray-500"><i class="fas fa-info-circle"></i> 为什么要分离？因为读锁是共享的，如果每个线程的重入次数都占用 state 位会导致状态爆炸。ThreadLocal 方式高效且准确。</div>
+    </div>
+
+    <!-- ========== 锁释放流程 ========== -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-200">
+            <div class="flex items-center gap-2 mb-3"><i class="fas fa-unlock-alt text-rose-600"></i><h3 class="text-lg font-bold">写锁释放 tryRelease</h3></div>
+            <p class="text-sm">将 state 低16位减1，若写计数变为0则释放独占锁，设置 exclusiveOwnerThread = null，并返回 true。然后唤醒 AQS 队列中的后继节点。</p>
+            <div class="mt-2 text-xs font-mono bg-gray-50 p-2 rounded">int nextc = getState() - releases; if (exclusiveCount(nextc) == 0) { setExclusiveOwnerThread(null); } setState(nextc);</div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-200">
+            <div class="flex items-center gap-2 mb-3"><i class="fas fa-people-arrows text-blue-600"></i><h3 class="text-lg font-bold">读锁释放 tryReleaseShared</h3></div>
+            <p class="text-sm">state 高16位减1，同时当前线程的 HoldCounter 计数减1（若减至0则移除）。如果读计数变为0，表示无任何读锁持有，返回 true 可能唤醒等待的写锁。</p>
+            <div class="mt-2 text-xs font-mono bg-gray-50 p-2 rounded">int c = getState(); int nextc = c - (1 << 16); if (nextc < 0) throw ...; // 同时清理 HoldCounter</div>
+        </div>
+    </div>
+
+    <!-- ========== 经典面试题集锦 ========== -->
+    <div class="mb-12">
+        <div class="flex items-center gap-3 mb-6"><i class="fas fa-star-of-life text-2xl text-rose-500"></i><h2 class="text-2xl font-bold text-gray-800">🔥 大厂高频面试题 · ReentrantReadWriteLock 专项</h2></div>
+        <div class="space-y-5">
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-indigo-500 shadow-sm">
+                <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-indigo-800">Q1：读写锁为什么能同时提高并发性能？底层如何保证读-写互斥？</span><span class="interview-badge">必问</span></div>
+                <p class="text-sm text-gray-700 mt-2">读写锁允许多个读线程并发，提高读多写少场景的吞吐量。互斥通过 AQS 的 state 区分：写锁获取时必须判断读锁计数为0且无其他写锁；读锁获取时必须判断写锁未被其他线程持有。底层使用 <span class="font-mono">CAS</span> 更新 state 实现原子性检查和修改。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-emerald-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-emerald-800">Q2：什么是锁降级？ReentrantReadWriteLock 支持锁升级吗？为什么？</span><span class="interview-badge">核心</span></div>
+                <p class="text-sm text-gray-700 mt-2">锁降级是写锁→读锁的过程，支持。但锁升级（读→写）不支持，因为如果有多个读线程同时持有读锁，任何线程尝试获取写锁都会导致死锁（互相等待释放读锁）。JVM 无法安全实现锁升级，会直接死锁或抛异常。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-amber-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-amber-800">Q3：读写锁的公平/非公平模式下，读锁插队行为有何不同？</span><span class="interview-badge">细节</span></div>
+                <p class="text-sm text-gray-700 mt-2">非公平读锁可以插队：如果当前同步队列头节点不是写锁等待线程，则读锁可直接获取，导致写锁饥饿。公平模式下，读锁必须排队，即使没有写锁等待也要遵循 FIFO，避免写饥饿。因此公平读写锁更适用需要严格公平的场景。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-rose-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-rose-800">Q4：读写锁如何避免写线程饿死？</span></div>
+                <p class="text-sm text-gray-700 mt-2">JDK 非公平读写锁存在写饥饿风险，但可以通过 <span class="font-mono">fair=true</span> 公平模式避免。此外，内部实现中，如果队列头节点是写锁等待，新的读锁无法插队（会排队），这也是缓解写饥饿的一种设计。推荐读多写少且允许短暂写饥饿时使用非公平，写频率较高时用公平。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-sky-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-sky-800">Q5：读写锁的重入计数如何实现？HoldCounter 的作用？</span></div>
+                <p class="text-sm text-gray-700 mt-2">写锁重入用 state 低16位。读锁重入需要记录每个线程的读锁重入次数，因为读锁是共享的且一个线程可能多次重入，若只用 state 高16位无法区分线程。因此通过 <span class="font-mono">ThreadLocal&lt;HoldCounter&gt;</span> 存储每个线程的重入数，HoldCounter 还缓存了线程ID以优化性能。释放时减少对应计数。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-purple-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-purple-800">Q6：ReentrantReadWriteLock 与 StampedLock 的区别？</span><span class="interview-badge">进阶</span></div>
+                <p class="text-sm text-gray-700 mt-2">StampedLock 提供乐观读锁，在读多写极少场景性能更高，但不支持重入，且不支持条件变量。ReentrantReadWriteLock 支持重入、公平性选择、锁降级，API 简单。面试中可提及 StampedLock 的乐观读避免了写锁阻塞读的问题，但重入不足。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 源码关键片段与总结 ========== -->
+    <div class="bg-gradient-to-r from-slate-800 to-teal-800 rounded-2xl p-6 text-white shadow-xl">
+        <div class="flex items-center gap-2 mb-3"><i class="fas fa-code text-2xl"></i><h3 class="text-xl font-bold">源码级核心方法摘要</h3></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-mono">
+            <div class="bg-black/30 p-2 rounded">
+                <span class="text-green-300">// 读锁获取共享锁</span><br>
+                protected final int tryAcquireShared(int unused) {<br>
+                &nbsp;&nbsp;Thread current = Thread.currentThread();<br>
+                &nbsp;&nbsp;int c = getState();<br>
+                &nbsp;&nbsp;if (exclusiveCount(c) != 0 &amp;&amp;<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;getExclusiveOwnerThread() != current)<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return -1; // 写锁被其他线程持有<br>
+                &nbsp;&nbsp;... // 计数更新
+                }
+            </div>
+            <div class="bg-black/30 p-2 rounded">
+                <span class="text-green-300">// 写锁获取独占锁</span><br>
+                protected final boolean tryAcquire(int acquires) {<br>
+                &nbsp;&nbsp;int c = getState(); int w = exclusiveCount(c);<br>
+                &nbsp;&nbsp;if (c != 0) {<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;if (w == 0 || current != getExclusiveOwnerThread())<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;<br>
+                &nbsp;&nbsp;}<br>
+                &nbsp;&nbsp;... // CAS 更新
+                }
+            </div>
+        </div>
+        <div class="mt-4 text-xs text-gray-300 border-t border-teal-600 pt-3"><i class="fas fa-graduation-cap"></i> 总结：ReentrantReadWriteLock 通过巧妙的 state 拆分、AQS 共享/独占模式融合，提供了读并发、写互斥的高性能锁机制。掌握其设计有助于理解大部分并发容器底层原理。</div>
+    </div>
+
+    <!-- 页脚 -->
+    <div class="text-center text-xs text-gray-500 border-t border-gray-300 pt-6 mt-8 flex flex-wrap justify-center gap-4">
+        <span><i class="fab fa-java"></i> java.util.concurrent.locks.ReentrantReadWriteLock</span>
+        <span><i class="fas fa-chart-simple"></i> 读共享 · 写独占 · 锁降级 · state 位域拆分</span>
+        <span><i class="fas fa-check-circle"></i> 面试深度覆盖：公平性、重入计数、HoldCounter</span>
+    </div>
+</div>
+</body>
+</html>
