@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Java synchronized 锁升级 | Mark Word 64位全景演变</title>
+    <!-- Tailwind CSS + Font Awesome + Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #f0f4fa 0%, #e2eaf5 100%);
+        }
+        .card-hover {
+            transition: all 0.25s ease-in-out;
+        }
+        .card-hover:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 25px 35px -12px rgba(0, 0, 0, 0.15);
+        }
+        .markword-bit-bar {
+            transition: all 0.2s ease;
+        }
+        .tooltip-hover {
+            position: relative;
+            cursor: help;
+        }
+        .tooltip-hover:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #f1f5f9;
+            font-size: 0.7rem;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 0.2rem 0.6rem;
+            border-radius: 0.5rem;
+            white-space: nowrap;
+            z-index: 20;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            pointer-events: none;
+        }
+        .bit-segment {
+            transition: transform 0.1s ease;
+        }
+        .bit-segment:hover {
+            transform: scaleY(1.05);
+            filter: brightness(0.98);
+        }
+        @media (max-width: 768px) {
+            .markword-row {
+                flex-wrap: wrap;
+            }
+            .bit-label {
+                font-size: 0.6rem;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+<div class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <!-- 页眉区域 -->
+    <div class="text-center mb-12">
+        <div class="inline-flex items-center gap-2 bg-white/60 backdrop-blur-sm rounded-full px-4 py-1.5 shadow-sm mb-4">
+            <i class="fas fa-lock text-blue-600 text-sm"></i>
+            <span class="text-xs font-medium text-gray-700 tracking-wide">JVM 并发基石 · 对象头深度解析</span>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent tracking-tight">
+            synchronized 锁升级 & Mark Word 演变
+        </h1>
+        <p class="text-gray-600 max-w-2xl mx-auto mt-4 text-base md:text-lg">
+            无锁 → 偏向锁 → 轻量级锁 → 重量级锁 · 64位对象头字段复用与bit位全景变化
+        </p>
+    </div>
+
+    <!-- ================= 锁升级卡片 (原有，优化样式) ================= -->
+    <div class="flex flex-wrap justify-center items-start gap-3 md:gap-5 relative mb-16">
+        <!-- 卡片1：无锁 -->
+        <div class="card-hover w-72 md:w-80 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/70 overflow-hidden">
+            <div class="bg-gradient-to-r from-gray-50 to-gray-100 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-unlock-alt text-gray-500 text-lg"></i>
+                    <h2 class="font-bold text-xl text-gray-800">无锁</h2>
+                </div>
+                <span class="text-xs font-mono bg-gray-200 px-2 py-1 rounded-full text-gray-700">No Lock</span>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="bg-blue-50/40 rounded-xl p-3 border border-blue-100">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-microchip text-blue-500 text-xs"></i>
+                        <span class="text-xs font-semibold text-blue-800 uppercase tracking-wider">Mark Word (64位示意)</span>
+                    </div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between items-center border-b border-blue-100 pb-1"><span class="font-medium text-gray-700">hashCode</span><span class="font-mono text-gray-600 text-xs">0x6AC3F2B1</span></div>
+                        <div class="flex justify-between items-center border-b border-blue-100 pb-1"><span class="font-medium text-gray-700">分代年龄 (age)</span><span class="font-mono text-gray-600 text-xs">0 (0000)</span></div>
+                        <div class="flex justify-between items-center border-b border-blue-100 pb-1"><span class="font-medium text-gray-700">biased_lock</span><span class="font-mono font-bold text-gray-800">0</span></div>
+                        <div class="flex justify-between items-center"><span class="font-medium text-gray-700">锁标志位 (lock)</span><span class="bg-gray-200 px-2 py-0.5 rounded-md font-mono font-bold text-gray-800">01</span></div>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="fas fa-info-circle text-blue-400 mr-1"></i> 对象哈希码 + 分代年龄，偏向位0，标志位01</div>
+                <div class="flex flex-wrap gap-2"><span class="badge-bit">lock:01</span><span class="badge-bit">biased:0</span><span class="badge-bit">age:4bit</span></div>
+            </div>
+        </div>
+        <div class="arrow-container flex flex-col items-center justify-center text-gray-500 mx-1 my-2 md:my-0"><i class="fas fa-arrow-right-long text-2xl md:text-3xl text-gray-400"></i><div class="text-center mt-2 max-w-[100px]"><span class="text-[11px] font-medium bg-white/70 px-2 py-0.5 rounded-full shadow-sm">偏向锁启用</span></div></div>
+        <!-- 卡片2：偏向锁 -->
+        <div class="card-hover w-72 md:w-80 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-indigo-200/80 overflow-hidden">
+            <div class="bg-gradient-to-r from-indigo-50 to-indigo-100 px-5 py-3 border-b border-indigo-200 flex items-center justify-between">
+                <div class="flex items-center gap-2"><i class="fas fa-hand-peace text-indigo-600 text-lg"></i><h2 class="font-bold text-xl text-indigo-800">偏向锁</h2></div>
+                <span class="text-xs font-mono bg-indigo-200 px-2 py-1 rounded-full text-indigo-800">Biased Lock</span>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="bg-indigo-50/40 rounded-xl p-3 border border-indigo-100">
+                    <div class="flex items-center gap-2 mb-2"><i class="fas fa-microchip text-indigo-500 text-xs"></i><span class="text-xs font-semibold text-indigo-800">Mark Word (偏向模式)</span></div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between items-center border-b border-indigo-100 pb-1"><span class="font-medium text-gray-700">偏向线程ID</span><span class="font-mono text-gray-600 text-xs">0x2A3F1C (Thread-1)</span></div>
+                        <div class="flex justify-between items-center border-b border-indigo-100 pb-1"><span class="font-medium text-gray-700">Epoch</span><span class="font-mono text-gray-600 text-xs">0x01</span></div>
+                        <div class="flex justify-between items-center border-b border-indigo-100 pb-1"><span class="font-medium text-gray-700">分代年龄</span><span class="font-mono text-gray-600 text-xs">2 (0010)</span></div>
+                        <div class="flex justify-between items-center"><span class="font-medium text-gray-700">标志位</span><span class="flex gap-1"><span class="bg-indigo-100 px-2 py-0.5 rounded font-mono">biased_lock=1</span><span class="bg-indigo-100 px-2 py-0.5 rounded font-mono">lock=01</span></span></div>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="fas fa-info-circle text-indigo-400 mr-1"></i> 记录偏向线程ID，无竞争时重入不CAS</div>
+                <div class="flex flex-wrap gap-2"><span class="badge-bit">lock:01</span><span class="badge-bit">biased_lock:1</span><span class="badge-bit">thread_id</span></div>
+            </div>
+        </div>
+        <div class="arrow-container flex flex-col items-center justify-center text-gray-500 mx-1 my-2 md:my-0"><i class="fas fa-arrow-right-long text-2xl md:text-3xl text-gray-400"></i><div class="text-center mt-2 max-w-[110px]"><span class="text-[11px] font-medium bg-white/70 px-2 py-0.5 rounded-full shadow-sm">竞争发生</span></div></div>
+        <!-- 卡片3：轻量级锁 -->
+        <div class="card-hover w-72 md:w-80 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-emerald-200/80 overflow-hidden">
+            <div class="bg-gradient-to-r from-emerald-50 to-emerald-100 px-5 py-3 border-b border-emerald-200 flex items-center justify-between">
+                <div class="flex items-center gap-2"><i class="fas fa-weight-hanging text-emerald-700 text-lg"></i><h2 class="font-bold text-xl text-emerald-800">轻量级锁</h2></div>
+                <span class="text-xs font-mono bg-emerald-200 px-2 py-1 rounded-full text-emerald-800">Lightweight Lock</span>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="bg-emerald-50/40 rounded-xl p-3 border border-emerald-100">
+                    <div class="flex items-center gap-2 mb-2"><i class="fas fa-microchip text-emerald-500 text-xs"></i><span class="text-xs font-semibold text-emerald-800">Mark Word (轻量级)</span></div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between items-center border-b border-emerald-100 pb-2"><span class="font-medium text-gray-700">指向锁记录指针</span><span class="font-mono text-emerald-700 text-xs bg-emerald-100 px-2 py-0.5 rounded">ptr_to_lock_record</span></div>
+                        <div class="flex justify-between items-center"><span class="font-medium text-gray-700">锁标志位 (lock)</span><span class="bg-emerald-200 px-3 py-0.5 rounded-md font-mono font-bold">00</span></div>
+                    </div>
+                    <div class="mt-2 text-[11px] text-gray-500 italic">* hashCode/age暂存于Lock Record</div>
+                </div>
+                <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="fas fa-info-circle text-emerald-400 mr-1"></i> CAS将对象头指向栈中锁记录，自旋等待</div>
+                <div class="flex flex-wrap gap-2"><span class="badge-bit">lock:00</span><span class="badge-bit">ptr锁记录</span></div>
+            </div>
+        </div>
+        <div class="arrow-container flex flex-col items-center justify-center text-gray-500 mx-1 my-2 md:my-0"><i class="fas fa-arrow-right-long text-2xl md:text-3xl text-gray-400"></i><div class="text-center mt-2 max-w-[110px]"><span class="text-[11px] font-medium bg-white/70 px-2 py-0.5 rounded-full shadow-sm">激烈竞争/自旋超限</span></div></div>
+        <!-- 卡片4：重量级锁 -->
+        <div class="card-hover w-72 md:w-80 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-rose-200/80 overflow-hidden">
+            <div class="bg-gradient-to-r from-rose-50 to-rose-100 px-5 py-3 border-b border-rose-200 flex items-center justify-between">
+                <div class="flex items-center gap-2"><i class="fas fa-lock text-rose-700 text-lg"></i><h2 class="font-bold text-xl text-rose-800">重量级锁</h2></div>
+                <span class="text-xs font-mono bg-rose-200 px-2 py-1 rounded-full text-rose-800">Heavyweight Lock</span>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="bg-rose-50/40 rounded-xl p-3 border border-rose-100">
+                    <div class="flex items-center gap-2 mb-2"><i class="fas fa-microchip text-rose-500 text-xs"></i><span class="text-xs font-semibold text-rose-800">Mark Word (重量级)</span></div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between items-center border-b border-rose-100 pb-2"><span class="font-medium text-gray-700">指向 ObjectMonitor 指针</span><span class="font-mono text-rose-700 text-xs bg-rose-100 px-2 py-0.5 rounded">ptr_to_monitor</span></div>
+                        <div class="flex justify-between items-center"><span class="font-medium text-gray-700">锁标志位 (lock)</span><span class="bg-rose-200 px-3 py-0.5 rounded-md font-mono font-bold">10</span></div>
+                    </div>
+                    <div class="mt-2 text-[11px] text-gray-500 italic">* 依赖操作系统互斥量，阻塞线程</div>
+                </div>
+                <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="fas fa-info-circle text-rose-400 mr-1"></i> monitor对象，由操作系统调度，开销较大</div>
+                <div class="flex flex-wrap gap-2"><span class="badge-bit">lock:10</span><span class="badge-bit">monitor指针</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 新增核心：Mark Word 64位整体结构演变图 (bit级全景) ================= -->
+    <div class="mt-8 mb-14">
+        <div class="flex items-center gap-3 justify-center mb-6">
+            <i class="fas fa-chart-pie text-2xl text-indigo-600 bg-white p-2 rounded-full shadow-md"></i>
+            <h2 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">📐 Mark Word 64位结构演变全景图</h2>
+            <span class="text-xs bg-gray-200 px-3 py-1 rounded-full">bit-level 布局对比</span>
+        </div>
+        <p class="text-center text-gray-600 mb-8 text-sm max-w-2xl mx-auto">同一个64位内存区域在锁升级过程中字段含义完全改变 —— 无锁存哈希码，偏向锁存线程ID，轻量/重量级锁存指针。</p>
+
+        <div class="space-y-8">
+            <!-- 无锁 Mark Word 位图 -->
+            <div class="bg-white/70 backdrop-blur-sm rounded-2xl shadow-md p-4 border border-gray-200 transition-all hover:shadow-lg">
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-blue-500"></div><span class="font-bold text-gray-800">无锁 (No Lock)</span><span class="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded-full">lock=01, biased_lock=0</span></div>
+                    <div class="text-xs text-gray-400"><i class="far fa-clock"></i> 初始状态，对象哈希码 + 分代年龄</div>
+                </div>
+                <div class="relative w-full bg-gray-100 rounded-xl overflow-hidden shadow-inner h-14 md:h-16 flex markword-row">
+                    <div class="bit-segment bg-blue-200 h-full flex flex-col items-center justify-center text-[10px] md:text-xs font-semibold text-blue-900 border-r border-white/50" style="width: 48.4375%;" data-tip="hashCode (31 bits)">hashCode<br><span class="text-[9px] font-mono">31 bits</span></div>
+                    <div class="bit-segment bg-gray-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-gray-700 border-r border-white/50" style="width: 6.25%;" data-tip="未使用 / cms_free 占位 (4 bits)">unused<br><span class="text-[9px]">4b</span></div>
+                    <div class="bit-segment bg-green-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-green-900 border-r border-white/50" style="width: 6.25%;" data-tip="分代年龄 (4 bits)">age<br><span class="text-[9px]">4 bits</span></div>
+                    <div class="bit-segment bg-amber-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-amber-900 border-r border-white/50" style="width: 1.5625%;" data-tip="偏向锁标志位 (1 bit)">bias<br><span class="text-[9px]">1b</span></div>
+                    <div class="bit-segment bg-red-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-red-900" style="width: 3.125%;" data-tip="锁标志位 (2 bits): 01">lock<br><span class="text-[9px]">01(2b)</span></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-2 px-1 font-mono"><span>bit 0-30</span><span>bit 31-34</span><span>bit 35-38</span><span>bit 39</span><span>bit 40-41</span><span class="invisible">bit 42-63占位</span><span>剩余高位(22bits)未使用</span></div>
+                <div class="mt-2 text-xs text-gray-500 bg-blue-50 p-2 rounded-lg"><i class="fas fa-calculator mr-1"></i> 31位哈希码保证了对象身份，age用于分代GC，未使用位填充为0</div>
+            </div>
+
+            <!-- 偏向锁 Mark Word 位图 -->
+            <div class="bg-white/70 backdrop-blur-sm rounded-2xl shadow-md p-4 border border-indigo-200 transition-all hover:shadow-lg">
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-indigo-500"></div><span class="font-bold text-gray-800">偏向锁 (Biased Lock)</span><span class="text-xs font-mono bg-indigo-100 px-2 py-0.5 rounded-full">lock=01, biased_lock=1</span></div>
+                    <div class="text-xs text-gray-400"><i class="fas fa-id-card"></i> 存储偏向线程ID & Epoch</div>
+                </div>
+                <div class="relative w-full bg-gray-100 rounded-xl overflow-hidden shadow-inner h-14 md:h-16 flex markword-row">
+                    <div class="bit-segment bg-indigo-200 h-full flex flex-col items-center justify-center text-[10px] md:text-xs font-semibold text-indigo-900 border-r border-white/50" style="width: 84.375%;" data-tip="线程ID + Epoch (54 bits + 2 bits 实际上前54位包含线程ID及额外字段)">线程ID (54bit) + Epoch(2)<br><span class="text-[9px]">56 bits</span></div>
+                    <div class="bit-segment bg-green-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-green-900 border-r border-white/50" style="width: 6.25%;" data-tip="分代年龄 (4 bits)">age<br><span class="text-[9px]">4 bits</span></div>
+                    <div class="bit-segment bg-amber-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-amber-900 border-r border-white/50" style="width: 1.5625%;" data-tip="偏向锁标志位 (1 bit)">bias=1<br><span class="text-[9px]">1b</span></div>
+                    <div class="bit-segment bg-red-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-red-900" style="width: 3.125%;" data-tip="锁标志位 (2 bits): 01">lock=01<br><span class="text-[9px]">2b</span></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1 px-1 font-mono"><span>bit 0-55 (threadId+epoch)</span><span>bit 56-59 age</span><span>bit 60 bias</span><span>bit 61-62 lock</span></div>
+                <div class="mt-2 text-xs text-gray-500 bg-indigo-50 p-2 rounded-lg"><i class="fas fa-microchip mr-1"></i> 偏向锁复用哈希码存储空间，完全替换为线程标识，避免CAS操作</div>
+            </div>
+
+            <!-- 轻量级锁 Mark Word 位图 -->
+            <div class="bg-white/70 backdrop-blur-sm rounded-2xl shadow-md p-4 border border-emerald-200 transition-all hover:shadow-lg">
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-emerald-500"></div><span class="font-bold text-gray-800">轻量级锁 (Lightweight Lock)</span><span class="text-xs font-mono bg-emerald-100 px-2 py-0.5 rounded-full">lock=00</span></div>
+                    <div class="text-xs text-gray-400"><i class="fas fa-link"></i> 指向线程栈中Lock Record的指针</div>
+                </div>
+                <div class="relative w-full bg-gray-100 rounded-xl overflow-hidden shadow-inner h-14 md:h-16 flex markword-row">
+                    <div class="bit-segment bg-emerald-200 h-full flex flex-col items-center justify-center text-[10px] md:text-xs font-semibold text-emerald-900 border-r border-white/50" style="width: 96.875%;" data-tip="指向锁记录 (Lock Record) 的指针，62位有效地址">ptr_to_lock_record<br><span class="text-[9px]">62 bits</span></div>
+                    <div class="bit-segment bg-red-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-red-900" style="width: 3.125%;" data-tip="锁标志位 (2 bits): 00">lock=00<br><span class="text-[9px]">2b</span></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1 px-1 font-mono"><span>bit 0-61 (指针)</span><span>bit 62-63 (锁标志)</span></div>
+                <div class="mt-2 text-xs text-gray-500 bg-emerald-50 p-2 rounded-lg"><i class="fas fa-exchange-alt mr-1"></i> 无锁中的哈希码/年龄等信息被“置换”到线程栈的锁记录中，Mark Word只保存指针和标志位</div>
+            </div>
+
+            <!-- 重量级锁 Mark Word 位图 -->
+            <div class="bg-white/70 backdrop-blur-sm rounded-2xl shadow-md p-4 border border-rose-200 transition-all hover:shadow-lg">
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-rose-500"></div><span class="font-bold text-gray-800">重量级锁 (Heavyweight Lock)</span><span class="text-xs font-mono bg-rose-100 px-2 py-0.5 rounded-full">lock=10</span></div>
+                    <div class="text-xs text-gray-400"><i class="fas fa-tachometer-alt"></i> 指向ObjectMonitor内核对象</div>
+                </div>
+                <div class="relative w-full bg-gray-100 rounded-xl overflow-hidden shadow-inner h-14 md:h-16 flex markword-row">
+                    <div class="bit-segment bg-rose-200 h-full flex flex-col items-center justify-center text-[10px] md:text-xs font-semibold text-rose-900 border-r border-white/50" style="width: 96.875%;" data-tip="指向ObjectMonitor的指针，62位">ptr_to_monitor<br><span class="text-[9px]">62 bits</span></div>
+                    <div class="bit-segment bg-red-300 h-full flex flex-col items-center justify-center text-[10px] md:text-xs text-red-900" style="width: 3.125%;" data-tip="锁标志位 (2 bits): 10">lock=10<br><span class="text-[9px]">2b</span></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1 px-1 font-mono"><span>bit 0-61 (monitor地址)</span><span>bit 62-63 (锁标志)</span></div>
+                <div class="mt-2 text-xs text-gray-500 bg-rose-50 p-2 rounded-lg"><i class="fas fa-hourglass-half mr-1"></i> 重量级锁通过monitor实现阻塞/唤醒，依赖操作系统mutex，指针指向C++级别对象</div>
+            </div>
+        </div>
+        <div class="mt-5 text-center text-xs text-gray-400 flex justify-center gap-4 flex-wrap"><span><i class="fas fa-square mr-1 text-blue-400"></i>哈希/元数据区域</span><span><i class="fas fa-square mr-1 text-indigo-400"></i>线程ID/epoch区域</span><span><i class="fas fa-square mr-1 text-emerald-400"></i>指针区域</span><span><i class="fas fa-square mr-1 text-amber-400"></i>标志位/年龄</span></div>
+    </div>
+
+    <!-- 锁升级完整特征速查表 + 对象头标志位说明 -->
+    <div class="mt-6 bg-white/60 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+        <div class="bg-gradient-to-r from-gray-800 to-gray-700 px-6 py-4">
+            <div class="flex items-center gap-3"><i class="fas fa-diagram-project text-white text-xl"></i><h3 class="text-white font-bold text-lg">锁升级触发条件 & 对象头标志位速查手册</h3></div>
+        </div>
+        <div class="p-5 md:p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <div class="flex items-center gap-2 mb-3"><i class="fas fa-chart-line text-blue-600"></i><span class="font-semibold text-gray-800">🔁 升级触发逻辑</span></div>
+                    <ul class="space-y-2 text-sm text-gray-700">
+                        <li class="flex items-start gap-2"><span class="inline-block w-5 h-5 bg-blue-100 rounded-full text-blue-600 text-xs flex items-center justify-center mt-0.5">1</span> <span><strong>无锁 → 偏向锁</strong> : 默认开启偏向锁（JDK6+但有延迟），当对象第一个线程获取锁时置为偏向模式。</span></li>
+                        <li class="flex items-start gap-2"><span class="inline-block w-5 h-5 bg-indigo-100 rounded-full text-indigo-600 text-xs flex items-center justify-center mt-0.5">2</span> <span><strong>偏向锁 → 轻量级锁</strong> : 其他线程竞争时，偏向锁撤销升级为轻量级锁（CAS尝试获取）。</span></li>
+                        <li class="flex items-start gap-2"><span class="inline-block w-5 h-5 bg-emerald-100 rounded-full text-emerald-600 text-xs flex items-center justify-center mt-0.5">3</span> <span><strong>轻量级锁 → 重量级锁</strong> : 自旋超过阈值（自适应自旋）或竞争线程数过多，膨胀为重量级锁，线程阻塞。</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 mb-3"><i class="fas fa-table-list text-gray-600"></i><span class="font-semibold text-gray-800">📋 锁标志位解码表 (lock + biased_lock)</span></div>
+                    <div class="overflow-x-auto"><table class="min-w-full text-sm border border-gray-200 rounded-xl bg-white"><thead class="bg-gray-100"><tr><th class="px-4 py-2 text-left">锁状态</th><th class="px-4 py-2 text-left">biased_lock</th><th class="px-4 py-2 text-left">lock</th><th class="px-4 py-2 text-left">Mark Word 64位内容</th></tr></thead><tbody class="divide-y"><tr class="hover:bg-gray-50"><td class="px-4 py-2">无锁</td><td class="font-mono">0</td><td class="font-mono">01</td><td class="text-xs">hashCode(31) + age(4) + 未使用</td></tr><tr class="hover:bg-indigo-50"><td class="px-4 py-2">偏向锁</td><td class="font-mono">1</td><td class="font-mono">01</td><td class="text-xs">threadId(54) + epoch(2) + age(4) + 标志</td></tr><tr class="hover:bg-emerald-50"><td class="px-4 py-2">轻量级锁</td><td class="font-mono">-</td><td class="font-mono">00</td><td class="text-xs">指向 Lock Record 的指针 (62位)</td></tr><tr class="hover:bg-rose-50"><td class="px-4 py-2">重量级锁</td><td class="font-mono">-</td><td class="font-mono">10</td><td class="text-xs">指向 ObjectMonitor 的指针 (62位)</td></tr><tr class="bg-gray-50"><td class="px-4 py-2">GC标记</td><td class="font-mono">-</td><td class="font-mono">11</td><td class="text-xs">GC 标记信息 (不参与锁)</td></tr></tbody></table></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-8 text-center text-xs text-gray-400 border-t border-gray-200/70 pt-6 flex flex-wrap justify-center gap-x-6 gap-y-2">
+        <span><i class="fas fa-cube mr-1"></i> 基于 HotSpot 64位VM 对象头 (Mark Word) 官方规范引申</span>
+        <span><i class="fas fa-chart-simple mr-1"></i> 锁升级路径单向不可逆 (重量级锁不会降级)</span>
+        <span><i class="fas fa-code-branch mr-1"></i> JDK15+ 默认禁用偏向锁，但原理仍是并发基石</span>
+    </div>
+</div>
+<div class="fixed bottom-6 right-6 opacity-10 pointer-events-none z-0"><div class="text-8xl text-gray-600"><i class="fas fa-microchip"></i></div></div>
+</body>
+</html>

@@ -4,12 +4,18 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
 /**
  * 同步任务记录
  */
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 @TableName("sync_task")
 public class SyncTask {
     @TableId(type = IdType.INPUT)

@@ -2,7 +2,10 @@ package com.example.dynamicds.entity;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
@@ -13,7 +16,10 @@ import java.math.BigDecimal;
  */
 @Deprecated
 @TableName("raw_trade")
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 public class RawTrade {
     @TableId
     private Long id;

@@ -5,12 +5,18 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
 /**
  * 初始化任务记录
  */
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 @TableName("init_task")
 public class InitTask {
     @TableId(type = IdType.INPUT)
