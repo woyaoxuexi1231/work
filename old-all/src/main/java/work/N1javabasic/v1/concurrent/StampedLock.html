@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>StampedLock 详解 · 乐观读与性能之王 | 对比 ReentrantReadWriteLock</title>
+  <!-- Tailwind CSS + Font Awesome + Google Fonts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    body { background: linear-gradient(145deg, #f8fafc 0%, #eef2f8 100%); }
+    .card-hover { transition: all 0.2s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.12); }
+    .code-block { background: #1e293b; border-radius: 1rem; padding: 1rem; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; overflow-x: auto; }
+    .interview-badge { background: #ffedd5; color: #b45309; border-radius: 9999px; font-size: 0.7rem; padding: 0.2rem 0.7rem; font-weight: 600; }
+    .step-item { border-left: 3px solid #3b82f6; padding-left: 1rem; margin-bottom: 0.75rem; }
+    .compare-table th, .compare-table td { padding: 0.75rem; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+    .compare-table th { background: #f8fafc; font-weight: 600; color: #0f172a; }
+  </style>
+</head>
+<body class="antialiased">
+
+<div class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+  <!-- 头部 -->
+  <div class="text-center mb-10">
+    <div class="inline-flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 shadow-sm mb-4">
+      <i class="fab fa-java text-red-500 text-sm"></i>
+      <span class="text-xs font-medium text-gray-700">JUC · 高并发读写锁</span>
+    </div>
+    <h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-slate-800 to-cyan-700 bg-clip-text text-transparent tracking-tight">
+      StampedLock 深度解析
+    </h1>
+    <p class="text-gray-600 max-w-2xl mx-auto mt-3 text-base md:text-lg">
+      乐观读 · 悲观读 · 写锁 · 锁转换 · 不可重入 · 与 ReentrantReadWriteLock 全面对比
+    </p>
+  </div>
+
+  <!-- 核心特性卡片 -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+      <div class="flex items-center gap-3 mb-3"><i class="fas fa-sun text-2xl text-yellow-600"></i><h2 class="text-xl font-bold">乐观读 (Optimistic Read)</h2></div>
+      <p class="text-sm text-gray-700"><span class="font-mono bg-gray-100 px-1">tryOptimisticRead()</span> 获取一个邮戳(stamp)，不加锁，直接读数据。随后通过 <span class="font-mono">validate(stamp)</span> 检查期间是否有写锁发生。无竞争时可获得极高读性能，适用于读多写极少场景。</p>
+      <div class="mt-2 text-xs text-gray-500">⚠️ 注意：乐观读不阻塞写锁，但必须验证，失败后需升级为悲观读锁。</div>
+    </div>
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+      <div class="flex items-center gap-3 mb-3"><i class="fas fa-book-open text-2xl text-blue-600"></i><h2 class="text-xl font-bold">悲观读锁 (Read Lock)</h2></div>
+      <p class="text-sm text-gray-700"><span class="font-mono bg-gray-100 px-1">readLock()</span> 类似于 ReentrantReadWriteLock 的读锁，共享锁，阻塞写锁。支持重入？<strong class="text-red-600">不支持重入！</strong> 同一个线程再次获取读锁会死锁。不可重入是 StampedLock 的重要特征。</p>
+    </div>
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+      <div class="flex items-center gap-3 mb-3"><i class="fas fa-pen-fancy text-2xl text-rose-600"></i><h2 class="text-xl font-bold">写锁 (Write Lock)</h2></div>
+      <p class="text-sm text-gray-700"><span class="font-mono bg-gray-100 px-1">writeLock()</span> 独占锁，互斥于所有读锁（包括乐观读，因为乐观读验证会失败）。不支持重入，同一线程再次获取写锁会死锁。释放时使用对应的 stamp。</p>
+    </div>
+  </div>
+
+  <!-- ========== 乐观读核心机制 + 验证流程图 ========== -->
+  <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-gray-200 mb-12">
+    <div class="flex items-center gap-3 flex-wrap mb-4"><i class="fas fa-rocket text-2xl text-emerald-600"></i><h2 class="text-2xl font-bold">⚡ 乐观读模式 · 无锁读 + 验证机制</h2><span class="interview-badge">StampedLock 精髓</span></div>
+    <p class="text-gray-700 text-sm mb-5">乐观读不获取锁，直接读取数据副本，然后通过 <span class="font-mono">validate(stamp)</span> 检查 stamp 有效性。若期间有写锁发生过，则验证失败，需重试或升级为悲观读锁。这种模式彻底消除了读锁对写锁的阻塞，极大提升并发读性能。</p>
+    <div class="bg-slate-50 rounded-xl p-4">
+      <div class="flex flex-col md:flex-row justify-between items-center gap-4 text-sm font-mono">
+        <div class="bg-white p-3 rounded-lg shadow text-center w-full md:w-1/3">1️⃣ tryOptimisticRead()<br>获取 stamp (如 256)</div>
+        <i class="fas fa-arrow-right text-gray-400 text-xl hidden md:block"></i>
+        <div class="bg-white p-3 rounded-lg shadow text-center w-full md:w-1/3">2️⃣ 读取共享数据<br>(不加任何锁)</div>
+        <i class="fas fa-arrow-right text-gray-400 text-xl hidden md:block"></i>
+        <div class="bg-white p-3 rounded-lg shadow text-center w-full md:w-1/3">3️⃣ validate(stamp)<br>检查写锁是否发生过</div>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-3 justify-center">
+        <div class="bg-green-100 p-2 rounded-lg text-xs"><i class="fas fa-check-circle text-green-600"></i> 验证成功 → 数据一致，直接使用</div>
+        <div class="bg-red-100 p-2 rounded-lg text-xs"><i class="fas fa-times-circle text-red-600"></i> 验证失败 → 升级为悲观读锁 (readLock()) 重新读</div>
+      </div>
+    </div>
+    <div class="mt-4 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><i class="fas fa-microphone-alt"></i> 面试高频：乐观读的底层实现基于 state 变量上的版本号（邮戳），写锁每次获取会递增一个奇数位，读锁和写锁操作都会改变 state 的二进制位，validate 比较 stamp 与当前 state 是否匹配，从而检测是否有写锁介入。</div>
+  </div>
+
+  <!-- ========== 锁转换 (tryConvertToWriteLock / tryConvertToReadLock) ========== -->
+  <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-gray-200 mb-12">
+    <div class="flex items-center gap-3 mb-4"><i class="fas fa-exchange-alt text-2xl text-purple-600"></i><h2 class="text-2xl font-bold">🔄 锁转换 (Lock Conversion)</h2><span class="interview-badge">特色能力</span></div>
+    <p class="text-sm text-gray-700 mb-3">StampedLock 支持从乐观读 → 悲观读锁、悲观读锁 → 写锁等转换，无需释放锁重新获取，提高效率。常用方法：<span class="font-mono">tryConvertToWriteLock(stamp)</span>、<span class="font-mono">tryConvertToReadLock(stamp)</span>、<span class="font-mono">tryConvertToOptimisticRead(stamp)</span>，转换成功返回新 stamp，失败则返回 0。</p>
+    <div class="code-block text-xs">
+                <pre class="whitespace-pre-wrap break-words">
+long stamp = sl.readLock();
+try {
+    // 读操作，发现需要写操作
+    long ws = sl.tryConvertToWriteLock(stamp);
+    if (ws != 0L) {   // 转换成功
+        stamp = ws;
+        // 执行写操作
+    } else {
+        sl.unlockRead(stamp);
+        stamp = sl.writeLock();
+        // 写操作
+    }
+} finally {
+    sl.unlock(stamp);
+}
+                </pre>
+    </div>
+    <div class="mt-3 text-xs text-gray-500"><i class="fas fa-lightbulb text-yellow-500"></i> 面试亮点：锁转换避免了锁的释放和重竞争，尤其在读后写的场景下提高性能。但注意转换失败时需要手动释放原锁再重新获取。</div>
+  </div>
+
+  <!-- ========== 与 ReentrantReadWriteLock 全面对比表 ========== -->
+  <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-gray-200 mb-12">
+    <div class="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-4">
+      <div class="flex items-center gap-3"><i class="fas fa-table-list text-white text-xl"></i><h3 class="text-white font-bold text-xl">📊 StampedLock vs ReentrantReadWriteLock 全方位对比</h3><span class="interview-badge ml-auto">面试必考</span></div>
+    </div>
+    <div class="overflow-x-auto p-5">
+      <table class="compare-table min-w-full text-sm">
+        <thead>
+        <tr><th style="width: 28%">对比维度</th><th style="width: 36%">StampedLock</th><th style="width: 36%">ReentrantReadWriteLock</th></tr>
+        </thead>
+        <tbody>
+        <tr><td class="font-semibold">锁模式</td><td>写锁、悲观读锁、<span class="text-emerald-600 font-bold">乐观读锁（无锁读）</span></td><td>写锁、读锁（无乐观读）</td></tr>
+        <tr><td class="font-semibold">重入性</td><td><span class="text-red-600 font-bold">不可重入</span>，同一线程二次获取读锁/写锁会死锁</td><td>完全可重入（读锁、写锁均支持重入）</td></tr>
+        <tr><td class="font-semibold">锁降级/升级</td><td>支持锁转换（tryConvertToXxx），可从读锁升级为写锁，从写锁降级为读锁</td><td>支持锁降级（写→读），<span class="text-red-600">不支持锁升级（读→写）</span></td></tr>
+        <tr><td class="font-semibold">条件变量</td><td><span class="text-red-600">不支持</span> Condition</td><td>支持 Condition（读锁不支持条件，写锁支持）</td></tr>
+        <tr><td class="font-semibold">公平性策略</td><td>非公平模式，无公平锁选项</td><td>支持公平/非公平两种策略</td></tr>
+        <tr><td class="font-semibold">性能特点</td><td>乐观读场景下性能极高，但写锁和悲观读锁开销略高</td><td>读锁与写锁均有一定的 CAS 和队列开销，无乐观读优化</td></tr>
+        <tr><td class="font-semibold">写锁饥饿问题</td><td>乐观读不影响写锁，写锁饥饿风险较低；但读锁与写锁公平性差</td><td>非公平模式下读锁可能导致写饥饿，公平模式避免</td></tr>
+        <tr><td class="font-semibold">适用场景</td><td>读极多、写极少且对重入无要求，追求极致性能</td><td>需要重入、条件变量或公平性控制的通用读写锁场景</td></tr>
+        <tr><td class="font-semibold">API 风格</td><td>基于 stamp（邮戳），手动释放锁</td><td>基于 Lock 接口，自动释放（try-finally 仍然必须）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="bg-slate-50 p-4 text-xs text-gray-600 border-t border-gray-200"><i class="fas fa-lightbulb text-yellow-600"></i> 面试总结：StampedLock 性能更强，尤其乐观读无锁化；但不可重入、不支持 Condition、需要小心 stamp 管理。ReentrantReadWriteLock 更安全、易用，适合常规需求。</div>
+  </div>
+
+  <!-- ========== 代码实战 + 典型用法 ========== -->
+  <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200 mb-12">
+    <div class="bg-gradient-to-r from-cyan-700 to-blue-700 px-6 py-4 text-white"><div class="flex items-center gap-2"><i class="fas fa-code"></i><span class="font-bold text-lg">📌 典型示例：使用 StampedLock 实现线程安全的 Point 坐标</span><span class="ml-auto text-xs bg-cyan-800 px-2 py-0.5 rounded-full">乐观读 + 悲观读 + 写锁</span></div></div>
+    <div class="p-6">
+      <div class="code-block text-xs">
+                    <pre class="whitespace-pre-wrap break-words">
+<span class="text-green-400">class</span> <span class="text-yellow-300">Point</span> {
+    <span class="text-blue-300">private double</span> x, y;
+    <span class="text-blue-300">private final</span> StampedLock sl = <span class="text-blue-300">new</span> StampedLock();
+
+    <span class="text-green-400">public void</span> <span class="text-yellow-300">move</span>(<span class="text-blue-300">double</span> dx, <span class="text-blue-300">double</span> dy) {
+        <span class="text-blue-300">long</span> stamp = sl.writeLock();   <span class="text-gray-400">// 获取写锁</span>
+        <span class="text-green-400">try</span> {
+            x += dx;
+            y += dy;
+        } <span class="text-green-400">finally</span> {
+            sl.unlockWrite(stamp);
+        }
+    }
+
+    <span class="text-green-400">public double</span> <span class="text-yellow-300">distanceFromOrigin</span>() {
+        <span class="text-blue-300">long</span> stamp = sl.tryOptimisticRead();   <span class="text-gray-400">// 乐观读</span>
+        <span class="text-blue-300">double</span> currentX = x, currentY = y;
+        <span class="text-green-400">if</span> (!sl.validate(stamp)) {            <span class="text-gray-400">// 验证失败</span>
+            stamp = sl.readLock();            <span class="text-gray-400">// 升级为悲观读锁</span>
+            <span class="text-green-400">try</span> {
+                currentX = x;
+                currentY = y;
+            } <span class="text-green-400">finally</span> {
+                sl.unlockRead(stamp);
+            }
+        }
+        <span class="text-green-400">return</span> Math.sqrt(currentX * currentX + currentY * currentY);
+    }
+}
+                    </pre>
+      </div>
+      <div class="mt-3 text-xs text-gray-500"><i class="fas fa-comment-dots"></i> 以上代码展示了乐观读的经典用法：先乐观读，若验证失败则退化为悲观读锁，保证数据一致性且性能最大化。</div>
+    </div>
+  </div>
+
+  <!-- ========== 面试高频问题集 ========== -->
+  <div class="mb-12">
+    <div class="flex items-center gap-3 mb-6"><i class="fas fa-fire text-2xl text-rose-500"></i><h2 class="text-2xl font-bold text-gray-800">🔥 StampedLock 大厂面试高频题</h2></div>
+    <div class="space-y-5">
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-indigo-500 shadow-sm">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-indigo-800">Q1：StampedLock 的乐观读到底有没有锁？如何保证数据一致性？</span><span class="interview-badge">必问</span></div>
+        <p class="text-sm text-gray-700 mt-2">乐观读完全无锁，通过 stamp 版本号机制保证一致性。写锁获取时会递增一个奇数的 stamp，乐观读开始时复制当前 stamp，读取数据后调用 validate(stamp) 比较当前 stamp 是否改变。若没变则数据一致；若变了则表明有写锁介入，需要重新读取（通常退化为悲观读锁）。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-emerald-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-emerald-800">Q2：StampedLock 为什么不可重入？如果误用会怎样？</span><span class="interview-badge">易错点</span></div>
+        <p class="text-sm text-gray-700 mt-2">设计上为了避免重入带来的复杂性和性能开销，简化实现。如果同一个线程在没有释放读锁或写锁的情况下再次获取相同锁，会直接导致死锁（线程永久阻塞）。所以使用时必须严格避免重入调用，通常通过代码规范或使用 <span class="font-mono">tryConvertToXxx</span> 替代。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-amber-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-amber-800">Q3：何时使用 StampedLock 代替 ReentrantReadWriteLock？</span><span class="interview-badge">场景选择</span></div>
+        <p class="text-sm text-gray-700 mt-2">当读操作极其频繁、写操作极少，且对锁重入、条件变量无要求时，使用 StampedLock 可获得更高吞吐量（乐观读避免了读锁对写锁的阻塞）。在写多或需要重入、公平锁的场景，应选择 ReentrantReadWriteLock。另外，StampedLock 不支持 Condition，也无法在写锁中调用 await。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-rose-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-rose-800">Q4：StampedLock 如何避免写饥饿？与读写锁相比有何不同？</span></div>
+        <p class="text-sm text-gray-700 mt-2">StampedLock 内部基于队列（CLH）和自旋，写锁请求时，如果当前有乐观读或悲观读，写锁会阻塞等待，但乐观读不阻塞写锁（乐观读期间写锁可获取，导致 validate 失败）。在写锁等待时，新的读锁请求（悲观读）可能会被阻塞以避免写饥饿，但非公平性依然存在。相比 ReentrantReadWriteLock 的非公平模式，StampedLock 对于写锁的公平性稍好一些（但没有公平选项），总体上仍然建议在读极少写时使用。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-sky-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-sky-800">Q5：StampedLock 锁转换（tryConvertToWriteLock）实现原理？失败后如何处理？</span></div>
+        <p class="text-sm text-gray-700 mt-2">转换方法检查当前 stamp 对应的锁状态，如果满足升级条件（如当前持有读锁且无其他线程持有读锁，或当前持有乐观读且无写锁发生），则直接更新 stamp 并返回新 stamp，避免了释放锁再重新获取的竞争。如果转换返回 0，表示转换失败，此时需要手动释放原锁，再获取目标锁。失败原因通常是其他线程同时持有读锁导致无法升级为写锁。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 底层实现简述 + 注意事项 ========== -->
+  <div class="bg-gradient-to-r from-indigo-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl">
+    <div class="flex items-center gap-2 mb-3"><i class="fas fa-microchip text-2xl"></i><h3 class="text-xl font-bold">🔧 底层实现简述 & 注意事项</h3></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div><i class="fas fa-check-circle text-green-400"></i> stamp 是一个 long 类型，高 7 位表示锁状态，低 57 位作为版本计数器；写锁每次获取会使版本递增，读锁操作会记录数量。</div>
+      <div><i class="fas fa-check-circle text-green-400"></i> 悲观读锁与写锁共享一个等待队列，采用 CLH 变体，自旋 + park 管理。</div>
+      <div><i class="fas fa-exclamation-triangle text-yellow-400"></i> <span class="font-bold">重要：</span>StampedLock 不是 ReentrantLock 的替代品，不支持重入，务必在 finally 块中释放。</div>
+      <div><i class="fas fa-exclamation-triangle text-yellow-400"></i> 线程中断可能会导致锁状态损坏，建议使用可中断方法时小心处理。</div>
+    </div>
+    <div class="mt-4 text-xs text-gray-300 border-t border-indigo-700 pt-3"><i class="fas fa-graduation-cap"></i> 总结：StampedLock 是并发读写锁的性能杀手锏，但需要开发者更精细地管理锁的生命周期，适合中级以上工程师在特定场景使用。面试中如果能完整讲出乐观读原理和对比 ReentrantReadWriteLock 的优劣，是加分项。</div>
+  </div>
+
+  <!-- 页脚 -->
+  <div class="text-center text-xs text-gray-500 border-t border-gray-300 pt-6 mt-8 flex flex-wrap justify-center gap-4">
+    <span><i class="fab fa-java"></i> java.util.concurrent.locks.StampedLock</span>
+    <span><i class="fas fa-eye"></i> 乐观读 · 悲观读 · 写锁 · 锁转换</span>
+    <span><i class="fas fa-chart-line"></i> 不可重入 | 无 Condition | 性能极致</span>
+    <span><i class="fas fa-balance-scale"></i> 与 ReentrantReadWriteLock 全面对比</span>
+  </div>
+</div>
+</body>
+</html>

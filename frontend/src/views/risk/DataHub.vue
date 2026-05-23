@@ -273,6 +273,7 @@ const taskStatusType = (status) => {
   const map = {
     'PENDING': 'info',
     'RUNNING': 'primary',
+    'SUCCESS': 'success',
     'COMPLETED': 'success',
     'FAILED': 'danger'
   }
@@ -283,6 +284,7 @@ const taskStatusText = (status) => {
   const map = {
     'PENDING': '等待中',
     'RUNNING': '运行中',
+    'SUCCESS': '已完成',
     'COMPLETED': '已完成',
     'FAILED': '失败'
   }

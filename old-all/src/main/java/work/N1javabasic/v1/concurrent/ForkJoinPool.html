@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>ForkJoinPool 工作窃取（Work-Stealing）详解 | 分治任务与双端队列</title>
+    <!-- Tailwind CSS + Font Awesome + Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+        body { background: linear-gradient(145deg, #f5f7fb 0%, #eef2f8 100%); }
+        .card-hover { transition: all 0.2s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.12); }
+        .code-block { background: #1e293b; border-radius: 1rem; padding: 1rem; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; overflow-x: auto; }
+        .interview-badge { background: #ffedd5; color: #b45309; border-radius: 9999px; font-size: 0.7rem; padding: 0.2rem 0.7rem; font-weight: 600; }
+        .step-item { border-left: 3px solid #3b82f6; padding-left: 1rem; margin-bottom: 0.75rem; }
+        .queue-demo { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; background: #f1f5f9; border-radius: 1rem; padding: 1rem; }
+        .task-card { background: white; border-radius: 0.5rem; padding: 0.25rem 0.75rem; font-size: 0.75rem; font-family: monospace; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .arrow-icon { font-size: 1.25rem; color: #94a3b8; }
+    </style>
+</head>
+<body class="antialiased">
+
+<div class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <!-- 头部 -->
+    <div class="text-center mb-10">
+        <div class="inline-flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 shadow-sm mb-4">
+            <i class="fab fa-java text-red-500 text-sm"></i>
+            <span class="text-xs font-medium text-gray-700">JUC · 并行计算框架</span>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-slate-800 to-amber-700 bg-clip-text text-transparent tracking-tight">
+            ForkJoinPool 工作窃取
+        </h1>
+        <p class="text-gray-600 max-w-2xl mx-auto mt-3 text-base md:text-lg">
+            每个线程独立双端队列 · 本地 LIFO · 窃取 FIFO · 分治任务 · 适用递归/归并场景
+        </p>
+    </div>
+
+    <!-- 核心概念卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+            <div class="flex items-center gap-3 mb-3"><i class="fas fa-layer-group text-2xl text-indigo-600"></i><h2 class="text-xl font-bold">双端队列 (Deque)</h2></div>
+            <p class="text-sm text-gray-700">每个工作线程拥有自己的 <strong>双端队列</strong>（<span class="font-mono bg-gray-100 px-1">WorkQueue</span>），存放待执行的 <span class="font-mono">ForkJoinTask</span>。队列支持两端操作：本地线程从一端（底端）进行 push/pop（LIFO），而其他线程（窃取者）从另一端（顶端）进行 poll（FIFO）。</p>
+        </div>
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+            <div class="flex items-center gap-3 mb-3"><i class="fas fa-hand-peace text-2xl text-emerald-600"></i><h2 class="text-xl font-bold">工作窃取 (Work-Stealing)</h2></div>
+            <p class="text-sm text-gray-700">空闲线程主动从其他繁忙线程的队列尾部（顶端）“窃取”任务，窃取采用 <strong>FIFO</strong> 顺序。这种机制平衡负载，减少竞争，充分利用 CPU 资源。</p>
+            <div class="mt-2 text-xs text-gray-500">优势：无需全局任务队列，降低锁竞争；适应分治任务中动态产生的子任务。</div>
+        </div>
+        <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+            <div class="flex items-center gap-3 mb-3"><i class="fas fa-code-branch text-2xl text-rose-600"></i><h2 class="text-xl font-bold">RecursiveTask / RecursiveAction</h2></div>
+            <p class="text-sm text-gray-700"><span class="font-mono bg-gray-100 px-1">RecursiveTask&lt;V&gt;</span> 有返回值的分治任务；<span class="font-mono">RecursiveAction</span> 无返回值。核心方法 <span class="font-mono">compute()</span> 中拆分任务，通过 <span class="font-mono">fork()</span> 和 <span class="font-mono">join()</span> 进行子任务调度。</p>
+        </div>
+    </div>
+
+    <!-- ========== 双端队列 & 工作窃取可视化 ========== -->
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-gray-200 mb-12">
+        <div class="flex items-center gap-3 flex-wrap mb-4"><i class="fas fa-tasks text-2xl text-blue-600"></i><h2 class="text-2xl font-bold">🧵 工作窃取核心模型图</h2><span class="interview-badge">高频图解</span></div>
+        <p class="text-gray-700 text-sm mb-5">每个线程都有自己的任务队列：<strong>本地线程从队尾（底端） LIFO 获取任务</strong>（减少任务拆分开销）；<strong>窃取线程从队首（顶端） FIFO 获取任务</strong>（减少冲突）。当本地队列为空时，线程会随机扫描其他队列进行窃取。</p>
+
+        <div class="flex flex-col gap-6">
+            <!-- Thread 1 -->
+            <div class="bg-slate-50 rounded-xl p-3">
+                <div class="flex items-center gap-2 mb-2"><i class="fas fa-microchip text-indigo-600"></i><span class="font-semibold">工作线程 A (本地操作 LIFO)</span><span class="text-xs text-gray-500 ml-auto">push/pop 从底端</span></div>
+                <div class="queue-demo justify-between">
+                    <div class="flex flex-col items-center"><span class="text-[10px] text-gray-400">顶端 (窃取端)</span><div class="flex flex-row-reverse gap-1">
+                        <div class="task-card bg-amber-100 border-amber-300">Task A3</div>
+                        <div class="task-card bg-amber-100 border-amber-300">Task A2</div>
+                        <div class="task-card bg-amber-100 border-amber-300">Task A1</div>
+                    </div></div>
+                    <i class="fas fa-long-arrow-alt-right text-gray-400"></i>
+                    <div class="flex flex-col items-center"><span class="text-[10px] text-gray-400">底端 (本地端)</span><div class="task-card bg-blue-100 border-blue-300 font-bold">← push/pop</div></div>
+                </div>
+                <div class="text-xs text-gray-500 mt-2">本地线程执行新 fork 的子任务时压入底端，执行完当前任务后 pop 底端任务（后进先出），利于深度优先执行，减少任务分割开销。</div>
+            </div>
+
+            <!-- Thread 2 -->
+            <div class="bg-slate-50 rounded-xl p-3">
+                <div class="flex items-center gap-2 mb-2"><i class="fas fa-microchip text-emerald-600"></i><span class="font-semibold">工作线程 B (空闲时窃取 FIFO)</span><span class="text-xs text-gray-500 ml-auto">从其他队列顶端 poll</span></div>
+                <div class="queue-demo justify-between">
+                    <div class="flex flex-col items-center"><span class="text-[10px] text-gray-400">窃取者从此处取任务</span><div class="flex flex-row gap-1">
+                        <div class="task-card bg-purple-100 border-purple-300">Task A1 (窃取)</div>
+                    </div></div>
+                    <i class="fas fa-hand-peace text-amber-600 text-xl"></i>
+                    <div class="text-xs text-gray-500">窃取 FIFO 避免与本地 LIFO 操作发生头部冲突，减少竞争。</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><i class="fas fa-microphone-alt"></i> 面试要点：双端队列设计是工作窃取的核心，本地 LIFO 利用任务局部性（新创建的子任务往往很快被执行），窃取 FIFO 减少了窃取者与本地线程的竞争。ForkJoinPool 默认线程数 = CPU 核心数，充分利用并行计算。</div>
+    </div>
+
+    <!-- ========== Fork/Join 任务拆分流程 ========== -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+            <div class="bg-gradient-to-r from-amber-700 to-amber-800 px-5 py-3 text-white flex items-center gap-2"><i class="fas fa-code-branch"></i><span class="font-bold">RecursiveTask 实现（有返回值）</span></div>
+            <div class="p-5">
+                <div class="code-block text-xs">
+                        <pre class="whitespace-pre-wrap break-words">
+<span class="text-green-400">class</span> <span class="text-yellow-300">SumTask</span> <span class="text-green-400">extends</span> RecursiveTask&lt;Long&gt; {
+    <span class="text-blue-300">private final</span> <span class="text-blue-300">int</span>[] array;
+    <span class="text-blue-300">private final int</span> start, end;
+    <span class="text-blue-300">private static final int</span> THRESHOLD = 10_000;
+
+    <span class="text-green-400">protected</span> Long <span class="text-yellow-300">compute</span>() {
+        <span class="text-green-400">if</span> (end - start <= THRESHOLD) {
+            <span class="text-blue-300">long</span> sum = 0;
+            <span class="text-green-400">for</span> (<span class="text-blue-300">int</span> i = start; i < end; i++) sum += array[i];
+            <span class="text-green-400">return</span> sum;
+        }
+        <span class="text-blue-300">int</span> mid = (start + end) / 2;
+        SumTask leftTask = <span class="text-blue-300">new</span> SumTask(array, start, mid);
+        SumTask rightTask = <span class="text-blue-300">new</span> SumTask(array, mid, end);
+        leftTask.fork();        <span class="text-gray-400">// 异步执行子任务</span>
+        <span class="text-blue-300">long</span> rightResult = rightTask.compute(); <span class="text-gray-400">// 当前线程继续执行右边任务</span>
+        <span class="text-blue-300">long</span> leftResult = leftTask.join();     <span class="text-gray-400">// 等待左边结果</span>
+        <span class="text-green-400">return</span> leftResult + rightResult;
+    }
+}
+                        </pre>
+                </div>
+                <div class="mt-3 text-xs text-gray-500"><i class="fas fa-lightbulb"></i> 关键点：<span class="font-mono">fork()</span> 将任务提交到当前线程的队列，<span class="font-mono">join()</span> 阻塞等待结果。避免对子任务直接调用 fork 两次导致过多任务创建，典型写法是 <span class="font-mono">leftTask.fork(); rightTask.compute(); leftTask.join();</span></div>
+            </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+            <div class="bg-gradient-to-r from-emerald-700 to-emerald-800 px-5 py-3 text-white flex items-center gap-2"><i class="fas fa-chart-line"></i><span class="font-bold">分治执行流程</span></div>
+            <div class="p-5 space-y-3 text-sm">
+                <div class="step-item">1️⃣ 任务被提交给 ForkJoinPool，创建根任务。</div>
+                <div class="step-item">2️⃣ 在 <span class="font-mono">compute()</span> 中，若任务足够小，直接计算；否则拆分为两个子任务。</div>
+                <div class="step-item">3️⃣ 调用 <span class="font-mono">leftTask.fork()</span> 将子任务异步放入当前线程队列。</div>
+                <div class="step-item">4️⃣ 当前线程继续执行 <span class="font-mono">rightTask.compute()</span>（或再次 fork）。</div>
+                <div class="step-item">5️⃣ 调用 <span class="font-mono">leftTask.join()</span> 等待子任务完成并获取结果。</div>
+                <div class="step-item">6️⃣ 工作窃取机制：空闲线程会从其他线程队列末尾窃取任务，分担负载。</div>
+                <div class="mt-3 bg-gray-50 p-2 rounded-lg text-xs font-mono">fork() 不会立刻产生新线程，而是将任务加入队列；join() 会在等待时帮助执行其他任务（work-stealing 优化）。</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 工作窃取 vs 传统线程池 ========== -->
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-gray-200 mb-12">
+        <div class="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-4">
+            <div class="flex items-center gap-3"><i class="fas fa-balance-scale text-white text-xl"></i><h3 class="text-white font-bold text-xl">⚖️ ForkJoinPool 与 ThreadPoolExecutor 核心对比</h3></div>
+        </div>
+        <div class="overflow-x-auto p-5">
+            <table class="min-w-full text-sm border-collapse">
+                <thead class="bg-gray-100">
+                <tr><th class="p-3 text-left font-semibold">对比维度</th><th class="p-3 text-left font-semibold">ForkJoinPool</th><th class="p-3 text-left font-semibold">ThreadPoolExecutor</th></tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                <tr><td class="p-3 font-medium">任务队列类型</td><td class="p-3">每个线程独立的双端队列 (WorkQueue)</td><td class="p-3">所有线程共享一个阻塞队列 (BlockingQueue)</td></tr>
+                <tr><td class="p-3 font-medium">负载均衡策略</td><td class="p-3">工作窃取 (work-stealing)，空闲线程窃取其他线程队列任务</td><td class="p-3">任务在共享队列中竞争，空闲线程从共享队列获取任务</td></tr>
+                <tr><td class="p-3 font-medium">适用场景</td><td class="p-3">分治算法、递归任务、任务频繁生成子任务（如排序、矩阵运算）</td><td class="p-3">独立任务、I/O 密集型或 CPU 密集型但任务间无依赖</td></tr>
+                <tr><td class="p-3 font-medium">任务类型</td><td class="p-3"><span class="font-mono">ForkJoinTask</span>（RecursiveTask / RecursiveAction）</td><td class="p-3"><span class="font-mono">Runnable</span> / <span class="font-mono">Callable</span></td></tr>
+                <tr><td class="p-3 font-medium">工作线程数</td><td class="p-3">通常设置为 CPU 核心数（默认并行度）</td><td class="p-3">根据任务类型灵活配置（CPU 密集型 = 核心数，I/O 密集型 = 更大）</td></tr>
+                <tr><td class="p-3 font-medium">任务窃取开销</td><td class="p-3">窃取时 CAS 操作，竞争较小</td><td class="p-3">共享队列存在锁竞争（尤其高并发时）</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="bg-slate-50 p-4 text-xs text-gray-600 border-t border-gray-200"><i class="fas fa-lightbulb text-yellow-600"></i> 面试总结：ForkJoinPool 通过工作窃取避免了传统线程池中共享队列的竞争瓶颈，特别适合分治场景。而 ThreadPoolExecutor 在独立任务、无依赖场景下更简单高效。</div>
+    </div>
+
+    <!-- ========== 典型应用场景示例 ========== -->
+    <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200 mb-12">
+        <div class="bg-gradient-to-r from-purple-700 to-indigo-700 px-6 py-4 text-white"><div class="flex items-center gap-2"><i class="fas fa-chart-simple"></i><span class="font-bold text-lg">📊 经典案例：归并排序 / 数组求和 / 斐波那契数列</span></div></div>
+        <div class="p-6">
+            <p class="text-sm text-gray-700 mb-3">ForkJoinPool 天生适用于可以递归分解的任务。下面是一个使用 RecursiveAction 实现的并行归并排序片段：</p>
+            <div class="code-block text-xs">
+                    <pre class="whitespace-pre-wrap break-words">
+<span class="text-green-400">class</span> <span class="text-yellow-300">MergeSortTask</span> <span class="text-green-400">extends</span> RecursiveAction {
+    <span class="text-blue-300">private final int</span>[] array;
+    <span class="text-blue-300">private final int</span> lo, hi;
+    <span class="text-blue-300">private static final int</span> THRESHOLD = 1000;
+
+    <span class="text-green-400">protected void</span> <span class="text-yellow-300">compute</span>() {
+        <span class="text-green-400">if</span> (hi - lo <= THRESHOLD) {
+            insertionSort(array, lo, hi);
+            <span class="text-green-400">return</span>;
+        }
+        <span class="text-blue-300">int</span> mid = (lo + hi) >>> 1;
+        MergeSortTask left = <span class="text-blue-300">new</span> MergeSortTask(array, lo, mid);
+        MergeSortTask right = <span class="text-blue-300">new</span> MergeSortTask(array, mid, hi);
+        invokeAll(left, right);   <span class="text-gray-400">// fork 两个子任务并等待完成</span>
+        merge(array, lo, mid, hi);
+    }
+}
+                    </pre>
+            </div>
+            <div class="mt-3 text-xs text-gray-500"><i class="fas fa-check-circle text-green-600"></i> <span class="font-mono">invokeAll()</span> 是批量 fork 并 join 的便捷方法，内部利用工作窃取提升效率。并行分治框架在排序、流式计算、图像处理等领域广泛应用。</div>
+        </div>
+    </div>
+
+    <!-- ========== 大厂面试高频题 ========== -->
+    <div class="mb-12">
+        <div class="flex items-center gap-3 mb-6"><i class="fas fa-star-of-life text-2xl text-rose-500"></i><h2 class="text-2xl font-bold text-gray-800">🔥 大厂高频面试题 · ForkJoinPool 专项</h2></div>
+        <div class="space-y-5">
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-indigo-500 shadow-sm">
+                <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-indigo-800">Q1：工作窃取算法的核心是什么？为何本地 LIFO 而窃取 FIFO？</span><span class="interview-badge">必问</span></div>
+                <p class="text-sm text-gray-700 mt-2">核心是每个线程拥有独立任务队列，空闲线程从其他队列尾部取任务。本地 LIFO 保证最近创建的子任务优先执行（利用任务局部性，减少内存和递归开销）；窃取 FIFO 防止与本地线程竞争队列同一端，降低 CAS 冲突。同时，LIFO 适用于深度优先遍历，而窃取大块任务有助于负载均衡。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-emerald-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-emerald-800">Q2：ForkJoinPool 如何避免线程饥饿和死锁？</span><span class="interview-badge">深度</span></div>
+                <p class="text-sm text-gray-700 mt-2">ForkJoinPool 实现了 <span class="font-mono">join()</span> 的“等待-帮助”机制：当线程调用 join() 等待子任务时，不会阻塞，而是执行其他可窃取的任务（包括自己队列中的任务或其他队列的任务）。这避免了死锁，并充分利用线程。另外，默认的并行度等于 CPU 核心数，避免过多线程竞争。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-amber-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-amber-800">Q3：ForkJoinPool 与 Java 8 并行流 (parallelStream) 的关系？</span><span class="interview-badge">常用</span></div>
+                <p class="text-sm text-gray-700 mt-2">并行流底层使用 ForkJoinPool.commonPool()（公共池）。但需要注意，commonPool 是全局共享的，大型阻塞任务可能影响其他并行流。可以通过 <span class="font-mono">ForkJoinPool</span> 自定义池隔离任务。parallelStream 适用于无状态、CPU 密集型的聚合操作（如 reduce、map）。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-rose-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-rose-800">Q4：ForkJoinTask 的 fork() 和 submit() 有什么区别？</span></div>
+                <p class="text-sm text-gray-700 mt-2"><span class="font-mono">fork()</span> 将任务异步提交给当前线程的队列，不保证立刻执行；<span class="font-mono">submit()</span> 是 ForkJoinPool 的方法，将任务提交到池中，可能被任意线程窃取。在 RecursiveTask 内部通常使用 fork()，而外部使用 pool.submit(rootTask)。</p>
+            </div>
+            <div class="bg-white/70 rounded-xl p-5 border-l-8 border-sky-500 shadow-sm">
+                <div class="flex items-center gap-2"><span class="font-bold text-sky-800">Q5：ForkJoinPool 的最大并行度如何设置？为什么通常设为 CPU 核心数？</span></div>
+                <p class="text-sm text-gray-700 mt-2">ForkJoinPool 并行度默认为 <span class="font-mono">Runtime.getRuntime().availableProcessors()</span>。因为 ForkJoinTask 多为 CPU 密集型计算，线程数超过核心数反而会导致上下文切换开销。如果需要执行阻塞 I/O，可以通过构造器增加并行度或使用 ManagedBlocker 接口。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 注意事项 & 性能调优 ========== -->
+    <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-2xl p-6 text-white shadow-xl mb-10">
+        <div class="flex items-center gap-2 mb-3"><i class="fas fa-exclamation-triangle text-2xl text-yellow-400"></i><h3 class="text-xl font-bold">⚠️ 使用 ForkJoinPool 的注意事项</h3></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div><i class="fas fa-ban text-red-400"></i> 避免在 ForkJoinTask 中使用阻塞操作（如 Thread.sleep、网络IO），否则会导致线程耗尽。必要时使用 <span class="font-mono">ManagedBlocker</span> 适配。</div>
+            <div><i class="fas fa-ban text-red-400"></i> 不要手动调用 <span class="font-mono">ForkJoinTask.adapt(Runnable)</span> 包装阻塞任务，可能会影响窃取效率。</div>
+            <div><i class="fas fa-check-circle text-green-400"></i> 尽量确保任务拆分足够细但不过细（阈值经验约为 100-10000 次操作），避免任务数量巨大导致开销上升。</div>
+            <div><i class="fas fa-check-circle text-green-400"></i> 使用 <span class="font-mono">invokeAll()</span> 优于手动 fork/join，它内部会优化任务调度。</div>
+            <div><i class="fas fa-check-circle text-green-400"></i> 自定义 ForkJoinPool 时，记得在 finally 中调用 <span class="font-mono">shutdown()</span>，或使用 try-with-resources (Java 19+ 支持 <span class="font-mono">AutoCloseable</span>)。</div>
+            <div><i class="fas fa-lightbulb text-yellow-400"></i> 监控池状态：<span class="font-mono">getStealCount()</span> 可查看窃取任务总数，<span class="font-mono">getRunningThreadCount()</span> 查看活动线程。</div>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+    <div class="text-center text-xs text-gray-500 border-t border-gray-300 pt-6 mt-4 flex flex-wrap justify-center gap-4">
+        <span><i class="fab fa-java"></i> java.util.concurrent.ForkJoinPool</span>
+        <span><i class="fas fa-layer-group"></i> WorkQueue | Work-Stealing | RecursiveTask/RecursiveAction</span>
+        <span><i class="fas fa-chart-line"></i> 分治框架 · 并行计算 · 负载均衡</span>
+        <span><i class="fas fa-code-branch"></i> 适用：归并排序、数组求和、斐波那契、树遍历</span>
+    </div>
+</div>
+</body>
+</html>

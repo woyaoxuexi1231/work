@@ -5,6 +5,7 @@ import { postForm, setToken } from '../api/request.js'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+const formRef = ref(null)
 const loginForm = ref({
   username: '',
   password: ''
@@ -16,6 +17,9 @@ const rules = {
 }
 
 async function doLogin() {
+  const formEl = formRef.value
+  if (!formEl) return
+  try { await formEl.validate() } catch { return }
   loading.value = true
   try {
     const data = await postForm('/login', { username: loginForm.value.username, password: loginForm.value.password })
@@ -54,7 +58,7 @@ async function doLogin() {
           <span>MLM Anime Platform</span>
         </div>
       </template>
-      <el-form :model="loginForm" :rules="rules" label-position="top" @submit.prevent="doLogin">
+      <el-form ref="formRef" :model="loginForm" :rules="rules" label-position="top" @submit.prevent="doLogin">
         <el-form-item label="用户名" prop="username">
           <el-input 
             v-model="loginForm.username" 
