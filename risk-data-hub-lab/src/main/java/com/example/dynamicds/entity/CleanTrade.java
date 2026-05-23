@@ -3,6 +3,7 @@ package com.example.dynamicds.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -25,4 +26,31 @@ public class CleanTrade {
     private String cleanBatch;
     private String tradeTime;
     private String createdAt;
+
+    public static CleanTrade create(CleanRecordContext context,
+                                    String vendorTradeNo,
+                                    String bizType,
+                                    String direction,
+                                    BigDecimal amount,
+                                    String statusName,
+                                    String counterpartyName,
+                                    String cleanMode,
+                                    String tradeTime) {
+        CleanTrade trade = new CleanTrade();
+        trade.setGlobalId(context.globalId());
+        trade.setSourceSystem(context.sourceSystem());
+        trade.setSourceType(context.sourceType());
+        trade.setSourceRowId(context.sourceRowId());
+        trade.setVendorTradeNo(vendorTradeNo);
+        trade.setBizType(bizType);
+        trade.setDirection(direction);
+        trade.setAmount(amount);
+        trade.setStatusName(statusName);
+        trade.setCounterpartyName(counterpartyName);
+        trade.setCleanMode(cleanMode);
+        trade.setCleanBatch(context.cleanBatch());
+        trade.setTradeTime(tradeTime);
+        trade.setCreatedAt(context.createdAt());
+        return trade;
+    }
 }

@@ -11,4 +11,7 @@ public interface DynamicSqlMapper {
 
     @Select("select count(1) from ${tableName}")
     Integer countTable(@Param("tableName") String tableName);
+
+    @Select("select coalesce(max(${columnName}), 0) from ${tableName}")
+    Long maxValue(@Param("tableName") String tableName, @Param("columnName") String columnName);
 }

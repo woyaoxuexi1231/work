@@ -44,11 +44,16 @@ public class RoutingMybatisExecutor {
      * @return 操作结果
      */
     public <T> T query(String dataSourceKey, Supplier<T> action) {
+        String previousKey = DynamicRoutingDataSource.getDataSourceKey();
         DynamicRoutingDataSource.setDataSourceKey(dataSourceKey);
         try {
             return action.get();
         } finally {
-            DynamicRoutingDataSource.clearDataSourceKey();
+            if (previousKey == null) {
+                DynamicRoutingDataSource.clearDataSourceKey();
+            } else {
+                DynamicRoutingDataSource.setDataSourceKey(previousKey);
+            }
         }
     }
 

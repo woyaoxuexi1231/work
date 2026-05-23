@@ -81,58 +81,18 @@ public class TradeEtlService {
                                          int pageSize,
                                          SyncProgressListener progressListener) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
-        int safePageSize = Math.max(1, Math.min(pageSize, 500));
-        String batchNo = "SYNC-" + System.currentTimeMillis();
-        BusinessSyncContext context = BusinessSyncContext.builder()
-                .dataSourceKey(dataSourceKey)
-                .datasourceType(config.getDatasourceType())
-                .pageSize(safePageSize)
-                .batchNo(batchNo)
-                .build();
+        int safePageSize = sanitizePageSize(pageSize);
+        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize);
 
         log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 业务模板数={}",
-                dataSourceKey, config.getDatasourceType(), safePageSize, batchNo, businessSyncTemplates.size());
+                dataSourceKey, config.getDatasourceType(), safePageSize, context.getBatchNo(), businessSyncTemplates.size());
 
         try {
-            List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
-            for (BusinessSyncTemplate template : businessSyncTemplates) {
-                futures.add(CompletableFuture.supplyAsync(() -> {
-                    try {
-                        return template.execute(context, progressListener);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }, syncBusinessExecutor));
-            }
-
-            // 等待所有业务模板执行完毕
+            List<CompletableFuture<BusinessSyncResult>> futures = submitBusinessTemplates(context, progressListener);
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
-
-            Map<String, BusinessSyncResult> businessResults = new LinkedHashMap<>();
-            int totalPulled = 0;
-            int totalSaved = 0;
-            int maxPageCount = 0;
-            for (CompletableFuture<BusinessSyncResult> future : futures) {
-                BusinessSyncResult result = future.get(); // 不阻塞，allOf 已确保全部完成
-                businessResults.put(result.getBusinessCode(), result);
-                totalPulled += result.getPulledCount();
-                totalSaved += result.getSavedCount();
-                maxPageCount = Math.max(maxPageCount, result.getPageCount());
-            }
-
-            SyncResultDTO summary = new SyncResultDTO(
-                    dataSourceKey,
-                    config.getName(),
-                    config.getDatasourceType(),
-                    safePageSize,
-                    batchNo,
-                    maxPageCount,
-                    totalPulled,
-                    totalSaved,
-                    businessResults
-            );
+            SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
             log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
-                    dataSourceKey, batchNo, totalPulled, totalSaved);
+                    dataSourceKey, context.getBatchNo(), summary.getPulledCount(), summary.getSavedCount());
             return summary;
         } catch (Exception e) {
             log.error("[同步编排] 同步失败 dataSourceKey={}, 错误={}", dataSourceKey, e.getMessage(), e);
@@ -156,5 +116,65 @@ public class TradeEtlService {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
         return config;
+    }
+
+    private int sanitizePageSize(int pageSize) {
+        return Math.max(1, Math.min(pageSize, 500));
+    }
+
+    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize) {
+        return BusinessSyncContext.builder()
+                .dataSourceKey(dataSourceKey)
+                .datasourceType(config.getDatasourceType())
+                .pageSize(pageSize)
+                .batchNo("SYNC-" + System.currentTimeMillis())
+                .build();
+    }
+
+    private List<CompletableFuture<BusinessSyncResult>> submitBusinessTemplates(BusinessSyncContext context,
+                                                                                 SyncProgressListener progressListener) {
+        List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
+        for (BusinessSyncTemplate template : businessSyncTemplates) {
+            futures.add(CompletableFuture.supplyAsync(() -> executeTemplate(template, context, progressListener), syncBusinessExecutor));
+        }
+        return futures;
+    }
+
+    private BusinessSyncResult executeTemplate(BusinessSyncTemplate template,
+                                               BusinessSyncContext context,
+                                               SyncProgressListener progressListener) {
+        try {
+            return template.execute(context, progressListener);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private SyncResultDTO summarizeResults(BusinessSyncContext context,
+                                           DataSourceConfigDTO config,
+                                           int pageSize,
+                                           List<CompletableFuture<BusinessSyncResult>> futures) throws Exception {
+        Map<String, BusinessSyncResult> businessResults = new LinkedHashMap<>();
+        int totalPulled = 0;
+        int totalSaved = 0;
+        int maxPageCount = 0;
+        for (CompletableFuture<BusinessSyncResult> future : futures) {
+            BusinessSyncResult result = future.get();
+            businessResults.put(result.getBusinessCode(), result);
+            totalPulled += result.getPulledCount();
+            totalSaved += result.getSavedCount();
+            maxPageCount = Math.max(maxPageCount, result.getPageCount());
+        }
+        return new SyncResultDTO(
+                context.getDataSourceKey(),
+                config.getName(),
+                config.getDatasourceType(),
+                pageSize,
+                context.getBatchNo(),
+                maxPageCount,
+                totalPulled,
+                totalSaved,
+                businessResults
+        );
     }
 }
