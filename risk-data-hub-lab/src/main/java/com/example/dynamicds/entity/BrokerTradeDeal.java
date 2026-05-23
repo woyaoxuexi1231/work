@@ -4,12 +4,18 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.example.dynamicds.bootstrap.MarketSeedSnapshot;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 @TableName("broker_trade_deal")
 public class BrokerTradeDeal {
     @TableId(type = IdType.INPUT)

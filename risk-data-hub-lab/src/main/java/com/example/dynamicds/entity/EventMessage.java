@@ -3,10 +3,16 @@ package com.example.dynamicds.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
 @TableName("event_message")
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 public class EventMessage {
     @TableId(type = IdType.INPUT)
     private Long messageId;

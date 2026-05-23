@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Condition 等待通知机制 · 独立等待队列深度剖析 | 大厂面试必备</title>
+  <!-- Tailwind CSS + Font Awesome + Google Fonts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    body { background: linear-gradient(145deg, #f5f7fb 0%, #eef2f8 100%); }
+    .card-hover { transition: all 0.2s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.12); }
+    .queue-node { transition: all 0.2s; border-radius: 1rem; }
+    .code-block { background: #1e293b; border-radius: 1rem; padding: 1rem; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; overflow-x: auto; }
+    .interview-badge { background: #ffedd5; color: #b45309; border-radius: 9999px; font-size: 0.7rem; padding: 0.2rem 0.7rem; font-weight: 600; }
+    .step-item { border-left: 3px solid #3b82f6; padding-left: 1rem; margin-bottom: 0.75rem; }
+    .condition-box { background: #f1f5f9; border-radius: 1rem; padding: 0.75rem; }
+    .compare-table th, .compare-table td { padding: 0.75rem; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+    .compare-table th { background: #f8fafc; font-weight: 600; color: #0f172a; }
+  </style>
+</head>
+<body class="antialiased">
+
+<div class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+  <!-- 头部区域 -->
+  <div class="text-center mb-10">
+    <div class="inline-flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 shadow-sm mb-4">
+      <i class="fab fa-java text-red-500 text-sm"></i>
+      <span class="text-xs font-medium text-gray-700">JUC · 线程通信进阶</span>
+    </div>
+    <h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-slate-800 to-cyan-700 bg-clip-text text-transparent tracking-tight">
+      Condition 等待通知机制
+    </h1>
+    <p class="text-gray-600 max-w-2xl mx-auto mt-3 text-base md:text-lg">
+      独立等待队列 · await释放锁 · signal转移节点 · 多等待集 · 比wait/notify更强大的线程协作
+    </p>
+  </div>
+
+  <!-- ========== 核心概念总览 ========== -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+      <div class="flex items-center gap-3 mb-3"><i class="fas fa-forklift text-2xl text-indigo-600"></i><h2 class="text-xl font-bold">独立等待队列</h2></div>
+      <p class="text-sm text-gray-700">每个 <span class="font-mono bg-gray-100 px-1 rounded">Condition</span> 对象内部维护一个 <strong>单向条件队列 (firstWaiter → lastWaiter)</strong>，与 AQS 同步队列完全分离。一个 Lock 可以创建多个 Condition，实现多路等待/通知。</p>
+      <div class="mt-2 text-xs text-indigo-600"><i class="fas fa-check-circle"></i> 面试亮点：解决了 Object.wait/notify 无法区分等待条件的痛点。</div>
+    </div>
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+      <div class="flex items-center gap-3 mb-3"><i class="fas fa-exchange-alt text-2xl text-emerald-600"></i><h2 class="text-xl font-bold">await 核心步骤</h2></div>
+      <ul class="text-sm space-y-1 list-disc pl-4">
+        <li>当前线程必须持有锁（否则抛异常）</li>
+        <li>将当前线程封装为 Node (CONDITION) 加入条件队列</li>
+        <li>fullyRelease 完全释放锁（包括重入次数）</li>
+        <li>park 阻塞，等待 signal 或中断</li>
+        <li>被唤醒后重新竞争锁（acquireQueued）</li>
+      </ul>
+    </div>
+    <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-gray-200 card-hover">
+      <div class="flex items-center gap-3 mb-3"><i class="fas fa-share-square text-2xl text-amber-600"></i><h2 class="text-xl font-bold">signal 核心步骤</h2></div>
+      <ul class="text-sm space-y-1 list-disc pl-4">
+        <li>持有锁调用 signal，检查条件队列非空</li>
+        <li>将条件队列首节点 (或所有节点) 转移到 AQS 同步队列尾部</li>
+        <li>修改节点状态：waitStatus 从 CONDITION → 0 或 SIGNAL</li>
+        <li>同步队列中的节点随后可参与锁竞争</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 图解：双队列协作 (核心) ========== -->
+  <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 md:p-6 border border-gray-200 mb-12">
+    <div class="flex items-center gap-3 flex-wrap mb-4"><i class="fas fa-diagram-project text-blue-600 text-2xl"></i><h2 class="text-2xl font-bold">🔁 Condition 双队列协作全景图</h2><span class="interview-badge">高频图解</span></div>
+    <p class="text-gray-700 text-sm mb-5">AQS 同步队列（CLH）与 Condition 条件队列独立存在，<strong>signal</strong> 将节点从条件队列 <span class="font-mono bg-amber-100 px-1">移动</span> 到同步队列，实现等待条件的唤醒与锁竞争。</p>
+
+    <!-- 可视化双队列 -->
+    <div class="bg-slate-50 rounded-xl p-5 overflow-x-auto">
+      <div class="flex flex-col gap-8">
+        <!-- 条件队列 (Condition) -->
+        <div>
+          <div class="flex items-center gap-2 mb-2"><i class="fas fa-bed text-purple-600"></i><span class="font-semibold text-purple-800">Condition 条件队列 (等待集)</span><span class="text-xs text-gray-500">—— 调用 await() 时加入</span></div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="bg-purple-100 border border-purple-300 rounded-xl p-2 px-3 text-sm"><i class="fas fa-hourglass-start"></i> firstWaiter</div>
+            <i class="fas fa-arrow-right text-gray-400"></i>
+            <div class="bg-white border-2 border-purple-300 rounded-xl p-3 w-36 text-center shadow-sm"><div class="font-mono text-xs">Node A</div><div>thread=Thread-A</div><div class="text-[10px]">waitStatus = -2 (CONDITION)</div><div>nextWaiter →</div></div>
+            <i class="fas fa-arrow-right text-gray-400"></i>
+            <div class="bg-white border-2 border-purple-300 rounded-xl p-3 w-36 text-center shadow-sm"><div class="font-mono text-xs">Node B</div><div>thread=Thread-B</div><div class="text-[10px]">waitStatus = -2</div></div>
+            <i class="fas fa-arrow-right text-gray-400"></i>
+            <div class="bg-purple-100 border border-purple-300 rounded-xl p-2 px-3 text-sm">lastWaiter (null)</div>
+          </div>
+          <div class="text-xs text-gray-500 mt-2">每个 Condition 独立维护一个单向链表 (nextWaiter 指针)</div>
+        </div>
+
+        <!-- 转移箭头 -->
+        <div class="flex justify-center my-2"><div class="bg-amber-100 rounded-full px-4 py-1 text-xs font-bold flex items-center gap-2"><i class="fas fa-arrow-down text-amber-600"></i> signal() 将 Condition 队列首节点转移到 AQS 队列 <i class="fas fa-arrow-down text-amber-600"></i></div></div>
+
+        <!-- AQS 同步队列 (CLH) -->
+        <div>
+          <div class="flex items-center gap-2 mb-2"><i class="fas fa-layer-group text-indigo-600"></i><span class="font-semibold text-indigo-800">AQS 同步队列 (CLH 双向链表)</span><span class="text-xs text-gray-500">—— 竞争锁的线程队列</span></div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="bg-indigo-100 border border-indigo-300 rounded-xl p-2 px-3 text-sm">head (持有锁)</div>
+            <i class="fas fa-arrow-right text-gray-400"></i>
+            <div class="bg-white border border-gray-300 rounded-xl p-3 w-36 text-center"><div class="font-mono">Node C</div><div>thread=Thread-C</div><div>waitStatus=-1 (SIGNAL)</div></div>
+            <i class="fas fa-arrow-right text-gray-400"></i>
+            <div class="bg-green-50 border border-green-300 rounded-xl p-3 w-36 text-center"><div class="font-mono">Node A'</div><div>thread=Thread-A</div><div>waitStatus=0</div><div class="text-[10px]">刚从条件队列转移</div></div>
+            <i class="fas fa-arrow-right text-gray-400"></i>
+            <div class="bg-white border border-gray-300 rounded-xl p-3 w-36 text-center">tail</div>
+          </div>
+          <div class="text-xs text-gray-500 mt-2">signal 将 Node 的 waitStatus 从 CONDITION 置为 0，并加入同步队列尾，随后该节点可参与锁竞争。</div>
+        </div>
+      </div>
+    </div>
+    <div class="mt-4 text-sm text-gray-600 bg-blue-50 p-3 rounded-lg"><i class="fas fa-microphone-alt text-blue-500"></i> 面试核心：Object.wait/notify 只有一个等待队列，而 Condition 允许一个 Lock 创建多个等待队列（例如生产者-消费者模型中分别有 notFull 和 notEmpty），实现更精细的线程调度。</div>
+  </div>
+
+  <!-- ========== await 和 signal 详细流程图解 ========== -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+    <!-- await 流程图 -->
+    <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+      <div class="bg-gradient-to-r from-purple-700 to-purple-800 px-5 py-3 text-white flex items-center gap-2"><i class="fas fa-pause-circle"></i><span class="font-bold">Condition.await() 详细流程</span><span class="ml-auto text-xs bg-purple-600 px-2 py-0.5 rounded-full">释放锁 + 阻塞</span></div>
+      <div class="p-5 space-y-3 text-sm">
+        <div class="step-item">1️⃣ 当前线程必须已经持有锁（AQS 独占模式），否则抛出 IllegalMonitorStateException。</div>
+        <div class="step-item">2️⃣ 将当前线程包装成 Node，状态设为 <span class="font-mono bg-gray-100 px-1">CONDITION = -2</span>，并通过 <span class="font-mono">addConditionWaiter()</span> 加入条件队列尾部。</div>
+        <div class="step-item">3️⃣ 调用 <span class="font-mono">fullyRelease(node)</span>：释放当前线程持有的所有锁（state 归零），并唤醒 AQS 同步队列中的后继节点。</div>
+        <div class="step-item">4️⃣ 进入阻塞循环：<span class="font-mono">LockSupport.park(this)</span>，直到被 signal 或 中断。如果被中断则抛出 InterruptedException 或记录中断状态。</div>
+        <div class="step-item">5️⃣ 被 signal 唤醒后，节点从条件队列中移除，并通过 <span class="font-mono">acquireQueued(node, savedState)</span> 重新竞争锁，成功返回后，await 方法返回。</div>
+        <div class="mt-2 bg-purple-50 p-2 rounded-lg text-xs font-mono">源码要点：addConditionWaiter 中若 lastWaiter 被取消则遍历清除；fullyRelease 支持重入锁完全释放。</div>
+      </div>
+    </div>
+    <!-- signal 流程图 -->
+    <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+      <div class="bg-gradient-to-r from-amber-700 to-amber-800 px-5 py-3 text-white flex items-center gap-2"><i class="fas fa-bell"></i><span class="font-bold">Condition.signal() 详细流程</span><span class="ml-auto text-xs bg-amber-600 px-2 py-0.5 rounded-full">转移节点</span></div>
+      <div class="p-5 space-y-3 text-sm">
+        <div class="step-item">1️⃣ 检查当前线程是否持有锁，未持有则抛异常。</div>
+        <div class="step-item">2️⃣ 从条件队列中取出 firstWaiter（不为空）。</div>
+        <div class="step-item">3️⃣ 调用 <span class="font-mono">transferForSignal(node)</span>：将节点从条件队列中移除，并尝试将其添加到 AQS 同步队列尾部。</div>
+        <div class="step-item">4️⃣ 修改节点状态：<span class="font-mono">waitStatus</span> 从 CONDITION 改为 0，再将前驱节点状态设为 SIGNAL（若前驱取消则自旋）。</div>
+        <div class="step-item">5️⃣ 成功入队后，如果前驱节点的 waitStatus > 0 或设置 SIGNAL 失败，则直接 <span class="font-mono">LockSupport.unpark(node.thread)</span> 唤醒线程。</div>
+        <div class="step-item">6️⃣ signalAll 则遍历整个条件队列，对每个节点重复上述转移。</div>
+        <div class="mt-2 bg-amber-50 p-2 rounded-lg text-xs font-mono">注意：signal 不会立即唤醒等待线程，只是将节点移到同步队列；被转移的线程仍需在 acquireQueued 中自旋竞争锁。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== Condition vs Object.wait/notify 对比表 ========== -->
+  <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-gray-200 mb-12">
+    <div class="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-4">
+      <div class="flex items-center gap-3"><i class="fas fa-table-list text-white text-xl"></i><h3 class="text-white font-bold text-xl">🔍 Condition 与 Object 监视器方法全面对比</h3><span class="interview-badge ml-auto">面试必考</span></div>
+    </div>
+    <div class="overflow-x-auto p-5">
+      <table class="compare-table min-w-full text-sm">
+        <thead>
+        <tr><th style="width: 25%">对比维度</th><th style="width: 37.5%">Object.wait/notify/notifyAll</th><th style="width: 37.5%">Condition.await/signal/signalAll</th></tr>
+        </thead>
+        <tbody>
+        <tr><td class="font-semibold">等待队列数量</td><td>每个对象只有一个等待集（wait set）</td><td>每个 Lock 可以创建<span class="font-mono bg-green-100 px-1">多个 Condition</span> 实例，每个拥有独立等待队列</td></tr>
+        <tr><td class="font-semibold">使用前提</td><td>必须持有 synchronized 内置锁（监视器）</td><td>必须持有 Lock（ReentrantLock等）并调用 lock()，与 AQS 配合</td></tr>
+        <tr><td class="font-semibold">锁释放与重获取</td><td>wait 释放锁，被唤醒后重新竞争内置锁（不可中断）</td><td>await 完全释放锁（支持重入），唤醒后通过 acquireQueued 重新获取锁，支持可中断/不可中断/超时版本</td></tr>
+        <tr><td class="font-semibold">中断响应</td><td>wait 响应中断并抛出 InterruptedException，但锁状态恢复复杂</td><td>await 提供了 <span class="font-mono">awaitUninterruptibly()</span> 忽略中断，<span class="font-mono">awaitNanos()</span> 支持超时，更灵活</td></tr>
+        <tr><td class="font-semibold">公平性 & 顺序</td><td>依赖于 JVM 实现，notify 一般随机唤醒一个线程</td><td>signal 按照条件队列 FIFO 顺序转移，结合 AQS 的公平锁可实现公平唤醒</td></tr>
+        <tr><td class="font-semibold">适用场景</td><td>简单的生产者-消费者，单一条件等待</td><td>复杂并发组件（如阻塞队列、连接池），多条件精细化控制（notFull / notEmpty）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="bg-slate-50 p-4 text-xs text-gray-600 border-t border-gray-200"><i class="fas fa-lightbulb text-yellow-600"></i> 面试金句：Condition 将等待队列与同步队列分离，支持多路等待，且 await 释放锁过程中可完全释放重入次数，弥补了 Object 监视器的不足，是 JUC 锁框架的亮点。</div>
+  </div>
+
+  <!-- ========== 实战案例：生产者-消费者模型（两个 Condition） ========== -->
+  <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200 mb-12">
+    <div class="bg-gradient-to-r from-cyan-700 to-blue-700 px-6 py-4 text-white"><div class="flex items-center gap-2"><i class="fas fa-code-branch"></i><span class="font-bold text-lg">💡 典型应用：使用两个 Condition 实现有界阻塞队列</span><span class="ml-auto text-xs bg-cyan-800 px-2 py-0.5 rounded-full">生产者-消费者</span></div></div>
+    <div class="p-6">
+      <p class="text-sm text-gray-700 mb-3">通过 <span class="font-mono bg-gray-100 px-1">notFull</span> 和 <span class="font-mono bg-gray-100 px-1">notEmpty</span> 两个 Condition，分别控制队列不满和队列不空的条件，避免不必要的线程唤醒。</p>
+      <div class="code-block text-xs">
+                    <pre class="whitespace-pre-wrap break-words">
+<span class="text-green-400">class</span> <span class="text-yellow-300">BoundedQueue</span>&lt;T&gt; {
+    <span class="text-blue-300">private final</span> ReentrantLock lock = <span class="text-blue-300">new</span> ReentrantLock();
+    <span class="text-blue-300">private final</span> Condition notFull  = lock.newCondition();
+    <span class="text-blue-300">private final</span> Condition notEmpty = lock.newCondition();
+    <span class="text-blue-300">private final</span> Object[] items;
+    <span class="text-blue-300">private int</span> putIndex, takeIndex, count;
+
+    <span class="text-green-400">public void</span> <span class="text-yellow-300">put</span>(T item) <span class="text-green-400">throws</span> InterruptedException {
+        lock.lockInterruptibly();
+        <span class="text-green-400">try</span> {
+            <span class="text-green-400">while</span> (count == items.length)
+                notFull.await();      <span class="text-gray-400">// 队列满，等待 notFull 条件</span>
+            items[putIndex] = item;
+            <span class="text-green-400">if</span> (++putIndex == items.length) putIndex = <span class="text-yellow-300">0</span>;
+            count++;
+            notEmpty.signal();        <span class="text-gray-400">// 唤醒一个等待 notEmpty 的消费者</span>
+        } <span class="text-green-400">finally</span> { lock.unlock(); }
+    }
+
+    <span class="text-green-400">public T</span> <span class="text-yellow-300">take</span>() <span class="text-green-400">throws</span> InterruptedException {
+        lock.lockInterruptibly();
+        <span class="text-green-400">try</span> {
+            <span class="text-green-400">while</span> (count == <span class="text-yellow-300">0</span>)
+                notEmpty.await();     <span class="text-gray-400">// 队列空，等待 notEmpty 条件</span>
+            T item = (T) items[takeIndex];
+            <span class="text-green-400">if</span> (++takeIndex == items.length) takeIndex = <span class="text-yellow-300">0</span>;
+            count--;
+            notFull.signal();         <span class="text-gray-400">// 唤醒一个等待 notFull 的生产者</span>
+            <span class="text-green-400">return</span> item;
+        } <span class="text-green-400">finally</span> { lock.unlock(); }
+    }
+}
+                    </pre>
+      </div>
+      <div class="mt-3 text-xs text-gray-500"><i class="fas fa-comment-dots"></i> 面试延伸：通过两个 Condition 精准控制，比使用 notifyAll 避免“惊群效应”且提高效率。</div>
+    </div>
+  </div>
+
+  <!-- ========== 大厂面试高频题（Condition 专场） ========== -->
+  <div class="mb-12">
+    <div class="flex items-center gap-3 mb-6"><i class="fas fa-fire text-2xl text-rose-500"></i><h2 class="text-2xl font-bold text-gray-800">📌 大厂面试高频题 · Condition 深度剖析</h2></div>
+    <div class="space-y-5">
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-indigo-500 shadow-sm">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-indigo-800">Q1：一个 Lock 可以创建多个 Condition，它们之间有什么关系？节点能否跨条件队列转移？</span><span class="interview-badge">必问</span></div>
+        <p class="text-sm text-gray-700 mt-2">每个 Condition 拥有独立的条件队列（单向链表），不同 Condition 的节点完全隔离。调用 signal 只能将当前 Condition 队列中的节点转移到 AQS 同步队列，绝不可能将其他 Condition 的节点误转移。这样实现了 <strong>等待集分离</strong>，例如生产者线程只等待 notFull，消费者只等待 notEmpty。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-emerald-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-emerald-800">Q2：await 释放锁时，如果锁是可重入的（如 ReentrantLock），如何完全释放？</span><span class="interview-badge">源码细节</span></div>
+        <p class="text-sm text-gray-700 mt-2">AQS 提供的 <span class="font-mono">fullyRelease</span> 方法会循环调用 tryRelease，直到 state 变为 0，并返回保存的重入次数。被唤醒后，在 acquireQueued 中会使用该保存的状态重新获取锁（恢复重入次数）。这保证了 await 前后锁状态一致性。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-amber-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-amber-800">Q3：signal 操作是立即唤醒等待线程吗？被唤醒的线程能立刻执行吗？</span><span class="interview-badge">容易混淆</span></div>
+        <p class="text-sm text-gray-700 mt-2">signal 只是将节点从条件队列转移到同步队列，并修改节点状态（如果前驱是取消状态则可能直接 unpark）。但线程要真正执行，必须先通过 <span class="font-mono">acquireQueued</span> 竞争锁成功。所以被唤醒的线程不会立即运行，而是进入同步队列排队等待锁，符合锁的公平/非公平策略。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-rose-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-rose-800">Q4：Condition 的 await 方法为什么必须放在 while 循环中？</span><span class="interview-badge">最佳实践</span></div>
+        <p class="text-sm text-gray-700 mt-2">原因有三：① 防止虚假唤醒（spurious wakeup），线程可能在未被 signal/notify 的情况下醒来；② 从 await 返回后，条件可能仍未满足（例如队列再次被其他线程写满）；③ 多条件协作时，signal 不保证条件立刻成立，必须重检查。因此官方文档强制要求 while 循环。</p>
+      </div>
+      <div class="bg-white/70 rounded-xl p-5 border-l-8 border-sky-500 shadow-sm">
+        <div class="flex items-center gap-2"><span class="font-bold text-sky-800">Q5：Condition 的等待队列中节点如何被清理（取消等待）？中断如何影响？</span></div>
+        <p class="text-sm text-gray-700 mt-2">在 await 时如果线程发生中断，且方法支持中断（如 await() 会抛出 InterruptedException），节点会从条件队列中移除并转移到同步队列，然后抛出异常。另外，在条件队列遍历时（如 signal 前），会检查并跳过 waitStatus 为 CANCELLED 的节点。同时 <span class="font-mono">awaitNanos</span> 超时后也会自动将节点转移到同步队列并返回 false。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 总结与内部实现细节 ========== -->
+  <div class="bg-gradient-to-r from-indigo-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl">
+    <div class="flex items-center gap-2 mb-3"><i class="fas fa-microchip text-2xl"></i><h3 class="text-xl font-bold">🔧 Condition 内部实现关键点总结</h3></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div><i class="fas fa-check-circle text-green-400"></i> 条件队列为单向链表，由 firstWaiter, lastWaiter 指针维护，节点使用 nextWaiter 连接。</div>
+      <div><i class="fas fa-check-circle text-green-400"></i> Node 的状态 CONDITION (-2) 仅用于条件队列，表示节点正在等待条件。</div>
+      <div><i class="fas fa-check-circle text-green-400"></i> transferForSignal 将节点从条件队列移除后，调用 enq 入同步队列，并设置前驱为 SIGNAL。</div>
+      <div><i class="fas fa-check-circle text-green-400"></i> await 支持超时和中断：awaitNanos, awaitUntil, awaitUninterruptibly 提供灵活变种。</div>
+      <div><i class="fas fa-check-circle text-green-400"></i> JUC 阻塞队列 (ArrayBlockingQueue, LinkedBlockingQueue) 底层均使用 Condition 实现。</div>
+      <div><i class="fas fa-check-circle text-green-400"></i> ReentrantLock.newCondition() 返回 ConditionObject，它是 AQS 内部类。</div>
+    </div>
+    <div class="mt-4 text-xs text-gray-300 border-t border-indigo-700 pt-3"><i class="fas fa-graduation-cap"></i> 面试官常让你手写简单的 Condition 生产者-消费者，上述代码即标准答案。</div>
+  </div>
+
+  <!-- 页脚 -->
+  <div class="text-center text-xs text-gray-500 border-t border-gray-300 pt-6 mt-8 flex flex-wrap justify-center gap-4">
+    <span><i class="fab fa-java"></i> AbstractQueuedSynchronizer.ConditionObject 实现</span>
+    <span><i class="fas fa-quote-right"></i> 掌握 Condition = 深入理解 JUC 锁通信精髓</span>
+    <span><i class="fas fa-chart-simple"></i> 多等待集 | 可中断/超时 | 公平唤醒</span>
+  </div>
+</div>
+</body>
+</html>
