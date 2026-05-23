@@ -20,7 +20,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DictionaryService {
 
+    private static final String TAG_DICT_ITEM = "dict_item";
+
     private final RoutingMybatisExecutor routingMybatisExecutor;
+    private final LeafSegmentService leafSegmentService;
     private final DictItemMapper dictItemMapper;
 
     /**
@@ -43,6 +46,7 @@ public class DictionaryService {
                     .last("limit 1"));
             if (exist == null) {
                 DictItem item = new DictItem();
+                item.setId(leafSegmentService.nextId(TAG_DICT_ITEM));
                 item.setDictType(dictType);
                 item.setDictCode(dictCode);
                 item.setDictName(dictName);

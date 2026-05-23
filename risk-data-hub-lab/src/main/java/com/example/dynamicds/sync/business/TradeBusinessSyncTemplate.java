@@ -15,6 +15,7 @@ import com.example.dynamicds.service.MessageOutboxService;
 import com.example.dynamicds.service.PlatformBootstrapService;
 import com.example.dynamicds.sync.AbstractBusinessSyncTemplate;
 import com.example.dynamicds.sync.BusinessSyncContext;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -91,22 +92,17 @@ public class TradeBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Trad
 
     @Override
     protected CleanTrade transform(BusinessSyncContext context, TradeRow row) {
-        CleanTrade cleanTrade = new CleanTrade();
-        cleanTrade.setGlobalId(leafSegmentService.nextId("clean_trade"));
-        cleanTrade.setSourceSystem(context.getDataSourceKey());
-        cleanTrade.setSourceType(context.getDatasourceType());
-        cleanTrade.setSourceRowId(row.getId());
-        cleanTrade.setVendorTradeNo(row.getBizNo());
-        cleanTrade.setBizType("股票交易");
-        cleanTrade.setDirection(resolveTradeDirection(context.getDatasourceType(), row.getDirectionCode()));
-        cleanTrade.setAmount(row.getAmount());
-        cleanTrade.setStatusName(resolveTradeStatus(context.getDatasourceType(), row.getStatusCode()));
-        cleanTrade.setCounterpartyName(row.getCounterpartyName());
-        cleanTrade.setCleanMode("MANUAL_SYNC");
-        cleanTrade.setCleanBatch(context.getBatchNo());
-        cleanTrade.setTradeTime(row.getTradeTime());
-        cleanTrade.setCreatedAt(LocalDateTime.now().format(FORMATTER));
-        return cleanTrade;
+        return CleanTrade.create(
+                cleanRecordContext(context, row.getId()),
+                row.getBizNo(),
+                "股票交易",
+                resolveTradeDirection(context.getDatasourceType(), row.getDirectionCode()),
+                row.getAmount(),
+                resolveTradeStatus(context.getDatasourceType(), row.getStatusCode()),
+                row.getCounterpartyName(),
+                "MANUAL_SYNC",
+                row.getTradeTime()
+        );
     }
 
     @Override
@@ -141,6 +137,17 @@ public class TradeBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Trad
             return dictionaryService.translate("trade_status_oms", rawStatus);
         }
         return dictionaryService.translate("trade_status_broker", rawStatus);
+    }
+
+    private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
+        return new CleanRecordContext(
+                leafSegmentService.nextId("clean_trade"),
+                context.getDataSourceKey(),
+                context.getDatasourceType(),
+                sourceRowId,
+                context.getBatchNo(),
+                LocalDateTime.now().format(FORMATTER)
+        );
     }
 
     @Data

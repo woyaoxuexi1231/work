@@ -14,6 +14,7 @@ import com.example.dynamicds.service.MessageOutboxService;
 import com.example.dynamicds.service.PlatformBootstrapService;
 import com.example.dynamicds.sync.AbstractBusinessSyncTemplate;
 import com.example.dynamicds.sync.BusinessSyncContext;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -84,20 +85,15 @@ public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Asse
 
     @Override
     protected CleanAsset transform(BusinessSyncContext context, AssetRow row) {
-        CleanAsset cleanAsset = new CleanAsset();
-        cleanAsset.setGlobalId(leafSegmentService.nextId("clean_asset"));
-        cleanAsset.setSourceSystem(context.getDataSourceKey());
-        cleanAsset.setSourceType(context.getDatasourceType());
-        cleanAsset.setSourceRowId(row.getId());
-        cleanAsset.setAccountName(row.getAccountName());
-        cleanAsset.setAccountNo(row.getAccountNo());
-        cleanAsset.setCashBalance(row.getCashBalance());
-        cleanAsset.setFrozenBalance(row.getFrozenBalance());
-        cleanAsset.setTotalAsset(row.getTotalAsset());
-        cleanAsset.setStatDay(row.getStatDay());
-        cleanAsset.setCleanBatch(context.getBatchNo());
-        cleanAsset.setCreatedAt(LocalDateTime.now().format(FORMATTER));
-        return cleanAsset;
+        return CleanAsset.create(
+                cleanRecordContext(context, row.getId()),
+                row.getAccountName(),
+                row.getAccountNo(),
+                row.getCashBalance(),
+                row.getFrozenBalance(),
+                row.getTotalAsset(),
+                row.getStatDay()
+        );
     }
 
     @Override
@@ -118,6 +114,17 @@ public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Asse
                             .eq(BrokerFundAccount::getId, rowId)));
             default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
         }
+    }
+
+    private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
+        return new CleanRecordContext(
+                leafSegmentService.nextId("clean_asset"),
+                context.getDataSourceKey(),
+                context.getDatasourceType(),
+                sourceRowId,
+                context.getBatchNo(),
+                LocalDateTime.now().format(FORMATTER)
+        );
     }
 
     @Data

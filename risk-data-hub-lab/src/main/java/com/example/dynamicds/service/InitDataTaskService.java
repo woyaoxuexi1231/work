@@ -35,14 +35,15 @@ public class InitDataTaskService {
     private final ThreadPoolExecutor initDataTaskExecutor;
 
     public InitTask startTask() {
+        long taskId = leafSegmentService.nextId(TAG_INIT_TASK);
         RLock lock = redissonClient.getLock(LOCK_KEY);
-        if (!lock.tryLock()) {
+        if (!tryAcquireLock(lock, taskId)) {
             throw new IllegalStateException("已有初始化任务正在运行");
         }
 
         String now = now();
         InitTask task = new InitTask();
-        task.setId(leafSegmentService.nextId(TAG_INIT_TASK));
+        task.setId(taskId);
         task.setStatus("QUEUED");
         task.setProgress(0);
         task.setSubmittedAt(now);
@@ -51,7 +52,12 @@ public class InitDataTaskService {
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> initTaskMapper.insert(task));
 
         log.info("[InitTask] submit id={}", task.getId());
-        initDataTaskExecutor.submit(() -> runTask(task.getId(), lock));
+        try {
+            initDataTaskExecutor.submit(() -> runTask(task.getId(), lock, taskId));
+        } catch (RuntimeException e) {
+            releaseLockQuietly(lock, taskId);
+            throw e;
+        }
         return task;
     }
 
@@ -72,9 +78,9 @@ public class InitDataTaskService {
         return task;
     }
 
-    private void runTask(Long id, RLock lock) {
+    private void runTask(Long id, RLock lock, long lockOwnerId) {
         try {
-            updateTask(id, "RUNNING", null, 0, "初始化任务执行中...", null, null, now());
+            updateTask(id, "RUNNING", null, 0, "初始化任务执行中...", null, now(), null);
 
             Map<String, Object> result = platformBootstrapService.initDemoDataWithProgress(p -> {});
             int snapshotCount = ((Number) result.getOrDefault("snapshotCount", 0)).intValue();
@@ -85,9 +91,32 @@ public class InitDataTaskService {
             updateTask(id, "FAILED", null, 0, "初始化任务失败", e.getMessage(), null, now());
             log.error("[InitTask] failed id={}", id, e);
         } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
+            releaseLockQuietly(lock, lockOwnerId);
+        }
+    }
+
+    private boolean tryAcquireLock(RLock lock, long lockOwnerId) {
+        try {
+            return lock.tryLockAsync(lockOwnerId).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("初始化任务加锁被中断", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("初始化任务加锁失败: " + e.getMessage(), e);
+        }
+    }
+
+    private void releaseLockQuietly(RLock lock, long lockOwnerId) {
+        try {
+            if (!lock.isHeldByThread(lockOwnerId)) {
+                return;
             }
+            lock.unlockAsync(lockOwnerId).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[InitTask] unlock interrupted id={}", lockOwnerId, e);
+        } catch (Exception e) {
+            log.error("[InitTask] unlock failed id={}", lockOwnerId, e);
         }
     }
 

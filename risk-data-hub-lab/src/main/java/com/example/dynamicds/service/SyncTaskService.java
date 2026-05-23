@@ -27,6 +27,7 @@ public class SyncTaskService {
 
     private static final String LOCK_KEY = "risk-hub:sync:task:lock";
     private static final String TAG_SYNC_TASK = "sync_task";
+    private static final String TAG_SYNC_BUSINESS_RECORD = "sync_business_record";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final RedissonClient redissonClient;
@@ -68,8 +69,9 @@ public class SyncTaskService {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
 
+        long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
         RLock lock = redissonClient.getLock(LOCK_KEY);
-        if (!lock.tryLock()) {
+        if (!tryAcquireLock(lock, taskId)) {
             throw new IllegalStateException("已有同步任务正在运行");
         }
 
@@ -77,7 +79,7 @@ public class SyncTaskService {
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
 
         SyncTask task = new SyncTask();
-        task.setId(leafSegmentService.nextId(TAG_SYNC_TASK));
+        task.setId(taskId);
         task.setStatus("QUEUED");
         task.setProgress(0);
         task.setDataSourceKey(dataSourceKey);
@@ -90,7 +92,12 @@ public class SyncTaskService {
         routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> syncTaskMapper.insert(task));
 
         log.info("[SyncTask] submit id={}, dataSourceKey={}, pageSize={}", task.getId(), dataSourceKey, safePageSize);
-        syncTaskExecutor.submit(() -> runTask(task.getId(), dataSourceKey, safePageSize, config.getName(), config.getDatasourceType(), lock));
+        try {
+            syncTaskExecutor.submit(() -> runTask(task.getId(), dataSourceKey, safePageSize, config.getName(), config.getDatasourceType(), lock, taskId));
+        } catch (RuntimeException e) {
+            releaseLockQuietly(lock, taskId);
+            throw e;
+        }
         return task;
     }
 
@@ -112,7 +119,7 @@ public class SyncTaskService {
     }
 
     private void runTask(Long id, String dataSourceKey, int pageSize,
-                         String dataSourceName, String datasourceType, RLock lock) {
+                         String dataSourceName, String datasourceType, RLock lock, long lockOwnerId) {
         try {
             updateTask(id, "RUNNING", now(), null, null, null, 0, 0, 0);
 
@@ -128,6 +135,7 @@ public class SyncTaskService {
                 com.example.dynamicds.sync.SyncSupport.BusinessSyncResult bizResult = entry.getValue();
 
                 SyncBusinessRecord record = new SyncBusinessRecord();
+                record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
                 record.setTaskId(id);
                 record.setBusinessCode(bizCode);
                 record.setStatus("SUCCESS");
@@ -153,9 +161,32 @@ public class SyncTaskService {
             updateTask(id, "FAILED", null, "同步任务失败", e.getMessage(), now(), 0, 0, 0);
             log.error("[SyncTask] failed id={}", id, e);
         } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
+            releaseLockQuietly(lock, lockOwnerId);
+        }
+    }
+
+    private boolean tryAcquireLock(RLock lock, long lockOwnerId) {
+        try {
+            return lock.tryLockAsync(lockOwnerId).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("同步任务加锁被中断", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("同步任务加锁失败: " + e.getMessage(), e);
+        }
+    }
+
+    private void releaseLockQuietly(RLock lock, long lockOwnerId) {
+        try {
+            if (!lock.isHeldByThread(lockOwnerId)) {
+                return;
             }
+            lock.unlockAsync(lockOwnerId).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[SyncTask] unlock interrupted id={}", lockOwnerId, e);
+        } catch (Exception e) {
+            log.error("[SyncTask] unlock failed id={}", lockOwnerId, e);
         }
     }
 

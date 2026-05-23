@@ -14,6 +14,7 @@ import com.example.dynamicds.service.MessageOutboxService;
 import com.example.dynamicds.service.PlatformBootstrapService;
 import com.example.dynamicds.sync.AbstractBusinessSyncTemplate;
 import com.example.dynamicds.sync.BusinessSyncContext;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -84,21 +85,16 @@ public class PositionBusinessSyncTemplate extends AbstractBusinessSyncTemplate<P
 
     @Override
     protected CleanPosition transform(BusinessSyncContext context, PositionRow row) {
-        CleanPosition cleanPosition = new CleanPosition();
-        cleanPosition.setGlobalId(leafSegmentService.nextId("clean_position"));
-        cleanPosition.setSourceSystem(context.getDataSourceKey());
-        cleanPosition.setSourceType(context.getDatasourceType());
-        cleanPosition.setSourceRowId(row.getId());
-        cleanPosition.setAccountName(row.getAccountName());
-        cleanPosition.setStockCode(row.getStockCode());
-        cleanPosition.setHoldingQty(row.getHoldingQty());
-        cleanPosition.setAvailableQty(row.getAvailableQty());
-        cleanPosition.setCostPrice(row.getCostPrice());
-        cleanPosition.setMarketValue(row.getMarketValue());
-        cleanPosition.setStatDay(row.getStatDay());
-        cleanPosition.setCleanBatch(context.getBatchNo());
-        cleanPosition.setCreatedAt(LocalDateTime.now().format(FORMATTER));
-        return cleanPosition;
+        return CleanPosition.create(
+                cleanRecordContext(context, row.getId()),
+                row.getAccountName(),
+                row.getStockCode(),
+                row.getHoldingQty(),
+                row.getAvailableQty(),
+                row.getCostPrice(),
+                row.getMarketValue(),
+                row.getStatDay()
+        );
     }
 
     @Override
@@ -119,6 +115,17 @@ public class PositionBusinessSyncTemplate extends AbstractBusinessSyncTemplate<P
                             .eq(BrokerPositionBalance::getId, rowId)));
             default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
         }
+    }
+
+    private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
+        return new CleanRecordContext(
+                leafSegmentService.nextId("clean_position"),
+                context.getDataSourceKey(),
+                context.getDatasourceType(),
+                sourceRowId,
+                context.getBatchNo(),
+                LocalDateTime.now().format(FORMATTER)
+        );
     }
 
     @Data

@@ -3,6 +3,7 @@ package com.example.dynamicds.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -23,4 +24,27 @@ public class CleanAsset {
     private String statDay;
     private String cleanBatch;
     private String createdAt;
+
+    public static CleanAsset create(CleanRecordContext context,
+                                    String accountName,
+                                    String accountNo,
+                                    BigDecimal cashBalance,
+                                    BigDecimal frozenBalance,
+                                    BigDecimal totalAsset,
+                                    String statDay) {
+        CleanAsset asset = new CleanAsset();
+        asset.setGlobalId(context.globalId());
+        asset.setSourceSystem(context.sourceSystem());
+        asset.setSourceType(context.sourceType());
+        asset.setSourceRowId(context.sourceRowId());
+        asset.setAccountName(accountName);
+        asset.setAccountNo(accountNo);
+        asset.setCashBalance(cashBalance);
+        asset.setFrozenBalance(frozenBalance);
+        asset.setTotalAsset(totalAsset);
+        asset.setStatDay(statDay);
+        asset.setCleanBatch(context.cleanBatch());
+        asset.setCreatedAt(context.createdAt());
+        return asset;
+    }
 }

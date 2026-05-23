@@ -14,6 +14,7 @@ import com.example.dynamicds.service.MessageOutboxService;
 import com.example.dynamicds.service.PlatformBootstrapService;
 import com.example.dynamicds.sync.AbstractBusinessSyncTemplate;
 import com.example.dynamicds.sync.BusinessSyncContext;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -89,23 +90,18 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
 
     @Override
     protected CleanStock transform(BusinessSyncContext context, StockRow row) {
-        CleanStock cleanStock = new CleanStock();
-        cleanStock.setGlobalId(leafSegmentService.nextId("clean_stock"));
-        cleanStock.setSourceSystem(context.getDataSourceKey());
-        cleanStock.setSourceType(context.getDatasourceType());
-        cleanStock.setSourceRowId(row.getId());
-        cleanStock.setStockCode(row.getStockCode());
-        cleanStock.setExchangeCode(row.getExchangeCode());
-        cleanStock.setMarketDay(row.getMarketDay());
-        cleanStock.setOpenPrice(row.getOpenPrice());
-        cleanStock.setHighPrice(row.getHighPrice());
-        cleanStock.setLowPrice(row.getLowPrice());
-        cleanStock.setClosePrice(row.getClosePrice());
-        cleanStock.setVolumeQty(row.getVolumeQty());
-        cleanStock.setTurnoverAmount(row.getTurnoverAmount());
-        cleanStock.setCleanBatch(context.getBatchNo());
-        cleanStock.setCreatedAt(LocalDateTime.now().format(FORMATTER));
-        return cleanStock;
+        return CleanStock.create(
+                cleanRecordContext(context, row.getId()),
+                row.getStockCode(),
+                row.getExchangeCode(),
+                row.getMarketDay(),
+                row.getOpenPrice(),
+                row.getHighPrice(),
+                row.getLowPrice(),
+                row.getClosePrice(),
+                row.getVolumeQty(),
+                row.getTurnoverAmount()
+        );
     }
 
     @Override
@@ -126,6 +122,17 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
                             .eq(BrokerStockQuote::getId, rowId)));
             default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
         }
+    }
+
+    private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
+        return new CleanRecordContext(
+                leafSegmentService.nextId("clean_stock"),
+                context.getDataSourceKey(),
+                context.getDatasourceType(),
+                sourceRowId,
+                context.getBatchNo(),
+                LocalDateTime.now().format(FORMATTER)
+        );
     }
 
     @Data

@@ -3,6 +3,7 @@ package com.example.dynamicds.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.example.dynamicds.sync.CleanRecordContext;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -26,4 +27,33 @@ public class CleanStock {
     private BigDecimal turnoverAmount;
     private String cleanBatch;
     private String createdAt;
+
+    public static CleanStock create(CleanRecordContext context,
+                                    String stockCode,
+                                    String exchangeCode,
+                                    String marketDay,
+                                    BigDecimal openPrice,
+                                    BigDecimal highPrice,
+                                    BigDecimal lowPrice,
+                                    BigDecimal closePrice,
+                                    Long volumeQty,
+                                    BigDecimal turnoverAmount) {
+        CleanStock stock = new CleanStock();
+        stock.setGlobalId(context.globalId());
+        stock.setSourceSystem(context.sourceSystem());
+        stock.setSourceType(context.sourceType());
+        stock.setSourceRowId(context.sourceRowId());
+        stock.setStockCode(stockCode);
+        stock.setExchangeCode(exchangeCode);
+        stock.setMarketDay(marketDay);
+        stock.setOpenPrice(openPrice);
+        stock.setHighPrice(highPrice);
+        stock.setLowPrice(lowPrice);
+        stock.setClosePrice(closePrice);
+        stock.setVolumeQty(volumeQty);
+        stock.setTurnoverAmount(turnoverAmount);
+        stock.setCleanBatch(context.cleanBatch());
+        stock.setCreatedAt(context.createdAt());
+        return stock;
+    }
 }
