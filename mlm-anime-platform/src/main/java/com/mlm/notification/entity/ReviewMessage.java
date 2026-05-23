@@ -1,7 +1,13 @@
 package com.mlm.notification.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
-import lombok.Data;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
@@ -18,7 +24,9 @@ import java.time.LocalDateTime;
  * 而这里只是"谁提交了审核 → 通知前端去查看"，一个简单的 publish-subscribe
  * 用 WebSocket 或 SSE 更合适，此处先用轮询 + 数据库表保持简单。
  */
-@Data
+@Getter
+@Setter
+@ToString
 @NoArgsConstructor
 @TableName("review_message")
 public class ReviewMessage {

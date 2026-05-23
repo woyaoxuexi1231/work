@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CountDownLatch vs CyclicBarrier 演示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 自定义动画关键帧 */
+        @keyframes moveRight {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(300px); opacity: 0; }
+        }
+
+        .thread-ball {
+            transition: all 0.5s ease;
+        }
+
+        .barrier-line {
+            transition: height 0.3s ease, background-color 0.3s ease;
+        }
+
+        /* 进度条动画 */
+        .progress-fill {
+            transition: width 0.3s linear;
+        }
+
+        /* 闪烁效果 */
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+        }
+        .animate-pulse-green {
+            animation: pulse-green 1s infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 font-sans min-h-screen flex flex-col items-center py-10 px-4">
+
+<!-- 标题区域 -->
+<header class="text-center mb-10 max-w-4xl">
+    <h1 class="text-4xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent mb-4">
+        并发工具类可视化演示
+    </h1>
+    <p class="text-slate-400 text-lg">
+        直观理解 <span class="text-blue-400 font-mono">CountDownLatch</span> (一票否决/不可重置)
+        与 <span class="text-emerald-400 font-mono">CyclicBarrier</span> (循环屏障/可重置) 的核心区别
+    </p>
+</header>
+
+<main class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full max-w-6xl">
+
+    <!-- ======================= CountDownLatch 演示区 ======================= -->
+    <section class="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl flex flex-col relative overflow-hidden">
+        <div class="absolute top-0 right-0 p-4 opacity-10">
+            <i class="fa-solid fa-hourglass-end text-9xl text-blue-500"></i>
+        </div>
+
+        <div class="flex justify-between items-center mb-6 z-10">
+            <div>
+                <h2 class="text-2xl font-bold text-blue-400 flex items-center gap-2">
+                    <i class="fa-solid fa-list-check"></i> CountDownLatch
+                </h2>
+                <p class="text-sm text-slate-400 mt-1">场景：主线程等待多个子任务完成 (一次性)</p>
+            </div>
+            <div class="text-right">
+                <div class="text-xs text-slate-500 uppercase tracking-wider">剩余计数 (Count)</div>
+                <div id="cdl-count" class="text-4xl font-mono font-bold text-white">3</div>
+            </div>
+        </div>
+
+        <!-- 动画舞台 -->
+        <div class="flex-1 bg-slate-900/50 rounded-xl p-6 relative min-h-[300px] flex flex-col justify-center border border-slate-700/50">
+
+            <!-- 终点线 (Main Thread Await) -->
+            <div class="absolute right-8 top-0 bottom-0 w-1 bg-blue-500/30 border-r-2 border-dashed border-blue-500 flex items-center justify-center">
+                <span class="absolute -rotate-90 text-blue-500 font-bold tracking-widest whitespace-nowrap bg-slate-900 px-2">MAIN THREAD AWAIT</span>
+            </div>
+
+            <!-- 线程容器 -->
+            <div class="space-y-8 relative z-10 pr-12">
+                <!-- 动态生成的线程将放在这里 -->
+                <div id="cdl-threads-container" class="space-y-6">
+                    <!-- JS 填充 -->
+                </div>
+            </div>
+
+            <!-- 状态提示 -->
+            <div id="cdl-status" class="absolute bottom-4 left-4 text-sm font-mono text-blue-300 bg-blue-900/30 px-3 py-1 rounded border border-blue-500/30">
+                Status: Waiting for tasks...
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="mt-6 flex gap-4 z-10">
+            <button onclick="startCDL()" id="btn-cdl-start" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-lg font-semibold transition-all active:scale-95 shadow-lg shadow-blue-900/20">
+                <i class="fa-solid fa-play mr-2"></i> 开始任务 (Start)
+            </button>
+            <button onclick="resetCDL()" class="px-6 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg font-semibold transition-all">
+                <i class="fa-solid fa-rotate-right"></i> 重置
+            </button>
+        </div>
+
+        <div class="mt-4 text-xs text-slate-500 bg-slate-900/50 p-3 rounded border border-slate-700">
+            <i class="fa-solid fa-circle-info mr-1"></i>
+            <strong>特点：</strong> 计数器减至 0 后无法重置。所有任务完成后，主线程才能继续执行（通过终点线）。
+        </div>
+    </section>
+
+    <!-- ======================= CyclicBarrier 演示区 ======================= -->
+    <section class="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl flex flex-col relative overflow-hidden">
+        <div class="absolute top-0 right-0 p-4 opacity-10">
+            <i class="fa-solid fa-rotate text-9xl text-emerald-500"></i>
+        </div>
+
+        <div class="flex justify-between items-center mb-6 z-10">
+            <div>
+                <h2 class="text-2xl font-bold text-emerald-400 flex items-center gap-2">
+                    <i class="fa-solid fa-person-running"></i> CyclicBarrier
+                </h2>
+                <p class="text-sm text-slate-400 mt-1">场景：多线程互相等待至屏障点 (可循环)</p>
+            </div>
+            <div class="text-right">
+                <div class="text-xs text-slate-500 uppercase tracking-wider">当前轮次 (Cycle)</div>
+                <div id="cb-cycle" class="text-2xl font-mono font-bold text-white">1</div>
+                <div class="text-xs text-slate-500 mt-1">等待中: <span id="cb-waiting" class="text-emerald-400 font-bold">0</span>/3</div>
+            </div>
+        </div>
+
+        <!-- 动画舞台 -->
+        <div class="flex-1 bg-slate-900/50 rounded-xl p-6 relative min-h-[300px] flex flex-col justify-center border border-slate-700/50">
+
+            <!-- 屏障线 (Barrier Point) -->
+            <div id="cb-barrier" class="absolute left-1/2 -translate-x-1/2 top-4 bottom-4 w-2 bg-red-500/80 rounded-full transition-all duration-300 flex items-center justify-center z-20">
+                <span class="absolute -rotate-90 text-red-200 font-bold tracking-widest whitespace-nowrap text-xs bg-red-900/80 px-2 py-1 rounded border border-red-500">BARRIER ACTION</span>
+            </div>
+
+            <!-- 跑道容器 -->
+            <div class="space-y-6 relative z-10 h-full flex flex-col justify-around py-4">
+                <!-- Thread 1 -->
+                <div class="relative h-8 w-full">
+                    <div class="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-mono">T1</div>
+                    <div id="cb-t1" class="thread-ball absolute left-8 top-0 w-6 h-6 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)] flex items-center justify-center text-[10px] font-bold text-slate-900">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                </div>
+                <!-- Thread 2 -->
+                <div class="relative h-8 w-full">
+                    <div class="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-mono">T2</div>
+                    <div id="cb-t2" class="thread-ball absolute left-8 top-0 w-6 h-6 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)] flex items-center justify-center text-[10px] font-bold text-slate-900">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                </div>
+                <!-- Thread 3 -->
+                <div class="relative h-8 w-full">
+                    <div class="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-mono">T3</div>
+                    <div id="cb-t3" class="thread-ball absolute left-8 top-0 w-6 h-6 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)] flex items-center justify-center text-[10px] font-bold text-slate-900">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 状态提示 -->
+            <div id="cb-status" class="absolute bottom-4 left-4 text-sm font-mono text-emerald-300 bg-emerald-900/30 px-3 py-1 rounded border border-emerald-500/30">
+                Status: Ready to run
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="mt-6 flex gap-4 z-10">
+            <button onclick="toggleCB()" id="btn-cb-toggle" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-900/20">
+                <i class="fa-solid fa-play mr-2"></i> 自动循环演示
+            </button>
+            <button onclick="resetCB()" class="px-6 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg font-semibold transition-all">
+                <i class="fa-solid fa-stop"></i> 停止/重置
+            </button>
+        </div>
+
+        <div class="mt-4 text-xs text-slate-500 bg-slate-900/50 p-3 rounded border border-slate-700">
+            <i class="fa-solid fa-circle-info mr-1"></i>
+            <strong>特点：</strong> 所有线程到达屏障点后阻塞，触发 BarrierAction，然后计数器重置，进入下一轮循环。
+        </div>
+    </section>
+
+</main>
+
+<!-- 底部对比总结 -->
+<footer class="mt-12 max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+    <div class="bg-slate-800/50 p-4 rounded-lg border-l-4 border-blue-500">
+        <h3 class="font-bold text-blue-400 mb-2">CountDownLatch (减计数)</h3>
+        <ul class="list-disc list-inside text-slate-400 space-y-1">
+            <li><strong>await():</strong> 阻塞直到计数器为0</li>
+            <li><strong>countDown():</strong> 计数器减1</li>
+            <li><strong>重用性:</strong> ❌ 不可重用 (一次性)</li>
+            <li><strong>核心:</strong> AQS (Shared Mode)</li>
+        </ul>
+    </div>
+    <div class="bg-slate-800/50 p-4 rounded-lg border-l-4 border-emerald-500">
+        <h3 class="font-bold text-emerald-400 mb-2">CyclicBarrier (加计数)</h3>
+        <ul class="list-disc list-inside text-slate-400 space-y-1">
+            <li><strong>await():</strong> 阻塞直到所有线程都调用await</li>
+            <li><strong>Action:</strong> 人齐后触发公共任务</li>
+            <li><strong>重用性:</strong> ✅ 可重用 (Cyclic)</li>
+            <li><strong>核心:</strong> ReentrantLock + Condition</li>
+        </ul>
+    </div>
+</footer>
+
+<script>
+  // ==================== CountDownLatch Logic ====================
+  const CDL_TOTAL = 3;
+  let cdlCount = CDL_TOTAL;
+  let cdlRunning = false;
+
+  function initCDL() {
+    const container = document.getElementById('cdl-threads-container');
+    container.innerHTML = '';
+    for(let i=1; i<=CDL_TOTAL; i++) {
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-4';
+      div.innerHTML = `
+                    <div class="w-8 text-xs font-mono text-slate-500">T${i}</div>
+                    <div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden relative">
+                        <div id="cdl-prog-${i}" class="h-full bg-blue-500 w-0 progress-fill"></div>
+                    </div>
+                    <div id="cdl-icon-${i}" class="w-6 text-center text-slate-600"><i class="fa-regular fa-circle"></i></div>
+                `;
+      container.appendChild(div);
+    }
+    document.getElementById('cdl-count').innerText = CDL_TOTAL;
+    document.getElementById('cdl-status').innerText = "Status: Idle";
+    document.getElementById('cdl-status').className = "absolute bottom-4 left-4 text-sm font-mono text-slate-400 bg-slate-800 px-3 py-1 rounded border border-slate-600";
+  }
+
+  async function startCDL() {
+    if(cdlRunning || cdlCount === 0) return;
+    cdlRunning = true;
+    document.getElementById('btn-cdl-start').disabled = true;
+    document.getElementById('btn-cdl-start').classList.add('opacity-50', 'cursor-not-allowed');
+
+    const statusEl = document.getElementById('cdl-status');
+    statusEl.innerText = "Status: Tasks running...";
+    statusEl.className = "absolute bottom-4 left-4 text-sm font-mono text-blue-300 bg-blue-900/30 px-3 py-1 rounded border border-blue-500/30 animate-pulse";
+
+    // 模拟3个任务随机时间完成
+    const promises = [];
+    for(let i=1; i<=CDL_TOTAL; i++) {
+      promises.push(runTask(i));
+    }
+
+    await Promise.all(promises);
+
+    // 全部完成
+    statusEl.innerText = "Status: Count is 0! Main thread proceeds.";
+    statusEl.className = "absolute bottom-4 left-4 text-sm font-mono text-green-300 bg-green-900/30 px-3 py-1 rounded border border-green-500/30 animate-pulse-green";
+
+    // 模拟主线程通过
+    setTimeout(() => {
+      alert("✅ CountDownLatch: All tasks done! Main thread continues.");
+    }, 500);
+  }
+
+  function runTask(id) {
+    return new Promise(resolve => {
+      const duration = 1000 + Math.random() * 3000; // 1~4秒
+      const prog = document.getElementById(`cdl-prog-${id}`);
+      const icon = document.getElementById(`cdl-icon-${id}`);
+
+      // 开始动画
+      prog.style.transition = `width ${duration}ms linear`;
+      // 强制重绘
+      void prog.offsetWidth;
+      prog.style.width = '100%';
+
+      setTimeout(() => {
+        // 任务完成
+        icon.innerHTML = '<i class="fa-solid fa-circle-check text-green-400"></i>';
+        cdlCount--;
+        document.getElementById('cdl-count').innerText = cdlCount;
+
+        // 震动反馈
+        document.getElementById('cdl-count').classList.add('scale-125');
+        setTimeout(()=>document.getElementById('cdl-count').classList.remove('scale-125'), 200);
+
+        resolve();
+      }, duration);
+    });
+  }
+
+  function resetCDL() {
+    cdlRunning = false;
+    cdlCount = CDL_TOTAL;
+    document.getElementById('btn-cdl-start').disabled = false;
+    document.getElementById('btn-cdl-start').classList.remove('opacity-50', 'cursor-not-allowed');
+    initCDL();
+  }
+
+  // ==================== CyclicBarrier Logic ====================
+  const CB_PARTIES = 3;
+  let cbCycle = 1;
+  let cbTimer = null;
+  let cbIsRunning = false;
+
+  function resetCBVisuals() {
+    ['cb-t1', 'cb-t2', 'cb-t3'].forEach(id => {
+      const el = document.getElementById(id);
+      el.style.transition = 'none';
+      el.style.left = '2rem'; // Reset to start
+      el.classList.remove('bg-yellow-400');
+      el.classList.add('bg-emerald-500');
+    });
+    document.getElementById('cb-barrier').classList.remove('bg-green-500', 'animate-pulse');
+    document.getElementById('cb-barrier').classList.add('bg-red-500/80');
+    document.getElementById('cb-waiting').innerText = '0';
+  }
+
+  function toggleCB() {
+    if(cbIsRunning) {
+      stopCB();
+    } else {
+      startCBLoop();
+    }
+  }
+
+  function startCBLoop() {
+    if(cbIsRunning) return;
+    cbIsRunning = true;
+    document.getElementById('btn-cb-toggle').innerHTML = '<i class="fa-solid fa-pause mr-2"></i> 暂停演示';
+    document.getElementById('btn-cb-toggle').classList.replace('bg-emerald-600', 'bg-yellow-600');
+    document.getElementById('btn-cb-toggle').classList.replace('hover:bg-emerald-500', 'hover:bg-yellow-500');
+
+    runOneCycle();
+  }
+
+  function stopCB() {
+    cbIsRunning = false;
+    clearTimeout(cbTimer);
+    document.getElementById('btn-cb-toggle').innerHTML = '<i class="fa-solid fa-play mr-2"></i> 自动循环演示';
+    document.getElementById('btn-cb-toggle').classList.replace('bg-yellow-600', 'bg-emerald-600');
+    document.getElementById('btn-cb-toggle').classList.replace('hover:bg-yellow-500', 'hover:bg-emerald-500');
+    document.getElementById('cb-status').innerText = "Status: Paused";
+  }
+
+  function resetCB() {
+    stopCB();
+    cbCycle = 1;
+    document.getElementById('cb-cycle').innerText = cbCycle;
+    resetCBVisuals();
+    document.getElementById('cb-status').innerText = "Status: Ready";
+  }
+
+  function runOneCycle() {
+    if(!cbIsRunning) return;
+
+    const statusEl = document.getElementById('cb-status');
+    statusEl.innerText = `Cycle ${cbCycle}: Threads running to barrier...`;
+    statusEl.className = "absolute bottom-4 left-4 text-sm font-mono text-emerald-300 bg-emerald-900/30 px-3 py-1 rounded border border-emerald-500/30";
+
+    let arrivedCount = 0;
+    const threads = ['cb-t1', 'cb-t2', 'cb-t3'];
+
+    // 随机速度跑向屏障 (50% 位置)
+    threads.forEach((id, index) => {
+      const el = document.getElementById(id);
+      const duration = 1000 + Math.random() * 2000;
+
+      el.style.transition = `left ${duration}ms ease-out`;
+      // 屏障在中间 (约50%)，稍微偏左一点对齐
+      el.style.left = 'calc(50% - 1rem)';
+
+      setTimeout(() => {
+        // 到达屏障
+        arrivedCount++;
+        document.getElementById('cb-waiting').innerText = arrivedCount;
+        el.classList.remove('bg-emerald-500');
+        el.classList.add('bg-yellow-400'); // 变黄表示等待
+
+        if(arrivedCount === CB_PARTIES) {
+          triggerBarrierAction();
+        }
+      }, duration);
+    });
+  }
+
+  function triggerBarrierAction() {
+    if(!cbIsRunning) return;
+
+    const statusEl = document.getElementById('cb-status');
+    const barrier = document.getElementById('cb-barrier');
+
+    // 屏障触发效果
+    statusEl.innerText = `⚡ BARRIER ACTION TRIGGERED! (All ${CB_PARTIES} arrived)`;
+    statusEl.className = "absolute bottom-4 left-4 text-sm font-mono text-yellow-200 bg-yellow-900/50 px-3 py-1 rounded border border-yellow-500 animate-pulse";
+
+    barrier.classList.remove('bg-red-500/80');
+    barrier.classList.add('bg-green-500', 'animate-pulse');
+
+    // 停留一段时间后进入下一轮
+    cbTimer = setTimeout(() => {
+      if(!cbIsRunning) return;
+
+      // 重置位置准备下一轮
+      cbCycle++;
+      document.getElementById('cb-cycle').innerText = cbCycle;
+
+      // 瞬间回到起点 (视觉上可以做一个淡出淡入或者直接重置)
+      const threads = ['cb-t1', 'cb-t2', 'cb-t3'];
+      threads.forEach(id => {
+        const el = document.getElementById(id);
+        el.style.transition = 'none';
+        el.style.left = '2rem';
+        el.classList.remove('bg-yellow-400');
+        el.classList.add('bg-emerald-500');
+      });
+
+      barrier.classList.remove('bg-green-500', 'animate-pulse');
+      barrier.classList.add('bg-red-500/80');
+      document.getElementById('cb-waiting').innerText = '0';
+
+      // 递归调用下一轮
+      setTimeout(() => runOneCycle(), 500);
+
+    }, 1500); // 屏障动作持续时间
+  }
+
+  // 初始化
+  initCDL();
+  resetCBVisuals();
+
+</script>
+</body>
+</html>

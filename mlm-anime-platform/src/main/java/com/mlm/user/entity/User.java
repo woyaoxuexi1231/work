@@ -3,12 +3,16 @@ package com.mlm.user.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
-/**
- * 用户实体
- */
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 @TableName("mlm_user")
 public class User {
 
@@ -17,6 +21,7 @@ public class User {
 
     private String username;
 
+    @JsonIgnore
     private String password;
 
     private String role;

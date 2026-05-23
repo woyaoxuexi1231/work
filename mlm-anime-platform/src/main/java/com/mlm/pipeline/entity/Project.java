@@ -1,18 +1,20 @@
 package com.mlm.pipeline.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
-import lombok.Data;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-/**
- * 项目实体 — 对应数据库 project 表
- * <p>
- * 项目是剧集的容器，本身不走 Pipeline，真正的状态流转在 {@link Episode} 中。
- * 项目可引用一个资源（从资源库创建时），无资源则为直接创建。
- */
-@Data
+@Getter
+@Setter
+@ToString
 @NoArgsConstructor
 @TableName("project")
 public class Project {

@@ -1,4 +1,4 @@
-package work.N1javabasic.v1.concurrent;
+package work.N1javabasic.v1.concurrent.lock;
 
 import java.util.concurrent.locks.StampedLock;
 import java.util.concurrent.TimeUnit;
