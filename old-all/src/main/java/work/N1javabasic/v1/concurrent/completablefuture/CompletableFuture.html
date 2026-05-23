@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CompletableFuture 全链路异步编排深度演示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @keyframes pulse-active {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+        }
+        @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .node-box { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .node-waiting { filter: grayscale(100%) brightness(0.6); border-style: dashed; }
+        .node-running { filter: grayscale(0%) brightness(1); border-style: solid; animation: pulse-active 1.5s infinite; }
+        .node-done { filter: grayscale(0%) brightness(1.1); border-color: #10b981 !important; }
+
+        .data-packet { position: absolute; z-index: 50; pointer-events: none; white-space: nowrap; }
+        .connector-line { position: absolute; background: #334155; z-index: 0; transition: background 0.3s; }
+        .connector-line.active { background: linear-gradient(90deg, #3b82f6, #8b5cf6); box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
+        .code-font { font-family: 'Fira Code', 'Consolas', monospace; }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans min-h-screen py-6 px-4 selection:bg-blue-500/30">
+
+<header class="text-center max-w-5xl mx-auto mb-6">
+    <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent mb-2">
+        CompletableFuture 全链路编排
+    </h1>
+    <p class="text-slate-400 text-sm md:text-base">可视化演示数据如何在异步阶段（Stage）之间流转、等待与聚合</p>
+</header>
+
+<main class="max-w-7xl mx-auto space-y-4">
+    <!-- 分类选项卡 -->
+    <div class="flex flex-wrap gap-2 justify-center text-xs md:text-sm">
+        <span class="text-slate-500 self-center mr-1">创建:</span>
+        <button onclick="loadDemo('supplyAsync')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="supplyAsync">supplyAsync</button>
+        <button onclick="loadDemo('runAsync')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="runAsync">runAsync</button>
+
+        <span class="text-slate-500 self-center mx-1">转换:</span>
+        <button onclick="loadDemo('thenApply')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="thenApply">thenApply</button>
+        <button onclick="loadDemo('thenCompose')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="thenCompose">thenCompose</button>
+
+        <span class="text-slate-500 self-center mx-1">消费:</span>
+        <button onclick="loadDemo('thenAccept')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="thenAccept">thenAccept</button>
+        <button onclick="loadDemo('thenRun')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="thenRun">thenRun</button>
+
+        <span class="text-slate-500 self-center mx-1">组合:</span>
+        <button onclick="loadDemo('thenCombine')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="thenCombine">thenCombine</button>
+        <button onclick="loadDemo('allOf')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="allOf">allOf</button>
+        <button onclick="loadDemo('anyOf')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="anyOf">anyOf</button>
+
+        <span class="text-slate-500 self-center mx-1">异常:</span>
+        <button onclick="loadDemo('exceptionally')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="exceptionally">exceptionally</button>
+        <button onclick="loadDemo('handle')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="handle">handle</button>
+        <button onclick="loadDemo('whenComplete')" class="demo-btn px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors" data-id="whenComplete">whenComplete</button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- 左侧：动画舞台 -->
+        <div class="lg:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col min-h-[420px]">
+            <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 backdrop-blur">
+                <div class="flex items-center gap-3">
+                    <div id="stage-icon" class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-xl shrink-0">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                    <div>
+                        <h2 id="stage-title" class="text-lg md:text-xl font-bold text-white code-font">supplyAsync()</h2>
+                        <p id="stage-subtitle" class="text-xs text-slate-500">异步执行入口</p>
+                    </div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button onclick="runAnimation()" id="btn-run" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-play text-xs"></i> Run
+                    </button>
+                    <button onclick="resetAnimation()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-md text-sm transition-all">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="animation-container" class="flex-1 relative bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800/50 to-slate-950 p-6 md:p-8 overflow-hidden">
+                <div class="absolute inset-0 flex items-center justify-center text-slate-600">
+                    <p>选择一个方法开始演示</p>
+                </div>
+            </div>
+
+            <div class="h-28 bg-black/40 border-t border-slate-800 p-3 font-mono text-xs overflow-y-auto" id="console-log">
+                <div class="text-slate-500">// 运行日志输出...</div>
+            </div>
+        </div>
+
+        <!-- 右侧：原理与代码 -->
+        <div class="space-y-4">
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-code"></i> 伪代码示例
+                </h3>
+                <pre id="code-block" class="bg-slate-950 rounded-lg p-3 text-xs text-blue-300 overflow-x-auto border border-slate-800 leading-relaxed code-font whitespace-pre-wrap"></pre>
+            </div>
+
+            <div class="bg-gradient-to-br from-blue-900/20 to-purple-900/20 rounded-2xl border border-blue-500/20 p-4">
+                <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-lightbulb"></i> 核心机制
+                </h3>
+                <ul id="key-points" class="space-y-1.5 text-xs md:text-sm text-slate-300 list-disc list-inside marker:text-blue-500"></ul>
+            </div>
+
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4">
+                <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation"></i> 面试/实战要点
+                </h3>
+                <p id="interview-tip" class="text-xs text-slate-400 leading-relaxed"></p>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+  // ================= 完整演示配置 =================
+  const DEMOS = {
+    supplyAsync: {
+      title: "supplyAsync()", subtitle: "异步任务的起点，生产数据", icon: "fa-bolt",
+      code: `CompletableFuture<String> cf = \n  CompletableFuture.supplyAsync(() -> {\n      Thread.sleep(1000);\n      return "Data-A";\n  });`,
+      points: ["创建一个新的异步阶段", "默认使用 ForkJoinPool.commonPool()", "Supplier<T> 接口提供返回值"],
+      tip: "若任务涉及阻塞I/O，务必传入自定义线程池作为第二个参数，否则可能导致公共池饥饿，影响全局异步任务。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center"><div id="n1" class="node-box node-waiting w-40 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-microchip text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">Supply Task</span></div><div id="res" class="absolute right-8 top-1/2 -translate-y-1/2 w-32 h-16 border-2 border-dashed border-slate-700 rounded-lg flex items-center justify-center text-slate-600 text-sm">Future Result</div></div>`; },
+      run: async (log) => {
+        const n = document.getElementById('n1'), r = document.getElementById('res');
+        log("🚀 [Main] 调用 supplyAsync，任务已提交..."); await wait(300);
+        activateNode(n, 'fa-gear', 'text-blue-400 animate-spin-slow'); log("⏳ [Pool] 线程开始执行 Supplier..."); await wait(1500);
+        completeNode(n, 'fa-check', 'text-emerald-400'); log("✅ [Pool] 任务完成，返回 'Data-A'");
+        createPacket(n, r, "Data-A", () => { r.classList.remove('border-dashed','border-slate-700','text-slate-600'); r.classList.add('border-emerald-500','bg-emerald-500/10','text-emerald-400','font-bold'); r.innerText='"Data-A"'; log("📦 [Future] 结果已就绪"); });
+      }
+    },
+    runAsync: {
+      title: "runAsync()", subtitle: "异步执行无返回值的任务", icon: "fa-person-running",
+      code: `CompletableFuture<Void> cf = \n  CompletableFuture.runAsync(() -> {\n      System.out.println("Side Effect");\n  });`,
+      points: ["返回 CompletableFuture<Void>", "Runnable 接口，无返回值", "适用于纯副作用操作（写库、发消息）"],
+      tip: "与 supplyAsync 的区别仅在于有无返回值。底层同样使用 ForkJoinPool 或自定义 Executor。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center"><div id="n1" class="node-box node-waiting w-40 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-person-running text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">Run Task</span></div><div id="res" class="absolute right-8 top-1/2 -translate-y-1/2 w-32 h-16 border-2 border-dashed border-slate-700 rounded-lg flex items-center justify-center text-slate-600 text-sm">Void</div></div>`; },
+      run: async (log) => {
+        const n = document.getElementById('n1'), r = document.getElementById('res');
+        log("🚀 [Main] 调用 runAsync..."); await wait(300);
+        activateNode(n, 'fa-gear', 'text-blue-400 animate-spin-slow'); log("⏳ [Pool] 执行 Runnable..."); await wait(1200);
+        completeNode(n, 'fa-check', 'text-emerald-400'); log("✅ [Pool] 执行完毕");
+        createPacket(n, r, "null", () => { r.classList.remove('border-dashed','border-slate-700','text-slate-600'); r.classList.add('border-emerald-500','bg-emerald-500/10','text-emerald-400','font-bold'); r.innerText='Void ✓'; log("📦 [Future] 完成（无数据）"); });
+      }
+    },
+    thenApply: {
+      title: "thenApply()", subtitle: "同步转换：拿到上一步结果，加工成新结果", icon: "fa-filter",
+      code: `cf.thenApply(data -> {\n    return data + "-Processed";\n});`,
+      points: ["类似 Stream.map()", "同步执行（复用上一阶段线程）", "Function<T,U> 有入参有返回"],
+      tip: "若转换逻辑耗时，应使用 thenApplyAsync 切换到新线程，避免阻塞回调线程。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-16"><div id="np" class="node-box node-done w-32 h-20 bg-slate-800 border-2 border-emerald-500 rounded-xl flex flex-col items-center justify-center z-10 opacity-60"><span class="text-xs text-emerald-500 mb-1">Previous</span><span class="font-bold text-emerald-400">"Data-A"</span></div><div class="connector-line w-16 h-1 rounded-full"></div><div id="nc" class="node-box node-waiting w-36 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-filter text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">thenApply</span><span class="text-[10px] text-slate-500 mt-1">x → x+"-B"</span></div></div>`; },
+      run: async (log) => {
+        const np = document.getElementById('np'), nc = document.getElementById('nc'), line = document.querySelector('.connector-line');
+        log("🔗 [Chain] 注册 thenApply 回调..."); await wait(500);
+        log("📤 [Prev] 上一步完成，触发数据流转");
+        createPacket(np, nc, "Data-A", async () => {
+          line.classList.add('active'); activateNode(nc, 'fa-gear', 'text-purple-400 animate-spin-slow');
+          log("⚙️ [Apply] 收到数据，同步转换中..."); await wait(1000);
+          completeNode(nc, 'fa-check', 'text-emerald-400');
+          nc.querySelector('span.font-bold').innerText = '"Data-A-B"'; nc.querySelector('span.font-bold').classList.add('text-emerald-400');
+          log("✅ [Apply] 转换完成: 'Data-A-B'");
+        });
+      }
+    },
+    thenCompose: {
+      title: "thenCompose()", subtitle: "扁平化：解决 Future 嵌套 (FlatMap)", icon: "fa-layer-group",
+      code: `cf.thenCompose(user -> {\n    return getOrderAsync(user.id);\n});`,
+      points: ["类似 Stream.flatMap()", "避免 Future<Future<T>> 嵌套", "用于串联两个异步操作"],
+      tip: "thenApply 返回普通值，thenCompose 返回 CompletableFuture 并自动拆包。这是最容易混淆的面试点。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-12"><div id="n1" class="node-box node-done w-28 h-16 bg-slate-800 border-2 border-emerald-500 rounded-xl flex flex-col items-center justify-center z-10 opacity-60"><span class="text-xs text-slate-400">getUser()</span><span class="font-bold text-emerald-400 text-sm">User{id=1}</span></div><div class="connector-line w-12 h-1 rounded-full"></div><div id="n2" class="node-box node-waiting w-32 h-20 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-layer-group text-xl mb-1 text-slate-500"></i><span class="font-bold text-slate-400 text-sm">thenCompose</span></div><div class="connector-line w-12 h-1 rounded-full"></div><div id="ni" class="node-box node-waiting w-28 h-16 bg-slate-800 border-2 border-orange-500/50 rounded-xl flex flex-col items-center justify-center z-10 border-dashed"><span class="text-xs text-orange-400">Inner Async</span><span class="font-bold text-slate-500 text-sm">getOrder()</span></div></div>`; },
+      run: async (log) => {
+        const n1=document.getElementById('n1'),n2=document.getElementById('n2'),ni=document.getElementById('ni'),lines=document.querySelectorAll('.connector-line');
+        log("🔗 [Chain] 上一步返回 User");
+        createPacket(n1, n2, "User", async () => {
+          lines[0].classList.add('active'); activateNode(n2,'fa-gear','text-purple-400 animate-spin-slow');
+          log("⚙️ [Compose] 收到 User，启动内部异步任务..."); await wait(800);
+          completeNode(n2,'fa-check','text-emerald-400'); lines[1].classList.add('active');
+          ni.classList.remove('node-waiting','border-dashed'); ni.classList.add('node-running','border-solid');
+          log("🚀 [Inner] 内部 CompletableFuture 执行中..."); await wait(1000);
+          completeNode(ni,'fa-check','text-emerald-400');
+          ni.querySelector('span.font-bold').innerText='Order{#99}'; ni.querySelector('span.font-bold').classList.add('text-emerald-400');
+          log("✅ [Compose] 扁平化完成，直接获得 Order");
+        });
+      }
+    },
+    thenAccept: {
+      title: "thenAccept()", subtitle: "消费结果：有入参，无返回值", icon: "fa-hand-holding",
+      code: `cf.thenAccept(data -> {\n    log.info("Received: " + data);\n    // 无 return\n});`,
+      points: ["Consumer<T> 接口", "返回 CompletableFuture<Void>", "常用于终端消费（存库、推送）"],
+      tip: "与 thenApply 区别：thenAccept 不产生新值，是链路的\"消费者\"而非\"转换器\"。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-16"><div id="np" class="node-box node-done w-32 h-20 bg-slate-800 border-2 border-emerald-500 rounded-xl flex flex-col items-center justify-center z-10 opacity-60"><span class="text-xs text-emerald-500 mb-1">Previous</span><span class="font-bold text-emerald-400">"Order"</span></div><div class="connector-line w-16 h-1 rounded-full"></div><div id="nc" class="node-box node-waiting w-36 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-hand-holding text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">thenAccept</span><span class="text-[10px] text-slate-500 mt-1">保存数据库</span></div><div id="db" class="absolute right-8 top-1/2 -translate-y-1/2 w-20 h-20 bg-slate-800 border-2 border-slate-700 rounded-xl flex flex-col items-center justify-center z-10 opacity-40"><i class="fa-solid fa-database text-2xl text-slate-600"></i><span class="text-[10px] text-slate-600 mt-1">DB</span></div></div>`; },
+      run: async (log) => {
+        const np=document.getElementById('np'),nc=document.getElementById('nc'),db=document.getElementById('db'),line=document.querySelector('.connector-line');
+        log("🔗 [Chain] 注册 thenAccept 消费者..."); await wait(500);
+        createPacket(np, nc, "Order", async () => {
+          line.classList.add('active'); activateNode(nc,'fa-gear','text-amber-400 animate-spin-slow');
+          log("⚙️ [Accept] 收到数据，写入数据库..."); await wait(1000);
+          completeNode(nc,'fa-check','text-emerald-400');
+          db.classList.remove('opacity-40'); db.classList.add('border-emerald-500','text-emerald-400');
+          db.querySelector('i').className='fa-solid fa-database text-2xl text-emerald-400';
+          log("✅ [Accept] 消费完成，数据已持久化（返回 Void）");
+        });
+      }
+    },
+    thenRun: {
+      title: "thenRun()", subtitle: "不关心结果：无入参，无返回值", icon: "fa-forward",
+      code: `cf.thenRun(() -> {\n    System.out.println("Done!");\n    // 不需要上一步的结果\n});`,
+      points: ["Runnable 接口", "不接收上一步结果", "返回 CompletableFuture<Void>"],
+      tip: "与 thenAccept 区别：thenRun 完全忽略上游结果。适用于清理资源、发送通知等与数据无关的操作。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-16"><div id="np" class="node-box node-done w-32 h-20 bg-slate-800 border-2 border-emerald-500 rounded-xl flex flex-col items-center justify-center z-10 opacity-60"><span class="text-xs text-emerald-500 mb-1">Previous</span><span class="font-bold text-emerald-400">Any Result</span></div><div class="connector-line w-16 h-1 rounded-full"></div><div id="nc" class="node-box node-waiting w-36 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-forward text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">thenRun</span><span class="text-[10px] text-slate-500 mt-1">发送完成通知</span></div><div id="bell" class="absolute right-8 top-1/2 -translate-y-1/2 w-16 h-16 bg-slate-800 border-2 border-slate-700 rounded-full flex items-center justify-center z-10 opacity-40"><i class="fa-solid fa-bell text-xl text-slate-600"></i></div></div>`; },
+      run: async (log) => {
+        const np=document.getElementById('np'),nc=document.getElementById('nc'),bell=document.getElementById('bell'),line=document.querySelector('.connector-line');
+        log("🔗 [Chain] 注册 thenRun 动作..."); await wait(500);
+        // thenRun 只传递"完成信号"，不传数据
+        createPacket(np, nc, "✓ Signal", async () => {
+          line.classList.add('active'); activateNode(nc,'fa-gear','text-cyan-400 animate-spin-slow');
+          log("⚙️ [Run] 收到完成信号（忽略数据），执行通知..."); await wait(800);
+          completeNode(nc,'fa-check','text-emerald-400');
+          bell.classList.remove('opacity-40'); bell.classList.add('border-yellow-400','animate-bounce');
+          bell.querySelector('i').className='fa-solid fa-bell text-xl text-yellow-400';
+          log("🔔 [Run] 通知已发送（返回 Void）");
+        });
+      }
+    },
+    thenCombine: {
+      title: "thenCombine()", subtitle: "聚合：等待两个独立任务都完成", icon: "fa-puzzle-piece",
+      code: `futureA.thenCombine(futureB, (a, b) -> {\n    return a * b;\n});`,
+      points: ["并行执行，汇合点等待", "两者都完成才触发回调", "BiFunction<T,U,V>"],
+      tip: "适合多源数据组装场景，如同时查价格和汇率后计算最终价格。任一异常则整体异常。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex flex-col items-center justify-center"><div class="flex gap-24 mb-10"><div id="na" class="node-box node-running w-28 h-16 bg-slate-800 border-2 border-blue-500 rounded-xl flex flex-col items-center justify-center z-10"><span class="text-xs text-blue-400">Task A</span><span class="font-bold text-white text-sm">价格查询</span></div><div id="nb" class="node-box node-running w-28 h-16 bg-slate-800 border-2 border-purple-500 rounded-xl flex flex-col items-center justify-center z-10"><span class="text-xs text-purple-400">Task B</span><span class="font-bold text-white text-sm">汇率查询</span></div></div><svg class="absolute top-20 w-64 h-20 pointer-events-none z-0"><path d="M70 0 L128 70" stroke="#334155" stroke-width="2" fill="none" id="la"/><path d="M186 0 L128 70" stroke="#334155" stroke-width="2" fill="none" id="lb"/></svg><div id="nc" class="node-box node-waiting w-36 h-20 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10 mt-2"><i class="fa-solid fa-calculator text-xl mb-1 text-slate-500"></i><span class="font-bold text-slate-400 text-sm">thenCombine</span></div></div>`; },
+      run: async (log) => {
+        const nA=document.getElementById('na'),nB=document.getElementById('nb'),nC=document.getElementById('nc'),lA=document.getElementById('la'),lB=document.getElementById('lb');
+        log("🚀 [Parallel] Task A 和 Task B 同时开始...");
+        setTimeout(()=>{ completeNode(nA,'fa-check','text-emerald-400'); nA.querySelector('span.font-bold').innerText='$100'; log("✅ [A] 完成，等待B..."); createPacket(nA,nC,"$100",null,lA); },800);
+        setTimeout(()=>{ completeNode(nB,'fa-check','text-emerald-400'); nB.querySelector('span.font-bold').innerText='7.2'; log("✅ [B] 完成，两者就绪！"); createPacket(nB,nC,"7.2",async()=>{ activateNode(nC,'fa-gear','text-orange-400 animate-spin-slow'); log("⚙️ [Combine] 两参数到齐，合并中..."); await wait(800); completeNode(nC,'fa-check','text-emerald-400'); nC.querySelector('span.font-bold').innerText='¥720'; nC.querySelector('span.font-bold').classList.add('text-emerald-400'); log("✅ [Combine] 聚合完成: ¥720"); },lB); },1800);
+      }
+    },
+    allOf: {
+      title: "allOf()", subtitle: "屏障：等待所有任务完成", icon: "fa-list-check",
+      code: `CompletableFuture.allOf(f1, f2, f3)\n    .thenRun(() -> {\n        System.out.println("All Done!");\n    });`,
+      points: ["返回 CompletableFuture<Void>", "所有任务完成才触发下游", "需手动 join() 获取各结果"],
+      tip: "allOf 本身不聚合结果，只充当屏障。实际使用中常在 thenRun/thenApply 中逐个 get/join 收集结果。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex flex-col items-center justify-center gap-6"><div class="flex gap-6">${[1,2,3].map(i=>`<div id="t${i}" class="node-box node-running w-20 h-20 bg-slate-800 border-2 border-blue-500 rounded-full flex flex-col items-center justify-center z-10"><i class="fa-solid fa-spinner animate-spin text-blue-400"></i><span class="text-xs mt-1">T${i}</span></div>`).join('')}</div><div class="w-1 h-10 bg-slate-700"></div><div id="barrier" class="node-box node-waiting w-48 h-16 bg-slate-800 border-2 border-slate-600 rounded-lg flex items-center justify-center z-10"><span class="font-bold text-slate-400">allOf Barrier</span></div></div>`; },
+      run: async (log) => {
+        const barrier=document.getElementById('barrier'); let done=0;
+        log("🚀 [Batch] 3个任务并行执行...");
+        [1,2,3].forEach((i)=>{ setTimeout(()=>{ const el=document.getElementById(`t${i}`); completeNode(el,'fa-check','text-emerald-400'); el.innerHTML=`<i class="fa-solid fa-check text-emerald-400"></i><span class="text-xs mt-1">Done</span>`; log(`✅ [T${i}] 完成`); done++; if(done===3){ barrier.classList.remove('node-waiting'); barrier.classList.add('node-done','border-emerald-500'); barrier.querySelector('span').innerText="ALL COMPLETED"; barrier.querySelector('span').classList.add('text-emerald-400'); log("🎉 [allOf] 全部完成，屏障打开！"); } }, 800+Math.random()*1500); });
+      }
+    },
+    anyOf: {
+      title: "anyOf()", subtitle: "竞速：任一完成即返回", icon: "fa-gauge-high",
+      code: `CompletableFuture.anyOf(f1, f2, f3)\n    .thenAccept(result -> {\n        // result = 最快那个的结果\n    });`,
+      points: ["返回 CompletableFuture<Object>", "第一个完成的决定最终结果", "其余任务仍会继续执行（不会取消）"],
+      tip: "典型场景：多CDN竞速、主备服务降级。注意：未完成的任务不会被自动取消，可能造成资源浪费。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex flex-col items-center justify-center gap-6"><div class="flex gap-8"><div id="t1" class="node-box node-running w-24 h-16 bg-slate-800 border-2 border-blue-500 rounded-xl flex flex-col items-center justify-center z-10"><span class="text-xs text-blue-400">CDN-1</span><span class="font-bold text-white text-sm">慢</span></div><div id="t2" class="node-box node-running w-24 h-16 bg-slate-800 border-2 border-emerald-500 rounded-xl flex flex-col items-center justify-center z-10"><span class="text-xs text-emerald-400">CDN-2</span><span class="font-bold text-white text-sm">快 ⚡</span></div><div id="t3" class="node-box node-running w-24 h-16 bg-slate-800 border-2 border-purple-500 rounded-xl flex flex-col items-center justify-center z-10"><span class="text-xs text-purple-400">CDN-3</span><span class="font-bold text-white text-sm">中</span></div></div><div class="w-1 h-8 bg-slate-700"></div><div id="winner" class="node-box node-waiting w-48 h-16 bg-slate-800 border-2 border-slate-600 rounded-lg flex items-center justify-center z-10"><span class="font-bold text-slate-400">anyOf Winner</span></div></div>`; },
+      run: async (log) => {
+        const winner=document.getElementById('winner'); let decided=false;
+        log("🏁 [Race] 三个CDN同时请求...");
+        [{id:'t1',d:2500,v:'CDN-1 Data'},{id:'t2',d:600,v:'CDN-2 Data ⚡'},{id:'t3',d:1500,v:'CDN-3 Data'}].forEach(({id,d,v})=>{
+          setTimeout(()=>{
+            const el=document.getElementById(id); completeNode(el,'fa-check','text-emerald-400');
+            el.querySelector('span.font-bold').innerText='Done';
+            log(`✅ [${id}] 完成 (${d}ms)`);
+            if(!decided){ decided=true; createPacket(el,winner,v,()=>{ winner.classList.remove('node-waiting'); winner.classList.add('node-done','border-yellow-500'); winner.querySelector('span').innerText=v; winner.querySelector('span').classList.add('text-yellow-400'); log(`🏆 [anyOf] 最快结果: ${v}`); }); }
+          },d);
+        });
+      }
+    },
+    exceptionally: {
+      title: "exceptionally()", subtitle: "异常恢复：捕获异常返回默认值", icon: "fa-shield-halved",
+      code: `cf.exceptionally(ex -> {\n    log.error("Failed", ex);\n    return "Default";\n});`,
+      points: ["类似 catch 块", "仅在上一阶段异常时触发", "必须返回兼容类型的默认值"],
+      tip: "只能处理异常，不能处理正常结果。若需要统一处理成功/失败，使用 handle()。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-16"><div id="nf" class="node-box node-running w-32 h-20 bg-slate-800 border-2 border-red-500 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-bomb text-2xl text-red-500"></i><span class="font-bold text-red-400 mt-1">Risky Task</span></div><div class="connector-line w-16 h-1 rounded-full"></div><div id="nr" class="node-box node-waiting w-36 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-shield-halved text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">exceptionally</span><span class="text-[10px] text-slate-500 mt-1">return "Fallback"</span></div></div>`; },
+      run: async (log) => {
+        const nf=document.getElementById('nf'),nr=document.getElementById('nr'),line=document.querySelector('.connector-line');
+        log("⚠️ [Risk] 执行高风险任务..."); await wait(1000);
+        nf.classList.remove('node-running'); nf.classList.add('border-red-600','bg-red-900/20'); nf.innerHTML=`<i class="fa-solid fa-skull-crossbones text-2xl text-red-500"></i><span class="font-bold text-red-500 mt-1">BOOM!</span>`;
+        log("❌ [Error] NullPointerException!"); await wait(500);
+        createPacket(nf, nr, "Exception!", async () => {
+          line.classList.add('active','!bg-red-500'); activateNode(nr,'fa-kit-medical','text-yellow-400 animate-bounce');
+          log("🩹 [Recover] 捕获异常，执行降级..."); await wait(800);
+          completeNode(nr,'fa-check','text-emerald-400'); nr.querySelector('span.font-bold').innerText='"Fallback"'; nr.querySelector('span.font-bold').classList.add('text-emerald-400');
+          log("✅ [Recover] 返回安全默认值，链路未中断");
+        });
+      }
+    },
+    handle: {
+      title: "handle()", subtitle: "统一处理：无论成功或异常都执行", icon: "fa-hand-peace",
+      code: `cf.handle((result, ex) -> {\n    if (ex != null) {\n        return "Default";\n    }\n    return result.toUpperCase();\n});`,
+      points: ["BiFunction<T,Throwable,U>", "成功时 ex=null，异常时 result=null", "类似 try-catch-finally 合体"],
+      tip: "比 exceptionally 更强大：既能处理异常也能转换正常结果。一个 handle 替代 thenApply + exceptionally。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-12"><div id="np" class="node-box node-running w-28 h-20 bg-slate-800 border-2 border-blue-500 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-dice text-2xl text-blue-400"></i><span class="font-bold text-slate-400 mt-1">随机结果</span></div><div class="connector-line w-12 h-1 rounded-full"></div><div id="nh" class="node-box node-waiting w-36 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-hand-peace text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">handle</span><span class="text-[10px] text-slate-500 mt-1">(res, ex) → ...</span></div><div id="nout" class="absolute right-8 top-1/2 -translate-y-1/2 w-32 h-16 border-2 border-dashed border-slate-700 rounded-lg flex items-center justify-center text-slate-600 text-sm">Output</div></div>`; },
+      run: async (log) => {
+        const np=document.getElementById('np'),nh=document.getElementById('nh'),nout=document.getElementById('nout'),line=document.querySelector('.connector-line');
+        const isSuccess = Math.random() > 0.5;
+        log(`🎲 [Random] 本次模拟: ${isSuccess ? '✅ 成功' : '❌ 异常'}`); await wait(800);
+
+        if(isSuccess) {
+          completeNode(np,'fa-check','text-emerald-400'); np.querySelector('span.font-bold').innerText='"hello"';
+          createPacket(np, nh, '"hello"', async () => {
+            line.classList.add('active'); activateNode(nh,'fa-gear','text-teal-400 animate-spin-slow');
+            log("⚙️ [Handle] res='hello', ex=null → 转大写"); await wait(800);
+            completeNode(nh,'fa-check','text-emerald-400');
+            createPacket(nh, nout, '"HELLO"', () => { nout.classList.remove('border-dashed','border-slate-700','text-slate-600'); nout.classList.add('border-emerald-500','bg-emerald-500/10','text-emerald-400','font-bold'); nout.innerText='"HELLO"'; log("✅ [Handle] 正常路径输出: HELLO"); });
+          });
+        } else {
+          np.classList.remove('node-running'); np.classList.add('border-red-600','bg-red-900/20'); np.innerHTML=`<i class="fa-solid fa-skull-crossbones text-2xl text-red-500"></i><span class="font-bold text-red-500 mt-1">ERROR</span>`;
+          createPacket(np, nh, "Exception!", async () => {
+            line.classList.add('active','!bg-red-500'); activateNode(nh,'fa-kit-medical','text-yellow-400 animate-bounce');
+            log("⚙️ [Handle] res=null, ex≠null → 返回默认值"); await wait(800);
+            completeNode(nh,'fa-check','text-emerald-400');
+            createPacket(nh, nout, '"DEFAULT"', () => { nout.classList.remove('border-dashed','border-slate-700','text-slate-600'); nout.classList.add('border-yellow-500','bg-yellow-500/10','text-yellow-400','font-bold'); nout.innerText='"DEFAULT"'; log("✅ [Handle] 异常路径输出: DEFAULT"); });
+          });
+        }
+      }
+    },
+    whenComplete: {
+      title: "whenComplete()", subtitle: "旁路回调：不改变结果，只做副作用", icon: "fa-clipboard-check",
+      code: `cf.whenComplete((result, ex) -> {\n    long cost = System.currentTimeMillis() - start;\n    metrics.record("api_cost", cost);\n    // 返回值被忽略，原结果透传\n});`,
+      points: ["BiConsumer<T,Throwable>", "不影响链路结果（透传）", "即使抛异常也不改变原结果"],
+      tip: "与 handle 核心区别：whenComplete 是\"观察者\"，handle 是\"转换器\"。监控埋点用 whenComplete，结果兜底用 handle。",
+      setup: (c) => { c.innerHTML = `<div class="relative w-full h-full flex items-center justify-center gap-12"><div id="np" class="node-box node-done w-28 h-20 bg-slate-800 border-2 border-emerald-500 rounded-xl flex flex-col items-center justify-center z-10 opacity-60"><span class="text-xs text-emerald-500 mb-1">Previous</span><span class="font-bold text-emerald-400">"Result"</span></div><div class="connector-line w-12 h-1 rounded-full"></div><div id="nwc" class="node-box node-waiting w-36 h-24 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><i class="fa-solid fa-clipboard-check text-2xl mb-2 text-slate-500"></i><span class="font-bold text-slate-400">whenComplete</span><span class="text-[10px] text-slate-500 mt-1">记录耗时指标</span></div><div class="connector-line w-12 h-1 rounded-full"></div><div id="nout" class="node-box node-waiting w-28 h-20 bg-slate-800 border-2 border-slate-600 rounded-xl flex flex-col items-center justify-center z-10"><span class="text-xs text-slate-500 mb-1">透传</span><span class="font-bold text-slate-400">?</span></div><div id="metrics" class="absolute bottom-6 right-8 w-28 h-16 bg-slate-800 border-2 border-slate-700 rounded-lg flex flex-col items-center justify-center z-10 opacity-40"><i class="fa-solid fa-chart-line text-lg text-slate-600"></i><span class="text-[10px] text-slate-600 mt-1">Metrics</span></div></div>`; },
+      run: async (log) => {
+        const np=document.getElementById('np'),nwc=document.getElementById('nwc'),nout=document.getElementById('nout'),metrics=document.getElementById('metrics'),lines=document.querySelectorAll('.connector-line');
+        log("🔗 [Chain] 注册 whenComplete 旁路回调..."); await wait(500);
+        createPacket(np, nwc, '"Result"', async () => {
+          lines[0].classList.add('active'); activateNode(nwc,'fa-gear','text-cyan-400 animate-spin-slow');
+          log("📊 [WhenComplete] 记录耗时: 1523ms（不修改结果）"); await wait(800);
+          completeNode(nwc,'fa-check','text-emerald-400');
+          metrics.classList.remove('opacity-40'); metrics.classList.add('border-cyan-500'); metrics.querySelector('i').className='fa-solid fa-chart-line text-lg text-cyan-400';
+          lines[1].classList.add('active');
+          createPacket(nwc, nout, '"Result"', () => {
+            completeNode(nout,'fa-arrow-right','text-emerald-400');
+            nout.querySelector('span.font-bold').innerText='"Result"'; nout.querySelector('span.font-bold').classList.add('text-emerald-400');
+            log("✅ [WhenComplete] 原始结果原样透传给下游");
+          });
+        });
+      }
+    }
+  };
+
+  // ================= 工具函数 =================
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  function activateNode(el, iconClass, iconColorClass) {
+    el.classList.remove('node-waiting');
+    el.classList.add('node-running');
+    const icon = el.querySelector('i');
+    if(icon) icon.className = `fa-solid ${iconClass} text-2xl mb-2 ${iconColorClass}`;
+  }
+
+  function completeNode(el, iconClass, iconColorClass) {
+    el.classList.remove('node-running');
+    el.classList.add('node-done');
+    const icon = el.querySelector('i');
+    if(icon) icon.className = `fa-solid ${iconClass} text-2xl mb-2 ${iconColorClass}`;
+  }
+
+  function log(msg) {
+    const c = document.getElementById('console-log');
+    const t = new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const d = document.createElement('div');
+    d.className = "mb-1 animate-[fadeIn_0.3s_ease]";
+    d.innerHTML = `<span class="text-slate-600">[${t}]</span> ${msg}`;
+    c.appendChild(d);
+    c.scrollTop = c.scrollHeight;
+  }
+
+  function createPacket(from, to, label, onArrive, svgPath = null) {
+    const packet = document.createElement('div');
+    const isError = label.includes('Exception') || label.includes('BOOM');
+    packet.className = `data-packet ${isError?'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]':'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]'} text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1`;
+    packet.innerHTML = `<i class="fa-solid fa-cube"></i> ${label}`;
+
+    const container = document.getElementById('animation-container');
+    container.appendChild(packet);
+
+    const fr = from.getBoundingClientRect(), tr = to.getBoundingClientRect(), cr = container.getBoundingClientRect();
+    const sx = fr.left+fr.width/2-cr.left, sy = fr.top+fr.height/2-cr.top;
+    const ex = tr.left+tr.width/2-cr.left, ey = tr.top+tr.height/2-cr.top;
+
+    packet.style.left = sx+'px'; packet.style.top = sy+'px'; packet.style.transform = 'translate(-50%,-50%)';
+
+    const anim = packet.animate([
+      {left:`${sx}px`,top:`${sy}px`},{left:`${ex}px`,top:`${ey}px`}
+    ], {duration:800, easing:'cubic-bezier(0.4,0,0.2,1)', fill:'forwards'});
+
+    anim.onfinish = () => { packet.remove(); if(onArrive) onArrive(); };
+  }
+
+  // ================= 交互逻辑 =================
+  let currentKey = 'supplyAsync', isRunning = false;
+
+  function loadDemo(key) {
+    if(isRunning) return;
+    currentKey = key;
+    const d = DEMOS[key];
+    document.querySelectorAll('.demo-btn').forEach(b => {
+      const active = b.dataset.id === key;
+      b.classList.toggle('text-blue-400', active);
+      b.classList.toggle('bg-slate-800', active);
+      b.classList.toggle('text-slate-400', !active);
+    });
+    document.getElementById('stage-title').innerText = d.title;
+    document.getElementById('stage-subtitle').innerText = d.subtitle;
+    document.getElementById('stage-icon').innerHTML = `<i class="fa-solid ${d.icon}"></i>`;
+    document.getElementById('code-block').innerText = d.code;
+    document.getElementById('key-points').innerHTML = d.points.map(p=>`<li>${p}</li>`).join('');
+    document.getElementById('interview-tip').innerText = d.tip;
+    resetAnimation();
+  }
+
+  function resetAnimation() {
+    if(isRunning) return;
+    document.getElementById('console-log').innerHTML = '<div class="text-slate-500">// 准备就绪，点击 Run 开始</div>';
+    DEMOS[currentKey].setup(document.getElementById('animation-container'));
+  }
+
+  async function runAnimation() {
+    if(isRunning) return;
+    isRunning = true;
+    const btn = document.getElementById('btn-run');
+    btn.disabled = true; btn.classList.add('opacity-50','cursor-not-allowed');
+    document.getElementById('console-log').innerHTML = '';
+    try { await DEMOS[currentKey].run(log); } catch(e) { console.error(e); }
+    finally { isRunning = false; btn.disabled = false; btn.classList.remove('opacity-50','cursor-not-allowed'); }
+  }
+
+  // 初始化
+  loadDemo('supplyAsync');
+</script>
+</body>
+</html>

@@ -188,7 +188,7 @@ public class PlatformBootstrapService {
 
     private void createOmsTradeTables() {
         routingMybatisExecutor.run(DS_TRADE_OMS, () -> {
-            executeSql("create table if not exists oms_stock_snapshot (id bigint primary key,symbol varchar(16) not null,exchange_code varchar(32),market_day varchar(16) not null,open_px decimal(18,4),high_px decimal(18,4),low_px decimal(18,4),close_px decimal(18,4),vol_num bigint,turnover_amt decimal(18,2),sync_flag int default 0)");
+            executeSql("create table if not exists oms_stock_snapshot (id bigint primary key,symbol varchar(16) not null,exchange_code varchar(32),market_day varchar(16) not null,open_price decimal(18,4),high_price decimal(18,4),low_price decimal(18,4),close_price decimal(18,4),volume_qty bigint,turnover_amount decimal(18,2),sync_flag int default 0)");
             executeSql("create table if not exists oms_trade_order (id bigint primary key,order_no varchar(64) not null,stock_code varchar(32) not null,investor_name varchar(128),side_code varchar(8),trade_qty bigint,trade_price decimal(18,4),order_amount decimal(18,2),trade_status varchar(32),trade_time varchar(32),sync_flag int default 0)");
             executeSql("create table if not exists oms_position_holding (id bigint primary key,investor_name varchar(128),stock_code varchar(32) not null,holding_qty bigint,available_qty bigint,cost_price decimal(18,4),market_value decimal(18,2),stat_day varchar(16),sync_flag int default 0)");
             executeSql("create table if not exists oms_cash_asset (id bigint primary key,investor_name varchar(128),account_no varchar(64),cash_balance decimal(18,2),frozen_balance decimal(18,2),total_asset decimal(18,2),stat_day varchar(16),sync_flag int default 0)");

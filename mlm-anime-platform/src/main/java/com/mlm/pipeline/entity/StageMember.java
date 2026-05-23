@@ -3,14 +3,15 @@ package com.mlm.pipeline.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
-/**
- * 项目阶段负责人 — 对应 project_stage_member 表
- * <p>
- * 每个项目的每个阶段可以指定一个负责人，只有负责人能操作该阶段的剧集。
- */
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 @TableName("project_stage_member")
 public class StageMember {
 

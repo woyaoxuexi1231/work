@@ -1,6 +1,4 @@
-package work.N1javabasic.v1;
-
-import io.reactivex.rxjava3.core.Completable;
+package work.N1javabasic.v1.concurrent.completablefuture;
 
 import java.util.ArrayList;
 import java.util.List;
