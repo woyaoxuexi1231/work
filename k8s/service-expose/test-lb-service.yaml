@@ -1,0 +1,32 @@
+# ============================================================
+#  测试 LoadBalancer Service
+#  前提: 已安装 MetalLB (sudo bash setup-metallb.sh)
+#  使用: kubectl apply -f test-lb-service.yaml
+# ============================================================
+
+# 先创建一个测试 Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-nginx
+  labels:
+    app: test-nginx
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25-alpine
+    ports:
+    - containerPort: 80
+---
+# LoadBalancer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-nginx-lb
+spec:
+  type: LoadBalancer         # MetalLB 自动分配 External IP
+  selector:
+    app: test-nginx
+  ports:
+  - port: 80
+    targetPort: 80
