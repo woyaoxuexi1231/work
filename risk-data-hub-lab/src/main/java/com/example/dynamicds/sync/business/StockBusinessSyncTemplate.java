@@ -7,6 +7,7 @@ import com.example.dynamicds.entity.BrokerStockQuote;
 import com.example.dynamicds.entity.CleanStock;
 import com.example.dynamicds.entity.OmsStockSnapshot;
 import com.example.dynamicds.mapper.BrokerStockQuoteMapper;
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.mapper.CleanStockMapper;
 import com.example.dynamicds.mapper.OmsStockSnapshotMapper;
 import com.example.dynamicds.service.LeafSegmentService;
@@ -63,7 +64,7 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
     @Override
     protected List<StockRow> fetchPage(BusinessSyncContext context, long lastId, int pageSize) {
         return switch (context.getDatasourceType()) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
+            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> omsStockSnapshotMapper.selectList(new LambdaQueryWrapper<OmsStockSnapshot>()
                             .eq(OmsStockSnapshot::getSyncFlag, 0)
                             .gt(OmsStockSnapshot::getId, lastId)
@@ -71,7 +72,7 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
                             .last("limit " + pageSize))).stream().map(row -> new StockRow(
                             row.getId(), row.getSymbol(), row.getExchangeCode(), row.getMarketDay(), row.getOpenPrice(),
                             row.getHighPrice(), row.getLowPrice(), row.getClosePrice(), row.getVolumeQty(), row.getTurnoverAmount())).toList();
-            case PlatformBootstrapService.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
+            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> brokerStockQuoteMapper.selectList(new LambdaQueryWrapper<BrokerStockQuote>()
                             .eq(BrokerStockQuote::getSyncFlag, 0)
                             .gt(BrokerStockQuote::getId, lastId)
@@ -106,17 +107,17 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
 
     @Override
     protected void save(CleanStock target) {
-        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> cleanStockMapper.insert(target));
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> cleanStockMapper.insert(target));
     }
 
     @Override
     protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
         switch (context.getDatasourceType()) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     omsStockSnapshotMapper.update(null, new LambdaUpdateWrapper<OmsStockSnapshot>()
                             .set(OmsStockSnapshot::getSyncFlag, 1)
                             .eq(OmsStockSnapshot::getId, rowId)));
-            case PlatformBootstrapService.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     brokerStockQuoteMapper.update(null, new LambdaUpdateWrapper<BrokerStockQuote>()
                             .set(BrokerStockQuote::getSyncFlag, 1)
                             .eq(BrokerStockQuote::getId, rowId)));

@@ -7,6 +7,7 @@ import com.example.dynamicds.entity.BrokerFundAccount;
 import com.example.dynamicds.entity.CleanAsset;
 import com.example.dynamicds.entity.OmsCashAsset;
 import com.example.dynamicds.mapper.BrokerFundAccountMapper;
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.mapper.CleanAssetMapper;
 import com.example.dynamicds.mapper.OmsCashAssetMapper;
 import com.example.dynamicds.service.LeafSegmentService;
@@ -60,14 +61,14 @@ public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Asse
     @Override
     protected List<AssetRow> fetchPage(BusinessSyncContext context, long lastId, int pageSize) {
         return switch (context.getDatasourceType()) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
+            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> omsCashAssetMapper.selectList(new LambdaQueryWrapper<OmsCashAsset>()
                             .eq(OmsCashAsset::getSyncFlag, 0)
                             .gt(OmsCashAsset::getId, lastId)
                             .orderByAsc(OmsCashAsset::getId)
                             .last("limit " + pageSize))).stream().map(row -> new AssetRow(
                             row.getId(), row.getInvestorName(), row.getAccountNo(), row.getCashBalance(), row.getFrozenBalance(), row.getTotalAsset(), row.getStatDay())).toList();
-            case PlatformBootstrapService.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
+            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> brokerFundAccountMapper.selectList(new LambdaQueryWrapper<BrokerFundAccount>()
                             .eq(BrokerFundAccount::getSyncFlag, 0)
                             .gt(BrokerFundAccount::getId, lastId)
@@ -98,17 +99,17 @@ public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Asse
 
     @Override
     protected void save(CleanAsset target) {
-        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> cleanAssetMapper.insert(target));
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> cleanAssetMapper.insert(target));
     }
 
     @Override
     protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
         switch (context.getDatasourceType()) {
-            case PlatformBootstrapService.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     omsCashAssetMapper.update(null, new LambdaUpdateWrapper<OmsCashAsset>()
                             .set(OmsCashAsset::getSyncFlag, 1)
                             .eq(OmsCashAsset::getId, rowId)));
-            case PlatformBootstrapService.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     brokerFundAccountMapper.update(null, new LambdaUpdateWrapper<BrokerFundAccount>()
                             .set(BrokerFundAccount::getSyncFlag, 1)
                             .eq(BrokerFundAccount::getId, rowId)));

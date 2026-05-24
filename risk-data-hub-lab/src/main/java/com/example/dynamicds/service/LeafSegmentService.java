@@ -1,5 +1,6 @@
 package com.example.dynamicds.service;
 
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.entity.LeafAlloc;
 import com.example.dynamicds.mapper.LeafAllocMapper;
@@ -181,7 +182,7 @@ public class LeafSegmentService {
      */
     private Segment fetchSegment(String tag) {
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () ->
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
                 transactionTemplate.execute(status -> {
                     LeafAlloc alloc = leafAllocMapper.selectForUpdate(tag);
                     if (alloc == null) {

@@ -4,7 +4,10 @@ import com.gateway.JwtUtil;
 import com.gateway.dto.ApiResult;
 import com.gateway.entity.AuthUser;
 import com.gateway.service.AuthService;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 

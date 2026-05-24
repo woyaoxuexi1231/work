@@ -1,6 +1,7 @@
 package com.example.dynamicds.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.entity.DictItem;
 import com.example.dynamicds.mapper.DictItemMapper;
@@ -32,14 +33,14 @@ public class DictionaryService {
      */
     public List<DictItem> listAll() {
         log.info("[字典模块] 查询全部字典项");
-        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB,
+        return routingMybatisExecutor.query(HubConstants.DS_HUB,
                 () -> dictItemMapper.selectList(new LambdaQueryWrapper<DictItem>()
                         .orderByAsc(DictItem::getDictType, DictItem::getDictCode)));
     }
 
     public void save(String dictType, String dictCode, String dictName, String dictDesc) {
         log.info("[字典模块] 保存字典 dictType={}, dictCode={}, dictName={}", dictType, dictCode, dictName);
-        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
             DictItem exist = dictItemMapper.selectOne(new LambdaQueryWrapper<DictItem>()
                     .eq(DictItem::getDictType, dictType)
                     .eq(DictItem::getDictCode, dictCode)
@@ -66,7 +67,7 @@ public class DictionaryService {
      * 如果找不到映射，回退返回原始 code 并记录告警。
      */
     public String translate(String dictType, String dictCode) {
-        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () -> {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
             DictItem item = dictItemMapper.selectOne(new LambdaQueryWrapper<DictItem>()
                     .eq(DictItem::getDictType, dictType)
                     .eq(DictItem::getDictCode, dictCode)

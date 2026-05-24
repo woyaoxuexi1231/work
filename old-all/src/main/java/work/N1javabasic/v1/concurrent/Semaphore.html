@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Semaphore 信号量纯演示版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @keyframes pop-in { 0% { transform: scale(0); opacity: 0; } 80% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes slide-right { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+        @keyframes float-up { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-40px); opacity: 0; } }
+        @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } }
+
+        .anim-pop { animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        .anim-slide { animation: slide-right 0.4s ease-out forwards; }
+        .anim-shake { animation: shake 0.4s ease-in-out; }
+        .anim-float { position: absolute; animation: float-up 1s ease-out forwards; font-weight: bold; font-size: 14px; z-index: 50; pointer-events: none; }
+
+        .permit-box { transition: all 0.3s ease; }
+        .thread-card { transition: all 0.4s ease; }
+        .running-card { animation: pulse-ring 2s infinite; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans min-h-screen py-8 px-4 flex flex-col items-center">
+
+<header class="text-center mb-8">
+    <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
+        Semaphore 信号量 · 纯演示模式
+    </h1>
+    <p class="text-slate-500 text-sm">无复杂逻辑，纯粹展示“公平 vs 非公平”的插队差异</p>
+</header>
+
+<!-- 演示舞台 -->
+<div class="w-full max-w-4xl bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+
+    <!-- 顶部控制栏 -->
+    <div class="bg-slate-800/50 p-4 border-b border-slate-700 flex flex-wrap justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <span class="text-sm text-slate-400">当前模式：</span>
+            <button id="mode-btn" onclick="toggleMode()" class="px-4 py-1.5 rounded-lg text-sm font-bold bg-amber-500/20 text-amber-400 border border-amber-500/50 transition-colors">
+                ⚡ 非公平模式 (Unfair)
+            </button>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="playDemo()" id="play-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all">
+                <i class="fa-solid fa-play"></i> 自动演示全过程
+            </button>
+            <button onclick="resetStage()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm transition-all">
+                <i class="fa-solid fa-rotate-right"></i> 重置
+            </button>
+        </div>
+    </div>
+
+    <!-- 核心动画区 -->
+    <div class="p-8 min-h-[400px] flex flex-col gap-8 relative">
+
+        <!-- 1. 信号量池 -->
+        <div class="flex items-center gap-6">
+            <div class="w-24 text-right">
+                <div class="text-xs text-slate-500 uppercase">Permits</div>
+                <div class="text-2xl font-black text-blue-400" id="permit-count">2</div>
+            </div>
+            <div id="permit-pool" class="flex gap-3 bg-slate-950/50 p-4 rounded-xl border border-slate-800 flex-1 justify-center">
+                <!-- JS 渲染许可 -->
+            </div>
+        </div>
+
+        <!-- 2. 运行区 -->
+        <div class="ml-24">
+            <div class="text-xs text-slate-500 uppercase mb-2">Running (持有许可)</div>
+            <div id="running-area" class="flex gap-4 min-h-[80px]">
+                <!-- JS 渲染运行线程 -->
+            </div>
+        </div>
+
+        <!-- 3. 等待队列 -->
+        <div class="ml-24">
+            <div class="text-xs text-slate-500 uppercase mb-2 flex items-center gap-2">
+                Waiting Queue (等待队列)
+                <span id="queue-hint" class="text-[10px] text-amber-500/80 hidden">⚠️ 新来的可能插队！</span>
+                <span id="queue-hint-fair" class="text-[10px] text-emerald-500/80 hidden">✅ 严格按顺序排队</span>
+            </div>
+            <div id="queue-area" class="flex gap-3 min-h-[80px] items-center border-t border-dashed border-slate-800 pt-4">
+                <!-- JS 渲染等待线程 -->
+            </div>
+        </div>
+
+        <!-- 4. 入口 (新线程诞生处) -->
+        <div class="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
+            <div class="text-xs text-slate-600">Thread Entry</div>
+            <div class="w-12 h-12 rounded-full border-2 border-dashed border-slate-700 flex items-center justify-center text-slate-700">
+                <i class="fa-solid fa-plus"></i>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 底部解说栏 -->
+    <div class="bg-black/30 p-4 border-t border-slate-800 h-24 flex items-center justify-center text-center">
+        <p id="narrator" class="text-lg text-slate-300 font-medium transition-all">点击“自动演示”开始观看 Semaphore 的工作流程...</p>
+    </div>
+</div>
+
+<script>
+  // ================= 纯演示状态 =================
+  let isFair = false; // false = Unfair, true = Fair
+  let permits = 2;
+  let maxPermits = 2;
+  let isPlaying = false;
+
+  // 舞台上的数据（仅用于渲染，无复杂逻辑）
+  let runningThreads = [];
+  let waitingThreads = [];
+  let threadIdCounter = 1;
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ================= 渲染函数 =================
+  function render() {
+    // 渲染 Permits
+    const pool = document.getElementById('permit-pool');
+    document.getElementById('permit-count').innerText = permits;
+    pool.innerHTML = '';
+    for (let i = 0; i < maxPermits; i++) {
+      const hasPermit = i < permits;
+      pool.innerHTML += `
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center permit-box anim-pop"
+                         style="animation-delay: ${i * 50}ms; background: ${hasPermit ? '#3b82f6' : '#1e293b'}; box-shadow: ${hasPermit ? '0 0 15px rgba(59,130,246,0.5)' : 'none'}">
+                        <i class="fa-solid ${hasPermit ? 'fa-key text-white' : 'fa-lock text-slate-600'}"></i>
+                    </div>`;
+    }
+
+    // 渲染 Running
+    const runArea = document.getElementById('running-area');
+    runArea.innerHTML = runningThreads.map(t => `
+                <div class="thread-card running-card w-20 h-20 bg-blue-500/10 border-2 border-blue-500 rounded-xl flex flex-col items-center justify-center anim-pop">
+                    <i class="fa-solid fa-gear fa-spin text-blue-400 text-xl mb-1"></i>
+                    <span class="text-sm font-bold text-blue-300">T-${t}</span>
+                </div>
+            `).join('');
+
+    // 渲染 Queue
+    const queueArea = document.getElementById('queue-area');
+    queueArea.innerHTML = waitingThreads.map((t, idx) => `
+                <div class="thread-card w-16 h-16 bg-slate-800 border border-slate-600 rounded-xl flex flex-col items-center justify-center anim-slide relative" style="animation-delay: ${idx * 100}ms">
+                    <span class="text-xs text-slate-500 absolute -top-2 -right-2 bg-slate-900 rounded-full w-5 h-5 flex items-center justify-center border border-slate-700">${idx + 1}</span>
+                    <i class="fa-regular fa-clock text-amber-500/70 mb-1"></i>
+                    <span class="text-xs font-bold text-slate-400">T-${t}</span>
+                </div>
+            `).join('');
+
+    // 队列提示
+    document.getElementById('queue-hint').classList.toggle('hidden', isFair || waitingThreads.length === 0);
+    document.getElementById('queue-hint-fair').classList.toggle('hidden', !isFair || waitingThreads.length === 0);
+  }
+
+  function say(text, color = "text-slate-300") {
+    const el = document.getElementById('narrator');
+    el.style.opacity = 0;
+    setTimeout(() => {
+      el.innerHTML = `<span class="${color}">${text}</span>`;
+      el.style.opacity = 1;
+    }, 200);
+  }
+
+  function showFloatText(elementId, text, colorClass) {
+    const el = document.getElementById(elementId);
+    if(!el) return;
+    const rect = el.getBoundingClientRect();
+    const floatEl = document.createElement('div');
+    floatEl.className = `anim-float ${colorClass}`;
+    floatEl.innerText = text;
+    floatEl.style.left = (rect.left + rect.width / 2) + 'px';
+    floatEl.style.top = (rect.top) + 'px';
+    document.body.appendChild(floatEl);
+    setTimeout(() => floatEl.remove(), 1000);
+  }
+
+  // ================= 演示剧本 =================
+  async function playDemo() {
+    if (isPlaying) return;
+    isPlaying = true;
+    document.getElementById('play-btn').classList.add('opacity-50', 'cursor-not-allowed');
+    resetStage(false);
+
+    // --- 场景 1: 基础占用 ---
+    say("1. 初始状态：拥有 2 个许可 (Permits)", "text-blue-400 font-bold");
+    await sleep(1500);
+
+    say("2. 线程 T-1 到达，发现有空闲许可，直接拿走执行", "text-emerald-400");
+    permits--; runningThreads.push(threadIdCounter++); render();
+    showFloatText('permit-pool', '-1 Permit', 'text-red-400');
+    await sleep(2000);
+
+    say("3. 线程 T-2 到达，拿走最后一个许可", "text-emerald-400");
+    permits--; runningThreads.push(threadIdCounter++); render();
+    await sleep(2000);
+
+    // --- 场景 2: 产生排队 ---
+    say("4. 许可耗尽！此时 T-3 和 T-4 到达，只能进入队列等待...", "text-amber-400");
+    waitingThreads.push(threadIdCounter++); // T-3
+    waitingThreads.push(threadIdCounter++); // T-4
+    render();
+    await sleep(2500);
+
+    // --- 场景 3: 释放与获取 (核心差异) ---
+    if (!isFair) {
+      // === 非公平演示 ===
+      say("【非公平模式】T-1 释放了许可。但注意！新来的 T-5 不讲武德！", "text-amber-500 font-bold");
+      await sleep(2000);
+
+      // T-1 释放
+      permits++; runningThreads.shift(); render();
+      showFloatText('running-area', 'Release', 'text-blue-400');
+      await sleep(1000);
+
+      // T-5 插队
+      say("⚡ T-5 到达！虽然是新来的，但它直接抢走了刚释放的许可 (插队成功)", "text-red-400 font-bold text-xl");
+      showFloatText('queue-area', '😡 被插队!', 'text-red-500');
+      await sleep(800);
+      permits--; runningThreads.push(threadIdCounter++); render();
+      await sleep(3000);
+
+      say("结果：队列里的 T-3 依然在苦苦等待，这就是非公平模式的特点。", "text-slate-400");
+
+    } else {
+      // === 公平演示 ===
+      say("【公平模式】T-1 释放了许可。新来的 T-5 到达。", "text-emerald-500 font-bold");
+      await sleep(2000);
+
+      // T-1 释放
+      permits++; runningThreads.shift(); render();
+      await sleep(800);
+
+      // T-5 排队
+      say("🛑 T-5 到达，但因为有队列，它必须乖乖排到 T-4 后面。", "text-emerald-400");
+      waitingThreads.push(threadIdCounter++);
+      render();
+      await sleep(1500);
+
+      // 队首获取
+      say("✅ 许可分配给了队首的 T-3 (FIFO 先进先出)", "text-emerald-400 font-bold");
+      showFloatText('queue-area', 'FIFO 获取', 'text-emerald-500');
+      await sleep(800);
+      permits--; waitingThreads.shift(); runningThreads.push(3); render(); // T-3 进
+      await sleep(3000);
+
+      say("结果：严格遵守排队顺序，杜绝了饥饿现象。", "text-slate-400");
+    }
+
+    say("演示结束。点击重置可切换模式再次观看。", "text-blue-400");
+    isPlaying = false;
+    document.getElementById('play-btn').classList.remove('opacity-50', 'cursor-not-allowed');
+  }
+
+  // ================= 交互控制 =================
+  function toggleMode() {
+    if (isPlaying) return;
+    isFair = !isFair;
+    const btn = document.getElementById('mode-btn');
+    if (isFair) {
+      btn.className = "px-4 py-1.5 rounded-lg text-sm font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition-colors";
+      btn.innerHTML = "⚖️ 公平模式 (Fair)";
+    } else {
+      btn.className = "px-4 py-1.5 rounded-lg text-sm font-bold bg-amber-500/20 text-amber-400 border border-amber-500/50 transition-colors";
+      btn.innerHTML = "⚡ 非公平模式 (Unfair)";
+    }
+    resetStage();
+  }
+
+  function resetStage(full = true) {
+    if (isPlaying && full) return;
+    permits = 2;
+    runningThreads = [];
+    waitingThreads = [];
+    threadIdCounter = 1;
+    render();
+    if(full) say("舞台已重置", "text-slate-500");
+  }
+
+  // 初始化
+  render();
+</script>
+</body>
+</html>

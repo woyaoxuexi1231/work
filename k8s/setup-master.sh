@@ -23,10 +23,20 @@ echo "  K8s Master 节点初始化"
 echo "  节点: k8s-master (192.168.2.102)"
 echo "=========================================="
 
-# 检查 root
+# 检查 root 权限 (Ubuntu 使用 sudo 运行)
 if [ "$EUID" -ne 0 ]; then
-    log_error "请使用 root 用户运行此脚本"
+    log_error "请使用 sudo 运行此脚本: sudo bash setup-master.sh"
     exit 1
+fi
+
+# 检测真实的操作用户 (sudo 场景下 $SUDO_USER 非空)
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+    REAL_HOME=$(eval echo ~$REAL_USER)
+    log_info "真实用户: $REAL_USER, HOME: $REAL_HOME"
+else
+    REAL_USER="root"
+    REAL_HOME="/root"
 fi
 
 # 确认主机名
@@ -79,29 +89,40 @@ log_info "集群初始化完成！"
 # ==========================================
 log_step "[2/4] 配置 kubectl..."
 
-mkdir -p $HOME/.kube
-cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-chown $(id -u):$(id -g) $HOME/.kube/config
+# 为当前 root 环境配置 kubectl
+mkdir -p /root/.kube
+cp /etc/kubernetes/admin.conf /root/.kube/config
 
-# 配置 bash 补全（非 root 用户也可以手动执行）
-if ! grep -q "kubectl completion bash" $HOME/.bashrc 2>/dev/null; then
-    echo "source <(kubectl completion bash)" >> $HOME/.bashrc
+# 为真实用户也配置 kubectl（sudo 场景下用户不是 root）
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+    mkdir -p "$REAL_HOME/.kube"
+    cp /etc/kubernetes/admin.conf "$REAL_HOME/.kube/config"
+    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.kube"
+
+    # 配置 bash 补全
+    if ! grep -q "kubectl completion bash" "$REAL_HOME/.bashrc" 2>/dev/null; then
+        echo "source <(kubectl completion bash)" >> "$REAL_HOME/.bashrc"
+    fi
+
+    log_info "kubectl 已配置到用户 '$REAL_USER' 的 HOME 目录"
+else
+    log_info "kubectl 已配置到 /root/.kube/"
 fi
-
-log_info "kubectl 配置完成"
-log_info "验证: $(kubectl version --client -o short 2>/dev/null)"
 
 # ==========================================
 # Step 3: 保存 join 命令
 # ==========================================
 log_step "[3/4] 生成并保存 Worker 节点加入命令..."
 
-# 创建 token 并生成 join 命令
 JOIN_CMD_FILE="/root/k8s-join-command.sh"
 kubeadm token create --print-join-command > "$JOIN_CMD_FILE"
 chmod +x "$JOIN_CMD_FILE"
 
-log_info "Join 命令已保存到: $JOIN_CMD_FILE"
+# 同步到 /tmp/，方便 Worker 节点通过普通用户 SCP 获取（Ubuntu 不允许 root SSH）
+cp "$JOIN_CMD_FILE" /tmp/k8s-join-command.sh
+chmod 644 /tmp/k8s-join-command.sh
+
+log_info "Join 命令已保存到: $JOIN_CMD_FILE 和 /tmp/k8s-join-command.sh"
 log_info ""
 log_info "Join 命令内容:"
 echo "----------------------------------------"
@@ -162,11 +183,8 @@ echo "=========================================="
 echo -e "${YELLOW}  下一步: 在 Worker 节点执行加入操作${NC}"
 echo "=========================================="
 echo ""
-log_info "Join 命令文件: /root/k8s-join-command.sh"
+log_info "Join 命令文件: /root/k8s-join-command.sh   (也可通过 /tmp/k8s-join-command.sh 用普通用户 SCP 获取)"
 echo ""
-echo "将 join 命令内容复制到 Worker 节点 (k8s-node1, k8s-node2) 后运行:"
-echo "  bash setup-node.sh"
-echo ""
-echo "或者直接在 Worker 节点执行 join 命令:"
-echo "  bash /root/k8s-join-command.sh  (需要先将文件从 Master 复制过去)"
+echo "在 Worker 节点执行:"
+echo "  sudo bash setup-node.sh"
 echo ""

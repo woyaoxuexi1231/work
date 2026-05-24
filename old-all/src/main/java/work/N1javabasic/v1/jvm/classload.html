@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JVM 类加载机制 · 步进式深度演示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @keyframes fade-in-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse-val { 0%,100% { transform: scale(1); } 50% { transform: scale(1.2); color: #fbbf24; } }
+        @keyframes glow-border { 0%,100% { box-shadow: 0 0 5px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 20px rgba(59,130,246,0.6); } }
+
+        .anim-enter { animation: fade-in-up 0.5s ease-out forwards; }
+        .val-change { animation: pulse-val 0.6s ease-in-out; }
+        .active-stage { border-color: #3b82f6 !important; background: rgba(59,130,246,0.05) !important; animation: glow-border 2s infinite; }
+
+        .step-card { transition: all 0.3s ease; cursor: pointer; }
+        .step-card:hover:not(.locked) { transform: translateY(-2px); border-color: #60a5fa; }
+        .step-card.completed { border-color: #10b981; background: rgba(16,185,129,0.05); }
+        .step-card.completed .step-icon { color: #10b981; }
+        .step-card.locked { opacity: 0.4; cursor: not-allowed; filter: grayscale(1); }
+
+        .mem-slot { transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans min-h-screen py-6 px-4 selection:bg-blue-500/30">
+
+<header class="text-center max-w-4xl mx-auto mb-6">
+    <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent mb-2">
+        JVM 类加载全过程 · 步进演示
+    </h1>
+    <p class="text-slate-400 text-sm">点击步骤卡片或底部按钮，按需控制加载进度，深入观察内存状态变化</p>
+</header>
+
+<main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- 左侧：步骤导航 (3列) -->
+    <div class="lg:col-span-3 space-y-3">
+        <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">生命周期阶段</div>
+
+        <!-- 步骤列表由JS生成 -->
+        <div id="steps-nav" class="space-y-2"></div>
+    </div>
+
+    <!-- 中间：可视化舞台 (6列) -->
+    <div class="lg:col-span-6 space-y-4">
+        <!-- 当前阶段详解卡 -->
+        <div id="stage-detail" class="bg-slate-900 rounded-2xl border border-slate-800 p-6 min-h-[180px] flex flex-col justify-center items-center text-center transition-all duration-500">
+            <i class="fa-solid fa-hand-pointer text-4xl text-slate-700 mb-3"></i>
+            <h3 class="text-xl font-bold text-slate-300 mb-2">准备就绪</h3>
+            <p class="text-slate-500 text-sm max-w-md">请在左侧选择步骤，或点击下方“下一步”按钮，开始逐步观察 <code class="text-blue-400">DemoClass</code> 的加载过程。</p>
+        </div>
+
+        <!-- 内存状态可视化 -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-memory"></i> 方法区 / 元空间 (Method Area)
+                </h3>
+                <span class="text-[10px] text-slate-600 bg-slate-800 px-2 py-0.5 rounded">DemoClass.class</span>
+            </div>
+
+            <!-- 静态变量池 -->
+            <div class="space-y-3">
+                <div class="text-xs text-slate-500 mb-1">static int value;</div>
+                <div class="mem-slot bg-slate-950 border border-slate-700 rounded-lg p-3 flex justify-between items-center">
+                    <span class="font-mono text-sm text-slate-400">value</span>
+                    <div class="flex items-center gap-2">
+                        <span id="val-display" class="font-mono text-xl font-black text-slate-600 transition-colors">-</span>
+                        <span id="val-tag" class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-600 transition-all">未分配</span>
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-500 mb-1 mt-3">static String name = "JVM";</div>
+                <div class="mem-slot bg-slate-950 border border-slate-700 rounded-lg p-3 flex justify-between items-center">
+                    <span class="font-mono text-sm text-slate-400">name</span>
+                    <div class="flex items-center gap-2">
+                        <span id="name-display" class="font-mono text-lg font-bold text-slate-600 transition-colors">-</span>
+                        <span id="name-tag" class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-600 transition-all">未分配</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 常量池引用提示 -->
+            <div id="cp-hint" class="mt-4 pt-3 border-t border-dashed border-slate-800 text-[11px] text-slate-600 hidden anim-enter">
+                <i class="fa-solid fa-link mr-1"></i> 符号引用已解析为直接引用
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：代码映射 (3列) -->
+    <div class="lg:col-span-3 space-y-4">
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 h-full">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <i class="fa-brands fa-java"></i> 源码对照
+            </h3>
+            <pre class="text-[11px] leading-relaxed font-mono overflow-x-auto"><code id="source-code" class="text-slate-500"><span class="line block px-2 py-0.5 rounded transition-colors" data-line="1">public class DemoClass {</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="2">    static int value;</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="3">    static String name = "JVM";</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="4"></span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="5">    static {</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="6">        value = 42;</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="7">        System.out.println("Init!");</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="8">    }</span>
+<span class="line block px-2 py-0.5 rounded transition-colors" data-line="9">}</span></code></pre>
+
+            <div class="mt-4 pt-3 border-t border-slate-800">
+                <div class="text-[10px] text-slate-600 mb-1">当前执行焦点：</div>
+                <div id="focus-desc" class="text-xs text-blue-400 font-medium min-h-[2.5em]">等待开始...</div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- 底部全局控制栏 -->
+<div class="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 p-4 z-50">
+    <div class="max-w-4xl mx-auto flex justify-between items-center">
+        <button onclick="prevStep()" id="btn-prev" class="px-5 py-2 rounded-lg text-sm font-bold bg-slate-800 text-slate-400 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all" disabled>
+            <i class="fa-solid fa-arrow-left mr-1"></i> 上一步
+        </button>
+
+        <div class="flex items-center gap-3">
+            <span id="progress-text" class="text-xs text-slate-500 font-mono">0 / 6</span>
+            <div class="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full bg-blue-500 transition-all duration-500" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <button onclick="nextStep()" id="btn-next" class="px-5 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 transition-all">
+            下一步 <i class="fa-solid fa-arrow-right ml-1"></i>
+        </button>
+    </div>
+</div>
+
+<script>
+  // ==================== 步骤数据定义 ====================
+  const STEPS = [
+    {
+      id: 'loading',
+      title: '1. 加载 (Loading)',
+      icon: 'fa-file-import',
+      desc: '<h3 class="text-xl font-bold text-blue-400 mb-2">📥 加载阶段</h3><p class="text-slate-300 text-sm leading-relaxed">通过全限定名获取二进制字节流，在方法区创建 <code class="text-blue-300">Class</code> 对象。<br><br>此时仅将类的结构信息读入内存，<strong class="text-amber-400">不会执行任何Java代码</strong>，也不会为静态变量赋初始值。</p>',
+      highlightLines: [1],
+      focus: '读取 DemoClass.class 字节码文件',
+      memState: { value: '-', valueTag: '未分配', valueColor: 'text-slate-600', name: '-', nameTag: '未分配', nameColor: 'text-slate-600' }
+    },
+    {
+      id: 'verification',
+      title: '2. 验证 (Verification)',
+      icon: 'fa-shield-check',
+      desc: '<h3 class="text-xl font-bold text-purple-400 mb-2">🛡️ 验证阶段</h3><p class="text-slate-300 text-sm leading-relaxed">确保字节码符合JVM规范且安全：<br>• 文件格式验证<br>• 元数据验证<br>• 字节码验证<br>• 符号引用验证<br><br><span class="text-slate-500 text-xs">此阶段不改变内存中的变量值，纯校验过程。</span></p>',
+      highlightLines: [],
+      focus: '校验字节码合法性与安全性',
+      memState: { value: '-', valueTag: '未分配', valueColor: 'text-slate-600', name: '-', nameTag: '未分配', nameColor: 'text-slate-600' }
+    },
+    {
+      id: 'preparation',
+      title: '3. 准备 (Preparation)',
+      icon: 'fa-box-open',
+      desc: '<h3 class="text-xl font-bold text-amber-400 mb-2">📦 准备阶段 ⭐关键</h3><p class="text-slate-300 text-sm leading-relaxed">为静态变量分配内存并设置<strong class="text-amber-300">零值（默认值）</strong>。<br><br>⚠️ <strong class="text-red-400">注意：</strong><code class="text-amber-300">name = "JVM"</code> 中的赋值在此阶段<strong>被忽略</strong>！字符串字面量赋值属于编译期常量才会在准备阶段赋值，普通静态变量统一置零。</p>',
+      highlightLines: [2, 3],
+      focus: '分配内存 → value=0, name=null (零值)',
+      memState: { value: '0', valueTag: '零值', valueColor: 'text-amber-400 val-change', name: 'null', nameTag: '零值', nameColor: 'text-amber-400 val-change' }
+    },
+    {
+      id: 'resolution',
+      title: '4. 解析 (Resolution)',
+      icon: 'fa-link',
+      desc: '<h3 class="text-xl font-bold text-cyan-400 mb-2">🔗 解析阶段</h3><p class="text-slate-300 text-sm leading-relaxed">将常量池内的<strong class="text-cyan-300">符号引用</strong>替换为<strong class="text-cyan-300">直接引用</strong>。<br><br>例如：<code class="text-cyan-300">System.out</code> 从字符串名称解析为指向 PrintStream 对象的内存指针。此阶段完成后，所有引用都能直接在内存中定位。</p>',
+      highlightLines: [7],
+      focus: '符号引用 → 直接引用 (内存地址绑定)',
+      memState: { value: '0', valueTag: '零值', valueColor: 'text-amber-400', name: 'null', nameTag: '零值', nameColor: 'text-amber-400', showCpHint: true }
+    },
+    {
+      id: 'initialization',
+      title: '5. 初始化 (Initialization)',
+      icon: 'fa-bolt',
+      desc: '<h3 class="text-xl font-bold text-emerald-400 mb-2">⚡ 初始化阶段 ⭐核心</h3><p class="text-slate-300 text-sm leading-relaxed">真正执行 <code class="text-emerald-300">&lt;clinit&gt;</code> 方法！<br><br>按源码顺序执行静态变量赋值和静态代码块：<br>① <code class="text-emerald-300">name = "JVM"</code><br>② <code class="text-emerald-300">value = 42</code><br>③ 打印 "Init!"<br><br>这是类加载中<strong>唯一执行用户代码</strong>的阶段。</p>',
+      highlightLines: [3, 5, 6, 7, 8],
+      focus: '执行 <clinit> → name="JVM", value=42',
+      memState: { value: '42', valueTag: '代码赋值', valueColor: 'text-emerald-400 val-change', name: '"JVM"', nameTag: '代码赋值', nameColor: 'text-emerald-400 val-change', showCpHint: true }
+    },
+    {
+      id: 'using',
+      title: '6. 使用 & 卸载',
+      icon: 'fa-rocket',
+      desc: '<h3 class="text-xl font-bold text-pink-400 mb-2">🚀 使用阶段</h3><p class="text-slate-300 text-sm leading-relaxed">类加载完成！现在可以安全地：<br>• new 创建实例<br>• 访问静态字段<br>• 调用静态方法<br><br><span class="text-slate-500 text-xs">卸载发生在GC时，当类不再被任何ClassLoader引用且无实例存活时回收。</span></p>',
+      highlightLines: [],
+      focus: '✅ 类加载完毕，可正常使用',
+      memState: { value: '42', valueTag: '就绪', valueColor: 'text-blue-400', name: '"JVM"', nameTag: '就绪', nameColor: 'text-blue-400', showCpHint: true }
+    }
+  ];
+
+  let currentStepIndex = -1; // -1 表示未开始
+
+  // ==================== 渲染与交互 ====================
+  function initStepsNav() {
+    const nav = document.getElementById('steps-nav');
+    nav.innerHTML = STEPS.map((step, idx) => `
+                <div id="step-card-${idx}"
+                     class="step-card locked bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-3"
+                     onclick="goToStep(${idx})">
+                    <div class="step-icon w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                        <i class="fa-solid ${step.icon} text-sm text-slate-500"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-400 truncate">${step.title}</div>
+                        <div class="text-[10px] text-slate-600 truncate step-status">🔒 未解锁</div>
+                    </div>
+                </div>
+            `).join('');
+  }
+
+  function goToStep(index) {
+    if (index < 0 || index >= STEPS.length) return;
+    // 只能前进或回到已完成的步骤，不能跳到未解锁的步骤
+    if (index > currentStepIndex + 1) return;
+
+    currentStepIndex = index;
+    const step = STEPS[index];
+
+    // 1. 更新步骤导航状态
+    STEPS.forEach((_, idx) => {
+      const card = document.getElementById(`step-card-${idx}`);
+      const statusEl = card.querySelector('.step-status');
+      card.classList.remove('active-stage', 'completed', 'locked');
+
+      if (idx < index) {
+        card.classList.add('completed');
+        statusEl.innerText = '✅ 已完成';
+        statusEl.className = 'text-[10px] text-emerald-500 truncate step-status';
+      } else if (idx === index) {
+        card.classList.add('active-stage');
+        statusEl.innerText = '👁️ 观察中...';
+        statusEl.className = 'text-[10px] text-blue-400 truncate step-status font-bold';
+      } else if (idx === index + 1) {
+        // 下一步解锁
+        statusEl.innerText = '⏳ 待执行';
+        statusEl.className = 'text-[10px] text-slate-400 truncate step-status';
+      } else {
+        card.classList.add('locked');
+        statusEl.innerText = '🔒 未解锁';
+        statusEl.className = 'text-[10px] text-slate-600 truncate step-status';
+      }
+    });
+
+    // 2. 更新详情卡
+    const detail = document.getElementById('stage-detail');
+    detail.style.opacity = 0;
+    setTimeout(() => {
+      detail.innerHTML = step.desc;
+      detail.style.opacity = 1;
+    }, 200);
+
+    // 3. 更新内存状态
+    updateMemory(step.memState);
+
+    // 4. 高亮代码行
+    document.querySelectorAll('#source-code .line').forEach(el => {
+      el.classList.remove('bg-blue-500/20', 'text-blue-200');
+      el.classList.add('text-slate-500');
+    });
+    step.highlightLines.forEach(line => {
+      const el = document.querySelector(`#source-code .line[data-line="${line}"]`);
+      if (el) {
+        el.classList.remove('text-slate-500');
+        el.classList.add('bg-blue-500/20', 'text-blue-200');
+      }
+    });
+
+    // 5. 更新焦点描述
+    document.getElementById('focus-desc').innerText = step.focus;
+
+    // 6. 更新底部进度
+    document.getElementById('progress-text').innerText = `${index + 1} / ${STEPS.length}`;
+    document.getElementById('progress-bar').style.width = `${((index + 1) / STEPS.length) * 100}%`;
+
+    // 7. 按钮状态
+    document.getElementById('btn-prev').disabled = index <= 0;
+    const nextBtn = document.getElementById('btn-next');
+    if (index >= STEPS.length - 1) {
+      nextBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> 演示完成';
+      nextBtn.classList.replace('bg-blue-600', 'bg-emerald-600');
+      nextBtn.classList.replace('hover:bg-blue-500', 'hover:bg-emerald-500');
+      nextBtn.disabled = true;
+    } else {
+      nextBtn.innerHTML = '下一步 <i class="fa-solid fa-arrow-right ml-1"></i>';
+      nextBtn.classList.replace('bg-emerald-600', 'bg-blue-600');
+      nextBtn.classList.replace('hover:bg-emerald-500', 'hover:bg-blue-500');
+      nextBtn.disabled = false;
+    }
+  }
+
+  function updateMemory(mem) {
+    const valDisplay = document.getElementById('val-display');
+    const valTag = document.getElementById('val-tag');
+    const nameDisplay = document.getElementById('name-display');
+    const nameTag = document.getElementById('name-tag');
+    const cpHint = document.getElementById('cp-hint');
+
+    // 移除旧动画类以触发重新播放
+    valDisplay.classList.remove('val-change');
+    nameDisplay.classList.remove('val-change');
+    void valDisplay.offsetWidth; // 强制重排
+
+    valDisplay.innerText = mem.value;
+    valDisplay.className = `font-mono text-xl font-black transition-colors ${mem.valueColor}`;
+    valTag.innerText = mem.valueTag;
+
+    nameDisplay.innerText = mem.name;
+    nameDisplay.className = `font-mono text-lg font-bold transition-colors ${mem.nameColor}`;
+    nameTag.innerText = mem.nameTag;
+
+    if (mem.showCpHint) {
+      cpHint.classList.remove('hidden');
+    } else {
+      cpHint.classList.add('hidden');
+    }
+  }
+
+  function nextStep() {
+    goToStep(currentStepIndex + 1);
+  }
+
+  function prevStep() {
+    goToStep(currentStepIndex - 1);
+  }
+
+  // 键盘支持
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') {
+      e.preventDefault();
+      if (currentStepIndex < STEPS.length - 1) nextStep();
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (currentStepIndex > 0) prevStep();
+    }
+  });
+
+  // 初始化
+  initStepsNav();
+</script>
+</body>
+</html>
