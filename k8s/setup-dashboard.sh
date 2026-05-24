@@ -13,12 +13,18 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
 
-DASHBOARD_VERSION="v2.7.0"
-METRICS_SERVER_VERSION="v0.7.2"
 DASHBOARD_NS="kubernetes-dashboard"
 NODE_PORT="30443"
+CONTAINERD_CONFIG="/etc/containerd/config.toml"
 
-MASTER_IP="${K8S_MASTER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+# 获取 Master IP（优先级: 环境变量 > /etc/hosts > 默认路由 > 兜底）
+detect_master_ip() {
+    [ -n "${K8S_MASTER_IP:-}" ] && { echo "$K8S_MASTER_IP"; return; }
+    getent hosts k8s-master 2>/dev/null | awk '{print $1; exit}' && return
+    ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}' && return
+    hostname -I 2>/dev/null | awk '{print $1}'
+}
+MASTER_IP="$(detect_master_ip)"
 TOKEN_FILE="/root/k8s-dashboard-token.txt"
 
 echo ""
@@ -31,16 +37,50 @@ echo ""
 kubectl cluster-info &>/dev/null || { log_error "无法连接集群"; exit 1; }
 
 # ============================================================
-# Step 1: 安装 Metrics Server
+# Step 0: 配置 containerd 镜像加速 (解决国内拉不到 docker.io)
 # ============================================================
-log_step "[1/3] 安装 Metrics Server..."
+log_step "[0/4] 配置 containerd 镜像加速..."
+
+if [ -f "$CONTAINERD_CONFIG" ]; then
+    # 用唯一标记检测是否已配置
+    if grep -q 'endpoint.*docker.m.daocloud' "$CONTAINERD_CONFIG" 2>/dev/null; then
+        log_info "containerd 已配置 docker.io 镜像加速"
+    else
+        log_info "添加 docker.io 镜像加速配置..."
+        cp "$CONTAINERD_CONFIG" "${CONTAINERD_CONFIG}.bak.$(date +%Y%m%d_%H%M%S)"
+
+        cat >> "$CONTAINERD_CONFIG" <<'EOF'
+
+# setup-dashboard.sh: docker.io mirror for China
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+  endpoint = ["https://docker.m.daocloud.io", "https://docker.mirrors.ustc.edu.cn"]
+EOF
+        systemctl restart containerd
+        sleep 3
+        log_info "containerd 镜像加速配置完成"
+    fi
+fi
+
+# ============================================================
+# Step 1: 安装 Metrics Server（始终用本地配置 + 阿里云镜像）
+# ============================================================
+log_step "[1/4] 安装 Metrics Server..."
 
 if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
-    log_info "已安装，跳过"
-else
-    kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml" 2>/dev/null || {
-        log_warn "在线安装失败，换用本地配置..."
-        cat > /tmp/metrics-server.yaml <<'YAML'
+    # 检查是否是 ImagePullBackOff（之前从官方源装的可能拉不到镜像）
+    ms_status=$(kubectl get pods -n kube-system -l k8s-app=metrics-server \
+        -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
+    if [ "$ms_status" = "ImagePullBackOff" ] || [ "$ms_status" = "ErrImagePull" ]; then
+        log_warn "Metrics Server 镜像拉取失败，重新安装（使用阿里云镜像）..."
+        kubectl delete deployment metrics-server -n kube-system --ignore-not-found=true 2>/dev/null
+        kubectl delete -f /tmp/metrics-server.yaml --ignore-not-found=true 2>/dev/null
+    else
+        log_info "Metrics Server 已安装且正常，跳过"
+    fi
+fi
+
+if ! kubectl get deployment metrics-server -n kube-system &>/dev/null; then
+    cat > /tmp/metrics-server.yaml <<'YAML'
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -167,64 +207,59 @@ spec:
   version: v1beta1
   versionPriority: 100
 YAML
-        kubectl apply -f /tmp/metrics-server.yaml || { log_error "Metrics Server 安装失败"; exit 1; }
-        rm -f /tmp/metrics-server.yaml
-    }
-
-    # 等待就绪
-    log_info "等待 Metrics Server Pod 就绪..."
-    for i in $(seq 1 30); do
-        kubectl get pods -n kube-system -l k8s-app=metrics-server --field-selector=status.phase=Running 2>/dev/null | grep -q Running && break
-        sleep 4
-        echo -n "."
-    done
-    echo ""
+    kubectl apply -f /tmp/metrics-server.yaml
+    rm -f /tmp/metrics-server.yaml
 fi
-log_info "Metrics Server 安装完成"
+
+# 等待就绪
+log_info "等待 Metrics Server Pod 就绪..."
+for i in $(seq 1 30); do
+    kubectl get pods -n kube-system -l k8s-app=metrics-server --field-selector=status.phase=Running 2>/dev/null | grep -q Running && break
+    sleep 4
+    echo -n "."
+done
+echo ""
+log_info "Metrics Server 完成"
 
 # ============================================================
-# Step 2: 安装 Dashboard + NodePort
+# Step 2: 安装 Dashboard
 # ============================================================
-log_step "[2/3] 安装 Dashboard (NodePort :${NODE_PORT})..."
+log_step "[2/4] 安装 Dashboard..."
 
 if kubectl get deployment kubernetes-dashboard -n "$DASHBOARD_NS" &>/dev/null; then
-    log_info "Dashboard 已安装，跳过"
-else
-    # 多个镜像源，依次尝试（解决 raw.githubusercontent.com 被墙问题）
-    DASHBOARD_URLS=(
-        "https://raw.githubusercontent.com/kubernetes/dashboard/${DASHBOARD_VERSION}/aio/deploy/recommended.yaml"
-        "https://cdn.jsdelivr.net/gh/kubernetes/dashboard@${DASHBOARD_VERSION}/aio/deploy/recommended.yaml"
-        "https://ghproxy.com/https://raw.githubusercontent.com/kubernetes/dashboard/${DASHBOARD_VERSION}/aio/deploy/recommended.yaml"
-    )
-    installed=false
-    for url in "${DASHBOARD_URLS[@]}"; do
-        log_info "尝试: $url"
-        if kubectl apply -f "$url" --validate=false 2>/dev/null; then
-            installed=true
-            break
-        fi
-        log_warn "该源不可用，尝试下一个..."
-    done
-    $installed || { log_error "所有镜像源均不可用，请手动下载: ${DASHBOARD_URLS[0]}"; exit 1; }
-
-    log_info "等待 Dashboard Pod 就绪..."
-    for i in $(seq 1 30); do
-        kubectl get pods -n "$DASHBOARD_NS" -l k8s-app=kubernetes-dashboard --field-selector=status.phase=Running 2>/dev/null | grep -q Running && break
-        sleep 4
-        echo -n "."
-    done
-    echo ""
+    log_info "Dashboard 已安装，重建以使用镜像加速..."
+    kubectl delete deployment kubernetes-dashboard dashboard-metrics-scraper -n "$DASHBOARD_NS" --ignore-not-found=true 2>/dev/null
 fi
 
-# 配置 NodePort
-kubectl patch svc kubernetes-dashboard -n "$DASHBOARD_NS" \
-    -p "{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"port\":443,\"targetPort\":8443,\"nodePort\":${NODE_PORT}}]}}" 2>/dev/null || true
-log_info "Dashboard + NodePort 配置完成"
+# 多个镜像源，依次尝试
+DASHBOARD_URLS=(
+    "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+    "https://cdn.jsdelivr.net/gh/kubernetes/dashboard@v2.7.0/aio/deploy/recommended.yaml"
+    "https://ghproxy.com/https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+)
+installed=false
+for url in "${DASHBOARD_URLS[@]}"; do
+    log_info "尝试: $url"
+    if curl -fsSL --connect-timeout 5 "$url" 2>/dev/null | kubectl apply --validate=false -f - 2>/dev/null; then
+        installed=true
+        break
+    fi
+    log_warn "该源不可用，尝试下一个..."
+done
+$installed || { log_error "所有镜像源均不可用，请检查网络"; exit 1; }
 
 # ============================================================
-# Step 3: 创建管理员账户 + Token
+# Step 3: 配置 NodePort
 # ============================================================
-log_step "[3/3] 创建管理员账户..."
+log_step "[3/4] 配置 NodePort..."
+
+kubectl patch svc kubernetes-dashboard -n "$DASHBOARD_NS" \
+    -p "{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"port\":443,\"targetPort\":8443,\"nodePort\":${NODE_PORT}}]}}" 2>/dev/null || true
+
+# ============================================================
+# Step 4: 创建管理员 + Token
+# ============================================================
+log_step "[4/4] 创建管理员账户..."
 
 if ! kubectl get serviceaccount admin-user -n "$DASHBOARD_NS" &>/dev/null; then
     kubectl apply -f - <<EOF
@@ -250,31 +285,42 @@ EOF
 fi
 
 TOKEN=$(kubectl create token admin-user -n "$DASHBOARD_NS" --duration=87600h 2>/dev/null || true)
-if [ -z "$TOKEN" ]; then
-    log_warn "Token 生成失败，请手动执行: kubectl -n $DASHBOARD_NS create token admin-user --duration=87600h"
-else
-    echo "$TOKEN" > "$TOKEN_FILE"
-    chmod 600 "$TOKEN_FILE"
-fi
+[ -n "$TOKEN" ] && echo "$TOKEN" > "$TOKEN_FILE" && chmod 600 "$TOKEN_FILE"
+
+# ============================================================
+# 等待 Pod 就绪
+# ============================================================
+log_info "等待 Dashboard Pod 就绪..."
+for i in $(seq 1 30); do
+    ready=$(kubectl get pods -n "$DASHBOARD_NS" \
+        --field-selector=status.phase=Running 2>/dev/null | grep -c Running || true)
+    if [ "$ready" -ge 2 ]; then
+        log_info "Dashboard Pod 已就绪"
+        break
+    fi
+    sleep 4
+    echo -n "."
+done
+echo ""
+
+# 检查 Pod 状态
+log_info "Dashboard Pod 状态:"
+kubectl get pods -n "$DASHBOARD_NS"
 
 # ============================================================
 # 完成
 # ============================================================
 echo ""
 echo "=========================================="
-echo -e "${GREEN}  ✅ Dashboard 安装完成${NC}"
+echo -e "${GREEN}  Dashboard 安装完成${NC}"
 echo "=========================================="
 echo ""
-echo "  地址: https://${MASTER_IP}:${NODE_PORT}"
-echo "  Token 文件: $TOKEN_FILE"
+echo "  访问: https://${MASTER_IP}:${NODE_PORT}"
 echo ""
 echo "  Token:"
 echo "  ----------------------------------------"
-[ -n "$TOKEN" ] && echo "  $TOKEN" || echo "  (生成失败，手动执行: kubectl -n $DASHBOARD_NS create token admin-user --duration=87600h)"
+[ -n "$TOKEN" ] && echo "  $TOKEN" || echo "  (重新生成: sudo bash $0)"
 echo "  ----------------------------------------"
 echo ""
-echo "  浏览器打开 https://${MASTER_IP}:${NODE_PORT}"
-echo "  → 忽略证书警告 → 粘贴 Token 登录"
-echo ""
-echo "  重新生成 Token: sudo bash $0"
+echo "  浏览器打开 → 忽略证书警告 → 粘贴 Token 登录"
 echo ""

@@ -8,7 +8,7 @@ logging:
 
 spring:
   kafka:
-    bootstrap-servers: 192.168.2.102:9092
+    bootstrap-servers: 192.168.3.100:9092
     # 生产者配置
     producer:
       # ----- 序列化器 -----

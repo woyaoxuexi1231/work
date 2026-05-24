@@ -8,7 +8,7 @@ def admin_operations():
     try:
         # 使用管理员连接（请替换实际密码）
         conn = mysql.connector.connect(
-            host='192.168.2.102',
+            host='192.168.3.100',
             user='root',
             password='123456',
             database='test_privileges'

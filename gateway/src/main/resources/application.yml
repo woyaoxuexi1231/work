@@ -6,7 +6,7 @@ spring:
     name: gateway
 
   datasource:
-    url: jdbc:mysql://192.168.2.102:3306/gateway_auth?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    url: jdbc:mysql://192.168.3.100:3306/gateway_auth?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
     password: 123456

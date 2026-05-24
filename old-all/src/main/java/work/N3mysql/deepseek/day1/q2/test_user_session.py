@@ -8,7 +8,7 @@ def monitor_queries():
     try:
         # 使用测试用户连接
         conn = mysql.connector.connect(
-            host='192.168.2.102',
+            host='192.168.3.100',
             user='test_user',
             password='TestPass123!',
             database='test_privileges',
