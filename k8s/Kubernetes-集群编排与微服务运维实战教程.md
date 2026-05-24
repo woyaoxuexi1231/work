@@ -229,7 +229,7 @@ kubectl get deployments
 ### 2.5 自愈演示
 
 ```bash
-# 删除一个 Pod
+# 删除一个 Pod 删除所有带标签 app=nginx 的 Pod，并且一次只删 1 个！
 kubectl delete pod -l app=nginx --max=1
 
 # 观察 —— Deployment 会立刻重建
@@ -318,10 +318,12 @@ kubectl run test --rm -it --image=busybox -- /bin/sh
 
 # 在 busybox shell 中
 wget -q -O- http://web-svc
+wget -q -O- http://web
 # 看到 Nginx 欢迎页
 
 # 查看 DNS 解析
 nslookup web-svc
+nslookup web
 # 输出: Name: web-svc.default.svc.cluster.local
 #       Address: 10.96.100.50
 ```
