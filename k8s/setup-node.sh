@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 #  Kubernetes 集群 - Worker 节点加入脚本
-#  在 k8s-node1 (192.168.2.59) / k8s-node2 (192.168.2.60) 上执行
+#  在 k8s-node1 (192.168.3.101) / k8s-node2 (192.168.3.102) 上执行
 #  前提: Master 节点已完成初始化, 本机已运行 setup-common.sh
 # ============================================================
 
@@ -60,7 +60,7 @@ fi
 # ==========================================
 log_step "[1/2] 获取集群加入信息..."
 
-MASTER_IP="192.168.2.102"
+MASTER_IP="192.168.3.100"
 
 # 检查 Master 是否可达
 log_info "检查 Master 节点连通性..."
@@ -135,7 +135,7 @@ else
     log_warn "  (Master 上执行) kubeadm token create --print-join-command"
     log_warn ""
     log_warn "示例格式:"
-    log_warn "  kubeadm join 192.168.2.102:6443 --token xxxxxx \\"
+    log_warn "  kubeadm join 192.168.3.100:6443 --token xxxxxx \\"
     log_warn "      --discovery-token-ca-cert-hash sha256:xxxxxx"
     log_warn ""
 

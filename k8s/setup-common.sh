@@ -48,9 +48,9 @@ log_step "[1/7] 配置主机名和 /etc/hosts..."
 echo "当前主机名: $(hostname)"
 echo ""
 echo "集群节点规划:"
-echo "  k8s-master  192.168.2.102"
-echo "  k8s-node1   192.168.2.59"
-echo "  k8s-node2   192.168.2.60"
+echo "  k8s-master  192.168.3.100"
+echo "  k8s-node1   192.168.3.101"
+echo "  k8s-node2   192.168.3.102"
 echo ""
 
 read -p "请输入本机的主机名 (k8s-master / k8s-node1 / k8s-node2): " HOSTNAME
@@ -65,13 +65,13 @@ hostnamectl set-hostname "$HOSTNAME"
 log_info "主机名已设置为: $HOSTNAME"
 
 # 配置 hosts 文件
-if ! grep -q "192.168.2.102 k8s-master" /etc/hosts; then
+if ! grep -q "192.168.3.100 k8s-master" /etc/hosts; then
     cat >> /etc/hosts <<EOF
 
 # Kubernetes Cluster
-192.168.2.102  k8s-master
-192.168.2.59   k8s-node1
-192.168.2.60   k8s-node2
+192.168.3.100  k8s-master
+192.168.3.101  k8s-node1
+192.168.3.102  k8s-node2
 EOF
     log_info "/etc/hosts 已配置"
 else
