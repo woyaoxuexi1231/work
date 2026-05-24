@@ -13,6 +13,15 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
 
+resolve_master_ip() {
+    if [ -n "${K8S_MASTER_IP:-}" ]; then
+        echo "${K8S_MASTER_IP}"
+        return 0
+    fi
+
+    getent hosts k8s-master 2>/dev/null | awk '{print $1; exit}'
+}
+
 echo "=========================================="
 echo "  K8s Worker 节点加入集群"
 echo "=========================================="
@@ -35,7 +44,11 @@ if [ "$CURRENT_HOST" = "k8s-master" ]; then
     exit 1
 fi
 
-MASTER_IP="192.168.3.100"
+MASTER_IP="$(resolve_master_ip)"
+if [ -z "$MASTER_IP" ]; then
+    log_error "无法解析 Master IP，请先修正 /etc/hosts 或设置环境变量 K8S_MASTER_IP"
+    exit 1
+fi
 
 # ==========================================
 # Step 1: 环境清理与获取最新 join 命令

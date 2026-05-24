@@ -14,18 +14,13 @@ ds
 
 
 
-
-
-
-
-腾讯
-
+ali
 ```
 {
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "sk-CDEUKks3EcrsOBnmoxUuwnTALXjLuihQiZr5CwwSuQ9bjnv7",
-    "ANTHROPIC_BASE_URL": "https://tokenhub.tencentmaas.com/plan/anthropic",
-    "ANTHROPIC_MODEL": "hy3-preview"
+    "ANTHROPIC_AUTH_TOKEN": "sk-4965120410e14d87b35b91684dc24ca9",
+    "ANTHROPIC_BASE_URL": "https://dashscope.aliyuncs.com/apps/anthropic",
+    "ANTHROPIC_MODEL": "qwen3.7-max"
   }
 }
 ```

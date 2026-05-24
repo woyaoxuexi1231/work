@@ -19,6 +19,21 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
 
+K8S_MASTER_IP="${K8S_MASTER_IP:-192.168.3.100}"
+K8S_NODE1_IP="${K8S_NODE1_IP:-192.168.3.101}"
+K8S_NODE2_IP="${K8S_NODE2_IP:-192.168.3.102}"
+
+upsert_hosts_entry() {
+    local host_ip="$1"
+    local host_name="$2"
+
+    if grep -Eq "^[[:space:]]*[0-9.]+[[:space:]]+${host_name}([[:space:]]|$)" /etc/hosts; then
+        sed -i -E "s|^[[:space:]]*[0-9.]+([[:space:]]+)${host_name}([[:space:]].*)?$|${host_ip}\1${host_name}|" /etc/hosts
+    else
+        echo "${host_ip}  ${host_name}" >> /etc/hosts
+    fi
+}
+
 echo "=========================================="
 echo "  K8s 公共环境准备脚本"
 echo "  适用: 所有节点"
@@ -43,14 +58,28 @@ log_info "真实用户: $REAL_USER"
 # ==========================================
 # Step 1: 配置主机名和 hosts
 # ==========================================
-log_step "[1/7] 配置主机名和 /etc/hosts..."
+log_step "[1/8] 配置主机名和 /etc/hosts..."
 
 echo "当前主机名: $(hostname)"
 echo ""
 echo "集群节点规划:"
-echo "  k8s-master  192.168.3.100"
-echo "  k8s-node1   192.168.3.101"
-echo "  k8s-node2   192.168.3.102"
+echo "  k8s-master  ${K8S_MASTER_IP}"
+echo "  k8s-node1   ${K8S_NODE1_IP}"
+echo "  k8s-node2   ${K8S_NODE2_IP}"
+echo ""
+
+read -p "请输入 Master IP [${K8S_MASTER_IP}]: " INPUT_MASTER_IP
+K8S_MASTER_IP="${INPUT_MASTER_IP:-$K8S_MASTER_IP}"
+read -p "请输入 Node1 IP [${K8S_NODE1_IP}]: " INPUT_NODE1_IP
+K8S_NODE1_IP="${INPUT_NODE1_IP:-$K8S_NODE1_IP}"
+read -p "请输入 Node2 IP [${K8S_NODE2_IP}]: " INPUT_NODE2_IP
+K8S_NODE2_IP="${INPUT_NODE2_IP:-$K8S_NODE2_IP}"
+
+echo ""
+echo "确认后的集群节点规划:"
+echo "  k8s-master  ${K8S_MASTER_IP}"
+echo "  k8s-node1   ${K8S_NODE1_IP}"
+echo "  k8s-node2   ${K8S_NODE2_IP}"
 echo ""
 
 read -p "请输入本机的主机名 (k8s-master / k8s-node1 / k8s-node2): " HOSTNAME
@@ -63,23 +92,19 @@ fi
 hostnamectl set-hostname "$HOSTNAME"
 log_info "主机名已设置为: $HOSTNAME"
 
-if ! grep -q "192.168.3.100 k8s-master" /etc/hosts; then
-    cat >> /etc/hosts <<EOF
-
-# Kubernetes Cluster
-192.168.3.100  k8s-master
-192.168.3.101  k8s-node1
-192.168.3.102  k8s-node2
-EOF
-    log_info "/etc/hosts 已配置"
-else
-    log_info "/etc/hosts 已存在集群配置，跳过"
+if ! grep -q "^# Kubernetes Cluster$" /etc/hosts; then
+    echo "" >> /etc/hosts
+    echo "# Kubernetes Cluster" >> /etc/hosts
 fi
+upsert_hosts_entry "$K8S_MASTER_IP" "k8s-master"
+upsert_hosts_entry "$K8S_NODE1_IP" "k8s-node1"
+upsert_hosts_entry "$K8S_NODE2_IP" "k8s-node2"
+log_info "/etc/hosts 已更新为当前集群规划"
 
 # ==========================================
 # Step 2: 关闭 Swap
 # ==========================================
-log_step "[2/7] 关闭 Swap..."
+log_step "[2/8] 关闭 Swap..."
 
 swapoff -a
 sed -i '/ swap / s/^\(.*\)$/#\1/' /etc/fstab
@@ -88,7 +113,7 @@ log_info "Swap 已关闭"
 # ==========================================
 # Step 3: 加载内核模块 & 配置内核参数
 # ==========================================
-log_step "[3/7] 配置内核模块和参数..."
+log_step "[3/8] 配置内核模块和参数..."
 
 cat > /etc/modules-load.d/k8s.conf <<EOF
 overlay
@@ -117,7 +142,7 @@ fi
 # ==========================================
 # Step 4: 安装 iptables 并放开转发
 # ==========================================
-log_step "[4/7] 安装并配置 iptables..."
+log_step "[4/8] 安装并配置 iptables..."
 
 apt update
 apt install -y iptables arptables ebtables
@@ -127,7 +152,7 @@ log_info "iptables 已配置"
 # ==========================================
 # Step 5: 安装 containerd 容器运行时 (核心修复)
 # ==========================================
-log_step "[5/7] 安装 containerd..."
+log_step "[5/8] 安装 containerd..."
 
 # ★ 检查是否安装了错误的大版本，如果是则强制卸载重装
 INSTALLED_VER=$(dpkg -s containerd.io 2>/dev/null | grep '^Version:' | awk '{print $2}' | cut -d. -f1 || echo "0")
@@ -187,9 +212,57 @@ fi
 log_info "containerd CRI 接口正常，配置已完成"
 
 # ==========================================
-# Step 6: 安装 Kubernetes 组件
+# Step 6: 预拉取 Calico 网络插件镜像
 # ==========================================
-log_step "[6/7] 安装 kubeadm / kubelet / kubectl..."
+log_step "[6/8] 预拉取 Calico 镜像（国内镜像源）..."
+
+CALICO_VERSION="v3.26.4"
+CALICO_IMAGES=(
+    "calico/node:${CALICO_VERSION}"
+    "calico/cni:${CALICO_VERSION}"
+    "calico/kube-controllers:${CALICO_VERSION}"
+)
+# 国内镜像源，按优先级排列
+MIRRORS=(
+    "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io"
+    "docker.m.daocloud.io"
+    "docker.1panel.live"
+)
+
+for IMG in "${CALICO_IMAGES[@]}"; do
+    FULL_ORIG="docker.io/${IMG}"
+    log_info "处理: ${FULL_ORIG}"
+
+    PULLED=false
+    for MIRROR in "${MIRRORS[@]}"; do
+        MIRROR_IMG="${MIRROR}/${IMG}"
+        echo -n "  尝试 ${MIRROR%%/*}... "
+
+        if timeout 60 ctr -n k8s.io image pull --platform linux/amd64 "$MIRROR_IMG" &>/dev/null; then
+            echo -e "${GREEN}成功${NC}"
+            # 重打标签为原始 docker.io 名称，K8s 直接用本地缓存
+            ctr -n k8s.io image tag "$MIRROR_IMG" "$FULL_ORIG" --force &>/dev/null
+            log_info "  → ${FULL_ORIG}"
+            PULLED=true
+            break
+        else
+            echo -e "${RED}失败${NC}"
+        fi
+    done
+
+    if [ "$PULLED" = false ]; then
+        log_error "镜像 ${IMG} 所有镜像源均拉取失败！"
+        log_error "请手动拉取: ctr -n k8s.io image pull docker.io/${IMG}"
+        exit 1
+    fi
+done
+
+log_info "Calico 镜像预拉取完成！"
+
+# ==========================================
+# Step 7: 安装 Kubernetes 组件
+# ==========================================
+log_step "[7/8] 安装 kubeadm / kubelet / kubectl..."
 
 if command -v kubeadm &> /dev/null; then
     log_info "Kubernetes 组件已安装: $(kubeadm version -o short)"
@@ -216,9 +289,9 @@ log_info "kubelet: $(kubelet --version 2>&1 | head -1)"
 log_info "kubectl: $(kubectl version --client -o short 2>/dev/null)"
 
 # ==========================================
-# Step 7: 配置 kubelet 开机启动
+# Step 8: 配置 kubelet 开机启动
 # ==========================================
-log_step "[7/7] 配置 kubelet 自启动..."
+log_step "[8/8] 配置 kubelet 自启动..."
 
 systemctl enable kubelet
 
