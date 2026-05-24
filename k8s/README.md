@@ -9,7 +9,7 @@
 ### 1. 所有节点执行公共环境准备
 
 ```bash
-# 在 k8s-master (192.168.2.102) / k8s-node1 (192.168.2.59) / k8s-node2 (192.168.2.60) 各自执行
+# 在 k8s-master (192.168.3.100) / k8s-node1 (192.168.3.101) / k8s-node2 (192.168.3.102) 各自执行
 sudo bash setup-common.sh
 ```
 
@@ -18,14 +18,14 @@ sudo bash setup-common.sh
 ### 2. Master 节点初始化集群
 
 ```bash
-# 仅在 k8s-master (192.168.2.102) 执行
+# 仅在 k8s-master (192.168.3.100) 执行
 sudo bash setup-master.sh
 ```
 
 ### 3. Worker 节点加入集群
 
 ```bash
-# 在 k8s-node1 (192.168.2.59) 和 k8s-node2 (192.168.2.60) 上执行
+# 在 k8s-node1 (192.168.3.101) 和 k8s-node2 (192.168.3.102) 上执行
 sudo bash setup-node.sh
 ```
 
@@ -61,9 +61,9 @@ kubectl get nodes -o wide
 
 | 角色 | 主机名 | IP 地址 | 配置 |
 |------|--------|---------|------|
-| Master | k8s-master | 192.168.2.102 | 2核4G+ |
-| Worker1 | k8s-node1 | 192.168.2.59 | 2核4G+ |
-| Worker2 | k8s-node2 | 192.168.2.60 | 2核4G+ |
+| Master | k8s-master | 192.168.3.100 | 2核4G+ |
+| Worker1 | k8s-node1 | 192.168.3.101 | 2核4G+ |
+| Worker2 | k8s-node2 | 192.168.3.102 | 2核4G+ |
 
 ### 1.2 基本要求
 
@@ -91,9 +91,9 @@ sudo hostnamectl set-hostname k8s-node2
 
 ```bash
 sudo tee /etc/hosts <<EOF
-192.168.2.102 k8s-master
-192.168.2.59  k8s-node1
-192.168.2.60  k8s-node2
+192.168.3.100 k8s-master
+192.168.3.101 k8s-node1
+192.168.3.102 k8s-node2
 EOF
 ```
 
@@ -270,7 +270,7 @@ sudo kubeadm init \
   --pod-network-cidr=10.244.0.0/16 \
   --service-cidr=10.96.0.0/12 \
   --kubernetes-version=1.28.0 \
-  --apiserver-advertise-address=192.168.2.102
+  --apiserver-advertise-address=192.168.3.100
 
 # 或者使用国内镜像加速
 sudo kubeadm init \

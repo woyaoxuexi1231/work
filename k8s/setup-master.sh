@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 #  Kubernetes 集群 - Master 节点初始化脚本
-#  仅在 k8s-master (192.168.2.102) 上执行
+#  仅在 k8s-master (192.168.3.100) 上执行
 #  前提: 已运行 setup-common.sh
 # ============================================================
 
@@ -20,7 +20,7 @@ log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
 
 echo "=========================================="
 echo "  K8s Master 节点初始化"
-echo "  节点: k8s-master (192.168.2.102)"
+echo "  节点: k8s-master (192.168.3.100)"
 echo "=========================================="
 
 # 检查 root 权限 (Ubuntu 使用 sudo 运行)
@@ -139,7 +139,7 @@ kubeadm init \
     --pod-network-cidr=10.244.0.0/16 \
     --service-cidr=10.96.0.0/12 \
     --image-repository registry.cn-hangzhou.aliyuncs.com/google_containers \
-    --apiserver-advertise-address=192.168.2.102 \
+    --apiserver-advertise-address=192.168.3.100 \
     --node-name=k8s-master
 
 log_info "集群初始化完成！"

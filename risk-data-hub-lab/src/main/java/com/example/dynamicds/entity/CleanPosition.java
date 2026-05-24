@@ -4,17 +4,11 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.example.dynamicds.sync.CleanRecordContext;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-import lombok.NoArgsConstructor;
+import lombok.Data;
 
 import java.math.BigDecimal;
 
-@Getter
-@Setter
-@ToString
-@NoArgsConstructor
+@Data
 @TableName("clean_position")
 public class CleanPosition {
     @TableId(type = IdType.INPUT)
