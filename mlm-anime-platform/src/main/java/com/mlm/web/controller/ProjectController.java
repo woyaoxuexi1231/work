@@ -12,16 +12,31 @@ import com.mlm.pipeline.entity.StageMember;
 import com.mlm.pipeline.mapper.StageMemberMapper;
 import com.mlm.pipeline.service.EpisodeService;
 import com.mlm.pipeline.service.ProjectService;
-import com.mlm.web.dto.*;
+import com.mlm.web.dto.EpisodeAddRequest;
+import com.mlm.web.dto.EpisodeIdRequest;
+import com.mlm.web.dto.GenerateImageRequest;
+import com.mlm.web.dto.GenerateVideoRequest;
+import com.mlm.web.dto.GenerationResultVO;
+import com.mlm.web.dto.IdRequest;
+import com.mlm.web.dto.ProjectCreateRequest;
+import com.mlm.web.dto.ProjectDetailVO;
+import com.mlm.web.dto.ResultsRequest;
+import com.mlm.web.dto.ScriptSubmitRequest;
+import com.mlm.web.dto.StageMembersListRequest;
+import com.mlm.web.dto.StageMembersSetRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.List;
@@ -43,6 +58,7 @@ public class ProjectController {
     private final PipelineEngine pipelineEngine;
     private final StageMemberMapper stageMemberMapper;
     private final ModelGateway modelGateway;
+    private final RestTemplate restTemplate = new RestTemplate();
     @Value("${auth.service.url:http://localhost:9000}")
     private String authServiceUrl;
 
@@ -317,12 +333,12 @@ public class ProjectController {
         }
         try {
             Map<String, String> body = new HashMap<>();
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            HttpHeaders headers = new HttpHeaders();
             headers.set("Authorization", authHeader);
-            org.springframework.http.HttpEntity<Map<String, String>> entity = new org.springframework.http.HttpEntity<>(body, headers);
-            var resp = new org.springframework.web.client.RestTemplate().exchange(
+            HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
+            var resp = restTemplate.exchange(
                     authServiceUrl + "/api/auth/me",
-                    org.springframework.http.HttpMethod.POST,
+                    HttpMethod.POST,
                     entity,
                     Map.class
             );

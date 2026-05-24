@@ -3,9 +3,15 @@ package com.gateway.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.NoArgsConstructor;
 
-@Data
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
 @TableName("auth_user")
 public class AuthUser {
     @TableId(type = IdType.AUTO)

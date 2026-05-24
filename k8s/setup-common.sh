@@ -24,11 +24,21 @@ echo "  K8s 公共环境准备脚本"
 echo "  适用: 所有节点"
 echo "=========================================="
 
-# 检查 root 用户
+# 检查 root 权限 (Ubuntu 使用 sudo 运行)
 if [ "$EUID" -ne 0 ]; then
-    log_error "请使用 root 用户运行此脚本"
+    log_error "请使用 sudo 运行此脚本: sudo bash setup-common.sh"
     exit 1
 fi
+
+# 检测真实的操作用户 (sudo 场景下 $SUDO_USER 非空)
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
+if [ -n "$REAL_USER" ]; then
+    REAL_HOME=$(eval echo ~$REAL_USER)
+else
+    REAL_USER="root"
+    REAL_HOME="/root"
+fi
+log_info "真实用户: $REAL_USER"
 
 # ==========================================
 # Step 1: 配置主机名和 hosts
@@ -216,10 +226,10 @@ echo ""
 echo -e "${YELLOW}后续操作：${NC}"
 echo ""
 if [ "$HOSTNAME" = "k8s-master" ]; then
-    echo "  ▶ 在 Master 节点执行: bash setup-master.sh"
+    echo "  ▶ 在 Master 节点执行: sudo bash setup-master.sh"
     echo ""
 else
     echo "  ▶ 等待 Master 节点完成初始化"
-    echo "  ▶ 然后在 Master 上获取 join 命令，在 Worker 节点执行: bash setup-node.sh"
+    echo "  ▶ 然后在 Worker 节点执行: sudo bash setup-node.sh"
     echo ""
 fi

@@ -2,6 +2,7 @@ package com.example.dynamicds.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
 import com.example.dynamicds.dto.SyncResultDTO;
@@ -101,7 +102,7 @@ public class TradeEtlService {
     }
 
     public List<CleanTrade> cleanedTrades() {
-        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB,
+        return routingMybatisExecutor.query(HubConstants.DS_HUB,
                 () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                         .orderByDesc(CleanTrade::getGlobalId)
                         .last("limit 30")));
@@ -112,7 +113,7 @@ public class TradeEtlService {
         if (config == null) {
             throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
         }
-        if (PlatformBootstrapService.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
+        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
         return config;

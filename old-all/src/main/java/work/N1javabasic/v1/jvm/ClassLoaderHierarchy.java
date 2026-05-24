@@ -1,4 +1,4 @@
-package work.N1javabasic.v1;
+package work.N1javabasic.v1.jvm;
 
 public class ClassLoaderHierarchy {
     public static void main(String[] args) {

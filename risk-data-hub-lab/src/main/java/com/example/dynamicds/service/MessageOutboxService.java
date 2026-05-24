@@ -1,6 +1,7 @@
 package com.example.dynamicds.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.entity.EventMessage;
 import com.example.dynamicds.mapper.EventMessageMapper;
@@ -33,7 +34,7 @@ public class MessageOutboxService {
     public long publish(String topic, String bizKey, String payload) {
         long messageId = leafSegmentService.nextId("event_message");
         log.info("[消息模块] 生成标准事件 messageId={}, topic={}, bizKey={}", messageId, topic, bizKey);
-        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
             EventMessage message = new EventMessage();
             message.setMessageId(messageId);
             message.setTopic(topic);
@@ -47,7 +48,7 @@ public class MessageOutboxService {
     }
 
     public List<EventMessage> recentMessages() {
-        return routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB,
+        return routingMybatisExecutor.query(HubConstants.DS_HUB,
                 () -> eventMessageMapper.selectList(new LambdaQueryWrapper<EventMessage>()
                         .orderByDesc(EventMessage::getMessageId)
                         .last("limit 20")));

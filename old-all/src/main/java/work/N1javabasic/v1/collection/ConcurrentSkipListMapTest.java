@@ -1,4 +1,4 @@
-package work.N1javabasic.v1;
+package work.N1javabasic.v1.collection;
 
 import java.util.Comparator;
 import java.util.concurrent.ConcurrentSkipListMap;

@@ -1,6 +1,7 @@
 package com.example.dynamicds.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
@@ -65,7 +66,7 @@ public class SyncTaskService {
         if (config == null) {
             throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
         }
-        if (PlatformBootstrapService.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
+        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
 
@@ -89,7 +90,7 @@ public class SyncTaskService {
         task.setSubmittedAt(now);
         task.setMessage("同步任务已提交");
         task.setRunning(true);
-        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> syncTaskMapper.insert(task));
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> syncTaskMapper.insert(task));
 
         log.info("[SyncTask] submit id={}, dataSourceKey={}, pageSize={}", task.getId(), dataSourceKey, safePageSize);
         try {
@@ -102,7 +103,7 @@ public class SyncTaskService {
     }
 
     public SyncTask currentTask() {
-        SyncTask task = routingMybatisExecutor.query(PlatformBootstrapService.DS_HUB, () ->
+        SyncTask task = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
                 syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
                         .orderByDesc(SyncTask::getId)
                         .last("limit 1")));
@@ -145,7 +146,7 @@ public class SyncTaskService {
                 record.setLastRowId(bizResult.getLastRowId());
                 record.setStartedAt(now());
                 record.setFinishedAt(now());
-                routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB,
+                routingMybatisExecutor.run(HubConstants.DS_HUB,
                         () -> syncBusinessRecordMapper.insert(record));
 
                 totalPulled += bizResult.getPulledCount();
@@ -193,7 +194,7 @@ public class SyncTaskService {
     private void updateTask(Long id, String status, String startedAt,
                             String message, String errorMessage,
                             String finishedAt, int totalPulled, int totalSaved, Integer progress) {
-        routingMybatisExecutor.run(PlatformBootstrapService.DS_HUB, () -> {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
             SyncTask task = syncTaskMapper.selectById(id);
             if (task == null) return;
             task.setStatus(status);

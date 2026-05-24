@@ -22,10 +22,20 @@ echo "=========================================="
 echo "  K8s Worker 节点加入集群"
 echo "=========================================="
 
-# 检查 root
+# 检查 root 权限 (Ubuntu 使用 sudo 运行)
 if [ "$EUID" -ne 0 ]; then
-    log_error "请使用 root 用户运行此脚本"
+    log_error "请使用 sudo 运行此脚本: sudo bash setup-node.sh"
     exit 1
+fi
+
+# 检测真实的操作用户
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+    REAL_HOME=$(eval echo ~$REAL_USER)
+    log_info "真实用户: $REAL_USER"
+else
+    REAL_USER="root"
+    REAL_HOME="/root"
 fi
 
 # 确认不是 Master 节点
@@ -77,21 +87,34 @@ if systemctl is-active --quiet kubelet && kubectl get node "$CURRENT_HOST" &> /d
     fi
 fi
 
-# 尝试读取 join 命令文件
-JOIN_CMD_FILE="/root/k8s-join-command.sh"
+# 尝试从 Master 复制 join 命令
+JOIN_CMD_FILE="$REAL_HOME/k8s-join-command.sh"
 
-# 尝试从 Master 复制 join 命令（如果有 SSH 免密登录）
+# 尝试从 Master 复制 join 命令（Ubuntu 不允许 root 直接 SSH，需用普通用户）
 if [ ! -f "$JOIN_CMD_FILE" ]; then
     log_info "尝试从 Master 节点获取 join 命令..."
 
-    if command -v sshpass &> /dev/null; then
-        log_info "使用 sshpass 从 Master 复制..."
-        read -s -p "请输入 Master 节点 root 密码: " MASTER_PASS
-        echo ""
-        sshpass -p "$MASTER_PASS" scp -o StrictHostKeyChecking=no root@${MASTER_IP}:/root/k8s-join-command.sh "$JOIN_CMD_FILE"
-    elif ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@${MASTER_IP} 'exit' 2>/dev/null; then
-        log_info "SSH 免密登录可用，从 Master 复制 join 命令..."
-        scp -o StrictHostKeyChecking=no root@${MASTER_IP}:/root/k8s-join-command.sh "$JOIN_CMD_FILE"
+    # 获取 SSH 用户名（sudo 场景下 $SUDO_USER 就是真实用户，如 hulei）
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        SSH_USER="$SUDO_USER"
+    fi
+    read -p "Master 节点 SSH 用户名 [${SSH_USER:-hulei}]: " INPUT_USER
+    SSH_USER="${INPUT_USER:-${SSH_USER:-hulei}}"
+
+    # 确保 sshpass 可用
+    if ! command -v sshpass &> /dev/null; then
+        log_info "安装 sshpass..."
+        apt install -y sshpass
+    fi
+
+    read -s -p "请输入 ${SSH_USER}@${MASTER_IP} 的密码: " MASTER_PASS
+    echo ""
+
+    log_info "从 Master 复制 join 命令..."
+    if sshpass -p "$MASTER_PASS" scp -o StrictHostKeyChecking=no "${SSH_USER}@${MASTER_IP}:/tmp/k8s-join-command.sh" "$JOIN_CMD_FILE" 2>/dev/null; then
+        log_info "Join 命令已成功复制到 $JOIN_CMD_FILE"
+    else
+        log_warn "SCP 复制失败，请检查用户名/密码是否正确"
     fi
 fi
 
