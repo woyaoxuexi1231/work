@@ -6,7 +6,7 @@ import java.util.concurrent.Semaphore;
 public class MysqlConnectionMonitor {
 
     // 替换为您的远程MySQL配置
-    private static final String DB_URL = "jdbc:mysql://192.168.2.102:3306/test?useSSL=false";
+    private static final String DB_URL = "jdbc:mysql://192.168.3.100:3306/test?useSSL=false";
     private static final String USER = "root";
     private static final String PASSWORD = "123456";
 

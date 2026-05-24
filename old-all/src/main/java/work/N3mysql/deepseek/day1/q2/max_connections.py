@@ -9,7 +9,7 @@ max_connections = 150  # 根据实际环境调整
 def create_connection():
     try:
         conn = mysql.connector.connect(
-            host='192.168.2.102',
+            host='192.168.3.100',
             user='root',
             password='123456'
         )
@@ -24,7 +24,7 @@ def create_connection():
 def test_max_connections():
     # 1. 获取当前max_connections
     admin_conn = mysql.connector.connect(
-        host='192.168.2.102',
+        host='192.168.3.100',
         user='root',
         password='123456'
     )

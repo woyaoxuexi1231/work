@@ -20,7 +20,7 @@ import java.util.concurrent.Semaphore;
 public class MysqlConnectionMonitor {
 
     // 替换为您的远程MySQL配置
-    private static final String DB_URL = "jdbc:mysql://192.168.2.102:3306/test?useSSL=false";
+    private static final String DB_URL = "jdbc:mysql://192.168.3.100:3306/test?useSSL=false";
     private static final String USER = "root";
     private static final String PASSWORD = "123456";
 
@@ -369,7 +369,7 @@ def monitor_queries():
     try:
         # 使用测试用户连接
         conn = mysql.connector.connect(
-            host='192.168.2.102',
+            host='192.168.3.100',
             user='test_user',
             password='TestPass123!',
             database='test_privileges',
@@ -414,7 +414,7 @@ def admin_operations():
     try:
         # 使用管理员连接（请替换实际密码）
         conn = mysql.connector.connect(
-            host='192.168.2.102',
+            host='192.168.3.100',
             user='root',
             password='123456',
             database='test_privileges'

@@ -17,7 +17,7 @@ public class KafkaProducerConfig {
     // public ProducerFactory<String, Object> producerFactory() {
     //     Map<String, Object> props = new HashMap<>();
     //     // 此处配置可以从 application.yml 中读取，为了展示拦截器手动配置
-    //     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "192.168.2.102:9092");
+    //     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "192.168.3.100:9092");
     //     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
     //             "org.apache.kafka.common.serialization.StringSerializer");
     //     props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,

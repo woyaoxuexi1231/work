@@ -19,7 +19,7 @@ public class DataSourceConfig {
     public DynamicRoutingDataSource dataSource() {
         // 默认数据源 — H2 内存库
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:mysql://192.168.2.102:3306/test?useSSL=false&serverTimezone=UTC&characterEncoding=utf-8&allowPublicKeyRetrieval=true");
+        config.setJdbcUrl("jdbc:mysql://192.168.3.100:3306/test?useSSL=false&serverTimezone=UTC&characterEncoding=utf-8&allowPublicKeyRetrieval=true");
         config.setUsername("root");
         config.setPassword("123456");
         config.setDriverClassName("com.mysql.cj.jdbc.Driver");

@@ -12,7 +12,7 @@ public class ConnectionBoundaryTest {
     public static void main(String[] args) throws Exception {
         // 配置连接池（max=200）
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:mysql://192.168.2.102:3306/test");
+        config.setJdbcUrl("jdbc:mysql://192.168.3.100:3306/test");
         config.setUsername("root");
         config.setPassword("123456");
         config.setMaximumPoolSize(200); // 客户端上限
