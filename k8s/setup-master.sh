@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 #  Kubernetes 集群 - Master 节点初始化脚本 (v1.28)
-#  仅在 k8s-master (192.168.3.100) 上执行
+#  仅在 k8s-master 上执行
 #  前提: 已运行 setup-common.sh
 # ============================================================
 
@@ -13,9 +13,33 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
 
+detect_default_ip() {
+    ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i+1); exit}}'
+}
+
+resolve_master_ip() {
+    if [ -n "${K8S_MASTER_IP:-}" ]; then
+        echo "${K8S_MASTER_IP}"
+        return 0
+    fi
+
+    getent hosts k8s-master 2>/dev/null | awk '{print $1; exit}'
+}
+
+MASTER_IP="$(resolve_master_ip)"
+if [ -z "$MASTER_IP" ]; then
+    MASTER_IP="$(detect_default_ip)"
+fi
+POD_CIDR="${K8S_POD_CIDR:-10.244.0.0/16}"
+
+if [ -z "$MASTER_IP" ]; then
+    log_error "无法自动探测 Master IP，请通过环境变量指定: export K8S_MASTER_IP=<master-ip>"
+    exit 1
+fi
+
 echo "=========================================="
 echo "  K8s Master 节点初始化"
-echo "  节点: k8s-master (192.168.3.100)"
+echo "  节点: k8s-master (${MASTER_IP})"
 echo "=========================================="
 
 if [ "$EUID" -ne 0 ]; then
@@ -95,10 +119,10 @@ kubeadm config images pull --image-repository registry.cn-hangzhou.aliyuncs.com/
 # 初始化集群
 log_info "正在初始化集群..."
 kubeadm init \
-    --pod-network-cidr=10.244.0.0/16 \
+    --pod-network-cidr="${POD_CIDR}" \
     --service-cidr=10.96.0.0/12 \
     --image-repository registry.cn-hangzhou.aliyuncs.com/google_containers \
-    --apiserver-advertise-address=192.168.3.100 \
+    --apiserver-advertise-address="${MASTER_IP}" \
     --node-name=k8s-master \
     --upload-certs
 
@@ -141,17 +165,16 @@ log_info "Join 命令已保存:"
 cat "$JOIN_CMD_FILE"
 
 # ==========================================
-# Step 4: 安装 Calico 网络插件（国内镜像源）
+# Step 4: 安装 Calico 网络插件（使用预拉取的本地镜像）
 # ==========================================
 log_step "[4/4] 安装 Calico 网络插件..."
 
 sleep 5
 
-# ★ 使用国内可达的镜像源，避免 GitHub raw 超时
+# ★ 下载 Calico YAML 清单
 CALICO_URL="https://ghproxy.net/https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml"
 log_info "从国内代理拉取 Calico 清单..."
 if ! curl -fsSL -o /tmp/calico.yaml "$CALICO_URL"; then
-    # 备用方案：直接从 Docker Hub 镜像仓库获取
     CALICO_BACKUP="https://mirror.ghproxy.com/https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml"
     log_warn "主代理失败，尝试备用源..."
     curl -fsSL -o /tmp/calico.yaml "$CALICO_BACKUP" || {
@@ -160,12 +183,28 @@ if ! curl -fsSL -o /tmp/calico.yaml "$CALICO_URL"; then
     }
 fi
 
+# ★ 修正 Calico YAML 中的镜像地址为 docker.io 标准格式（与本地预拉取的标签一致）
+log_info "修正 Calico YAML 镜像地址..."
+sed -i 's|^\(\s*image:\s*\)docker\.io/calico/|\1docker.io/calico/|' /tmp/calico.yaml
+sed -i 's|^\(\s*image:\s*\)quay\.io/calico/|\1docker.io/calico/|' /tmp/calico.yaml
+sed -i 's|^\(\s*image:\s*\)calico/|\1docker.io/calico/|' /tmp/calico.yaml
+
+# ★ 确保 Pod CIDR 与 kubeadm init 一致
+log_info "设置 Pod CIDR 为 ${POD_CIDR}..."
+# 取消注释并设置正确的 CIDR
+sed -i '/# *- name: CALICO_IPV4POOL_CIDR/{n;s/^# */  /}; /# *value: "10.244/{n;s/^# */  /}' /tmp/calico.yaml 2>/dev/null || true
+sed -i 's|value: "192.168.0.0/16"|value: "'${POD_CIDR}'"|' /tmp/calico.yaml
+
+# 验证修改结果
+log_info "Calico YAML 镜像引用:"
+grep 'image:.*calico' /tmp/calico.yaml | head -5
+
 kubectl apply -f /tmp/calico.yaml
-log_info "Calico 网络插件安装中..."
+log_info "Calico 网络插件安装中（使用本地缓存镜像，无需联网拉取）..."
 
 # 等待 Calico Pod 就绪
-log_info "等待 Calico Pod 启动 (最多 180 秒)..."
-for i in $(seq 1 36); do
+log_info "等待 Calico Pod 启动 (最多 120 秒)..."
+for i in $(seq 1 24); do
     READY=$(kubectl get pods -n kube-system -l k8s-app=calico-node --field-selector=status.phase=Running 2>/dev/null | grep -c Running || true)
     [ "$READY" -ge 1 ] && { log_info "Calico Pod 已就绪"; break; }
     sleep 5
