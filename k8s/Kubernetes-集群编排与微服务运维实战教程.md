@@ -49,6 +49,11 @@
 ```bash
 # 创建一个 Nginx Pod
 kubectl run my-nginx --image=nginx:1.25-alpine --port=80
+# 临时暴露端口
+kubectl port-forward pod/my-nginx 8080:80 --address=0.0.0.0 &
+# NodePort Service（正式方案）
+kubectl expose pod my-nginx --type=NodePort --port=80 --target-port=80 --name=my-nginx-svc
+
 
 # 查看 Pod 状态
 kubectl get pods -o wide
