@@ -153,16 +153,31 @@ else
     apt update
     apt install -y containerd.io
 
-    # 生成默认配置并启用 SystemdCgroup
+    # 生成默认配置
     mkdir -p /etc/containerd
     containerd config default > /etc/containerd/config.toml
-    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-
-    systemctl restart containerd
-    systemctl enable containerd
 
     log_info "containerd 安装完成"
 fi
+
+# ★ 不管 containerd 是新装还是已存在，都要确保配置正确
+log_info "确保 containerd 配置正确..."
+
+# 启用 SystemdCgroup
+if grep -q 'SystemdCgroup = false' /etc/containerd/config.toml 2>/dev/null; then
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+    log_info "SystemdCgroup 已启用"
+fi
+
+# sandbox 镜像改为阿里云镜像
+if grep 'sandbox_image' /etc/containerd/config.toml 2>/dev/null | grep -q 'registry.k8s.io'; then
+    sed -i 's|sandbox_image\s*=\s*"[^"]*"|sandbox_image = "registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.9"|' /etc/containerd/config.toml
+    log_info "sandbox 镜像已切换为阿里云"
+fi
+
+systemctl restart containerd
+systemctl enable containerd
+log_info "containerd 配置已完成"
 
 # 验证
 if systemctl is-active --quiet containerd; then
@@ -203,7 +218,7 @@ fi
 
 # 验证版本
 log_info "kubeadm: $(kubeadm version -o short)"
-log_info "kubelet: $(kubelet --version 2>/dev/null | head -1)"
+log_info "kubelet: $(kubelet --version 2>&1 | head -1)"
 log_info "kubectl: $(kubectl version --client -o short 2>/dev/null)"
 
 # ==========================================

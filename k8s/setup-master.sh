@@ -52,21 +52,81 @@ fi
 # ==========================================
 log_step "[1/4] 初始化 Kubernetes 集群..."
 
-# 检查是否已初始化
-if kubectl cluster-info &> /dev/null 2>&1; then
-    log_warn "检测到已有 Kubernetes 集群在运行"
-    read -p "是否重置并重新初始化? (yes/no): " CONFIRM
-    if [ "$CONFIRM" = "yes" ]; then
+# --- 情况1: 集群已经正常运行 ---
+if kubectl cluster-info &> /dev/null; then
+    log_warn "检测到已有 Kubernetes 集群正在运行"
+    kubectl get nodes -o wide 2>/dev/null || true
+    log_warn ""
+    read -p "是否需要重置并重新初始化? 这会删除所有数据 (y/n): " CONFIRM
+    if [[ "$CONFIRM" =~ ^[Yy] ]]; then
         log_info "正在重置集群..."
-        kubeadm reset -f
-        rm -rf /etc/kubernetes/manifests /var/lib/etcd
-        rm -rf $HOME/.kube
+        kubeadm reset -f 2>/dev/null || true
+        systemctl stop kubelet 2>/dev/null || true
+        rm -rf /etc/kubernetes/manifests /var/lib/etcd /var/lib/kubelet
+        rm -rf /root/.kube "$REAL_HOME/.kube" 2>/dev/null || true
         iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
         log_info "集群已重置"
     else
-        log_info "跳过初始化"
+        log_info "集群保持不动，退出"
         exit 0
     fi
+
+# --- 情况2: 没有运行的集群，但上次 init 失败残留了文件 ---
+elif [ -d "/etc/kubernetes/manifests" ] && ls /etc/kubernetes/manifests/*.yaml &>/dev/null; then
+    log_warn "检测到上次 kubeadm init 的残留文件（集群未成功运行）"
+    log_warn "这会导致重新初始化失败，需要先清理"
+    read -p "是否清理残留并重新初始化? (y/n): " CONFIRM
+    if [[ "$CONFIRM" =~ ^[Yy] ]]; then
+        log_info "清理残留..."
+        kubeadm reset -f 2>/dev/null || true
+        systemctl stop kubelet 2>/dev/null || true
+        rm -rf /etc/kubernetes/manifests /var/lib/etcd /var/lib/kubelet
+        rm -rf /root/.kube "$REAL_HOME/.kube" 2>/dev/null || true
+        iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+        log_info "残留已清理"
+    else
+        log_info "未清理，退出"
+        exit 0
+    fi
+
+# --- 情况3: 全新环境，直接初始化 ---
+else
+    log_info "环境干净，开始初始化"
+fi
+
+# 确保 containerd sandbox 镜像使用阿里云镜像（避免 kubelet 因拉不到 pause 而卡住）
+log_info "检查 containerd sandbox 镜像配置..."
+SANDBOX_IMAGE=$(grep 'sandbox_image' /etc/containerd/config.toml 2>/dev/null | head -1)
+if echo "$SANDBOX_IMAGE" | grep -q 'registry.k8s.io'; then
+    log_warn "sandbox_image 仍指向 registry.k8s.io，改为阿里云镜像..."
+    sed -i 's|sandbox_image\s*=\s*"[^"]*"|sandbox_image = "registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.9"|' /etc/containerd/config.toml
+    systemctl restart containerd
+    sleep 2
+    log_info "containerd sandbox 镜像已修复"
+elif grep -q 'sandbox_image' /etc/containerd/config.toml 2>/dev/null; then
+    log_info "sandbox_image 配置: $(grep 'sandbox_image' /etc/containerd/config.toml | head -1 | xargs)"
+    # 即使配置看起来正常，也要确保 containerd 完全加载了新配置
+    if ! systemctl is-active --quiet containerd; then
+        systemctl restart containerd
+        sleep 2
+    fi
+else
+    log_warn "未找到 sandbox_image 配置项，可能配置异常"
+fi
+
+# 检查 cgroup —— kubelet 依赖 cgroup，若缺失会导致 timeout
+log_info "检查 cgroup 配置..."
+if ! mount | grep -q cgroup2 && ! mount | grep -q 'cgroup on'; then
+    log_error "未检测到 cgroup，kubelet 将无法启动"
+    log_info "尝试添加 cgroup 内核参数..."
+    if ! grep -q 'cgroup_enable' /etc/default/grub 2>/dev/null; then
+        sed -i 's|^GRUB_CMDLINE_LINUX="|GRUB_CMDLINE_LINUX="cgroup_enable=memory swapaccount=1 |' /etc/default/grub
+        update-grub
+        log_warn "已更新 GRUB，请重启机器后重新运行本脚本: sudo reboot"
+        exit 1
+    fi
+else
+    log_info "cgroup 已启用"
 fi
 
 # 预拉取镜像 (使用阿里云国内镜像加速)
@@ -160,6 +220,12 @@ while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
 done
 echo ""
 
+# Calico 超时检查
+if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
+    log_warn "Calico Pod 等待超时，网络插件可能未就绪"
+    log_warn "请手动检查: kubectl get pods -n kube-system"
+fi
+
 # 移除 Master 节点的污点（允许在 Master 上调度 Pod，可选）
 log_info "移除 Master 节点污点，允许调度工作负载..."
 kubectl taint nodes k8s-master node-role.kubernetes.io/control-plane:NoSchedule- 2>/dev/null || \
@@ -174,10 +240,10 @@ echo -e "${GREEN}  Master 节点初始化完成！${NC}"
 echo "=========================================="
 echo ""
 echo "集群节点状态:"
-kubectl get nodes -o wide
+kubectl get nodes -o wide 2>/dev/null || log_warn "无法获取节点状态"
 echo ""
 echo "系统 Pod 状态:"
-kubectl get pods -n kube-system
+kubectl get pods -n kube-system 2>/dev/null || log_warn "无法获取 Pod 状态"
 echo ""
 echo "=========================================="
 echo -e "${YELLOW}  下一步: 在 Worker 节点执行加入操作${NC}"

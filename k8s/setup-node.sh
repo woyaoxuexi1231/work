@@ -49,8 +49,8 @@ fi
 if [[ ! "$CURRENT_HOST" =~ ^(k8s-node1|k8s-node2)$ ]]; then
     log_warn "当前主机名 '$CURRENT_HOST' 不在预期节点列表中 (k8s-node1/k8s-node2)"
     log_warn "请确认本机为 Worker 节点"
-    read -p "是否继续? (yes/no): " CONTINUE
-    if [ "$CONTINUE" != "yes" ]; then
+    read -p "是否继续? (y/n): " CONTINUE
+    if [[ ! "$CONTINUE" =~ ^[Yy] ]]; then
         exit 0
     fi
 fi
@@ -61,7 +61,6 @@ fi
 log_step "[1/2] 获取集群加入信息..."
 
 MASTER_IP="192.168.2.102"
-API_SERVER_ENDPOINT="${MASTER_IP}:6443"
 
 # 检查 Master 是否可达
 log_info "检查 Master 节点连通性..."
@@ -72,11 +71,11 @@ fi
 log_info "Master 节点可达"
 
 # 判断是否已加入集群
-if systemctl is-active --quiet kubelet && kubectl get node "$CURRENT_HOST" &> /dev/null 2>&1; then
+if systemctl is-active --quiet kubelet && kubectl get node "$CURRENT_HOST" &> /dev/null; then
     log_warn "当前节点似乎已加入集群"
     kubectl get node "$CURRENT_HOST" 2>/dev/null || true
-    read -p "是否重置并重新加入? (yes/no): " CONFIRM
-    if [ "$CONFIRM" = "yes" ]; then
+    read -p "是否重置并重新加入? (y/n): " CONFIRM
+    if [[ "$CONFIRM" =~ ^[Yy] ]]; then
         kubeadm reset -f
         rm -rf /etc/kubernetes/manifests /var/lib/kubelet
         iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
@@ -104,7 +103,7 @@ if [ ! -f "$JOIN_CMD_FILE" ]; then
     # 确保 sshpass 可用
     if ! command -v sshpass &> /dev/null; then
         log_info "安装 sshpass..."
-        apt install -y sshpass
+        apt update && apt install -y sshpass
     fi
 
     read -s -p "请输入 ${SSH_USER}@${MASTER_IP} 的密码: " MASTER_PASS
