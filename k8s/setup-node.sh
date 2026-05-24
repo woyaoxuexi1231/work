@@ -1,18 +1,13 @@
 #!/bin/bash
 # ============================================================
-#  Kubernetes 集群 - Worker 节点加入脚本
-#  在 k8s-node1 (192.168.3.101) / k8s-node2 (192.168.3.102) 上执行
-#  前提: Master 节点已完成初始化, 本机已运行 setup-common.sh
+#  Kubernetes 集群 - Worker 节点加入脚本 (v1.28)
+#  在 k8s-node1 / k8s-node2 上执行
+#  前提: Master 已初始化, 本机已运行 setup-common.sh
 # ============================================================
 
 set -e
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
@@ -22,146 +17,139 @@ echo "=========================================="
 echo "  K8s Worker 节点加入集群"
 echo "=========================================="
 
-# 检查 root 权限 (Ubuntu 使用 sudo 运行)
 if [ "$EUID" -ne 0 ]; then
-    log_error "请使用 sudo 运行此脚本: sudo bash setup-node.sh"
+    log_error "请使用 sudo 运行: sudo bash setup-node.sh"
     exit 1
 fi
 
-# 检测真实的操作用户
 REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
 if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
     REAL_HOME=$(eval echo ~$REAL_USER)
-    log_info "真实用户: $REAL_USER"
 else
-    REAL_USER="root"
-    REAL_HOME="/root"
+    REAL_USER="root"; REAL_HOME="/root"
 fi
 
-# 确认不是 Master 节点
 CURRENT_HOST=$(hostname)
 if [ "$CURRENT_HOST" = "k8s-master" ]; then
-    log_error "当前主机是 Master 节点，这个脚本只能在 Worker 节点执行"
-    log_error "请使用 setup-master.sh 初始化 Master 节点"
+    log_error "此脚本只能在 Worker 节点执行"
     exit 1
 fi
-
-if [[ ! "$CURRENT_HOST" =~ ^(k8s-node1|k8s-node2)$ ]]; then
-    log_warn "当前主机名 '$CURRENT_HOST' 不在预期节点列表中 (k8s-node1/k8s-node2)"
-    log_warn "请确认本机为 Worker 节点"
-    read -p "是否继续? (y/n): " CONTINUE
-    if [[ ! "$CONTINUE" =~ ^[Yy] ]]; then
-        exit 0
-    fi
-fi
-
-# ==========================================
-# Step 1: 获取 join 命令
-# ==========================================
-log_step "[1/2] 获取集群加入信息..."
 
 MASTER_IP="192.168.3.100"
 
-# 检查 Master 是否可达
-log_info "检查 Master 节点连通性..."
-if ! ping -c 1 -W 2 "$MASTER_IP" &> /dev/null; then
-    log_error "无法连接到 Master 节点 $MASTER_IP，请检查网络"
+# ==========================================
+# Step 1: 环境清理与获取最新 join 命令
+# ==========================================
+log_step "[1/2] 环境检查与获取加入信息..."
+
+if ! ping -c 1 -W 2 "$MASTER_IP" &>/dev/null; then
+    log_error "无法连接 Master $MASTER_IP"
     exit 1
 fi
-log_info "Master 节点可达"
 
-# 判断是否已加入集群
-if systemctl is-active --quiet kubelet && kubectl get node "$CURRENT_HOST" &> /dev/null; then
-    log_warn "当前节点似乎已加入集群"
-    kubectl get node "$CURRENT_HOST" 2>/dev/null || true
-    read -p "是否重置并重新加入? (y/n): " CONFIRM
+# ★ 双重检测：同时覆盖"已加入集群"和"join失败留有脏数据"两种场景
+NEED_RESET=false
+if kubectl get node "$CURRENT_HOST" &>/dev/null 2>&1; then
+    log_warn "检测到节点已加入集群"
+    NEED_RESET=true
+elif [ -f "/etc/kubernetes/kubelet.conf" ] || [ -d "/etc/kubernetes/pki" ]; then
+    log_warn "检测到上次 join 失败的残留文件（节点未成功加入）"
+    NEED_RESET=true
+fi
+
+if [ "$NEED_RESET" = true ]; then
+    read -p "是否清理残留并重新加入? (y/n): " CONFIRM
     if [[ "$CONFIRM" =~ ^[Yy] ]]; then
-        kubeadm reset -f
-        rm -rf /etc/kubernetes/manifests /var/lib/kubelet
+        log_info "正在彻底清理残留..."
+        kubeadm reset -f 2>/dev/null || true
+        systemctl stop kubelet 2>/dev/null || true
+        fuser -k 10250/tcp 2>/dev/null || true
+        rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd
+        rm -rf /root/.kube "$REAL_HOME/.kube" 2>/dev/null || true
         iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
-        log_info "已重置"
+        log_info "环境与端口残留已清理"
     else
-        log_info "跳过"
+        log_info "跳过清理，退出"
         exit 0
     fi
 fi
 
-# 尝试从 Master 复制 join 命令
 JOIN_CMD_FILE="$REAL_HOME/k8s-join-command.sh"
 
-# 尝试从 Master 复制 join 命令（Ubuntu 不允许 root 直接 SSH，需用普通用户）
-if [ ! -f "$JOIN_CMD_FILE" ]; then
-    log_info "尝试从 Master 节点获取 join 命令..."
-
-    # 获取 SSH 用户名（sudo 场景下 $SUDO_USER 就是真实用户，如 hulei）
-    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
-        SSH_USER="$SUDO_USER"
+# ★ 核心修复：Master 重装后，主动废弃本地缓存的旧 join 文件
+if [ -f "$JOIN_CMD_FILE" ]; then
+    log_warn "检测到本地存在旧的 join 命令文件"
+    log_warn "若 Master 节点已重置或重装，该文件中的 Token 已失效"
+    read -p "是否删除旧文件并从 Master 重新获取最新命令? (y/n): " REFRESH
+    if [[ "$REFRESH" =~ ^[Yy] ]]; then
+        rm -f "$JOIN_CMD_FILE"
+        log_info "旧 join 文件已删除"
     fi
-    read -p "Master 节点 SSH 用户名 [${SSH_USER:-hulei}]: " INPUT_USER
-    SSH_USER="${INPUT_USER:-${SSH_USER:-hulei}}"
+fi
 
-    # 确保 sshpass 可用
-    if ! command -v sshpass &> /dev/null; then
+# 从 Master 拉取最新的 join 命令
+if [ ! -f "$JOIN_CMD_FILE" ]; then
+    SSH_USER="${SUDO_USER:-hulei}"
+    read -p "Master SSH 用户名 [$SSH_USER]: " INPUT_USER
+    SSH_USER="${INPUT_USER:-$SSH_USER}"
+
+    if ! command -v sshpass &>/dev/null; then
         log_info "安装 sshpass..."
         apt update && apt install -y sshpass
     fi
 
-    read -s -p "请输入 ${SSH_USER}@${MASTER_IP} 的密码: " MASTER_PASS
-    echo ""
+    read -s -p "请输入 ${SSH_USER}@${MASTER_IP} 密码: " MASTER_PASS; echo ""
 
-    log_info "从 Master 复制 join 命令..."
-    if sshpass -p "$MASTER_PASS" scp -o StrictHostKeyChecking=no "${SSH_USER}@${MASTER_IP}:/tmp/k8s-join-command.sh" "$JOIN_CMD_FILE" 2>/dev/null; then
-        log_info "Join 命令已成功复制到 $JOIN_CMD_FILE"
+    if sshpass -p "$MASTER_PASS" scp -o StrictHostKeyChecking=no \
+        "${SSH_USER}@${MASTER_IP}:/tmp/k8s-join-command.sh" "$JOIN_CMD_FILE" 2>/dev/null; then
+        log_info "最新 Join 命令获取成功"
     else
-        log_warn "SCP 复制失败，请检查用户名/密码是否正确"
+        log_warn "SCP 获取失败，请检查网络、用户名或密码"
     fi
 fi
 
-# 如果文件存在，直接执行
-if [ -f "$JOIN_CMD_FILE" ]; then
-    log_info "找到 join 命令文件，执行加入..."
-    chmod +x "$JOIN_CMD_FILE"
-    bash "$JOIN_CMD_FILE"
-else
-    # 手动输入 join 命令
-    log_warn "未找到 join 命令文件"
-    log_warn ""
-    log_warn "请按以下步骤操作:"
-    log_warn "  1. 在 Master 节点执行: cat /root/k8s-join-command.sh"
-    log_warn "  2. 将输出的命令复制下来"
-    log_warn "  3. 在本机粘贴执行"
-    log_warn ""
-    log_warn "或者手动从 Master 节点获取 join 命令:"
-    log_warn "  (Master 上执行) kubeadm token create --print-join-command"
-    log_warn ""
-    log_warn "示例格式:"
-    log_warn "  kubeadm join 192.168.3.100:6443 --token xxxxxx \\"
-    log_warn "      --discovery-token-ca-cert-hash sha256:xxxxxx"
-    log_warn ""
+# 执行 join，内置 Token 过期自愈机制
+EXEC_JOIN() {
+    local cmd="$1"
+    log_info "执行: $cmd"
+    if eval "$cmd" 2>&1 | tee /tmp/join-output.log; then
+        return 0
+    fi
 
-    read -p "请输入 join 命令（直接粘贴，留空跳过）: " JOIN_CMD
-
-    if [ -n "$JOIN_CMD" ]; then
-        log_info "执行 join 命令..."
-        eval "$JOIN_CMD"
+    if grep -qiE 'token.*expired|unauthorized|authentication' /tmp/join-output.log; then
+        log_warn "Join Token 已过期或无效"
+        log_warn "请在 Master 节点执行: kubeadm token create --print-join-command"
+        read -p "请粘贴新的 join 命令: " NEW_CMD
+        if [ -n "$NEW_CMD" ]; then
+            eval "$NEW_CMD"
+        else
+            log_error "未提供有效命令，退出"
+            exit 1
+        fi
     else
-        log_error "未提供 join 命令，退出"
+        log_error "Join 失败，请查看日志: cat /tmp/join-output.log"
         exit 1
     fi
+}
+
+if [ -f "$JOIN_CMD_FILE" ]; then
+    EXEC_JOIN "$(cat "$JOIN_CMD_FILE")"
+else
+    read -p "请手动粘贴 join 命令: " MANUAL_CMD
+    [ -z "$MANUAL_CMD" ] && { log_error "未提供 join 命令"; exit 1; }
+    EXEC_JOIN "$MANUAL_CMD"
 fi
 
 # ==========================================
-# Step 2: 验证加入结果
+# Step 2: 验证节点状态
 # ==========================================
 log_step "[2/2] 验证节点状态..."
-
-# 等待 kubelet 注册
 sleep 5
 
 if systemctl is-active --quiet kubelet; then
-    log_info "kubelet 运行正常"
+    log_info "kubelet 服务运行正常"
 else
-    log_error "kubelet 未运行，请检查 journalctl -u kubelet"
+    log_error "kubelet 未正常运行，请执行: journalctl -u kubelet -n 30 --no-pager"
     exit 1
 fi
 
@@ -169,14 +157,5 @@ echo ""
 echo "=========================================="
 echo -e "${GREEN}  Worker 节点加入完成: $CURRENT_HOST${NC}"
 echo "=========================================="
-echo ""
-log_info "请在 Master 节点执行以下命令检查集群状态:"
-echo ""
+log_info "请前往 Master 节点执行以下命令验证集群状态:"
 echo "  kubectl get nodes -o wide"
-echo ""
-echo "预期输出:"
-echo "  NAME         STATUS   ROLES           AGE   VERSION"
-echo "  k8s-master   Ready    control-plane   ...   v1.28.x"
-echo "  k8s-node1    Ready    <none>          ...   v1.28.x"
-echo "  k8s-node2    Ready    <none>          ...   v1.28.x"
-echo ""

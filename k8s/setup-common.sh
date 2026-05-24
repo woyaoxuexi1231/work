@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
-#  Kubernetes 集群 - 公共环境准备脚本
+#  Kubernetes 集群 - 公共环境准备脚本 (v1.28 + containerd 1.7.x)
 #  在所有节点上执行 (k8s-master / k8s-node1 / k8s-node2)
-#  适用系统: Ubuntu 20.04 / 22.04
+#  适用系统: Ubuntu 20.04 / 22.04 / 24.04
 # ============================================================
 
 set -e
@@ -24,13 +24,13 @@ echo "  K8s 公共环境准备脚本"
 echo "  适用: 所有节点"
 echo "=========================================="
 
-# 检查 root 权限 (Ubuntu 使用 sudo 运行)
+# 检查 root 权限
 if [ "$EUID" -ne 0 ]; then
     log_error "请使用 sudo 运行此脚本: sudo bash setup-common.sh"
     exit 1
 fi
 
-# 检测真实的操作用户 (sudo 场景下 $SUDO_USER 非空)
+# 检测真实的操作用户
 REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
 if [ -n "$REAL_USER" ]; then
     REAL_HOME=$(eval echo ~$REAL_USER)
@@ -60,11 +60,9 @@ if [[ ! "$HOSTNAME" =~ ^(k8s-master|k8s-node1|k8s-node2)$ ]]; then
     exit 1
 fi
 
-# 设置主机名
 hostnamectl set-hostname "$HOSTNAME"
 log_info "主机名已设置为: $HOSTNAME"
 
-# 配置 hosts 文件
 if ! grep -q "192.168.3.100 k8s-master" /etc/hosts; then
     cat >> /etc/hosts <<EOF
 
@@ -92,7 +90,6 @@ log_info "Swap 已关闭"
 # ==========================================
 log_step "[3/7] 配置内核模块和参数..."
 
-# 加载内核模块（开机自动加载）
 cat > /etc/modules-load.d/k8s.conf <<EOF
 overlay
 br_netfilter
@@ -101,20 +98,15 @@ EOF
 modprobe overlay
 modprobe br_netfilter
 
-# 配置内核参数
 cat > /etc/sysctl.d/k8s.conf <<EOF
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 EOF
 
-# 立即生效（重启后由 /etc/sysctl.d/k8s.conf 自动加载）
-sysctl -w net.bridge.bridge-nf-call-iptables=1  > /dev/null
-sysctl -w net.bridge.bridge-nf-call-ip6tables=1 > /dev/null
-sysctl -w net.ipv4.ip_forward=1                 > /dev/null
+sysctl --system > /dev/null 2>&1
 log_info "内核参数已配置"
 
-# 验证
 if lsmod | grep -q br_netfilter && lsmod | grep -q overlay; then
     log_info "内核模块加载成功"
 else
@@ -133,59 +125,66 @@ iptables -P FORWARD ACCEPT
 log_info "iptables 已配置"
 
 # ==========================================
-# Step 5: 安装 containerd 容器运行时
+# Step 5: 安装 containerd 容器运行时 (核心修复)
 # ==========================================
 log_step "[5/7] 安装 containerd..."
 
-if systemctl is-active --quiet containerd; then
-    log_info "containerd 已安装，跳过安装步骤"
+# ★ 检查是否安装了错误的大版本，如果是则强制卸载重装
+INSTALLED_VER=$(dpkg -s containerd.io 2>/dev/null | grep '^Version:' | awk '{print $2}' | cut -d. -f1 || echo "0")
+if [ "$INSTALLED_VER" = "2" ]; then
+    log_warn "检测到 containerd v2.x，与 K8s v1.28 不兼容，正在降级..."
+    apt remove -y containerd.io
+    rm -f /etc/containerd/config.toml
+fi
+
+# ★ 安装或确认 containerd 1.7.x
+if dpkg -s containerd.io &>/dev/null && [ "$INSTALLED_VER" = "1" ]; then
+    log_info "containerd 1.7.x 已安装，跳过安装步骤"
 else
     apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
 
-    # 添加 Docker 官方 GPG 密钥
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
-    # 添加 Docker APT 仓库
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
         > /etc/apt/sources.list.d/docker.list
 
     apt update
-    apt install -y containerd.io
-
-    # 生成默认配置
-    mkdir -p /etc/containerd
-    containerd config default > /etc/containerd/config.toml
-
-    log_info "containerd 安装完成"
+    apt install -y containerd.io=1.7.27-*
+    apt-mark hold containerd.io
+    log_info "containerd 1.7.x 安装完成"
 fi
 
-# ★ 不管 containerd 是新装还是已存在，都要确保配置正确
-log_info "确保 containerd 配置正确..."
+# ★ 无条件重新生成配置（解决配置残缺/格式不匹配问题）
+log_info "重建 containerd 配置..."
+mkdir -p /etc/containerd
+containerd config default > /etc/containerd/config.toml
 
-# 启用 SystemdCgroup
-if grep -q 'SystemdCgroup = false' /etc/containerd/config.toml 2>/dev/null; then
-    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-    log_info "SystemdCgroup 已启用"
-fi
-
-# sandbox 镜像改为阿里云镜像
-if grep 'sandbox_image' /etc/containerd/config.toml 2>/dev/null | grep -q 'registry.k8s.io'; then
-    sed -i 's|sandbox_image\s*=\s*"[^"]*"|sandbox_image = "registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.9"|' /etc/containerd/config.toml
-    log_info "sandbox 镜像已切换为阿里云"
-fi
+# 无条件修改，不再依赖 grep 条件判断
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+sed -i 's|sandbox_image = "[^"]*"|sandbox_image = "registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.9"|' /etc/containerd/config.toml
+sed -i '/disabled_plugins/d' /etc/containerd/config.toml
 
 systemctl restart containerd
 systemctl enable containerd
-log_info "containerd 配置已完成"
+sleep 3
 
-# 验证
-if systemctl is-active --quiet containerd; then
-    log_info "containerd 运行正常"
-else
-    log_error "containerd 未运行"
+# ★ 安装 crictl 用于验证 CRI 接口
+if ! command -v crictl &> /dev/null; then
+    log_info "安装 crictl..."
+    CRICTL_VERSION="v1.28.0"
+    curl -fsSL "https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRICTL_VERSION}/crictl-${CRICTL_VERSION}-linux-amd64.tar.gz" \
+        | tar xz -C /usr/local/bin
+fi
+
+# ★ 验证 CRI 接口（而非仅验证进程存活）
+log_info "验证 containerd CRI 接口..."
+if ! crictl info &>/dev/null; then
+    log_error "containerd CRI 接口异常！请检查日志:"
+    journalctl -u containerd --no-pager -n 30
     exit 1
 fi
+log_info "containerd CRI 接口正常，配置已完成"
 
 # ==========================================
 # Step 6: 安装 Kubernetes 组件
@@ -197,15 +196,11 @@ if command -v kubeadm &> /dev/null; then
     log_info "跳过安装步骤"
 else
     apt update
-
-    # 安装依赖
     apt install -y apt-transport-https ca-certificates curl gpg
 
-    # 添加 Kubernetes GPG 密钥
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key \
         | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-    # 添加 Kubernetes 仓库（v1.28）
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" \
         > /etc/apt/sources.list.d/kubernetes.list
 
@@ -216,7 +211,6 @@ else
     log_info "Kubernetes 组件安装完成"
 fi
 
-# 验证版本
 log_info "kubeadm: $(kubeadm version -o short)"
 log_info "kubelet: $(kubelet --version 2>&1 | head -1)"
 log_info "kubectl: $(kubectl version --client -o short 2>/dev/null)"
