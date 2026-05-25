@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JVM 运行时数据区域 — 面试深度解析</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #020617;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .bg-grid {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+      animation: float 20s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%,100% { transform: translate(0,0); }
+      33% { transform: translate(30px,-50px); }
+      66% { transform: translate(-20px,30px); }
+    }
+    .glass-card {
+      background: rgba(15,23,42,0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(148,163,184,0.1);
+      transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+    }
+    .glass-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+    }
+    .glass-card.private:hover {
+      border-color: rgba(59,130,246,0.4);
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5), 0 0 20px rgba(59,130,246,0.15);
+    }
+    .glass-card.shared:hover {
+      border-color: rgba(16,185,129,0.4);
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5), 0 0 20px rgba(16,185,129,0.15);
+    }
+    .tag-private {
+      background: rgba(59,130,246,0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59,130,246,0.2);
+    }
+    .tag-shared {
+      background: rgba(16,185,129,0.15);
+      color: #34d399;
+      border: 1px solid rgba(16,185,129,0.2);
+    }
+    .code-block {
+      background: rgba(2,6,23,0.8);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .interview-card {
+      background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05));
+      border: 1px solid rgba(59,130,246,0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+    .interview-question {
+      background: rgba(59,130,246,0.1);
+      border-left: 3px solid #3b82f6;
+      padding: 1rem 1.25rem;
+      border-radius: 0 12px 12px 0;
+      margin-bottom: 1rem;
+    }
+    .interview-answer {
+      background: rgba(15,23,42,0.5);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .keyword {
+      color: #60a5fa;
+      font-weight: 600;
+    }
+    .keyword-green {
+      color: #34d399;
+      font-weight: 600;
+    }
+    .keyword-red {
+      color: #f87171;
+      font-weight: 600;
+    }
+    .keyword-amber {
+      color: #fbbf24;
+      font-weight: 600;
+    }
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .section-anchor {
+      scroll-margin-top: 80px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="antialiased">
+
+  <div class="bg-grid"></div>
+  <div class="glow-orb bg-blue-500 w-96 h-96 top-0 left-1/4"></div>
+  <div class="glow-orb bg-emerald-500 w-80 h-80 bottom-1/4 right-0" style="animation-delay:-7s"></div>
+  <div class="glow-orb bg-purple-500 w-64 h-64 top-1/2 left-0" style="animation-delay:-14s"></div>
+
+  <nav class="fixed top-0 w-full z-50 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <span class="font-bold text-lg tracking-tight text-white">JVM<span class="text-blue-400">Memory</span></span>
+      </div>
+      <div class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-400">
+        <a href="#pc" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">程序计数器</a>
+        <a href="#stack" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">虚拟机栈</a>
+        <a href="#native" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">本地方法栈</a>
+        <a href="#heap" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">堆</a>
+        <a href="#method" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">方法区</a>
+        <a href="#cheatsheet" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">速查表</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="relative z-10 pt-32 pb-16 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8">
+        <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+        面试高频追问深度解析
+      </div>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-100 to-slate-400">
+        JVM 六块区域<br>面试实战应答
+      </h1>
+      <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        当面试官追问"具体是什么？能举个例子吗？"时，用这里的<span class="text-blue-400 font-medium">概念 + 代码 + 画图话术</span>精准反击。
+      </p>
+    </div>
+  </header>
+
+  <main class="relative z-10 max-w-5xl mx-auto px-6 pb-24 space-y-20">
+
+    <!-- ========== 程序计数器 ========== -->
+    <section id="pc" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-2xl">📌</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">程序计数器</h2>
+          <p class="text-sm text-blue-400 font-mono">Program Counter Register · 线程私有</p>
+        </div>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold tag-private">THREAD PRIVATE</span>
+      </div>
+
+      <div class="interview-card mb-6">
+        <div class="interview-question">
+          <div class="flex items-start gap-3">
+            <span class="text-blue-400 font-bold text-lg">Q</span>
+            <p class="text-white font-medium">"程序计数器具体是什么？能举个实际例子说明吗？"</p>
+          </div>
+        </div>
+        <div class="interview-answer space-y-4">
+          <div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              你可以这样回答：<span class="keyword">程序计数器是一块很小的内存空间，可以看作是当前线程所执行的字节码的行号指示器。</span>它记录着线程下一步要执行哪一条指令。如果执行的是 Java 方法，计数器记录的是正在执行的虚拟机字节码指令的地址；如果执行的是 Native 方法，这个计数器值则为空（Undefined）。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">实际例子：</strong>想象你在看一本很厚的书（字节码），每页都有页码。程序计数器就是夹在书里的<span class="keyword-amber">书签</span>，记录你现在看到第几页。CPU 时间片轮转到这个线程时，JVM 看一眼书签，就知道该从哪一行字节码继续执行。线程切换出去时，把书签放好；切换回来时，按书签位置继续读。
+            </p>
+          </div>
+
+          <div class="code-block">
+<div class="text-slate-500">// 实际代码视角：下面这段代码编译后会产生字节码指令序列</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">CounterDemo</div> {
+<div class="text-purple-400">    public void</div> <div class="text-blue-400">hello</div>() {
+<div class="text-slate-500">        // 字节码指令大致如下（简化）：</div>
+<div class="text-slate-500">        // 0: aload_0</div>
+<div class="text-slate-500">        // 1: invokespecial #1  // Method java/lang/Object."&lt;init&gt;":()V</div>
+<div class="text-slate-500">        // 4: return</div>
+<div class="text-slate-500">        </div>
+<div class="text-slate-500">        // 程序计数器就记录着 "0"、"1"、"4" 这样的指令地址</div>
+<div class="text-slate-500">        // 线程 A 执行到指令 1 时被挂起，计数器存 "1"</div>
+<div class="text-slate-500">        // 线程 A 恢复执行时，从指令 1 继续，不会乱序</div>
+        <div class="text-blue-400">System</div>.out.<div class="text-blue-400">println</div>(<div class="text-green-400">"Hello"</div>);
+    }
+}
+          </div>
+
+          <div class="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-blue-400 font-bold">💡</span>
+              <span class="text-sm font-semibold text-blue-400">面试话术（口语化版）</span>
+            </div>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              "程序计数器就像多线程环境下的<span class="keyword">书签</span>。每个线程都有自己的书签，记录自己执行到字节码的哪一行。线程切换时靠它恢复上下文，所以它是线程私有的。也因为它只是存一个地址指针，空间非常小，所以<span class="keyword">不会发生 OutOfMemoryError</span>，这是它最特别的地方。"
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 虚拟机栈 ========== -->
+    <section id="stack" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-2xl">📚</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">虚拟机栈</h2>
+          <p class="text-sm text-blue-400 font-mono">JVM Stack · 线程私有</p>
+        </div>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold tag-private">THREAD PRIVATE</span>
+      </div>
+
+      <div class="interview-card mb-6">
+        <div class="interview-question">
+          <div class="flex items-start gap-3">
+            <span class="text-blue-400 font-bold text-lg">Q</span>
+            <p class="text-white font-medium">"虚拟机栈具体存什么？能举个实际例子吗？StackOverflowError 怎么产生的？"</p>
+          </div>
+        </div>
+        <div class="interview-answer space-y-4">
+          <div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              你可以这样回答：<span class="keyword">虚拟机栈描述的是 Java 方法执行的线程内存模型。</span>每个方法被执行的时候，JVM 都会同步创建一个<strong class="text-white">栈帧（Stack Frame）</strong>压入栈顶。方法执行完毕，栈帧出栈。栈帧里存储了<strong class="text-white">局部变量表、操作数栈、动态链接、方法返回地址</strong>等信息。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">实际例子：</strong>你写了一个 <code class="text-blue-400">main()</code> 方法调用 <code class="text-blue-400">a()</code>，<code class="text-blue-400">a()</code> 调用 <code class="text-blue-400">b()</code>。JVM 会依次压入三个栈帧：<span class="keyword">main 帧 → a 帧 → b 帧</span>。b 执行完后弹出，回到 a；a 执行完弹出，回到 main。这就像叠盘子，最后放的先拿（LIFO）。
+            </p>
+          </div>
+
+          <div class="code-block">
+<div class="text-slate-500">// 栈帧实际例子：方法调用链</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">StackDemo</div> {
+<div class="text-purple-400">    public static void</div> <div class="text-blue-400">main</div>(<div class="text-blue-400">String</div>[] args) {
+<div class="text-slate-500">        // 栈帧 1: main 方法的栈帧入栈</div>
+        <div class="text-blue-400">int</div> x = <div class="text-amber-400">10</div>;<div class="text-slate-500"> // 局部变量表: [args, x]</div>
+        <div class="text-blue-400">methodA</div>(x);<div class="text-slate-500"> // 调用 methodA，栈帧 2 入栈</div>
+    }
+
+<div class="text-purple-400">    static void</div> <div class="text-blue-400">methodA</div>(<div class="text-blue-400">int</div> val) {
+<div class="text-slate-500">        // 栈帧 2: methodA 的栈帧</div>
+<div class="text-slate-500">        // 局部变量表: [val]</div>
+<div class="text-slate-500">        // 操作数栈: 进行 val + 5 运算时，5 和 val 先入栈，再相加</div>
+        <div class="text-blue-400">int</div> y = val + <div class="text-amber-400">5</div>;
+        <div class="text-blue-400">methodB</div>(y);<div class="text-slate-500"> // 栈帧 3 入栈</div>
+    }
+
+<div class="text-purple-400">    static void</div> <div class="text-blue-400">methodB</div>(<div class="text-blue-400">int</div> val) {
+<div class="text-slate-500">        // 栈帧 3: methodB 的栈帧</div>
+        <div class="text-blue-400">System</div>.out.<div class="text-blue-400">println</div>(val);<div class="text-slate-500"> // 完成后栈帧 3 出栈</div>
+    }
+}
+<div class="text-slate-500">// 执行顺序: main入栈 → methodA入栈 → methodB入栈 → methodB出栈 → methodA出栈 → main出栈</div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-red-400 font-bold">⚠️</span>
+              <span class="text-sm font-semibold text-red-400">StackOverflowError 实际触发</span>
+            </div>
+            <div class="code-block text-xs">
+<div class="text-slate-500">// 无限递归 → 栈帧无限压入 → 栈深度超过最大值</div>
+<div class="text-purple-400">public void</div> <div class="text-blue-400">infiniteRecursion</div>() {
+    <div class="text-blue-400">infiniteRecursion</div>(); <div class="text-slate-500">// 自己调用自己，没有终止条件</div>
+}
+<div class="text-slate-500">// 运行结果: java.lang.StackOverflowError</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-blue-400 font-bold">💡</span>
+              <span class="text-sm font-semibold text-blue-400">面试话术</span>
+            </div>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              "虚拟机栈是<strong class="text-white">方法执行的舞台</strong>。每个方法对应一个栈帧，里面存局部变量、操作数栈等。方法调用就是压栈，方法结束就是弹栈。如果方法 A 调 A 自己无限循环，栈帧会一直压入直到超过栈容量，就会抛出 <span class="keyword-red">StackOverflowError</span>。如果栈空间申请不到内存，还会抛出 <span class="keyword-amber">OutOfMemoryError</span>。"
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 本地方法栈 ========== -->
+    <section id="native" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-2xl">🔧</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">本地方法栈</h2>
+          <p class="text-sm text-blue-400 font-mono">Native Method Stack · 线程私有</p>
+        </div>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold tag-private">THREAD PRIVATE</span>
+      </div>
+
+      <div class="interview-card mb-6">
+        <div class="interview-question">
+          <div class="flex items-start gap-3">
+            <span class="text-blue-400 font-bold text-lg">Q</span>
+            <p class="text-white font-medium">"本地方法栈具体是什么？能举个实际例子吗？和虚拟机栈有什么区别？"</p>
+          </div>
+        </div>
+        <div class="interview-answer space-y-4">
+          <div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              你可以这样回答：<span class="keyword">本地方法栈与虚拟机栈作用非常相似，区别只是服务对象不同。</span>虚拟机栈为 Java 方法（字节码）服务，而本地方法栈为 Native 方法服务。Native 方法是用 C/C++ 等语言编写、通过 JNI（Java Native Interface）调用的方法。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">实际例子：</strong>Java 的 <code class="text-blue-400">Thread.start()</code> 底层最终调用了 <code class="text-purple-400">start0()</code> 这个 Native 方法；<code class="text-blue-400">System.currentTimeMillis()</code>、<code class="text-blue-400">FileInputStream.read()</code> 等很多底层 IO 和系统交互，最终都会走到 Native 方法。这些 Native 方法执行时，就在本地方法栈中创建栈帧。
+            </p>
+          </div>
+
+          <div class="code-block">
+<div class="text-slate-500">// Thread.java 源码中的 Native 方法声明</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">Thread</div> <div class="text-purple-400">implements</div> <div class="text-blue-400">Runnable</div> {
+    <div class="text-slate-500">// 这是一个 native 方法，由 JVM 底层的 C++ 实现</div>
+    <div class="text-purple-400">private native void</div> <div class="text-blue-400">start0</div>();
+
+    <div class="text-purple-400">public synchronized void</div> <div class="text-blue-400">start</div>() {
+        <div class="text-slate-500">// ... 前置检查 ...</div>
+        <div class="text-blue-400">start0</div>(); <div class="text-slate-500">// 调用 native 方法，进入本地方法栈</div>
+    }
+}
+
+<div class="text-slate-500">// 实际调用链:</div>
+<div class="text-slate-500">// Java 层: thread.start() → start0()</div>
+<div class="text-slate-500">// ↓ JNI 过渡</div>
+<div class="text-slate-500">// C++ 层: JVM_StartThread() → 创建操作系统线程</div>
+<div class="text-slate-500">// 这段 C++ 代码的执行上下文就保存在本地方法栈中</div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+              <div class="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">虚拟机栈</div>
+              <ul class="space-y-2 text-sm text-slate-300">
+                <li class="flex items-start gap-2"><span class="text-blue-400 mt-1">•</span>服务对象：Java 方法（字节码）</li>
+                <li class="flex items-start gap-2"><span class="text-blue-400 mt-1">•</span>栈帧内容：局部变量表、操作数栈等</li>
+                <li class="flex items-start gap-2"><span class="text-blue-400 mt-1">•</span>异常：StackOverflowError / OOM</li>
+              </ul>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+              <div class="text-xs font-semibold text-purple-400 uppercase tracking-wider mb-3">本地方法栈</div>
+              <ul class="space-y-2 text-sm text-slate-300">
+                <li class="flex items-start gap-2"><span class="text-purple-400 mt-1">•</span>服务对象：Native 方法（C/C++）</li>
+                <li class="flex items-start gap-2"><span class="text-purple-400 mt-1">•</span>栈帧内容：Native 方法的局部状态</li>
+                <li class="flex items-start gap-2"><span class="text-purple-400 mt-1">•</span>异常：StackOverflowError / OOM</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-blue-400 font-bold">💡</span>
+              <span class="text-sm font-semibold text-blue-400">面试话术</span>
+            </div>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              "本地方法栈和虚拟机栈是<strong class="text-white">孪生兄弟</strong>，一个服务 Java 方法，一个服务 Native 方法。比如 <code class="text-blue-400">Thread.start()</code> 最终调用 <code class="text-purple-400">start0()</code> 这个 Native 方法，这时线程的执行上下文就从虚拟机栈转移到了本地方法栈。HotSpot VM 中这两块栈在实现上是合二为一的，但规范层面仍是独立概念。"
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 堆 ========== -->
+    <section id="heap" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-2xl">🏔️</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">堆</h2>
+          <p class="text-sm text-emerald-400 font-mono">Heap · 线程共享</p>
+        </div>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold tag-shared">THREAD SHARED</span>
+      </div>
+
+      <div class="interview-card mb-6" style="background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(59,130,246,0.05)); border-color: rgba(16,185,129,0.15);">
+        <div class="interview-question" style="background: rgba(16,185,129,0.1); border-left-color: #10b981;">
+          <div class="flex items-start gap-3">
+            <span class="text-emerald-400 font-bold text-lg">Q</span>
+            <p class="text-white font-medium">"堆具体存什么？能举个实际例子吗？为什么需要分代？"</p>
+          </div>
+        </div>
+        <div class="interview-answer space-y-4">
+          <div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              你可以这样回答：<span class="keyword-green">堆是 JVM 管理的最大一块内存，被所有线程共享。它的唯一目的就是存放对象实例和数组。</span>几乎所有的对象实例都在这里分配内存。堆是垃圾收集器（GC）管理的主要区域，因此也被称为 "GC 堆"。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">实际例子：</strong>当你写下 <code class="text-blue-400">new User()</code> 时，这个 <code class="text-blue-400">User</code> 对象就诞生在堆中。对象的引用（比如 <code class="text-blue-400">User u</code>）可能放在栈的局部变量表里，但真正的对象数据——字段值、对象头信息——都在堆里。多个线程可以同时持有指向同一个堆中对象的引用。
+            </p>
+          </div>
+
+          <div class="code-block">
+<div class="text-slate-500">// 堆内存分配实际例子</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">HeapDemo</div> {
+<div class="text-purple-400">    public static void</div> <div class="text-blue-400">main</div>(<div class="text-blue-400">String</div>[] args) {
+<div class="text-slate-500">        // userRef 是引用变量，存在虚拟机栈的局部变量表中</div>
+<div class="text-slate-500">        // new User("Alice") 这个对象实例，分配在堆中</div>
+        <div class="text-blue-400">User</div> userRef = <div class="text-purple-400">new</div> <div class="text-blue-400">User</div>(<div class="text-green-400">"Alice"</div>);
+
+<div class="text-slate-500">        // 数组也是对象，同样分配在堆中</div>
+        <div class="text-blue-400">int</div>[] numbers = <div class="text-purple-400">new int</div>[<div class="text-amber-400">100</div>];
+
+<div class="text-slate-500">        // 两个线程共享堆中的同一个对象</div>
+        <div class="text-blue-400">Thread</div> t1 = <div class="text-purple-400">new</div> <div class="text-blue-400">Thread</div>(() -> userRef.<div class="text-blue-400">sayHi</div>());
+        <div class="text-blue-400">Thread</div> t2 = <div class="text-purple-400">new</div> <div class="text-blue-400">Thread</div>(() -> userRef.<div class="text-blue-400">sayHi</div>());
+        t1.<div class="text-blue-400">start</div>(); t2.<div class="text-blue-400">start</div>();
+    }
+}
+
+<div class="text-purple-400">class</div> <div class="text-blue-400">User</div> {
+    <div class="text-blue-400">String</div> name;  <div class="text-slate-500">// name 引用存在堆中对象里，指向字符串常量池</div>
+    <div class="text-blue-400">int</div> age;      <div class="text-slate-500">// age 基本数据直接存在堆的对象实例数据中</div>
+    <div class="text-slate-500">// ...</div>
+}
+          </div>
+
+          <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-emerald-400 font-bold">🔄</span>
+              <span class="text-sm font-semibold text-emerald-400">为什么分代？实际 GC 场景</span>
+            </div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              你可以这样回答：<span class="keyword-green">分代的依据是"弱代假说"</span>——绝大多数对象都是朝生夕灭的（比如方法内的临时对象），而熬过多次 GC 的对象很可能会长期存活。把堆划分为<strong class="text-white">年轻代（Young）</strong>和<strong class="text-white">老年代（Old）</strong>，可以针对不同生命周期的对象采用不同的回收策略，提高 GC 效率。
+            </p>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <div class="p-2 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                <div class="text-emerald-400 font-semibold mb-1">Eden</div>
+                <div class="text-slate-400">新对象出生地</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                <div class="text-emerald-400 font-semibold mb-1">Survivor</div>
+                <div class="text-slate-400">存活对象过渡区</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                <div class="text-emerald-400 font-semibold mb-1">Old</div>
+                <div class="text-slate-400">长期存活对象</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-orange-400 font-bold">⚠️</span>
+              <span class="text-sm font-semibold text-orange-400">OutOfMemoryError 实际触发</span>
+            </div>
+            <div class="code-block text-xs">
+<div class="text-slate-500">// 不断创建对象且持有引用，堆空间耗尽</div>
+<div class="text-blue-400">List</div>&lt;<div class="text-blue-400">byte</div>[]&gt; list = <div class="text-purple-400">new</div> <div class="text-blue-400">ArrayList</div>&lt;&gt;();
+<div class="text-purple-400">while</div> (<div class="text-purple-400">true</div>) {
+    list.<div class="text-blue-400">add</div>(<div class="text-purple-400">new byte</div>[<div class="text-amber-400">1024</div> * <div class="text-amber-400">1024</div>]); <div class="text-slate-500">// 每次 1MB</div>
+}
+<div class="text-slate-500">// Exception in thread "main" java.lang.OutOfMemoryError: Java heap space</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-emerald-400 font-bold">💡</span>
+              <span class="text-sm font-semibold text-emerald-400">面试话术</span>
+            </div>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              "堆是 JVM 里最大的一块共享内存，专门放 <code class="text-blue-400">new</code> 出来的对象和数组。比如 <code class="text-blue-400">new User()</code>，引用在栈里，对象本体在堆里。因为对象生命周期不同，堆被分成了年轻代和老年代——新对象先在 Eden 区，经历 Minor GC 存活下来就移到 Survivor，足够老就晋升老年代。如果对象一直创建且不被回收，最终会抛出 <span class="keyword-amber">OutOfMemoryError: Java heap space</span>。"
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 方法区 ========== -->
+    <section id="method" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-2xl">📋</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">方法区（元空间/永久代）</h2>
+          <p class="text-sm text-emerald-400 font-mono">Method Area / Metaspace · 线程共享</p>
+        </div>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold tag-shared">THREAD SHARED</span>
+      </div>
+
+      <div class="interview-card mb-6" style="background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(59,130,246,0.05)); border-color: rgba(16,185,129,0.15);">
+        <div class="interview-question" style="background: rgba(16,185,129,0.1); border-left-color: #10b981;">
+          <div class="flex items-start gap-3">
+            <span class="text-emerald-400 font-bold text-lg">Q</span>
+            <p class="text-white font-medium">"方法区具体存什么？能举个实际例子吗？永久代和元空间有什么区别？"</p>
+          </div>
+        </div>
+        <div class="interview-answer space-y-4">
+          <div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              你可以这样回答：<span class="keyword-green">方法区存储的是类级别的数据，也就是"类本身的信息"，而不是对象实例。</span>它存储已被虚拟机加载的类型信息、常量、静态变量、即时编译器编译后的代码缓存等数据。方法区在逻辑上是堆的一部分，但规范上把它描述为"堆的一个逻辑部分"，然而为了区分，通常又叫"非堆"。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">实际例子：</strong>当你写一个类 <code class="text-blue-400">public class UserService</code>，里面定义了字段、方法、静态常量 <code class="text-blue-400">static final String VERSION = "1.0"</code>。类加载器加载这个类后，<span class="keyword-green">类的全限定名、父类名、实现的接口列表、字段描述、方法描述、静态常量池</span>等信息都会存入方法区。所有线程执行这个类的方法时，都要来方法区读取这些元数据。
+            </p>
+          </div>
+
+          <div class="code-block">
+<div class="text-slate-500">// 方法区存储内容实际例子</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">OrderService</div> {
+    <div class="text-slate-500">// 1. 类型信息：类名 "com.example.OrderService"、修饰符 public、父类 Object</div>
+    <div class="text-slate-500">//    → 存入方法区</div>
+
+    <div class="text-purple-400">private static final</div> <div class="text-blue-400">String</div> <div class="text-blue-400">MAX_ITEMS</div> = <div class="text-green-400">"100"</div>;
+    <div class="text-slate-500">// 2. 静态常量：MAX_ITEMS 引用和值 "100"</div>
+    <div class="text-slate-500">//    → 存入方法区（运行时常量池）</div>
+
+    <div class="text-purple-400">private</div> <div class="text-blue-400">String</div> orderId;
+    <div class="text-slate-500">// 3. 字段信息：字段名 "orderId"、类型 String、修饰符 private</div>
+    <div class="text-slate-500">//    → 存入方法区</div>
+
+    <div class="text-purple-400">public void</div> <div class="text-blue-400">createOrder</div>() { ... }
+    <div class="text-slate-500">// 4. 方法信息：方法名 "createOrder"、参数 ()、返回值 void、字节码指令</div>
+    <div class="text-slate-500">//    → 存入方法区</div>
+}
+
+<div class="text-slate-500">// 运行时行为：</div>
+<div class="text-slate-500">// OrderService.class 被类加载器加载 → 元数据进入方法区</div>
+<div class="text-slate-500">// new OrderService() → 对象实例进入堆，但类模板仍在方法区</div>
+<div class="text-slate-500">// 100 个线程同时 new OrderService()，方法区中只有一份类信息</div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-amber-400 font-bold">📊</span>
+              <span class="text-sm font-semibold text-amber-400">永久代 vs 元空间：面试必考点</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-slate-700">
+                    <th class="text-left py-2 pr-4 text-slate-500 font-semibold">对比项</th>
+                    <th class="text-left py-2 pr-4 text-amber-400 font-semibold">永久代 PermGen（JDK 7-）</th>
+                    <th class="text-left py-2 text-emerald-400 font-semibold">元空间 Metaspace（JDK 8+）</th>
+                  </tr>
+                </thead>
+                <tbody class="text-slate-300">
+                  <tr class="border-b border-slate-800">
+                    <td class="py-2 pr-4 text-slate-400">存储位置</td>
+                    <td class="py-2 pr-4">JVM 堆内存中</td>
+                    <td class="py-2">本地内存（Native Memory）</td>
+                  </tr>
+                  <tr class="border-b border-slate-800">
+                    <td class="py-2 pr-4 text-slate-400">默认上限</td>
+                    <td class="py-2 pr-4">固定且较小（通常几十 MB）</td>
+                    <td class="py-2">无上限（受限于物理内存）</td>
+                  </tr>
+                  <tr class="border-b border-slate-800">
+                    <td class="py-2 pr-4 text-slate-400">OOM 场景</td>
+                    <td class="py-2 pr-4">加载类过多很容易 OOM</td>
+                    <td class="py-2">类加载过多仍可能 OOM，但概率降低</td>
+                  </tr>
+                  <tr>
+                    <td class="py-2 pr-4 text-slate-400">参数</td>
+                    <td class="py-2 pr-4 font-mono text-xs">-XX:PermSize / MaxPermSize</td>
+                    <td class="py-2 font-mono text-xs">-XX:MetaspaceSize / MaxMetaspaceSize</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-orange-400 font-bold">⚠️</span>
+              <span class="text-sm font-semibold text-orange-400">OutOfMemoryError 实际触发（元空间）</span>
+            </div>
+            <div class="code-block text-xs">
+<div class="text-slate-500">// 使用 CGLib 不断生成动态类，撑爆方法区</div>
+<div class="text-blue-400">Enhancer</div> enhancer = <div class="text-purple-400">new</div> <div class="text-blue-400">Enhancer</div>();
+enhancer.<div class="text-blue-400">setSuperclass</div>(<div class="text-blue-400">TargetClass</div>.<div class="text-purple-400">class</div>);
+enhancer.<div class="text-blue-400">setUseCache</div>(<div class="text-purple-400">false</div>);
+<div class="text-purple-400">while</div> (<div class="text-purple-400">true</div>) {
+    enhancer.<div class="text-blue-400">setCallback</div>((<div class="text-blue-400">MethodInterceptor</div>) (obj, method, args, proxy) -> 
+        proxy.<div class="text-blue-400">invokeSuper</div>(obj, args));
+    enhancer.<div class="text-blue-400">create</div>(); <div class="text-slate-500">// 每个 create() 都生成一个新类放入方法区</div>
+}
+<div class="text-slate-500">// Caused by: java.lang.OutOfMemoryError: Metaspace</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-emerald-400 font-bold">💡</span>
+              <span class="text-sm font-semibold text-emerald-400">面试话术</span>
+            </div>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              "方法区存的是<strong class="text-white">类的元数据</strong>，不是对象。比如类名、字段列表、方法字节码、静态变量、常量池都在这。所有线程共享同一份。JDK 8 之前叫永久代，存在 JVM 堆里，很容易因为动态生成类太多而 OOM；JDK 8 改成元空间，挪到<strong class="text-white">本地内存</strong>，默认不受 JVM 堆大小限制，但加载类太多还是会报 <span class="keyword-amber">OutOfMemoryError: Metaspace</span>。"
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 速查表 ========== -->
+    <section id="cheatsheet" class="section-anchor fade-in">
+      <div class="text-center mb-10">
+        <h2 class="text-3xl font-bold text-white mb-3">面试速查表</h2>
+        <p class="text-slate-400">六块区域一句话定义 + 一句话例子 + 异常</p>
+      </div>
+
+      <div class="glass-card rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-700 bg-slate-900/80">
+                <th class="text-left py-4 px-6 text-slate-400 font-semibold">区域</th>
+                <th class="text-left py-4 px-6 text-slate-400 font-semibold">一句话定义</th>
+                <th class="text-left py-4 px-6 text-slate-400 font-semibold">一句话例子</th>
+                <th class="text-left py-4 px-6 text-slate-400 font-semibold">异常</th>
+              </tr>
+            </thead>
+            <tbody class="text-slate-300">
+              <tr class="border-b border-slate-800 hover:bg-blue-500/5 transition-colors">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <span class="text-blue-400">📌</span>
+                    <span class="font-medium text-white">程序计数器</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">记录当前线程执行到字节码的第几行</td>
+                <td class="py-4 px-6">线程切换时的"书签"，恢复执行时知道从哪继续</td>
+                <td class="py-4 px-6"><span class="text-slate-500">无</span></td>
+              </tr>
+              <tr class="border-b border-slate-800 hover:bg-blue-500/5 transition-colors">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <span class="text-blue-400">📚</span>
+                    <span class="font-medium text-white">虚拟机栈</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">Java 方法执行的内存模型，栈帧存局部变量与操作数栈</td>
+                <td class="py-4 px-6">main() 调 a() 调 b()，三个栈帧依次压入，b 先弹出</td>
+                <td class="py-4 px-6">
+                  <span class="text-red-400">SOF</span> <span class="text-slate-500">/</span> <span class="text-orange-400">OOM</span>
+                </td>
+              </tr>
+              <tr class="border-b border-slate-800 hover:bg-blue-500/5 transition-colors">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <span class="text-blue-400">🔧</span>
+                    <span class="font-medium text-white">本地方法栈</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">为 Native 方法（C/C++）服务，与虚拟机栈类似</td>
+                <td class="py-4 px-6">Thread.start0() 是 Native 方法，执行时在此建栈帧</td>
+                <td class="py-4 px-6">
+                  <span class="text-red-400">SOF</span> <span class="text-slate-500">/</span> <span class="text-orange-400">OOM</span>
+                </td>
+              </tr>
+              <tr class="border-b border-slate-800 hover:bg-emerald-500/5 transition-colors">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <span class="text-emerald-400">🏔️</span>
+                    <span class="font-medium text-white">堆</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">存放所有对象实例和数组，GC 管理的主战场</td>
+                <td class="py-4 px-6">new User() 创建的对象本体存在这里，引用在栈里</td>
+                <td class="py-4 px-6"><span class="text-orange-400">OOM</span></td>
+              </tr>
+              <tr class="hover:bg-emerald-500/5 transition-colors">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <span class="text-emerald-400">📋</span>
+                    <span class="font-medium text-white">方法区</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">存储类元数据、常量池、静态变量、编译后代码</td>
+                <td class="py-4 px-6">User.class 的类名、字段列表、static final 常量存在这里</td>
+                <td class="py-4 px-6"><span class="text-orange-400">OOM</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 底部总结卡片 -->
+    <section class="fade-in">
+      <div class="glass-card rounded-3xl p-8 md:p-10 text-center">
+        <div class="text-4xl mb-4">🎯</div>
+        <h3 class="text-2xl font-bold text-white mb-4">面试官真正想听什么？</h3>
+        <div class="max-w-3xl mx-auto grid md:grid-cols-3 gap-6 text-left">
+          <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-blue-400 font-bold mb-2">1. 概念精准</div>
+            <p class="text-sm text-slate-400">不要背定义，要用自己的话讲清楚"这块内存到底在程序运行时扮演什么角色"。</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-emerald-400 font-bold mb-2">2. 代码落地</div>
+            <p class="text-sm text-slate-400">能指出某一行代码（如 new / 方法调用 / static）对应哪块区域的变化。</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-amber-400 font-bold mb-2">3. 异常关联</div>
+            <p class="text-sm text-slate-400">能说出什么代码会触发 SOF 或 OOM，并解释背后的内存机制。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="relative z-10 py-12 px-6 border-t border-slate-800/50">
+    <div class="max-w-5xl mx-auto text-center">
+      <p class="text-slate-600 text-sm">JVM Runtime Data Areas — 面试深度解析</p>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  </script>
+</body>
+</html>

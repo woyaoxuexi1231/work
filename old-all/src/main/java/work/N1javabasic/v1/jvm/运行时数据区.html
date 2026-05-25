@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JVM 运行时数据区域划分</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            slate: {
+              850: '#151f32',
+              900: '#0f172a',
+              950: '#020617',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --accent-private: #3b82f6;
+      --accent-shared: #10b981;
+      --accent-error: #ef4444;
+      --accent-warn: #f59e0b;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #020617;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+
+    /* 背景网格动画 */
+    .bg-grid {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image:
+              linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.15;
+      pointer-events: none;
+      z-index: 0;
+      animation: float 20s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(30px, -50px); }
+      66% { transform: translate(-20px, 30px); }
+    }
+
+    /* 卡片玻璃拟态 */
+    .glass-card {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glass-card:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 20px rgba(59, 130, 246, 0.1);
+    }
+
+    .glass-card.private:hover {
+      border-color: rgba(59, 130, 246, 0.4);
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 20px rgba(59, 130, 246, 0.15);
+    }
+
+    .glass-card.shared:hover {
+      border-color: rgba(16, 185, 129, 0.4);
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 20px rgba(16, 185, 129, 0.15);
+    }
+
+    /* 标签样式 */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .tag-private {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+
+    .tag-shared {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .tag-error {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    /* 代码块 */
+    .code-block {
+      background: rgba(2, 6, 23, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      overflow-x: auto;
+    }
+
+    /* 连接线动画 */
+    .connector-line {
+      width: 2px;
+      background: linear-gradient(to bottom, rgba(59,130,246,0.3), rgba(16,185,129,0.3));
+      position: relative;
+    }
+
+    .connector-line::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 20px;
+      background: linear-gradient(to bottom, transparent, rgba(59,130,246,0.5));
+      animation: flowDown 2s linear infinite;
+    }
+
+    @keyframes flowDown {
+      0% { top: -20px; }
+      100% { top: 100%; }
+    }
+
+    /* 脉冲动画 */
+    .pulse-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    /* 展开动画 */
+    .expand-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+      opacity: 0;
+    }
+
+    .expand-content.open {
+      max-height: 800px;
+      opacity: 1;
+    }
+
+    /* 进度条 */
+    .progress-bar {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(148, 163, 184, 0.1);
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* 滚动条美化 */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* 区域高亮 */
+    .region-highlight {
+      position: relative;
+    }
+    .region-highlight::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: inherit;
+      padding: 2px;
+      background: linear-gradient(135deg, var(--accent-private), var(--accent-shared));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+    .region-highlight:hover::before {
+      opacity: 1;
+    }
+
+    /* 表格样式 */
+    .custom-table th {
+      background: rgba(15, 23, 42, 0.8);
+      color: #94a3b8;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      padding: 1rem;
+      text-align: left;
+    }
+    .custom-table td {
+      padding: 1rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      color: #cbd5e1;
+    }
+    .custom-table tr:hover td {
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    /* 图标容器 */
+    .icon-box {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    /* 切换按钮 */
+    .toggle-btn {
+      transition: all 0.3s ease;
+    }
+    .toggle-btn.active {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    /* 异常卡片 */
+    .error-card {
+      border-left: 3px solid var(--accent-error);
+    }
+    .error-card.warn {
+      border-left-color: var(--accent-warn);
+    }
+
+    /* 视差效果 */
+    .parallax-layer {
+      will-change: transform;
+    }
+
+    /* 渐入动画 */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+<!-- 背景装饰 -->
+<div class="bg-grid"></div>
+<div class="glow-orb bg-blue-500 w-96 h-96 top-0 left-1/4"></div>
+<div class="glow-orb bg-emerald-500 w-80 h-80 bottom-1/4 right-0" style="animation-delay: -7s;"></div>
+<div class="glow-orb bg-purple-500 w-64 h-64 top-1/2 left-0" style="animation-delay: -14s;"></div>
+
+<!-- 导航 -->
+<nav class="fixed top-0 w-full z-50 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-xl">
+  <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="icon-box bg-blue-500/10 text-blue-400">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <span class="font-bold text-lg tracking-tight text-white">JVM<span class="text-blue-400">Memory</span></span>
+    </div>
+    <div class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-400">
+      <a href="#overview" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">概览</a>
+      <a href="#private" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">线程私有</a>
+      <a href="#shared" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">线程共享</a>
+      <a href="#exceptions" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">异常</a>
+      <a href="#summary" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">总结</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<header class="relative z-10 pt-32 pb-20 px-6">
+  <div class="max-w-5xl mx-auto text-center">
+    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8">
+      <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+      Java 虚拟机核心知识
+    </div>
+    <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-100 to-slate-400">
+      JVM 运行时<br>数据区域划分
+    </h1>
+    <p class="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10">
+      深入理解程序计数器、虚拟机栈、本地方法栈、堆与方法区的存储机制、生命周期及异常场景，掌握 JVM 内存管理的核心架构。
+    </p>
+    <div class="flex flex-wrap justify-center gap-4">
+      <a href="#overview" class="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all shadow-lg shadow-blue-600/25 hover:shadow-blue-500/40">
+        开始探索
+      </a>
+      <a href="#summary" class="px-8 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition-all border border-slate-700">
+        查看总结
+      </a>
+    </div>
+  </div>
+</header>
+
+<!-- 概览可视化 -->
+<section id="overview" class="relative z-10 py-20 px-6">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-16 fade-in">
+      <h2 class="text-3xl font-bold text-white mb-4">内存架构全景</h2>
+      <p class="text-slate-400">JVM 运行时数据区域按线程访问权限划分为两大类</p>
+    </div>
+
+    <!-- 可视化图表 -->
+    <div class="fade-in relative bg-slate-900/50 rounded-3xl border border-slate-800 p-8 md:p-12 overflow-hidden">
+      <div class="grid md:grid-cols-2 gap-8 relative">
+
+        <!-- 线程私有 -->
+        <div class="relative">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div>
+              <h3 class="text-xl font-bold text-white">线程私有区域</h3>
+              <p class="text-sm text-blue-400 font-medium">Thread Private</p>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="glass-card private rounded-2xl p-5 cursor-pointer group" onclick="toggleDetail('pc')">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                  <span class="text-2xl">📌</span>
+                  <div>
+                    <div class="font-semibold text-white">程序计数器</div>
+                    <div class="text-xs text-slate-400">Program Counter Register</div>
+                  </div>
+                </div>
+                <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-400 transition-colors transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div class="text-sm text-slate-400">当前线程执行的字节码行号指示器</div>
+            </div>
+
+            <div class="glass-card private rounded-2xl p-5 cursor-pointer group" onclick="toggleDetail('stack')">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                  <span class="text-2xl">📚</span>
+                  <div>
+                    <div class="font-semibold text-white">虚拟机栈</div>
+                    <div class="text-xs text-slate-400">JVM Stack</div>
+                  </div>
+                </div>
+                <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-400 transition-colors transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div class="text-sm text-slate-400">Java 方法执行的内存模型，栈帧存储局部变量与操作数栈</div>
+            </div>
+
+            <div class="glass-card private rounded-2xl p-5 cursor-pointer group" onclick="toggleDetail('native')">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                  <span class="text-2xl">🔧</span>
+                  <div>
+                    <div class="font-semibold text-white">本地方法栈</div>
+                    <div class="text-xs text-slate-400">Native Method Stack</div>
+                  </div>
+                </div>
+                <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-400 transition-colors transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div class="text-sm text-slate-400">Native 方法服务的内存区域</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 连接线（桌面端） -->
+        <div class="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex-col items-center">
+          <div class="w-px h-20 bg-gradient-to-b from-transparent via-slate-600 to-slate-600"></div>
+          <div class="w-3 h-3 rounded-full bg-slate-600 border-2 border-slate-800"></div>
+          <div class="w-px h-20 bg-gradient-to-b from-slate-600 via-slate-600 to-transparent"></div>
+        </div>
+
+        <!-- 线程共享 -->
+        <div class="relative">
+          <div class="flex items-center gap-3 mb-6 md:justify-end">
+            <div class="md:text-right">
+              <h3 class="text-xl font-bold text-white">线程共享区域</h3>
+              <p class="text-sm text-emerald-400 font-medium">Thread Shared</p>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="glass-card shared rounded-2xl p-5 cursor-pointer group" onclick="toggleDetail('heap')">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                  <span class="text-2xl">🏔️</span>
+                  <div>
+                    <div class="font-semibold text-white">堆</div>
+                    <div class="text-xs text-slate-400">Heap</div>
+                  </div>
+                </div>
+                <svg class="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition-colors transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div class="text-sm text-slate-400">存放对象实例和数组，GC 管理的主要区域</div>
+            </div>
+
+            <div class="glass-card shared rounded-2xl p-5 cursor-pointer group" onclick="toggleDetail('method')">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                  <span class="text-2xl">📋</span>
+                  <div>
+                    <div class="font-semibold text-white">方法区</div>
+                    <div class="text-xs text-slate-400">Method Area (元空间/永久代)</div>
+                  </div>
+                </div>
+                <svg class="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition-colors transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div class="text-sm text-slate-400">存储类信息、常量、静态变量、即时编译器编译后的代码</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部图例 -->
+      <div class="mt-10 pt-6 border-t border-slate-800 flex flex-wrap justify-center gap-6 text-sm">
+        <div class="flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full bg-blue-500/30 border border-blue-500"></span>
+          <span class="text-slate-400">线程私有：随线程生而生，随线程灭而灭</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500"></span>
+          <span class="text-slate-400">线程共享：所有线程共同访问，需考虑同步与 GC</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 线程私有区域详情 -->
+<section id="private" class="relative z-10 py-20 px-6 bg-slate-900/30">
+  <div class="max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-12 fade-in">
+      <div class="h-px flex-1 bg-gradient-to-r from-blue-500/50 to-transparent"></div>
+      <div class="flex items-center gap-3">
+        <span class="tag tag-private">THREAD PRIVATE</span>
+        <h2 class="text-3xl font-bold text-white">线程私有区域</h2>
+      </div>
+      <div class="h-px flex-1 bg-gradient-to-l from-blue-500/50 to-transparent"></div>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-6">
+      <!-- 程序计数器 -->
+      <div class="glass-card private rounded-2xl overflow-hidden fade-in">
+        <div class="p-6">
+          <div class="flex items-start justify-between mb-4">
+            <div class="icon-box bg-blue-500/10 text-blue-400 text-2xl">📌</div>
+            <span class="tag tag-private">私有</span>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-1">程序计数器</h3>
+          <p class="text-sm text-slate-500 mb-4 font-mono">Program Counter Register</p>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">存储内容</div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                当前线程所执行的字节码的行号指示器。若执行 Native 方法，则为空（Undefined）。
+              </p>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">内存区域</div>
+              <div class="code-block text-blue-300">
+                唯一不会发生<br>OutOfMemoryError<br>的区域
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <div class="flex items-center gap-2 text-sm">
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                <span class="text-slate-400">生命周期：</span>
+                <span class="text-white">与线程相同</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-slate-800/30 border-t border-slate-800">
+          <div class="text-xs text-slate-500 mb-2">异常类型</div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-1 rounded bg-slate-800 text-slate-500 text-xs font-mono">无</span>
+            <span class="text-xs text-slate-500">不会发生 OOM / SOF</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 虚拟机栈 -->
+      <div class="glass-card private rounded-2xl overflow-hidden fade-in">
+        <div class="p-6">
+          <div class="flex items-start justify-between mb-4">
+            <div class="icon-box bg-blue-500/10 text-blue-400 text-2xl">📚</div>
+            <span class="tag tag-private">私有</span>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-1">虚拟机栈</h3>
+          <p class="text-sm text-slate-500 mb-4 font-mono">JVM Stack</p>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">存储内容</div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                每个方法执行时创建一个<strong class="text-blue-400">栈帧</strong>（Stack Frame），存储：
+              </p>
+              <ul class="mt-2 space-y-1 text-sm text-slate-400">
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-blue-400"></span>局部变量表</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-blue-400"></span>操作数栈</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-blue-400"></span>动态链接</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-blue-400"></span>方法返回地址</li>
+              </ul>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">栈帧示意</div>
+              <div class="code-block text-slate-300 text-xs">
+                <div class="text-slate-500">// 栈帧结构</div>
+                <div class="text-yellow-400">┌─────────────────┐</div>
+                <div class="text-yellow-400">│  局部变量表      │</div>
+                <div class="text-yellow-400">│  操作数栈        │</div>
+                <div class="text-yellow-400">│  动态链接        │</div>
+                <div class="text-yellow-400">│  返回地址        │</div>
+                <div class="text-yellow-400">└─────────────────┘</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-slate-800/30 border-t border-slate-800">
+          <div class="text-xs text-slate-500 mb-2">异常类型</div>
+          <div class="flex flex-wrap gap-2">
+            <span class="px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-mono">StackOverflowError</span>
+            <span class="px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs font-mono">OutOfMemoryError</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 本地方法栈 -->
+      <div class="glass-card private rounded-2xl overflow-hidden fade-in">
+        <div class="p-6">
+          <div class="flex items-start justify-between mb-4">
+            <div class="icon-box bg-blue-500/10 text-blue-400 text-2xl">🔧</div>
+            <span class="tag tag-private">私有</span>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-1">本地方法栈</h3>
+          <p class="text-sm text-slate-500 mb-4 font-mono">Native Method Stack</p>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">存储内容</div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                为虚拟机使用到的 <strong class="text-purple-400">Native 方法</strong> 服务。与虚拟机栈作用相似，但服务对象不同。
+              </p>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">实现说明</div>
+              <div class="code-block text-slate-300 text-xs">
+                <div class="text-slate-500">// HotSpot 实现</div>
+                <div class="text-purple-400">本地方法栈</div>
+                <div class="text-slate-400">  与虚拟机栈</div>
+                <div class="text-slate-400">  合二为一</div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10">
+              <p class="text-xs text-purple-300">
+                <strong>注意：</strong>HotSpot VM 将本地方法栈与虚拟机栈合并实现，但规范上仍是独立概念。
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-slate-800/30 border-t border-slate-800">
+          <div class="text-xs text-slate-500 mb-2">异常类型</div>
+          <div class="flex flex-wrap gap-2">
+            <span class="px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-mono">StackOverflowError</span>
+            <span class="px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs font-mono">OutOfMemoryError</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 线程共享区域详情 -->
+<section id="shared" class="relative z-10 py-20 px-6">
+  <div class="max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-12 fade-in">
+      <div class="h-px flex-1 bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
+      <div class="flex items-center gap-3">
+        <span class="tag tag-shared">THREAD SHARED</span>
+        <h2 class="text-3xl font-bold text-white">线程共享区域</h2>
+      </div>
+      <div class="h-px flex-1 bg-gradient-to-l from-emerald-500/50 to-transparent"></div>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <!-- 堆 -->
+      <div class="glass-card shared rounded-2xl overflow-hidden fade-in">
+        <div class="p-6">
+          <div class="flex items-start justify-between mb-4">
+            <div class="icon-box bg-emerald-500/10 text-emerald-400 text-2xl">🏔️</div>
+            <span class="tag tag-shared">共享</span>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-1">堆</h3>
+          <p class="text-sm text-slate-500 mb-4 font-mono">Heap</p>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">存储内容</div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                存放<strong class="text-emerald-400">对象实例</strong>和<strong class="text-emerald-400">数组</strong>。是 JVM 管理的最大一块内存，也是 GC 回收的主要区域。
+              </p>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">分代结构</div>
+              <div class="space-y-2">
+                <div class="flex items-center gap-3">
+                  <div class="flex-1 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center px-3">
+                    <span class="text-xs text-emerald-400 font-medium">年轻代 Young</span>
+                  </div>
+                  <span class="text-xs text-slate-500">Eden + Survivor</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="flex-1 h-8 rounded-lg bg-emerald-600/10 border border-emerald-600/20 flex items-center px-3">
+                    <span class="text-xs text-emerald-400 font-medium">老年代 Old</span>
+                  </div>
+                  <span class="text-xs text-slate-500">Tenured</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+              <p class="text-xs text-emerald-300">
+                <strong>参数：</strong>-Xms（初始堆大小）-Xmx（最大堆大小）
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-slate-800/30 border-t border-slate-800">
+          <div class="text-xs text-slate-500 mb-2">异常类型</div>
+          <div class="flex flex-wrap gap-2">
+            <span class="px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs font-mono">OutOfMemoryError</span>
+            <span class="text-xs text-slate-500 self-center">（Java heap space）</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方法区 -->
+      <div class="glass-card shared rounded-2xl overflow-hidden fade-in">
+        <div class="p-6">
+          <div class="flex items-start justify-between mb-4">
+            <div class="icon-box bg-emerald-500/10 text-emerald-400 text-2xl">📋</div>
+            <span class="tag tag-shared">共享</span>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-1">方法区</h3>
+          <p class="text-sm text-slate-500 mb-4 font-mono">Method Area</p>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">存储内容</div>
+              <ul class="space-y-2 text-sm text-slate-300">
+                <li class="flex items-start gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span>
+                  <span>类型信息（类名、修饰符、父类、接口）</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span>
+                  <span>常量池（运行时常量池）</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span>
+                  <span>字段信息、方法信息</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span>
+                  <span>静态变量、即时编译器编译后的代码缓存</span>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">演进：永久代 → 元空间</div>
+              <div class="relative pl-4 border-l-2 border-slate-700 space-y-3">
+                <div class="relative">
+                  <div class="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-amber-500/50 border-2 border-amber-500"></div>
+                  <div class="text-xs text-amber-400 font-medium">JDK 7 及以前</div>
+                  <div class="text-xs text-slate-400">永久代（PermGen）- JVM 内存</div>
+                </div>
+                <div class="relative">
+                  <div class="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-emerald-500/50 border-2 border-emerald-500"></div>
+                  <div class="text-xs text-emerald-400 font-medium">JDK 8 及以后</div>
+                  <div class="text-xs text-slate-400">元空间（Metaspace）- 本地内存</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+              <p class="text-xs text-emerald-300">
+                <strong>参数：</strong>-XX:MetaspaceSize -XX:MaxMetaspaceSize
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-slate-800/30 border-t border-slate-800">
+          <div class="text-xs text-slate-500 mb-2">异常类型</div>
+          <div class="flex flex-wrap gap-2">
+            <span class="px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs font-mono">OutOfMemoryError</span>
+            <span class="text-xs text-slate-500 self-center">（PermGen space / Metaspace）</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 异常类型详解 -->
+<section id="exceptions" class="relative z-10 py-20 px-6 bg-slate-900/30">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-16 fade-in">
+      <h2 class="text-3xl font-bold text-white mb-4">异常类型分析</h2>
+      <p class="text-slate-400">两大核心异常：StackOverflowError 与 OutOfMemoryError</p>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-12">
+      <!-- StackOverflowError -->
+      <div class="glass-card rounded-2xl overflow-hidden error-card fade-in">
+        <div class="p-6">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div>
+              <h3 class="text-xl font-bold text-white">StackOverflowError</h3>
+              <p class="text-sm text-red-400 font-mono">栈溢出错误</p>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">触发场景</div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                线程请求的<strong class="text-red-400">栈深度</strong>超过虚拟机栈允许的最大深度时抛出。
+              </p>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">常见原因</div>
+              <ul class="space-y-2 text-sm text-slate-300">
+                <li class="flex items-start gap-2">
+                  <span class="text-red-400 mt-0.5">▸</span>
+                  <span>无限递归调用（最常见）</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-red-400 mt-0.5">▸</span>
+                  <span>方法调用链过长</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-red-400 mt-0.5">▸</span>
+                  <span>局部变量表过大导致栈帧过大</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="code-block text-xs">
+              <div class="text-slate-500">// 触发 StackOverflowError 示例</div>
+              <div class="text-purple-400">public void</div> <div class="text-blue-400">recursive</div>() {
+              <div class="text-blue-400">recursive</div>();  <div class="text-slate-500">// 无限递归</div>
+              }
+            </div>
+
+            <div class="p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-semibold text-red-400">影响区域</span>
+              </div>
+              <div class="flex gap-2">
+                <span class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs">虚拟机栈</span>
+                <span class="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 text-xs">本地方法栈</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OutOfMemoryError -->
+      <div class="glass-card rounded-2xl overflow-hidden error-card warn fade-in">
+        <div class="p-6">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div>
+              <h3 class="text-xl font-bold text-white">OutOfMemoryError</h3>
+              <p class="text-sm text-orange-400 font-mono">内存溢出错误</p>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">触发场景</div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                虚拟机栈/堆/方法区<strong class="text-orange-400">无法申请到足够的内存</strong>空间时抛出。
+              </p>
+            </div>
+
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">细分类型</div>
+              <div class="space-y-2">
+                <div class="flex items-center justify-between p-2 rounded-lg bg-slate-800/50">
+                  <span class="text-sm text-slate-300">Java heap space</span>
+                  <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-xs">堆</span>
+                </div>
+                <div class="flex items-center justify-between p-2 rounded-lg bg-slate-800/50">
+                  <span class="text-sm text-slate-300">Metaspace / PermGen space</span>
+                  <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-xs">方法区</span>
+                </div>
+                <div class="flex items-center justify-between p-2 rounded-lg bg-slate-800/50">
+                  <span class="text-sm text-slate-300">unable to create new native thread</span>
+                  <span class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs">线程创建</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="code-block text-xs">
+              <div class="text-slate-500">// 触发 OutOfMemoryError 示例（堆）</div>
+              <div class="text-purple-400">List</div>&lt;<div class="text-purple-400">byte</div>[]&gt; list = <div class="text-purple-400">new</div> <div class="text-blue-400">ArrayList</div>&lt;&gt;();
+              <div class="text-purple-400">while</div> (<div class="text-purple-400">true</div>) {
+              list.<div class="text-blue-400">add</div>(<<div class="text-purple-400">new byte</div>[1024 * 1024]); <div class="text-slate-500">// 无限分配 1MB</div>
+              }
+            </div>
+
+            <div class="p-3 rounded-lg bg-orange-500/5 border border-orange-500/10">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-semibold text-orange-400">影响区域</span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <span class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs">虚拟机栈</span>
+                <span class="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 text-xs">本地方法栈</span>
+                <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-xs">堆</span>
+                <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-xs">方法区</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 异常对比表 -->
+    <div class="glass-card rounded-2xl overflow-hidden fade-in">
+      <div class="overflow-x-auto">
+        <table class="w-full custom-table text-sm">
+          <thead>
+          <tr>
+            <th>数据区域</th>
+            <th>StackOverflowError</th>
+            <th>OutOfMemoryError</th>
+            <th>说明</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr>
+            <td class="font-medium text-white">程序计数器</td>
+            <td><span class="text-slate-500">❌ 无</span></td>
+            <td><span class="text-slate-500">❌ 无</span></td>
+            <td class="text-slate-400">唯一不会抛出这两种异常的区域</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-white">虚拟机栈</td>
+            <td><span class="text-red-400">✅ 可能</span></td>
+            <td><span class="text-orange-400">✅ 可能</span></td>
+            <td class="text-slate-400">栈深度溢出 / 栈扩展失败</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-white">本地方法栈</td>
+            <td><span class="text-red-400">✅ 可能</span></td>
+            <td><span class="text-orange-400">✅ 可能</span></td>
+            <td class="text-slate-400">与虚拟机栈类似</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-white">堆</td>
+            <td><span class="text-slate-500">❌ 无</span></td>
+            <td><span class="text-orange-400">✅ 可能</span></td>
+            <td class="text-slate-400">对象实例分配失败</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-white">方法区</td>
+            <td><span class="text-slate-500">❌ 无</span></td>
+            <td><span class="text-orange-400">✅ 可能</span></td>
+            <td class="text-slate-400">类信息/常量池分配失败</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 总结 -->
+<section id="summary" class="relative z-10 py-20 px-6">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-16 fade-in">
+      <h2 class="text-3xl font-bold text-white mb-4">知识总结</h2>
+      <p class="text-slate-400">一图掌握 JVM 运行时数据区域核心要点</p>
+    </div>
+
+    <div class="glass-card rounded-3xl p-8 md:p-12 fade-in">
+      <div class="grid md:grid-cols-2 gap-12">
+        <div>
+          <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 text-sm">1</span>
+            线程私有 vs 线程共享
+          </h3>
+          <div class="space-y-4">
+            <div class="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="tag tag-private text-xs">PRIVATE</span>
+              </div>
+              <p class="text-sm text-slate-300">
+                <strong class="text-white">程序计数器、虚拟机栈、本地方法栈</strong>与线程生命周期绑定。每个线程独立拥有，数据互不干扰，无需考虑线程安全问题。
+              </p>
+            </div>
+            <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="tag tag-shared text-xs">SHARED</span>
+              </div>
+              <p class="text-sm text-slate-300">
+                <strong class="text-white">堆、方法区</strong>被所有线程共享。堆存放对象实例，需 GC 回收；方法区存储类元数据，JDK 8 后元空间使用本地内存。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-sm">2</span>
+            异常记忆口诀
+          </h3>
+          <div class="space-y-4">
+            <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+              <div class="flex items-center gap-3 mb-3">
+                <span class="text-2xl">🧠</span>
+                <span class="font-semibold text-white">"栈可溢，堆可满，计数器最稳"</span>
+              </div>
+              <ul class="space-y-2 text-sm text-slate-400">
+                <li class="flex items-start gap-2">
+                  <span class="text-blue-400 mt-0.5">•</span>
+                  <span><strong class="text-slate-300">虚拟机栈 & 本地方法栈：</strong>StackOverflowError（深度）+ OutOfMemoryError（扩展）</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-emerald-400 mt-0.5">•</span>
+                  <span><strong class="text-slate-300">堆 & 方法区：</strong>只有 OutOfMemoryError</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-green-400 mt-0.5">•</span>
+                  <span><strong class="text-slate-300">程序计数器：</strong>无任何异常</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+              <div class="flex items-center gap-3 mb-3">
+                <span class="text-2xl">⚡</span>
+                <span class="font-semibold text-white">JDK 8 关键变化</span>
+              </div>
+              <p class="text-sm text-slate-400 leading-relaxed">
+                永久代（PermGen）被移除，方法区实现改为<strong class="text-emerald-400">元空间（Metaspace）</strong>，使用本地内存而非 JVM 堆内存，默认无上限（受限于系统内存）。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部架构图 -->
+      <div class="mt-12 pt-8 border-t border-slate-800">
+        <div class="text-center mb-8">
+          <span class="text-sm font-semibold text-slate-500 uppercase tracking-wider">JVM Runtime Data Areas</span>
+        </div>
+        <div class="max-w-3xl mx-auto">
+          <div class="rounded-2xl border border-slate-700 bg-slate-900/50 p-6 font-mono text-sm">
+            <div class="text-center text-slate-500 mb-4">┌─────────────────────────────────────────┐</div>
+            <div class="text-center text-white font-bold mb-2">JVM 运行时数据区域</div>
+            <div class="text-center text-slate-500 mb-4">└─────────────────────────────────────────┘</div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div class="space-y-2">
+                <div class="text-xs text-blue-400 text-center mb-2">【线程私有】</div>
+                <div class="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20 text-center text-blue-300">程序计数器</div>
+                <div class="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20 text-center text-blue-300">虚拟机栈</div>
+                <div class="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20 text-center text-blue-300">本地方法栈</div>
+              </div>
+              <div class="space-y-2">
+                <div class="text-xs text-emerald-400 text-center mb-2">【线程共享】</div>
+                <div class="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-center text-emerald-300">堆（Heap）</div>
+                <div class="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-center text-emerald-300">方法区（Metaspace）</div>
+                <div class="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-center text-emerald-300 text-xs">运行时常量池</div>
+              </div>
+            </div>
+
+            <div class="text-center text-slate-600 text-xs">
+              直接内存（Direct Memory）— 不属于运行时数据区域，但频繁使用
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="relative z-10 py-12 px-6 border-t border-slate-800/50">
+  <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+    <div class="flex items-center gap-3">
+      <div class="icon-box bg-slate-800 text-slate-400">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <span class="text-slate-500 text-sm">JVM Memory Architecture Guide</span>
+    </div>
+    <div class="text-slate-600 text-sm">
+      基于《深入理解 Java 虚拟机》整理
+    </div>
+  </div>
+</footer>
+
+<script>
+  // 渐入动画观察器
+  const observerOptions = {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+  };
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, observerOptions);
+
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+  // 平滑滚动
+  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function (e) {
+      e.preventDefault();
+      const target = document.querySelector(this.getAttribute('href'));
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // 详情展开（预留交互）
+  function toggleDetail(id) {
+    // 可以在这里添加展开/收起详情的逻辑
+    // 当前版本使用 hover 效果展示核心信息
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  // 导航栏滚动效果
+  let lastScroll = 0;
+  window.addEventListener('scroll', () => {
+    const nav = document.querySelector('nav');
+    const currentScroll = window.pageYOffset;
+
+    if (currentScroll > 100) {
+      nav.classList.add('shadow-lg', 'shadow-black/20');
+    } else {
+      nav.classList.remove('shadow-lg', 'shadow-black/20');
+    }
+
+    lastScroll = currentScroll;
+  });
+</script>
+</body>
+</html>
