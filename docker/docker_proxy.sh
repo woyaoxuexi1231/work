@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROXY_HOST="${PROXY_HOST:-192.168.2.3}"
+PROXY_HOST="${PROXY_HOST:-192.168.3.4}"
 PROXY_PORT="${PROXY_PORT:-7890}"
 PROXY_PROTOCOL="${PROXY_PROTOCOL:-http}"
 SYSTEMD_DOCKER_DIR="/etc/systemd/system/docker.service.d"
