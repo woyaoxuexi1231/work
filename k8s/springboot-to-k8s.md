@@ -27,90 +27,80 @@
 你的 poker 项目源码
         │
         ▼
- ① mvn package → JAR 包
+ ① mvn package → JAR 包（你在 Windows 本地打好）
         │
         ▼
- ② docker build → 镜像（已有 Dockerfile，稍作调整）
+ ② docker build → 镜像（Dockerfile 只做 COPY JAR + 打包）
         │
         ▼
- ③ docker save | ctr import → 导入到 containerd
+ ③ docker save → scp → ctr import → 导入到 K8s 集群
         │
         ▼
- ④ 写 K8s YAML → Deployment + Service
+ ④ kubectl apply → 部署 YAML
         │
         ▼
- ⑤ kubectl apply → 部署
-        │
-        ▼
- ⑥ MetalLB 分配 External IP → curl 验证
+ ⑤ MetalLB 分配 External IP → curl 验证
 ```
 
 ---
 
-## 三、Step 1：调整 Dockerfile（适配 K8s）
+## 三、Step 1：Dockerfile（直接用你现有的）
 
-你现有的 Dockerfile 可以直接用，但建议改用多阶段构建，省掉手动 `mvn package` + `cp jar` 两步：
+你已有的 Dockerfile 不需要改，单阶段构建，只做复制 JAR + 启动：
 
 ```dockerfile
-# ============================
-# poker-tracker Dockerfile (K8s 版)
-# 多阶段构建，一个 docker build 搞定全部
-# ============================
-
-# 阶段1: 构建（Maven + JDK 17）
-FROM maven:3.9-eclipse-temurin-17 AS builder
-WORKDIR /app
-COPY pom.xml .
-# 先下载依赖，利用 Docker 缓存层
-RUN mvn dependency:go-offline -B
-COPY src ./src
-RUN mvn package -DskipTests -B
-
-# 阶段2: 运行（只带 JRE，镜像小）
 FROM eclipse-temurin:17-jre-jammy
+
+ARG JAR_FILE=poker-tracker.jar
 ENV TZ=Asia/Shanghai
 ENV JAVA_OPTS="-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
 
-WORKDIR /app
-COPY --from=builder /app/target/poker-tracker-1.0.0-SNAPSHOT.jar app.jar
-
-EXPOSE 8084
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /app/app.jar"]
+VOLUME /tmp
+WORKDIR /
+COPY ${JAR_FILE} /app.jar
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS:-} -jar /app.jar"]
 ```
 
-> 注意：`pom.xml` 里 `<finalName>` 是 `poker`，但实际 JAR 名以 artifact + version 为准。如果不确定，先本地 `mvn package` 看看 target 目录下 JAR 叫什么。
+> `ARG JAR_FILE` 是构建时传入的参数，`run.sh` 里已自动传。
 
 ---
 
 ## 四、Step 2：构建镜像并导入集群
 
-在你的 **Windows** 上编译 + 构建镜像（不需要 JDK，Docker 里面有 Maven）：
+### 4.1 在 Windows 上打 JAR + 构建镜像
 
 ```powershell
 cd d:\project\poker
-docker build -t poker-tracker:1.0.0 .
+
+# 编译
+mvn clean package -DskipTests
+
+# 构建镜像（JAR_FILE 参数让 run.sh 自动找）
+bash run.sh
 ```
 
-构建完成后，把镜像传到 k8s-master：
+或者手动指定 JAR 文件名：
 
 ```powershell
-# 导出镜像
-docker save poker-tracker:1.0.0 -o poker-tracker.tar
-
-# 通过 scp 传到 k8s-master
-scp poker-tracker.tar hulei@192.168.3.100:~/poker-tracker.tar
+JAR_FILE=poker-tracker-1.0.0-SNAPSHOT.jar IMAGE_NAME=poker-tracker:1.0.0 bash run.sh
 ```
 
-在 **k8s-master** 上导入 containerd（K8s 的容器运行时）：
+### 4.2 导出并传到 k8s-master
+
+```powershell
+docker save poker-tracker:1.0.0 -o poker-tracker.tar
+scp poker-tracker.tar hulei@192.168.3.100:~/
+```
+
+### 4.3 在 k8s-master 上导入 containerd
 
 ```bash
-# 先导入 docker
 docker load -i ~/poker-tracker.tar
+# 导出镜像到 tar 包
+docker save poker-tracker:1.0.0 -o poker-tracker-1.0.0.tar
+# 导入到 k8s.io 命名空间
+ctr -n k8s.io images import poker-tracker-1.0.0.tar
 
-# 再从 docker 导入 containerd
-docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -
-
-# 验证
 crictl images | grep poker
 ```
 
@@ -441,25 +431,27 @@ kubectl apply -f all.yaml
 
 ## 快速开始命令汇总
 
-```bash
-# 1. Windows 上构建镜像
+```powershell
+# 1. Windows 上打 JAR + 构建镜像
 cd d:\project\poker
-docker build -t poker-tracker:1.0.0 .
+mvn clean package -DskipTests
+JAR_FILE=poker-tracker-1.0.0-SNAPSHOT.jar IMAGE_NAME=poker-tracker:1.0.0 bash run.sh
+```
+
+```powershell
+# 2. 导出 + 传到 k8s-master
 docker save poker-tracker:1.0.0 -o poker-tracker.tar
 scp poker-tracker.tar hulei@192.168.3.100:~/
+```
 
-# 2. k8s-master 上导入镜像
+```bash
+# 3. k8s-master 上导入 containerd + 部署
 docker load -i ~/poker-tracker.tar
 docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -
 
-# 3. 部署
-mkdir -p ~/poker-k8s
-# 把上面的 all.yaml 写入 ~/poker-k8s/all.yaml
 kubectl apply -f ~/poker-k8s/all.yaml
-
-# 4. 等待就绪 + 获取访问地址
 kubectl wait --for=condition=ready pod -l app=poker-tracker --timeout=120s
 kubectl get svc poker-tracker
 
-# 5. 浏览器打开 http://<EXTERNAL-IP>/poker
+# 4. 浏览器打开 http://<EXTERNAL-IP>/poker
 ```
