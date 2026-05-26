@@ -96,13 +96,24 @@ scp poker-tracker.tar hulei@192.168.3.100:~/
 
 ```bash
 docker load -i ~/poker-tracker.tar
-# 导出镜像到 tar 包
-docker save poker-tracker:1.0.0 -o poker-tracker-1.0.0.tar
-# 导入到 k8s.io 命名空间
-ctr -n k8s.io images import poker-tracker-1.0.0.tar
-
+docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -
 crictl images | grep poker
 ```
+
+> **重要**：`imagePullPolicy: Never` 意味着 Pod 被调度到哪个节点，哪个节点就必须有镜像。把镜像也分发到 worker 节点：
+>
+> ```bash
+> for node in k8s-node1 k8s-node2; do
+>   scp ~/poker-tracker.tar root@$node:~/
+>   ssh root@$node "docker load -i ~/poker-tracker.tar && docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -"
+> done
+> ```
+>
+> 如果不想分发，也可以在 Deployment 的 `spec.template.spec` 下加一行把 Pod 锁在 master：
+> ```yaml
+> nodeSelector:
+>   node-role.kubernetes.io/control-plane: ""
+> ```
 
 ---
 
