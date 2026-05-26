@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQS CLH 队列 · 共享唤醒传播 · CDL/Semaphore 实战陷阱</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: { slate: { 850: '#151f32', 950: '#0a0f1c' } }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Noto Sans SC', system-ui, sans-serif; background: #0a0f1c; color: #cbd5e1; }
+    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+    /* Node visualization */
+    .aqs-node {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      border: 1px solid #334155; border-radius: 8px; font-size: 11px;
+      transition: all 0.3s ease; position: relative;
+    }
+    .node-exclusive { background: rgba(99,102,241,0.1); border-color: rgba(99,102,241,0.3); }
+    .node-shared { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); }
+    .node-cancelled { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); opacity: 0.6; }
+    .node-active { ring: 2px; box-shadow: 0 0 0 2px rgba(251,191,36,0.5); }
+
+    /* Arrow connector */
+    .arrow-down {
+      width: 2px; height: 20px; background: #334155; margin: 0 auto;
+      position: relative;
+    }
+    .arrow-down::after {
+      content: ''; position: absolute; bottom: -3px; left: -3px;
+      border-left: 4px solid transparent; border-right: 4px solid transparent;
+      border-top: 5px solid #334155;
+    }
+
+    /* Token colors */
+    .tk-kw { color: #c678dd; }
+    .tk-num { color: #d19a66; }
+    .tk-cmt { color: #5c6370; font-style: italic; }
+    .tk-type { color: #e5c07b; }
+    .tk-fn { color: #61afef; }
+    .tk-var { color: #e06c75; }
+    .tk-ann { color: #e5c07b; }
+  </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+
+<!-- Header -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+  <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-[10px] font-bold tracking-widest text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded uppercase">AQS Deep Dive</span>
+      <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">CLH Queue · Shared Propagation · CountDownLatch/Semaphore Pitfalls</h1>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 py-16 space-y-20">
+
+  <!-- ═══════════════ HERO ═══════════════ -->
+  <section class="text-center max-w-3xl mx-auto fade-up">
+    <h2 class="text-3xl sm:text-4xl font-black mb-5 leading-tight">
+      AQS 的灵魂：<br>
+      <span class="text-cyan-400">CLH 队列</span>入队唤醒 &
+      <span class="text-emerald-400">共享传播</span>机制
+    </h2>
+    <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+      ReentrantLock 的公平/非公平、CountDownLatch 的一次性、Semaphore 的限流，
+      底层全靠 AQS 的 CLH 变体队列。本篇从<strong class="text-slate-200">节点级 CAS 操作</strong>画出入队唤醒全流程，
+      重点拆解共享模式下 <code class="mono text-emerald-300">doReleaseShared</code> 如何像多米诺骨牌一样唤醒一整串节点，
+      最后用线上事故讲透 CDL 和 Semaphore 的工程陷阱。
+    </p>
+  </section>
+
+  <!-- ═══════════════ SECTION 1: CLH ENQUEUE & WAKEUP ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold text-sm">1</span>
+      <h3 class="text-xl font-bold text-white">ReentrantLock 下 CLH 队列的入队与唤醒</h3>
+    </div>
+
+    <p class="text-sm text-slate-400 leading-relaxed mb-5">
+      AQS 的 CLH 是一个<strong class="text-slate-200">FIFO 双向链表</strong>。每个节点封装了等待线程、模式（独占/共享）和前驱/后继指针。
+      以下是 ReentrantLock.lock() 失败后的完整入队 + park/unpark 流程：
+    </p>
+
+    <!-- Enqueue Flow -->
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <div class="bg-slate-900 border border-indigo-500/20 rounded-2xl p-6">
+        <h4 class="text-indigo-400 font-bold text-sm mb-4">📥 入队流程 (addWaiter + enq)</h4>
+        <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+          <div class="flex gap-3 items-start">
+            <span class="text-indigo-400 font-bold mono w-5 flex-shrink-0">①</span>
+            <div><strong class="text-slate-300">创建节点：</strong><code class="mono text-[10px]">new Node(EXCLUSIVE, thread)</code></div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <span class="text-indigo-400 font-bold mono w-5 flex-shrink-0">②</span>
+            <div><strong class="text-slate-300">快速尝试：</strong>CAS 将新节点设为 tail。若成功且原 tail 为 null（首次），同时初始化 head。</div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <span class="text-indigo-400 font-bold mono w-5 flex-shrink-0">③</span>
+            <div><strong class="text-slate-300">自旋入队：</strong>CAS 失败则进入 <code class="mono text-[10px]">enq()</code> 无限循环：<br>
+              • 读取当前 tail → 设置 node.prev = tail<br>
+              • <strong class="text-indigo-300">CAS(tail, oldTail, node)</strong><br>
+              • 成功后设置 oldTail.next = node<br>
+              ⚠️ 注意：prev 在 CAS 前设置，next 在 CAS 后设置。这保证了从 tail 向前遍历总是安全的。</div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <span class="text-indigo-400 font-bold mono w-5 flex-shrink-0">④</span>
+            <div><strong class="text-slate-300">acquireQueued：</strong>入队后自旋检查前驱是否为 head。若是，再次 tryAcquire。成功则将自己设为新 head（清除 thread 引用帮助 GC）。否则 shouldParkAfterFailedAcquire → park()。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Queue -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <h4 class="text-slate-400 font-bold text-sm mb-4">🔗 CLH 队列快照（3个线程等待）</h4>
+        <div class="space-y-0">
+          <!-- Head -->
+          <div class="aqs-node node-exclusive" style="border-style:dashed; opacity:0.7;">
+            <span class="text-[10px] text-slate-500 font-bold w-12">HEAD</span>
+            <span class="mono text-[10px] text-slate-500">thread=null</span>
+            <span class="ml-auto text-[9px] text-slate-600">已获锁/哨兵</span>
+          </div>
+          <div class="arrow-down"></div>
+
+          <!-- Node 1 -->
+          <div class="aqs-node node-exclusive node-active">
+            <span class="text-[10px] text-amber-400 font-bold w-12">Node₁</span>
+            <span class="mono text-[10px] text-slate-300">T-A (EXCLUSIVE)</span>
+            <span class="ml-auto text-[9px] text-amber-400">← pred=head ✓</span>
+          </div>
+          <div class="arrow-down"></div>
+
+          <!-- Node 2 -->
+          <div class="aqs-node node-exclusive">
+            <span class="text-[10px] text-slate-400 font-bold w-12">Node₂</span>
+            <span class="mono text-[10px] text-slate-400">T-B (EXCLUSIVE)</span>
+            <span class="ml-auto text-[9px] text-slate-600">waitStatus=SIGNAL</span>
+          </div>
+          <div class="arrow-down"></div>
+
+          <!-- Tail -->
+          <div class="aqs-node node-exclusive">
+            <span class="text-[10px] text-slate-400 font-bold w-12">TAIL</span>
+            <span class="mono text-[10px] text-slate-400">T-C (EXCLUSIVE)</span>
+            <span class="ml-auto text-[9px] text-slate-600">刚入队</span>
+          </div>
+        </div>
+
+        <div class="mt-4 text-[10px] text-slate-500 leading-relaxed">
+          💡 <strong class="text-slate-400">关键设计：</strong>head 是哨兵节点，不关联线程。
+          只有 head 的后继才有资格 tryAcquire。
+          其他节点通过 <code class="mono text-slate-400">waitStatus=SIGNAL(-1)</code>
+          告知前驱"释放时记得唤醒我"。
+        </div>
+      </div>
+    </div>
+
+    <!-- Wakeup Flow -->
+    <div class="bg-slate-900 border border-amber-500/20 rounded-2xl p-6">
+      <h4 class="text-amber-400 font-bold text-sm mb-4">⏰ 唤醒流程 (unlock → unparkSuccessor)</h4>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+          <div class="flex gap-3 items-start">
+            <span class="text-amber-400 font-bold mono w-5 flex-shrink-0">①</span>
+            <div><strong class="text-slate-300">release：</strong>tryRelease(state-1) 成功（state=0）</div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <span class="text-amber-400 font-bold mono w-5 flex-shrink-0">②</span>
+            <div><strong class="text-slate-300">unparkSuccessor(head)：</strong><br>
+              • 将 head.waitStatus 置 0（CANCELLED 或 0）<br>
+              • 从 tail 向前找第一个非 CANCELLED 节点 s<br>
+              • <code class="mono text-[10px]">LockSupport.unpark(s.thread)</code></div>
+          </div>
+          <div class="flex gap-3 items-start">
+            <span class="text-amber-400 font-bold mono w-5 flex-shrink-0">③</span>
+            <div><strong class="text-slate-300">被唤醒线程：</strong>回到 acquireQueued 自旋，发现 pred==head，tryAcquire 成功，setHead 将自己变为新 head。</div>
+          </div>
+        </div>
+        <div class="bg-slate-950 rounded-lg p-4">
+                    <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-kw">private void</span> <span class="tk-fn">unparkSuccessor</span>(Node node) {
+  <span class="tk-cmt">// 清除 signal 状态</span>
+  <span class="tk-kw">int</span> ws = node.waitStatus;
+  <span class="tk-kw">if</span> (ws &lt; <span class="tk-num">0</span>)
+    compareAndSetWaitStatus(node, ws, <span class="tk-num">0</span>);
+
+  <span class="tk-cmt">// 从 tail 向前找有效后继</span>
+  <span class="tk-cmt">// ⚠️ 为什么从后往前？因为 next</span>
+  <span class="tk-cmt">// 指针可能还没设置好（入队</span>
+  <span class="tk-cmt">// CAS 成功但 next 赋值前）</span>
+  Node s = node.next;
+  <span class="tk-kw">if</span> (s == <span class="tk-kw">null</span> || s.waitStatus > <span class="tk-num">0</span>) {
+    s = <span class="tk-kw">null</span>;
+    <span class="tk-kw">for</span> (Node t = tail; t != <span class="tk-kw">null</span> && t != node; t = t.prev)
+      <span class="tk-kw">if</span> (t.waitStatus &lt;= <span class="tk-num">0</span>) s = t;
+  }
+  <span class="tk-kw">if</span> (s != <span class="tk-kw">null</span>)
+    LockSupport.<span class="tk-fn">unpark</span>(s.thread);
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 2: SHARED PROPAGATION ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm">2</span>
+      <h3 class="text-xl font-bold text-white">共享模式的"传播唤醒"：doReleaseShared 多米诺效应</h3>
+    </div>
+
+    <p class="text-sm text-slate-400 leading-relaxed mb-5">
+      独占模式下，release 只唤醒一个后继。但在共享模式（Semaphore/CDL/ReadWriteLock.read）下，
+      一个 release 可能需要唤醒<strong class="text-slate-200">一连串连续的共享节点</strong>。这就是"传播"机制。
+    </p>
+
+    <!-- Two key methods -->
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
+        <h4 class="text-emerald-400 font-bold text-sm mb-3">tryAcquireShared 中的传播</h4>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto mb-3"><code><span class="tk-kw">final boolean</span> <span class="tk-fn">tryAcquireShared_nanos</span>(...) {
+  <span class="tk-kw">for</span> (;;) {
+    Node p = node.predecessor();
+    <span class="tk-kw">if</span> (p == head) {
+      <span class="tk-kw">int</span> r = <span class="tk-fn">tryAcquireShared</span>(arg);
+      <span class="tk-kw">if</span> (r >= <span class="tk-num">0</span>) {
+        <span class="tk-cmt">// ✅ 获取成功 → setHeadAndPropagate</span>
+        <span class="tk-fn">setHeadAndPropagate</span>(node, r);
+        <span class="tk-kw">return true</span>;
+      }
+    }
+    <span class="tk-cmt">// 失败则 park...</span>
+  }
+}</code></pre>
+        <p class="text-[10px] text-slate-500 leading-relaxed">
+          <code class="mono text-emerald-300">setHeadAndPropagate</code> 不仅将自己设为 head，
+          还会检查：<strong class="text-slate-300">如果剩余许可 > 0 或后继也是共享节点</strong>，
+          就继续调用 doReleaseShared 唤醒下一个。
+        </p>
+      </div>
+
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
+        <h4 class="text-emerald-400 font-bold text-sm mb-3">doReleaseShared 核心逻辑</h4>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto mb-3"><code><span class="tk-kw">private void</span> <span class="tk-fn">doReleaseShared</span>() {
+  <span class="tk-kw">for</span> (;;) {
+    Node h = head;
+    <span class="tk-kw">if</span> (h != <span class="tk-kw">null</span> && h != tail) {
+      <span class="tk-kw">int</span> ws = h.waitStatus;
+      <span class="tk-kw">if</span> (ws == SIGNAL) {
+        <span class="tk-cmt">// CAS 将 SIGNAL → 0</span>
+        <span class="tk-kw">if</span> (!<span class="tk-fn">compareAndSetWaitStatus</span>(h, SIGNAL, <span class="tk-num">0</span>))
+          <span class="tk-kw">continue</span>; <span class="tk-cmt">// 重试</span>
+        <span class="tk-fn">unparkSuccessor</span>(h);
+      }
+      <span class="tk-kw">else if</span> (ws == <span class="tk-num">0</span> &&
+        !<span class="tk-fn">compareAndSetWaitStatus</span>(h, <span class="tk-num">0</span>, PROPAGATE))
+        <span class="tk-kw">continue</span>; <span class="tk-cmt">// 标记传播</span>
+    }
+    <span class="tk-kw">if</span> (h == head) <span class="tk-kw">break</span>;
+    <span class="tk-cmt">// head 变了说明有新节点被唤醒并设头</span>
+    <span class="tk-cmt">// → 继续循环传播！</span>
+  }
+}</code></pre>
+        <p class="text-[10px] text-slate-500 leading-relaxed">
+          <code class="mono text-emerald-300">PROPAGATE(-3)</code> 状态是关键：
+          它告诉后续被唤醒的共享节点"即使你获取时发现 r==0，也要继续传播"，
+          防止因时序问题导致的唤醒丢失。
+        </p>
+      </div>
+    </div>
+
+    <!-- Propagation Visualization -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-5 text-center">传播唤醒可视化：Semaphore(3) 释放 1 个许可</h4>
+
+      <div class="space-y-4">
+        <!-- Before -->
+        <div>
+          <div class="text-[10px] text-slate-500 mono font-bold mb-2">BEFORE: state=0, 4个共享节点等待</div>
+          <div class="flex flex-wrap gap-2 items-center">
+            <div class="aqs-node node-shared" style="border-style:dashed;opacity:0.6;padding:4px 8px;">
+              <span class="text-[9px] text-slate-500">HEAD</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-shared node-active" style="padding:4px 8px;">
+              <span class="text-[9px] text-emerald-300">S₁(SIGNAL)</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-shared" style="padding:4px 8px;">
+              <span class="text-[9px] text-emerald-300">S₂(SIGNAL)</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-shared" style="padding:4px 8px;">
+              <span class="text-[9px] text-emerald-300">S₃(SIGNAL)</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-exclusive" style="padding:4px 8px;">
+              <span class="text-[9px] text-indigo-300">E₄(SIGNAL)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step by step -->
+        <div class="space-y-2 pl-4 border-l-2 border-emerald-500/30">
+          <div class="text-[10px] text-emerald-300">
+            ① release(1) → state=1 → doReleaseShared → unpark S₁
+          </div>
+          <div class="text-[10px] text-emerald-300">
+            ② S₁ 唤醒 → tryAcquireShared(1) 返回 0 (state=0) → setHeadAndPropagate
+          </div>
+          <div class="text-[10px] text-emerald-300">
+            ③ propagate=true (因为后继 S₂ 是共享) → 再次 doReleaseShared → unpark S₂
+          </div>
+          <div class="text-[10px] text-emerald-300">
+            ④ S₂ 唤醒 → tryAcquireShared(1) 返回 -1 (state=0, 无剩余) → park
+          </div>
+          <div class="text-[10px] text-amber-300">
+            ⚠️ 但 S₂ 被唤醒时 head 已变 → setHeadAndPropagate 中检查到 PROPAGATE 标记 → 继续传播 → unpark S₃
+          </div>
+          <div class="text-[10px] text-slate-500">
+            ⑤ S₃ 唤醒 → tryAcquireShared 返回 -1 → 无 PROPAGATE → 停止传播
+          </div>
+          <div class="text-[10px] text-indigo-300">
+            ⑥ E₄ 不会被唤醒（独占节点阻断传播链）
+          </div>
+        </div>
+
+        <!-- After -->
+        <div>
+          <div class="text-[10px] text-slate-500 mono font-bold mb-2">AFTER: S₁ 获锁成为新 head，S₂/S₃ 经历了一次无效唤醒后重新 park</div>
+          <div class="flex flex-wrap gap-2 items-center">
+            <div class="aqs-node node-shared" style="border-style:dashed;opacity:0.6;padding:4px 8px;">
+              <span class="text-[9px] text-slate-500">HEAD(S₁)</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-shared" style="padding:4px 8px;">
+              <span class="text-[9px] text-slate-400">S₂(parked)</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-shared" style="padding:4px 8px;">
+              <span class="text-[9px] text-slate-400">S₃(parked)</span>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="aqs-node node-exclusive" style="padding:4px 8px;">
+              <span class="text-[9px] text-indigo-300">E₄(SIGNAL)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+        <p class="text-[10px] text-emerald-200/80 leading-relaxed">
+          <strong>为什么要传播而不是只唤醒一个？</strong>
+          因为共享模式下多个线程可以同时持有许可。如果只唤醒 S₁，
+          而 S₁ 获取后发现还有剩余许可却不唤醒 S₂，S₂ 就会永远沉睡直到下一次 release。
+          传播机制确保了"只要有许可可用，所有连续共享节点都有机会竞争"。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 3: COUNTDOWNLATCH TRAPS ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">3</span>
+      <h3 class="text-xl font-bold text-white">CountDownLatch 陷阱：不可重用与虚假完成</h3>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <!-- Trap 1 -->
+      <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-rose-400 text-lg">💥</span>
+          <h4 class="text-rose-400 font-bold text-sm">陷阱一：不可重用</h4>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed mb-3">
+          CDL 的 state 从 N 递减到 0 后就<strong class="text-rose-300">永久停留在 0</strong>。
+          之后所有 await() 立即返回，countDown() 变成空操作。
+          没有 reset() 方法。
+        </p>
+        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mb-3">
+                    <pre class="text-[10px] mono text-rose-200/70 leading-relaxed"><code><span class="tk-cmt">// ❌ 错误：复用 CDL 做循环屏障</span>
+CountDownLatch cdl = <span class="tk-kw">new</span> CountDownLatch(<span class="tk-num">3</span>);
+<span class="tk-kw">for</span> (<span class="tk-kw">int</span> round = <span class="tk-num">0</span>; round &lt; <span class="tk-num">10</span>; round++) {
+    submitTasks(cdl);  <span class="tk-cmt">// 第2轮起 await 秒过</span>
+    cdl.await();       <span class="tk-cmt">// ⚠️ 不再阻塞！</span>
+    <span class="tk-cmt">// cdl.countDown() 无效</span>
+}</code></pre>
+        </div>
+        <p class="text-[10px] text-emerald-300 leading-relaxed">
+          ✅ <strong>修复：</strong>需要可重用屏障请用 <code class="mono text-emerald-300">CyclicBarrier</code>。
+          它内部有 generation 概念，每轮完成后自动重置。
+        </p>
+      </div>
+
+      <!-- Trap 2 -->
+      <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-rose-400 text-lg">💥</span>
+          <h4 class="text-rose-400 font-bold text-sm">陷阱二：异常吞没导致永久阻塞</h4>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed mb-3">
+          如果某个子任务抛异常而未执行 countDown()，
+          主线程的 await() 将<strong class="text-rose-300">永远阻塞</strong>。
+          CDL 不感知任务成功/失败，只计数。
+        </p>
+        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mb-3">
+                    <pre class="text-[10px] mono text-rose-200/70 leading-relaxed"><code><span class="tk-cmt">// ❌ 危险：异常路径遗漏 countDown</span>
+executor.submit(() -> {
+    process(data);     <span class="tk-cmt">// 可能抛异常</span>
+    cdl.countDown();   <span class="tk-cmt">// 异常时跳过!</span>
+});
+
+<span class="tk-cmt">// ✅ 安全写法</span>
+executor.submit(() -> {
+    <span class="tk-kw">try</span> { process(data); }
+    <span class="tk-kw">finally</span> { cdl.countDown(); }
+});</code></pre>
+        </div>
+        <p class="text-[10px] text-emerald-300 leading-relaxed">
+          ✅ <strong>最佳实践：</strong>始终在 finally 中 countDown。
+          或使用带超时的 <code class="mono text-emerald-300">await(timeout, unit)</code> 兜底。
+        </p>
+      </div>
+    </div>
+
+    <!-- Trap 3 -->
+    <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-amber-400 text-lg">⚠️</span>
+        <h4 class="text-amber-400 font-bold text-sm">陷阱三：countDown 与 await 的顺序竞态</h4>
+      </div>
+      <p class="text-xs text-slate-400 leading-relaxed mb-3">
+        如果在提交任务<strong class="text-slate-200">之前</strong>就调用了 await，或者任务执行极快在主线程 await 之前就全部 countDown 完毕，
+        逻辑上没问题（await 会立即返回）。但如果 count 初始化为 0，await 永远不阻塞——这可能是 bug 而非预期行为。
+      </p>
+      <p class="text-[10px] text-slate-500 leading-relaxed">
+        💡 <strong class="text-slate-400">调试技巧：</strong>生产环境建议封装 CDL，记录 countDown 调用栈和 await 超时信息，
+        便于排查"为什么 latch 没拦住"或"为什么 latch 卡住了"。
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 4: SEMAPHORE TRAPS ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 font-bold text-sm">4</span>
+      <h3 class="text-xl font-bold text-white">Semaphore 陷阱：为什么不能替代 CyclicBarrier？</h3>
+    </div>
+
+    <div class="bg-slate-900 border border-purple-500/20 rounded-2xl p-6 mb-6">
+      <h4 class="text-purple-400 font-bold text-sm mb-4">核心区别：信号量 ≠ 屏障</h4>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div>
+          <h5 class="text-slate-300 font-bold text-xs mb-2 uppercase tracking-wider">Semaphore 的语义</h5>
+          <ul class="text-xs text-slate-400 space-y-2 leading-relaxed">
+            <li class="flex gap-2"><span class="text-purple-400">•</span> <strong class="text-slate-300">许可计数器</strong>：控制同时访问资源的线程数</li>
+            <li class="flex gap-2"><span class="text-purple-400">•</span> acquire/release <strong class="text-slate-300">完全解耦</strong>：不要求配对，不要求同一线程</li>
+            <li class="flex gap-2"><span class="text-purple-400">•</span> <strong class="text-slate-300">无"轮次"概念</strong>：没有 generation，无法区分"这一批"和"下一批"</li>
+            <li class="flex gap-2"><span class="text-purple-400">•</span> 允许<strong class="text-slate-300">超额释放</strong>：release(100) 合法，permits 可以超过初始值</li>
+          </ul>
+        </div>
+        <div>
+          <h5 class="text-slate-300 font-bold text-xs mb-2 uppercase tracking-wider">CyclicBarrier 的语义</h5>
+          <ul class="text-xs text-slate-400 space-y-2 leading-relaxed">
+            <li class="flex gap-2"><span class="text-emerald-400">•</span> <strong class="text-slate-300">同步点</strong>：N 个线程必须全部到达才能继续</li>
+            <li class="flex gap-2"><span class="text-emerald-400">•</span> await 是<strong class="text-slate-300">原子集合操作</strong>：要么全过，要么全等</li>
+            <li class="flex gap-2"><span class="text-emerald-400">•</span> <strong class="text-slate-300">有 generation</strong>：每轮完成后自动重置，支持循环使用</li>
+            <li class="flex gap-2"><span class="text-emerald-400">•</span> 支持 <strong class="text-slate-300">barrierAction</strong>：所有线程到齐后执行一次汇总逻辑</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Why Semaphore fails as Barrier -->
+    <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5 mb-6">
+      <h4 class="text-rose-400 font-bold text-sm mb-3">💥 用 Semaphore 模拟 Barrier 的经典翻车</h4>
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div>
+                    <pre class="text-[10px] mono text-rose-200/70 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-cmt">// ❌ 试图用 Semaphore 做 3 线程屏障</span>
+Semaphore sem = <span class="tk-kw">new</span> Semaphore(<span class="tk-num">0</span>);
+
+<span class="tk-cmt">// 每个 worker:</span>
+doWork();
+sem.release();    <span class="tk-cmt">// 签到</span>
+sem.acquire(<span class="tk-num">3</span>);   <span class="tk-cmt">// 等齐3个</span>
+sem.release(<span class="tk-num">3</span>);   <span class="tk-cmt">// 放行所有人</span>
+doNextPhase();</code></pre>
+        </div>
+        <div class="space-y-2 text-xs text-slate-400 leading-relaxed">
+          <p><strong class="text-rose-300">问题 1：竞态条件</strong></p>
+          <p class="text-[10px]">
+            T1 release → permits=1<br>
+            T2 release → permits=2<br>
+            T3 release → permits=3<br>
+            T1 acquire(3) 成功 → permits=0 ← <strong class="text-rose-300">T1 独自通过！</strong><br>
+            T2 acquire(3) 阻塞 ← T2/T3 永远等不到
+          </p>
+          <p class="mt-2"><strong class="text-rose-300">问题 2：第二轮污染</strong></p>
+          <p class="text-[10px]">
+            即使第一轮侥幸正确，release(3) 后 permits=3。
+            第二轮如果有线程提前 release，permits 可能累积到 6，
+            导致 acquire(3) 不需要等齐就能通过。<strong class="text-rose-300">屏障语义彻底崩塌。</strong>
+          </p>
+          <p class="mt-2 text-emerald-300 text-[10px]">
+            ✅ <strong>正确做法：</strong>直接用 CyclicBarrier(3)。
+            它的 await() 内部用 ReentrantLock + Condition 保证原子性，
+            用 generation 隔离轮次，不可能出现上述问题。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Other Semaphore traps -->
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+        <h4 class="text-amber-400 font-bold text-sm mb-2">⚠️ 泄漏陷阱</h4>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          acquire 后未在 finally 中 release → 许可永久减少 → 最终所有线程阻塞。
+          比 ReentrantLock 更危险，因为 Semaphore <strong class="text-slate-300">没有 owner 概念</strong>，
+          JVM 无法检测"谁持有了许可但没还"。
+        </p>
+      </div>
+      <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+        <h4 class="text-amber-400 font-bold text-sm mb-2">⚠️ 公平性陷阱</h4>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          默认非公平模式下，刚 release 的许可可能被刚到的线程抢走，
+          而非给队列头部等待最久的线程。高负载下可能导致<strong class="text-slate-300">线程饥饿</strong>。
+          对延迟敏感的场景务必 <code class="mono text-[10px]">new Semaphore(n, true)</code>。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ COMPARISON TABLE ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-400 font-bold text-sm">∑</span>
+      <h3 class="text-xl font-bold text-white">三者对比速查表</h3>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-800">
+      <table class="w-full text-xs min-w-[600px]">
+        <thead>
+        <tr class="bg-slate-900/80 border-b border-slate-800">
+          <th class="text-left px-4 py-3 text-slate-400 font-semibold">特性</th>
+          <th class="text-center px-4 py-3 text-rose-400 font-bold">CountDownLatch</th>
+          <th class="text-center px-4 py-3 text-purple-400 font-bold">Semaphore</th>
+          <th class="text-center px-4 py-3 text-emerald-400 font-bold">CyclicBarrier</th>
+        </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60 text-slate-400">
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">核心语义</td>
+          <td class="text-center px-4 py-3">等待 N 个事件完成</td>
+          <td class="text-center px-4 py-3">限制并发访问数</td>
+          <td class="text-center px-4 py-3">N 个线程互相等待</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">可重用</td>
+          <td class="text-center px-4 py-3 text-rose-400 font-bold">❌ 一次性</td>
+          <td class="text-center px-4 py-3 text-emerald-400 font-bold">✅ 持续可用</td>
+          <td class="text-center px-4 py-3 text-emerald-400 font-bold">✅ 循环重用</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">参与方</td>
+          <td class="text-center px-4 py-3">1 等多 / 多等 1</td>
+          <td class="text-center px-4 py-3">任意数量</td>
+          <td class="text-center px-4 py-3">N 等 N（对称）</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">AQS 模式</td>
+          <td class="text-center px-4 py-3 mono">Shared</td>
+          <td class="text-center px-4 py-3 mono">Shared</td>
+          <td class="text-center px-4 py-3 mono">ReentrantLock + Condition</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">回调动作</td>
+          <td class="text-center px-4 py-3 text-slate-600">—</td>
+          <td class="text-center px-4 py-3 text-slate-600">—</td>
+          <td class="text-center px-4 py-3 text-emerald-300">barrierAction</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">异常处理</td>
+          <td class="text-center px-4 py-3">需手动 finally</td>
+          <td class="text-center px-4 py-3">需手动 finally</td>
+          <td class="text-center px-4 py-3 text-emerald-300">BrokenBarrierException 自动通知</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">典型场景</td>
+          <td class="text-center px-4 py-3">启动门、结果汇聚</td>
+          <td class="text-center px-4 py-3">连接池、限流、资源池</td>
+          <td class="text-center px-4 py-3">并行计算分阶段、多线程测试</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════════ FINAL SUMMARY ═══════════════ -->
+  <section class="fade-up">
+    <div class="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+      <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+        <span class="text-xl">🏁</span> 终极总结
+      </h3>
+      <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+        <p>
+          <strong class="text-indigo-400">CLH 队列</strong>的精妙在于：prev 先于 CAS 设置保证反向遍历安全，
+          next 后于 CAS 设置避免读到未初始化节点。唤醒时从 tail 向前找后继正是为了应对这个时序窗口。
+        </p>
+        <p>
+          <strong class="text-emerald-400">共享传播</strong>通过 PROPAGATE 状态和 setHeadAndPropagate 的循环检查，
+          解决了"唤醒丢失"这个困扰早期并发库的经典难题。代价是偶尔的无效唤醒（spurious wakeup），
+          但正确性优先于性能——这是 Doug Lea 一贯的设计哲学。
+        </p>
+        <p>
+          <strong class="text-rose-400">CountDownLatch</strong> 是一次性的倒计时器，不是屏障。
+          <strong class="text-purple-400">Semaphore</strong> 是许可计数器，不是同步点。
+          混淆它们的语义是并发编程中最常见的工程事故之一。
+          记住：<strong class="text-slate-200">选错工具比不用工具更危险</strong>，因为它看起来"能跑"，直到某天在高负载下悄然崩塌。
+        </p>
+        <p class="pt-3 border-t border-slate-800 text-xs text-slate-500">
+          💡 <strong class="text-slate-300">选型口诀：</strong>
+          "等完成用 CDL，限并发用 Sem，互等同步用 CB。
+          CDL 用完即弃，Sem 必配 finally，CB 才敢循环用。"
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-8 mt-8">
+  <div class="max-w-5xl mx-auto px-6 text-center">
+    <p class="text-slate-600 text-[11px]">
+      AQS CLH Queue · Shared Propagation · doReleaseShared · CountDownLatch · Semaphore · CyclicBarrier · Concurrency Pitfalls
+    </p>
+  </div>
+</footer>
+
+<!-- Scroll Observer -->
+<script>
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>

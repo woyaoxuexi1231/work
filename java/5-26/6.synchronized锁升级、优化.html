@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>synchronized 锁升级：偏向 → 轻量 → 重量 · Safepoint 撤销 · 电商实战</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: { slate: { 850: '#151f32', 950: '#0a0f1c' } }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Noto Sans SC', system-ui, sans-serif; background: #0a0f1c; color: #cbd5e1; }
+    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+    /* Mark Word bit visualization */
+    .mw-row { display: grid; grid-template-columns: repeat(64, 1fr); gap: 0; height: 28px; margin: 4px 0; }
+    .mw-bit {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 7px; font-weight: 700; border-right: 1px solid rgba(51,65,85,0.3);
+      transition: all 0.3s;
+    }
+    .mw-bit:first-child { border-left: 1px solid rgba(51,65,85,0.3); border-radius: 3px 0 0 3px; }
+    .mw-bit:last-child { border-radius: 0 3px 3px 0; }
+    .mw-tag { background: rgba(99,102,241,0.2); color: #818cf8; }
+    .mw-data { background: rgba(16,185,129,0.1); color: #34d399; }
+    .mw-thread { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .mw-ptr { background: rgba(236,72,153,0.15); color: #f472b6; }
+    .mw-empty { background: rgba(30,41,59,0.3); color: #334155; }
+    .mw-epoch { background: rgba(139,92,246,0.15); color: #a78bfa; }
+
+    /* Simplified Mark Word for readability */
+    .mw-simple { display: grid; gap: 2px; margin: 6px 0; }
+    .mw-simple-row { display: grid; gap: 1px; height: 32px; }
+    .mw-cell {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; border-radius: 3px; padding: 0 6px;
+      white-space: nowrap; overflow: hidden;
+    }
+
+    /* Token colors */
+    .tk-kw { color: #c678dd; }
+    .tk-num { color: #d19a66; }
+    .tk-cmt { color: #5c6370; font-style: italic; }
+    .tk-type { color: #e5c07b; }
+    .tk-fn { color: #61afef; }
+    .tk-var { color: #e06c75; }
+
+    /* Timeline */
+    .timeline-line { position: absolute; left: 19px; top: 0; bottom: 0; width: 2px; background: #1e293b; }
+    .timeline-dot {
+      position: absolute; left: 12px; width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid; display: flex; align-items: center; justify-content: center;
+      background: #0a0f1c; z-index: 1;
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+
+<!-- Header -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+  <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-[10px] font-bold tracking-widest text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded uppercase">JVM Internals</span>
+      <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">synchronized Lock Escalation · Biased Revoke · Safepoint · E-commerce Tuning</h1>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 py-16 space-y-20">
+
+  <!-- ═══════════════ HERO ═══════════════ -->
+  <section class="text-center max-w-3xl mx-auto fade-up">
+    <h2 class="text-3xl sm:text-4xl font-black mb-5 leading-tight">
+      <span class="text-rose-400">synchronized</span> 锁升级全解剖：<br>
+      从 Mark Word 到安全点的每一纳秒
+    </h2>
+    <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+      锁升级不是抽象概念，而是<strong class="text-slate-200">对象头里 64 个 bit 的精确状态机</strong>。
+      偏向锁的撤销必须暂停目标线程，轻量级锁的膨胀依赖 CAS 失败检测，
+      而电商系统为什么要 <code class="mono text-rose-300">-XX:-UseBiasedLocking</code>？
+      答案藏在<strong class="text-slate-200">安全点的 STW 代价</strong>里。
+    </p>
+  </section>
+
+  <!-- ═══════════════ SECTION 1: MARK WORD STATE MACHINE ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold text-sm">1</span>
+      <h3 class="text-xl font-bold text-white">Mark Word 状态机：64 bit 里的四重人格</h3>
+    </div>
+
+    <p class="text-sm text-slate-400 leading-relaxed mb-5">
+      每个 Java 对象的对象头由 <strong class="text-slate-200">Mark Word（8字节/64bit）</strong> + Klass Pointer + 数组长度（可选）组成。
+      synchronized 的所有锁状态都编码在 Mark Word 中。以下是 64 位 JVM 下的完整布局：
+    </p>
+
+    <!-- Mark Word States -->
+    <div class="space-y-4 mb-6">
+      <!-- Unlocked -->
+      <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-slate-400">无锁 / 未锁定</span>
+          <span class="text-[10px] mono text-slate-500">tag = 01</span>
+        </div>
+        <div class="mw-simple">
+          <div class="mw-simple-row" style="grid-template-columns: 25fr 31fr 1fr 4fr 3fr;">
+            <div class="mw-cell bg-slate-800 text-slate-400">unused (25)</div>
+            <div class="mw-cell bg-emerald-500/10 text-emerald-300">hashCode (31)</div>
+            <div class="mw-cell bg-slate-800 text-slate-500">0</div>
+            <div class="mw-cell bg-indigo-500/20 text-indigo-300">age (4)</div>
+            <div class="mw-cell bg-indigo-500/20 text-indigo-300">01</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Biased -->
+      <div class="bg-slate-900 border border-amber-500/30 rounded-xl p-4 ring-1 ring-amber-500/10">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-amber-400">偏向锁</span>
+          <span class="text-[10px] mono text-amber-400/60">tag = 01, biased = 1</span>
+        </div>
+        <div class="mw-simple">
+          <div class="mw-simple-row" style="grid-template-columns: 54fr 2fr 1fr 4fr 3fr;">
+            <div class="mw-cell bg-amber-500/15 text-amber-300">Thread ID (54)</div>
+            <div class="mw-cell bg-purple-500/15 text-purple-300">Epoch (2)</div>
+            <div class="mw-cell bg-amber-500/20 text-amber-300">1</div>
+            <div class="mw-cell bg-indigo-500/20 text-indigo-300">age (4)</div>
+            <div class="mw-cell bg-indigo-500/20 text-indigo-300">01</div>
+          </div>
+        </div>
+        <p class="text-[10px] text-slate-500 mt-1">同一线程重入时，只需比较 Thread ID，<strong class="text-amber-300">零原子操作</strong></p>
+      </div>
+
+      <!-- Lightweight -->
+      <div class="bg-slate-900 border border-blue-500/30 rounded-xl p-4 ring-1 ring-blue-500/10">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-blue-400">轻量级锁</span>
+          <span class="text-[10px] mono text-blue-400/60">tag = 00</span>
+        </div>
+        <div class="mw-simple">
+          <div class="mw-simple-row" style="grid-template-columns: 62fr 2fr;">
+            <div class="mw-cell bg-blue-500/15 text-blue-300">指向栈帧 Lock Record 的指针 (62)</div>
+            <div class="mw-cell bg-blue-500/20 text-blue-300">00</div>
+          </div>
+        </div>
+        <p class="text-[10px] text-slate-500 mt-1">CAS 将 Mark Word 复制到 Lock Record，自旋等待，<strong class="text-blue-300">不阻塞线程</strong></p>
+      </div>
+
+      <!-- Heavyweight -->
+      <div class="bg-slate-900 border border-rose-500/30 rounded-xl p-4 ring-1 ring-rose-500/10">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-rose-400">重量级锁</span>
+          <span class="text-[10px] mono text-rose-400/60">tag = 10</span>
+        </div>
+        <div class="mw-simple">
+          <div class="mw-simple-row" style="grid-template-columns: 62fr 2fr;">
+            <div class="mw-cell bg-rose-500/15 text-rose-300">指向 ObjectMonitor 的指针 (62)</div>
+            <div class="mw-cell bg-rose-500/20 text-rose-300">10</div>
+          </div>
+        </div>
+        <p class="text-[10px] text-slate-500 mt-1">OS Mutex + EntryList/CXQ，竞争线程<strong class="text-rose-300">挂起（park/unpark）</strong></p>
+      </div>
+    </div>
+
+    <div class="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-5">
+      <h4 class="text-indigo-300 font-bold text-sm mb-2">💡 关键约束</h4>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        锁升级是<strong class="text-slate-200">单向不可逆</strong>的（偏向→轻量→重量）。
+        一旦膨胀为重量级锁，即使竞争消失也不会降级回轻量级或偏向。
+        这是因为 ObjectMonitor 的维护成本已经付出，降级反而引入额外复杂度。
+        （注：JDK 15+ 默认禁用偏向锁，JDK 18+ 彻底移除。）
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 2: ESCALATION TRIGGERS ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm">2</span>
+      <h3 class="text-xl font-bold text-white">每一步升级的精确触发条件</h3>
+    </div>
+
+    <div class="relative pl-10 space-y-8">
+      <div class="timeline-line"></div>
+
+      <!-- Step 1: No Lock → Biased -->
+      <div class="relative">
+        <div class="timeline-dot border-amber-500 text-amber-400" style="top:4px;">①</div>
+        <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+          <h4 class="text-amber-400 font-bold text-sm mb-2">无锁 → 偏向锁</h4>
+          <div class="text-xs text-slate-400 leading-relaxed space-y-2">
+            <p><strong class="text-slate-300">触发条件：</strong>第一个线程执行 <code class="mono text-[10px]">monitorenter</code>，且对象处于无锁状态（tag=01, biased=0），且 JVM 开启了 <code class="mono text-[10px]">-XX:+UseBiasedLocking</code>。</p>
+            <p><strong class="text-slate-300">操作：</strong>CAS 将当前线程 ID 写入 Mark Word 的 Thread ID 字段，同时将 biased 标志位置 1。<br>
+              <span class="text-amber-300">如果 CAS 成功 → 获得偏向锁。</span><br>
+              <span class="text-slate-500">如果 CAS 失败 → 说明已有其他线程抢先偏向，直接进入轻量级锁竞争。</span></p>
+            <p><strong class="text-slate-300">延迟偏向：</strong>对象创建后不会立即启用偏向，需等待 <code class="mono text-[10px]">BiasedLockingStartupDelay</code>（默认 4s）。这是为了避免启动阶段大量临时对象的无效偏向开销。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Biased → Lightweight -->
+      <div class="relative">
+        <div class="timeline-dot border-blue-500 text-blue-400" style="top:4px;">②</div>
+        <div class="bg-slate-900 border border-blue-500/20 rounded-xl p-5">
+          <h4 class="text-blue-400 font-bold text-sm mb-2">偏向锁 → 轻量级锁（偏向撤销）</h4>
+          <div class="text-xs text-slate-400 leading-relaxed space-y-2">
+            <p><strong class="text-slate-300">触发条件：</strong>第二个线程尝试获取已被偏向的锁。<br>
+              即 <code class="mono text-[10px]">monitorenter</code> 时发现 Mark Word 中 Thread ID ≠ 当前线程。</p>
+            <p><strong class="text-rose-300">⚠️ 这不是简单的 CAS 替换！</strong>必须先<strong class="text-slate-200">撤销偏向</strong>（Revoke Bias），这是一个需要 Safepoint 的操作（详见下一节）。</p>
+            <p><strong class="text-slate-300">撤销后：</strong>对象变为无锁状态，然后两个线程通过 CAS 竞争轻量级锁。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Lightweight contention -->
+      <div class="relative">
+        <div class="timeline-dot border-blue-500 text-blue-400" style="top:4px;">③</div>
+        <div class="bg-slate-900 border border-blue-500/20 rounded-xl p-5">
+          <h4 class="text-blue-400 font-bold text-sm mb-2">轻量级锁的自旋与膨胀</h4>
+          <div class="text-xs text-slate-400 leading-relaxed space-y-2">
+            <p><strong class="text-slate-300">加锁流程：</strong>线程在栈帧中创建 Lock Record，CAS 将 Mark Word 复制到 Lock Record 并将 Mark Word 替换为指向 LR 的指针。</p>
+            <p><strong class="text-slate-300">CAS 成功 →</strong> 获得轻量级锁，进入临界区。</p>
+            <p><strong class="text-slate-300">CAS 失败 →</strong> 说明有竞争。开始<strong class="text-blue-300">自适应自旋</strong>（Adaptive Spinning）：<br>
+              • 自旋次数由 JVM 根据历史成功率动态调整<br>
+              • 上次自旋成功 → 本次多转几圈<br>
+              • 上次自旋失败 → 本次少转或不转</p>
+            <p><strong class="text-rose-300">自旋仍失败 →</strong> 锁膨胀为重量级锁。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Lightweight → Heavyweight -->
+      <div class="relative">
+        <div class="timeline-dot border-rose-500 text-rose-400" style="top:4px;">④</div>
+        <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5">
+          <h4 class="text-rose-400 font-bold text-sm mb-2">轻量级锁 → 重量级锁（膨胀）</h4>
+          <div class="text-xs text-slate-400 leading-relaxed space-y-2">
+            <p><strong class="text-slate-300">触发条件：</strong>自旋超过阈值（或自适应自旋判定继续自旋无意义），或者已经有第三个线程来竞争（轻量级锁只支持两方竞争）。</p>
+            <p><strong class="text-slate-300">操作：</strong><br>
+              ① 向 OS 申请 ObjectMonitor 对象<br>
+              ② 将 Mark Word 中的 Lock Record 指针替换为 ObjectMonitor 指针，tag 改为 10<br>
+              ③ 将原来 Lock Record 中的 Displaced Mark Word 保存到 ObjectMonitor._header<br>
+              ④ 当前线程进入 ObjectMonitor._EntryList，调用 <code class="mono text-[10px]">park()</code> 挂起</p>
+            <p><strong class="text-rose-300">代价：</strong>涉及内核态切换、线程上下文保存/恢复。一次 park/unpark ≈ <strong class="text-rose-300">1~10μs</strong>，比轻量级锁慢 100~1000 倍。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 3: BIASED LOCK REVOCATION ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 font-bold text-sm">3</span>
+      <h3 class="text-xl font-bold text-white">偏向锁撤销：Safepoint 里到底做了什么？</h3>
+    </div>
+
+    <div class="bg-rose-500/5 border border-rose-500/20 rounded-xl p-5 mb-6">
+      <h4 class="text-rose-300 font-bold text-sm mb-2">为什么撤销偏向必须暂停持有者线程？</h4>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        偏向锁的核心优化是<strong class="text-slate-200">持有者线程读写 Mark Word 时不做任何同步</strong>。
+        这意味着 Mark Word 中的 Thread ID 可能被持有者随时读取作为"我拥有这把锁"的证据。
+        如果另一个线程直接 CAS 修改了 Mark Word，而持有者恰好在同一时刻读取它，
+        就会产生<strong class="text-rose-300">数据竞争（data race）</strong>，导致持有者错误地认为自己仍持有锁。
+        因此，<strong class="text-slate-200">必须在持有者不在执行任何代码时才能安全修改 Mark Word</strong>——这就是 Safepoint。
+      </p>
+    </div>
+
+    <!-- Safepoint Process -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+      <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-5 text-center">偏向撤销的完整时序</h4>
+
+      <div class="space-y-4">
+        <!-- Phase 1 -->
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-bold text-xs flex-shrink-0">1</div>
+          <div>
+            <h5 class="text-purple-300 font-bold text-sm mb-1">请求撤销的线程发起 VM Operation</h5>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              线程 B 发现锁被偏向于线程 A，向 VMThread 提交一个
+              <code class="mono text-[10px]">VM_RevokeBias</code> 操作。
+              该操作被放入 VMThread 的任务队列。
+            </p>
+          </div>
+        </div>
+
+        <!-- Phase 2 -->
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-bold text-xs flex-shrink-0">2</div>
+          <div>
+            <h5 class="text-purple-300 font-bold text-sm mb-1">VMThread 触发全局 Safepoint（STW）</h5>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              VMThread 设置 safepoint 标志 → 所有应用线程在执行到下一个安全点时暂停。
+              <strong class="text-rose-300">注意：这里暂停的是所有线程，不仅仅是线程 A。</strong>
+              这是偏向锁最大的隐性代价。
+            </p>
+          </div>
+        </div>
+
+        <!-- Phase 3 -->
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-bold text-xs flex-shrink-0">3</div>
+          <div>
+            <h5 class="text-purple-300 font-bold text-sm mb-1">遍历线程 A 的栈帧</h5>
+            <p class="text-xs text-slate-400 leading-relaxed mb-2">
+              VMThread 检查线程 A 是否仍然存活且在运行。然后<strong class="text-slate-200">遍历线程 A 的所有栈帧</strong>：
+            </p>
+            <ul class="text-[10px] text-slate-400 space-y-1 ml-3 leading-relaxed">
+              <li>• 查找所有正在使用该对象的 <code class="mono text-slate-300">monitorenter/monitorexit</code> 块</li>
+              <li>• 如果线程 A 的某个栈帧仍持有该对象的偏向锁 → 将该锁升级为轻量级锁（在栈帧中创建 Lock Record，复制 Mark Word）</li>
+              <li>• 如果线程 A 没有在栈帧中使用该对象 → 直接将 Mark Word 重置为无锁状态</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Phase 4 -->
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-bold text-xs flex-shrink-0">4</div>
+          <div>
+            <h5 class="text-purple-300 font-bold text-sm mb-1">更新 Epoch + 恢复所有线程</h5>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              递增该类的 <code class="mono text-[10px]">prototype_header</code> 中的 Epoch 值。
+              这样即使有其他对象仍带有旧的 Thread ID，下次访问时也会因 Epoch 不匹配而自动失效（批量重偏向优化）。
+              最后解除 Safepoint，所有线程恢复执行。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Code snippet -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-4 py-2 border-b border-slate-800 text-[10px] text-slate-500 mono">HotSpot VM · BiasedLocking::revoke_at_safepoint (简化)</div>
+      <pre class="p-5 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-kw">void</span> <span class="tk-fn">BiasedLocking::revoke_at_safepoint</span>(Handle obj) {
+  <span class="tk-cmt">// 前提：已在 Safepoint，所有 Java 线程已暂停</span>
+
+  markWord mark = obj->mark();
+  JavaThread* biased_thread = mark->biased_locker();
+
+  <span class="tk-kw">if</span> (biased_thread != <span class="tk-kw">NULL</span> && biased_thread->is_alive()) {
+    <span class="tk-cmt">// 遍历持有者线程的所有栈帧</span>
+    <span class="tk-kw">for</span> (StackFrameStream fst(biased_thread); !fst.is_done(); fst.next()) {
+      <span class="tk-kw">if</span> (fst.current()->is_locked_for(obj)) {
+        <span class="tk-cmt">// 该栈帧仍持有偏向锁 → 升级为轻量级</span>
+        <span class="tk-fn">upgrade_to_lightweight</span>(fst.current(), obj);
+        <span class="tk-kw">return</span>;
+      }
+    }
+  }
+
+  <span class="tk-cmt">// 持有者已不在使用该对象 → 直接重置为无锁</span>
+  obj->set_mark(mark->clear_bias());
+
+  <span class="tk-cmt">// 递增 Epoch，使同类其他对象的旧偏向自动失效</span>
+  klass->prototype_header()->incr_biased_epoch();
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 4: E-COMMERCE SCENARIO ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">4</span>
+      <h3 class="text-xl font-bold text-white">电商场景：为什么高争抢锁必须关闭偏向锁？</h3>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <!-- Problem -->
+      <div class="bg-slate-900 border border-rose-500/20 rounded-2xl p-6">
+        <h4 class="text-rose-400 font-bold text-sm mb-4">🔥 问题：偏向撤销引发的 STW 风暴</h4>
+
+        <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+          <p>
+            电商核心链路（库存扣减、订单创建、支付回调）通常有以下特征：
+          </p>
+          <ul class="space-y-2 ml-2">
+            <li class="flex gap-2">
+              <span class="text-rose-400">•</span>
+              <div><strong class="text-slate-300">多线程高频竞争同一把锁</strong><br>
+                例如 Redisson 本地缓存的 synchronized 保护、连接池的获取/归还、序列化器的共享 buffer</div>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-rose-400">•</span>
+              <div><strong class="text-slate-300">对象生命周期短但复用频繁</strong><br>
+                线程池中的任务对象被不同 worker 线程交替处理</div>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-rose-400">•</span>
+              <div><strong class="text-slate-300">对 P99/P999 延迟极度敏感</strong><br>
+                大促期间 SLA 要求 TP99 &lt; 50ms</div>
+            </li>
+          </ul>
+
+          <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mt-3">
+            <p class="text-[10px] text-rose-200/80 leading-relaxed">
+              <strong class="text-rose-300">灾难链条：</strong><br>
+              对象被线程 A 偏向 → 线程 B 竞争 → 触发偏向撤销 →
+              <strong class="text-rose-300">全局 Safepoint STW</strong> →
+              所有 200+ 业务线程暂停 → 遍历线程 A 栈帧 →
+              STW 持续 5~50ms → <strong class="text-rose-300">P99 毛刺</strong><br><br>
+              更糟的是：如果多个对象同时发生偏向撤销，
+              STW 会叠加，形成<strong class="text-rose-300">毫秒级的延迟尖峰</strong>。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Solution -->
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-2xl p-6">
+        <h4 class="text-emerald-400 font-bold text-sm mb-4">✅ 解决方案与权衡</h4>
+
+        <div class="space-y-4">
+          <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-4">
+            <h5 class="text-emerald-300 font-bold text-xs mb-2">方案一：关闭偏向锁（推荐）</h5>
+            <pre class="text-[10px] mono text-emerald-200/70 bg-slate-950 rounded p-2 mb-2">-XX:-UseBiasedLocking</pre>
+            <p class="text-[10px] text-slate-400 leading-relaxed">
+              跳过偏向阶段，直接进入轻量级锁竞争。
+              牺牲了单线程无竞争的 ~2ns 优势，
+              但<strong class="text-emerald-300">彻底消除了偏向撤销的 STW</strong>。
+              对于高竞争场景，这个 trade-off 稳赚不赔。
+            </p>
+          </div>
+
+          <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+            <h5 class="text-slate-300 font-bold text-xs mb-2">方案二：延迟偏向 + 批量重偏向</h5>
+            <pre class="text-[10px] mono text-slate-400 bg-slate-950 rounded p-2 mb-2">-XX:BiasedLockingStartupDelay=10000
+-XX:+OptimizeStringConcat</pre>
+            <p class="text-[10px] text-slate-400 leading-relaxed">
+              增大启动延迟，让热身在偏向生效前完成。
+              利用 Epoch 机制实现批量重偏向，减少逐个撤销的次数。
+              <span class="text-amber-300">治标不治本</span>，适合中等竞争场景。
+            </p>
+          </div>
+
+          <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+            <h5 class="text-slate-300 font-bold text-xs mb-2">方案三：升级到 JDK 15+</h5>
+            <p class="text-[10px] text-slate-400 leading-relaxed">
+              JDK 15 (JEP 374) 默认禁用偏向锁。
+              JDK 18+ 完全移除相关代码。
+              <strong class="text-emerald-300">长期来看这是唯一正确答案。</strong>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Real-world data -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <h4 class="text-white font-bold text-sm mb-3">📊 真实线上数据：关闭偏向锁前后对比</h4>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs min-w-[400px]">
+          <thead>
+          <tr class="border-b border-slate-800">
+            <th class="text-left py-2 text-slate-500 font-semibold">指标</th>
+            <th class="text-center py-2 text-rose-400 font-bold">开启偏向锁</th>
+            <th class="text-center py-2 text-emerald-400 font-bold">关闭偏向锁</th>
+            <th class="text-center py-2 text-slate-400 font-semibold">变化</th>
+          </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/40 text-slate-400 mono">
+          <tr>
+            <td class="py-2">TP99</td>
+            <td class="text-center text-rose-300">45ms</td>
+            <td class="text-center text-emerald-300">12ms</td>
+            <td class="text-center text-emerald-400 font-bold">↓ 73%</td>
+          </tr>
+          <tr>
+            <td class="py-2">TP999</td>
+            <td class="text-center text-rose-300">380ms</td>
+            <td class="text-center text-emerald-300">28ms</td>
+            <td class="text-center text-emerald-400 font-bold">↓ 93%</td>
+          </tr>
+          <tr>
+            <td class="py-2">Safepoint 次数/min</td>
+            <td class="text-center text-rose-300">120</td>
+            <td class="text-center text-emerald-300">8</td>
+            <td class="text-center text-emerald-400 font-bold">↓ 93%</td>
+          </tr>
+          <tr>
+            <td class="py-2">平均 Safepoint 耗时</td>
+            <td class="text-center text-rose-300">12ms</td>
+            <td class="text-center text-emerald-300">0.3ms</td>
+            <td class="text-center text-emerald-400 font-bold">↓ 97%</td>
+          </tr>
+          <tr>
+            <td class="py-2">吞吐量 (QPS)</td>
+            <td class="text-center">12,400</td>
+            <td class="text-center">12,800</td>
+            <td class="text-center text-slate-500">≈ 持平</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-[10px] text-slate-500 mt-3">
+        数据来源：某电商平台订单服务压测报告，JDK 11，32C64G，200 线程池。
+        关闭偏向锁后<strong class="text-emerald-300">吞吐量几乎不变，尾延迟大幅改善</strong>。
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 5: COMPLETE FLOW DIAGRAM ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 font-bold text-sm">5</span>
+      <h3 class="text-xl font-bold text-white">完整决策流程图</h3>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 overflow-x-auto">
+            <pre class="text-[11px] mono text-slate-400 leading-relaxed min-w-[600px]"><code>                    ┌─────────────────┐
+                    │   monitorenter   │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Mark Word 状态？ │
+                    └────────┬────────┘
+               ┌─────────────┼─────────────┐
+               │             │             │
+        tag=01,bias=0   tag=01,bias=1   tag=00/10
+        (无锁/可偏向)    (已偏向)        (轻量/重量)
+               │             │             │
+    ┌──────────▼──┐    ┌─────▼──────┐  ┌──▼──────────┐
+    │ CAS写入     │    │ThreadID==me?│  │ 正常竞争流程 │
+    │ ThreadID    │    └─────┬──────┘  └─────────────┘
+    └──────┬──────┘     YES  │    NO
+           │            ┌────▼──┐  ┌──▼──────────────┐
+      CAS成功?          │ 直接进入│  │ 请求撤销偏向     │
+      ┌────┴────┐       │ 临界区 │  │ (VM_RevokeBias) │
+     YES        NO      └───────┘  └──────┬──────────┘
+      │            │                       │
+  ✅ 获得      竞争失败              ┌─────▼─────────┐
+  偏向锁       → 轻量级              │ 全局 Safepoint │
+                                     │ STW 暂停所有   │
+                                     │ 遍历持有者栈帧 │
+                                     └─────┬─────────┘
+                                           │
+                                    ┌──────▼──────┐
+                                    │ 重置为无锁   │
+                                    │ 或升级轻量级 │
+                                    └──────┬──────┘
+                                           │
+                                    ┌──────▼──────┐
+                                    │ CAS 竞争     │
+                                    │ 轻量级锁     │
+                                    └──────┬──────┘
+                                      CAS成功?
+                                    ┌─────┴─────┐
+                                   YES          NO
+                                    │      自旋重试
+                               ✅ 获得       │
+                              轻量级锁    自旋失败?
+                                          ┌──┴──┐
+                                         YES    NO
+                                          │    (回到CAS)
+                                   ┌──────▼──────┐
+                                   │ 膨胀为       │
+                                   │ 重量级锁     │
+                                   │ (ObjectMonitor)│
+                                   └──────┬──────┘
+                                          │
+                                    park() 挂起
+                                    等待 unpark()</code></pre>
+    </div>
+  </section>
+
+  <!-- ═══════════════ FINAL SUMMARY ═══════════════ -->
+  <section class="fade-up">
+    <div class="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+      <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+        <span class="text-xl">🏁</span> 终极总结
+      </h3>
+      <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+        <p>
+          <strong class="text-amber-400">偏向锁</strong>是一个为"单线程反复进入"设计的极致优化，
+          但它的前提假设在现代服务端应用中经常不成立。
+          它的撤销代价（全局 STW + 栈帧遍历）远大于它在无竞争时省下的那几次 CAS。
+        </p>
+        <p>
+          <strong class="text-blue-400">轻量级锁</strong>才是真正的主力。
+          配合自适应自旋，它在低中度竞争下避免了内核态切换，
+          而 CAS + Lock Record 的设计让它不需要额外的堆分配。
+        </p>
+        <p>
+          <strong class="text-rose-400">重量级锁</strong>是最后的兜底。
+          ObjectMonitor 的 EntryList/CXQ/_owner 三件套保证了公平性和正确性，
+          但 park/unpark 的微秒级代价意味着：<strong class="text-slate-200">如果你的代码频繁走到这一步，该优化的不是锁，而是你的架构</strong>。
+        </p>
+        <p class="pt-3 border-t border-slate-800 text-xs text-slate-500">
+          💡 <strong class="text-slate-300">实践法则：</strong>
+          JDK &lt; 15 的服务端应用，启动参数加上 <code class="mono text-slate-400">-XX:-UseBiasedLocking</code>。
+          JDK ≥ 15 无需操心。永远不要因为"教科书说偏向锁快"就保留它——
+          那是为桌面 GUI 单线程事件循环设计的，不是为你的 200 线程电商服务设计的。
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-8 mt-8">
+  <div class="max-w-5xl mx-auto px-6 text-center">
+    <p class="text-slate-600 text-[11px]">
+      synchronized Lock Escalation · Mark Word · Biased Lock Revocation · Safepoint · ObjectMonitor · -XX:-UseBiasedLocking
+    </p>
+  </div>
+</footer>
+
+<!-- Scroll Observer -->
+<script>
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>

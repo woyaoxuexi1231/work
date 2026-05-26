@@ -5,8 +5,8 @@
 | 项目 | 值 |
 |------|-----|
 | MySQL 版本 | 8.0.35 |
-| 主库端口 | 3306 |
-| 从库端口 | 3307 |
+| 主库端口 | 3307 |
+| 从库端口 | 3308 |
 | Root 密码 | 123456 |
 | 主库 Server ID | 1 |
 | 从库 Server ID | 2 |
@@ -95,7 +95,7 @@ STOP SLAVE;
 -- MASTER_LOG_POS: 填入主库的 Position 值
 CHANGE MASTER TO
   MASTER_HOST='192.168.2.59',
-  MASTER_PORT=3306,
+  MASTER_PORT=3307,
   MASTER_USER='repl_user',
   MASTER_PASSWORD='repl_pass123',
   MASTER_LOG_FILE='mysql-bin.000003',
@@ -299,7 +299,7 @@ docker exec mysql-slave mysql -uroot -p123456 -e "
 STOP SLAVE;
 CHANGE MASTER TO
   MASTER_HOST='host.docker.internal',
-  MASTER_PORT=3306,
+  MASTER_PORT=3307,
   MASTER_USER='repl_user',
   MASTER_PASSWORD='repl_pass123',
   MASTER_LOG_FILE='$MASTER_FILE',

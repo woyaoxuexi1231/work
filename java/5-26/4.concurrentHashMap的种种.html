@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConcurrentHashMap: JDK7 vs JDK8 深度演进</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: { slate: { 850: '#151f32', 950: '#0a0f1c' } }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Noto Sans SC', system-ui, sans-serif; background: #0a0f1c; color: #cbd5e1; }
+    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+    /* Token colors */
+    .tk-kw { color: #c678dd; }
+    .tk-num { color: #d19a66; }
+    .tk-cmt { color: #5c6370; font-style: italic; }
+    .tk-type { color: #e5c07b; }
+    .tk-fn { color: #61afef; }
+    .tk-var { color: #e06c75; }
+    .tk-ann { color: #e5c07b; }
+
+    /* Lock animation */
+    @keyframes lock-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+    .lock-active { animation: lock-pulse 1.5s ease-in-out infinite; }
+
+    /* Cache line visualization */
+    .cache-line {
+      display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px;
+      background: #1e293b; padding: 1px; border-radius: 4px; overflow: hidden;
+    }
+    .cache-byte {
+      aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 8px; font-weight: 700; transition: all 0.3s;
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+
+<!-- Header -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+  <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-[10px] font-bold tracking-widest text-violet-400 border border-violet-500/30 px-2 py-0.5 rounded uppercase">Concurrency</span>
+      <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">ConcurrentHashMap: Segment → CAS+synchronized → CounterCell</h1>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 py-16 space-y-20">
+
+  <!-- ═══════════════ HERO ═══════════════ -->
+  <section class="text-center max-w-3xl mx-auto fade-up">
+    <h2 class="text-3xl sm:text-4xl font-black mb-5 leading-tight">
+      并发容器之王：<br>
+      <span class="text-violet-400">ConcurrentHashMap</span> 的两次重生
+    </h2>
+    <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+      从 JDK 7 的 <strong class="text-slate-200">Segment 分段锁</strong>，到 JDK 8 的 <strong class="text-slate-200">CAS + synchronized + Node数组</strong>，
+      再到计数器从 <strong class="text-slate-200">全局求和</strong> 进化为 <strong class="text-slate-200">baseCount + CounterCell[]</strong>。
+      每一次重构都是对"锁粒度"与"硬件特性"的极致压榨。
+    </p>
+  </section>
+
+  <!-- ═══════════════ SECTION 1: JDK7 vs JDK8 ARCHITECTURE ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-sm">1</span>
+      <h3 class="text-xl font-bold text-white">架构对比：Segment 分段锁 vs 节点级锁</h3>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <!-- JDK 7 -->
+      <div class="bg-slate-900 border border-amber-500/20 rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-amber-400 font-bold">JDK 7: Segment 分段锁</h4>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-bold mono">ReentrantLock × 16</span>
+        </div>
+
+        <!-- Visual Structure -->
+        <div class="space-y-2 mb-4">
+          <div class="flex items-center gap-2 text-xs">
+            <div class="w-24 text-right text-slate-500 mono">CHM</div>
+            <div class="flex-1 grid grid-cols-4 gap-1">
+              <div class="h-8 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[9px] text-amber-300 mono lock-active">Seg[0] 🔒</div>
+              <div class="h-8 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[9px] text-amber-300 mono">Seg[1] 🔒</div>
+              <div class="h-8 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[9px] text-amber-300 mono">...</div>
+              <div class="h-8 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[9px] text-amber-300 mono">Seg[15] 🔒</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <div class="w-24 text-right text-slate-500 mono">每个Segment</div>
+            <div class="flex-1 h-8 rounded bg-slate-800 border border-slate-700 flex items-center px-2 text-[9px] text-slate-400 mono">
+              HashEntry[2] → [k1,v1] → [k2,v2] → null
+            </div>
+          </div>
+        </div>
+
+        <ul class="text-xs text-slate-400 space-y-1.5 leading-relaxed">
+          <li class="flex gap-2"><span class="text-amber-400">•</span> 继承 ReentrantLock，每个 Segment 是一把独立的锁</li>
+          <li class="flex gap-2"><span class="text-amber-400">•</span> 默认并发度 16（最多 16 个线程同时写）</li>
+          <li class="flex gap-2"><span class="text-amber-400">•</span> 定位需要两次 hash：第一次定位 Segment，第二次定位桶</li>
+          <li class="flex gap-2"><span class="text-rose-400">✗</span> 内存开销大（Segment 对象本身 + 内部数组）</li>
+          <li class="flex gap-2"><span class="text-rose-400">✗</span> 并发度固定，无法随数据量动态扩展</li>
+        </ul>
+      </div>
+
+      <!-- JDK 8 -->
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-2xl p-6 ring-1 ring-emerald-500/10">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-emerald-400 font-bold">JDK 8: CAS + synchronized</h4>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold mono">Node[] + 锁桶头</span>
+        </div>
+
+        <!-- Visual Structure -->
+        <div class="space-y-2 mb-4">
+          <div class="flex items-center gap-2 text-xs">
+            <div class="w-24 text-right text-slate-500 mono">Node[] table</div>
+            <div class="flex-1 grid grid-cols-6 gap-1">
+              <div class="h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[9px] text-slate-500 mono">null</div>
+              <div class="h-8 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[9px] text-emerald-300 mono lock-active">🔒 head</div>
+              <div class="h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[9px] text-slate-500 mono">null</div>
+              <div class="h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[9px] text-slate-500 mono">null</div>
+              <div class="h-8 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[9px] text-emerald-300 mono lock-active">🔒 head</div>
+              <div class="h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[9px] text-slate-500 mono">...</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <div class="w-24 text-right text-slate-500 mono">写入流程</div>
+            <div class="flex-1 h-8 rounded bg-slate-800 border border-slate-700 flex items-center px-2 text-[9px] text-slate-400 mono">
+              CAS(空桶) / sync(非空桶头) → 链表或红黑树
+            </div>
+          </div>
+        </div>
+
+        <ul class="text-xs text-slate-400 space-y-1.5 leading-relaxed">
+          <li class="flex gap-2"><span class="text-emerald-400">•</span> 抛弃 Segment，直接用 Node 数组 + 链表/红黑树</li>
+          <li class="flex gap-2"><span class="text-emerald-400">•</span> 锁粒度从"段"细化到"单个桶的头节点"</li>
+          <li class="flex gap-2"><span class="text-emerald-400">•</span> 空桶用 CAS 插入（无锁），非空桶 synchronized 锁头节点</li>
+          <li class="flex gap-2"><span class="text-emerald-400">✓</span> 并发度 = 数组长度，可随扩容动态增长</li>
+          <li class="flex gap-2"><span class="text-emerald-400">✓</span> 内存更紧凑，缓存友好性大幅提升</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Why abandon Segment? -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <h4 class="text-white font-bold text-sm mb-3">为什么放弃 Segment？</h4>
+      <div class="grid md:grid-cols-3 gap-4 text-xs text-slate-400 leading-relaxed">
+        <div>
+          <strong class="text-slate-300 block mb-1">1. 锁粒度不够细</strong>
+          Segment 数量在构造时确定（默认16），即使数据量增长到百万级，并发写入上限仍然是 16。JDK8 的锁粒度跟随数组大小，理论上并发度可达数万。
+        </div>
+        <div>
+          <strong class="text-slate-300 block mb-1">2. 二次哈希开销</strong>
+          JDK7 需要先 hash 定位 Segment，再 hash 定位桶。JDK8 只需一次 hash 直接定位桶，减少了 CPU 指令。
+        </div>
+        <div>
+          <strong class="text-slate-300 block mb-1">3. 数据结构统一</strong>
+          JDK8 的 CHM 与 HashMap 底层结构一致（Node+链表+红黑树），代码复用度高，且能享受 synchronized 在 JVM 层面的持续优化红利。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 2: WHY SYNCHRONIZED IS LIGHTWEIGHT ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold text-sm">2</span>
+      <h3 class="text-xl font-bold text-white">synchronized "足够轻量" 是谁保证的？—— JVM 锁升级机制</h3>
+    </div>
+
+    <p class="text-sm text-slate-400 leading-relaxed mb-5">
+      JDK 6 之前，synchronized 是"重量级锁"，每次加锁都要操作系统互斥量（Mutex），涉及用户态↔内核态切换。
+      <strong class="text-slate-200">JDK 6 引入了锁升级（Lock Escalation）</strong>，由 HotSpot VM 的 ObjectMonitor 子系统保证：
+      在低竞争场景下，synchronized 的性能接近甚至优于 ReentrantLock。
+    </p>
+
+    <!-- Lock Escalation Diagram -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+      <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-5 text-center">synchronized 锁升级四阶段</h4>
+
+      <div class="relative">
+        <!-- Progress bar -->
+        <div class="absolute top-6 left-0 right-0 h-1 bg-slate-800 rounded-full"></div>
+
+        <div class="grid grid-cols-4 gap-2 relative">
+          <!-- Stage 1: No Lock -->
+          <div class="text-center">
+            <div class="w-12 h-12 mx-auto rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center text-lg mb-2 relative z-10">🔓</div>
+            <div class="text-xs font-bold text-slate-300 mb-1">无锁</div>
+            <div class="text-[10px] text-slate-500 leading-relaxed px-1">Mark Word 存储 hashCode/GC年龄</div>
+          </div>
+
+          <!-- Stage 2: Biased Lock -->
+          <div class="text-center">
+            <div class="w-12 h-12 mx-auto rounded-full bg-purple-500/10 border-2 border-purple-500 flex items-center justify-center text-lg mb-2 relative z-10">🎯</div>
+            <div class="text-xs font-bold text-purple-400 mb-1">偏向锁</div>
+            <div class="text-[10px] text-slate-500 leading-relaxed px-1">Mark Word 记录线程ID。<br><strong class="text-purple-300">同一线程重入零开销</strong></div>
+          </div>
+
+          <!-- Stage 3: Lightweight Lock -->
+          <div class="text-center">
+            <div class="w-12 h-12 mx-auto rounded-full bg-blue-500/10 border-2 border-blue-500 flex items-center justify-center text-lg mb-2 relative z-10">⚡</div>
+            <div class="text-xs font-bold text-blue-400 mb-1">轻量级锁</div>
+            <div class="text-[10px] text-slate-500 leading-relaxed px-1">CAS 将 Mark Word 复制到栈帧 Lock Record。<br><strong class="text-blue-300">自旋等待，不阻塞</strong></div>
+          </div>
+
+          <!-- Stage 4: Heavyweight Lock -->
+          <div class="text-center">
+            <div class="w-12 h-12 mx-auto rounded-full bg-rose-500/10 border-2 border-rose-500 flex items-center justify-center text-lg mb-2 relative z-10">🔒</div>
+            <div class="text-xs font-bold text-rose-400 mb-1">重量级锁</div>
+            <div class="text-[10px] text-slate-500 leading-relaxed px-1">膨胀为 ObjectMonitor。<br><strong class="text-rose-300">OS Mutex，线程挂起</strong></div>
+          </div>
+        </div>
+
+        <!-- Arrows -->
+        <div class="flex justify-between px-[12.5%] mt-1 text-[10px] text-slate-600 mono">
+          <span>← 竞争出现</span>
+          <span>多线程交替 →</span>
+          <span>竞争激烈 →</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Why CHM benefits -->
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="bg-slate-900 border border-blue-500/20 rounded-xl p-5">
+        <h4 class="text-blue-400 font-bold text-sm mb-2">为什么 CHM 特别适合轻量级锁？</h4>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          CHM 的 synchronized 只锁<strong class="text-slate-300">单个桶的头节点</strong>。
+          在高并发但 key 分布均匀的场景下，多个线程几乎不会竞争同一个桶。
+          这意味着绝大多数加锁操作都停留在<strong class="text-blue-300">偏向锁或轻量级锁</strong>阶段，
+          永远不会膨胀为重量级锁。这正是 Doug Lea 敢于用 synchronized 替代 ReentrantLock 的底气。
+        </p>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <h4 class="text-slate-300 font-bold text-sm mb-2">ReentrantLock 为什么不行了？</h4>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          ReentrantLock 基于 AQS，始终需要维护一个 volatile state + CLH 队列。
+          即使在无竞争时也有 CAS 操作和对象分配开销。
+          而 synchronized 的偏向锁在稳态下<strong class="text-slate-300">连 CAS 都不需要</strong>，
+          只是一次普通的内存读取比较线程 ID。对于 CHM 这种"大量短临界区"的模式，优势明显。
+        </p>
+      </div>
+    </div>
+
+    <!-- Code snippet -->
+    <div class="mt-5 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-4 py-2 border-b border-slate-800 text-[10px] text-slate-500 mono">ConcurrentHashMap.putVal() · JDK 8 核心加锁逻辑</div>
+      <pre class="p-5 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-kw">if</span> (tab == <span class="tk-kw">null</span> || (n = tab.length) == <span class="tk-num">0</span>)
+    tab = <span class="tk-fn">initTable</span>();                          <span class="tk-cmt">// CAS 初始化</span>
+<span class="tk-kw">else if</span> ((f = <span class="tk-fn">tabAt</span>(tab, i)) == <span class="tk-kw">null</span>) {
+    <span class="tk-cmt">// ✅ 空桶：纯 CAS 插入，零锁开销</span>
+    <span class="tk-kw">if</span> (<span class="tk-fn">casTabAt</span>(tab, i, <span class="tk-kw">null</span>, new Node&lt;&gt;(hash, key, value, <span class="tk-kw">null</span>)))
+        <span class="tk-kw">break</span>;
+}
+<span class="tk-kw">else if</span> ((fh = f.hash) == MOVED)
+    tab = <span class="tk-fn">helpTransfer</span>(tab, f);                  <span class="tk-cmt">// 协助扩容</span>
+<span class="tk-kw">else</span> {
+    <span class="tk-cmt">// ✅ 非空桶：synchronized 锁住头节点</span>
+    <span class="tk-cmt">// JVM 大概率走偏向锁/轻量级锁路径</span>
+    <span class="tk-kw">synchronized</span> (f) {
+        <span class="tk-kw">if</span> (<span class="tk-fn">tabAt</span>(tab, i) == f) {
+            <span class="tk-cmt">// 链表或红黑树插入...</span>
+        }
+    }
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 3: SIZE() EVOLUTION ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 font-bold text-sm">3</span>
+      <h3 class="text-xl font-bold text-white">size() 的进化：从 Segment 求和到 LongAdder 思想</h3>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <!-- JDK 7 size() -->
+      <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+        <h4 class="text-amber-400 font-bold text-sm mb-3">JDK 7: 三次不加锁尝试 + 全段加锁兜底</h4>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed mb-3 bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-cmt">// 尝试 3 次不加锁求和</span>
+<span class="tk-kw">for</span> (<span class="tk-kw">int</span> k = <span class="tk-num">0</span>; k &lt; RETRIES_BEFORE_LOCK; k++) {
+    sum = <span class="tk-num">0</span>;
+    <span class="tk-kw">for</span> (Segment seg : segments)
+        sum += seg.count;  <span class="tk-cmt">// volatile read</span>
+    <span class="tk-kw">if</span> (modCount == lastModCount)
+        <span class="tk-kw">return</span> sum;        <span class="tk-cmt">// 一致则返回</span>
+}
+<span class="tk-cmt">// 3 次都不一致 → 锁全部 Segment</span>
+<span class="tk-kw">for</span> (Segment seg : segments) seg.lock();
+sum = ...;
+<span class="tk-kw">for</span> (Segment seg : segments) seg.unlock();</code></pre>
+        <p class="text-[10px] text-slate-500 leading-relaxed">
+          <span class="text-rose-400 font-bold">问题：</span>高并发写入时 modCount 永远在变，
+          3 次尝试几乎必定失败，最终退化为<strong class="text-slate-300">锁住所有 Segment</strong>，
+          相当于全局锁，吞吐量断崖式下降。
+        </p>
+      </div>
+
+      <!-- JDK 8 size() -->
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5 ring-1 ring-emerald-500/10">
+        <h4 class="text-emerald-400 font-bold text-sm mb-3">JDK 8: baseCount + CounterCell[]</h4>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed mb-3 bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-kw">public int</span> <span class="tk-fn">size</span>() {
+    <span class="tk-kw">long</span> n = <span class="tk-fn">sumCount</span>();
+    <span class="tk-kw">return</span> ((n &lt; 0L) ? <span class="tk-num">0</span> :
+            (n &gt; Integer.MAX_VALUE) ? Integer.MAX_VALUE :
+            (<span class="tk-kw">int</span>)n);
+}
+
+<span class="tk-kw">final long</span> <span class="tk-fn">sumCount</span>() {
+    CounterCell[] as = counterCells;
+    <span class="tk-kw">long</span> sum = baseCount;  <span class="tk-cmt">// 基础值</span>
+    <span class="tk-kw">if</span> (as != <span class="tk-kw">null</span>) {
+        <span class="tk-kw">for</span> (CounterCell a : as)
+            <span class="tk-kw">if</span> (a != <span class="tk-kw">null</span>)
+                sum += a.value; <span class="tk-cmt">// 累加各cell</span>
+    }
+    <span class="tk-kw">return</span> sum;
+}</code></pre>
+        <p class="text-[10px] text-slate-500 leading-relaxed">
+          <span class="text-emerald-400 font-bold">优势：</span>借鉴 <code class="text-slate-300">LongAdder</code> 分段累加思想。
+          写入时分散竞争到不同 Cell，读取时<strong class="text-slate-300">完全无锁遍历求和</strong>。
+          弱一致性，但永不阻塞。
+        </p>
+      </div>
+    </div>
+
+    <!-- addCount flow -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <h4 class="text-white font-bold text-sm mb-3">addCount() 写入路径：CAS 竞争感知 + 动态扩容 Cell 数组</h4>
+      <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+        <div class="flex gap-3 items-start">
+          <span class="text-cyan-400 font-bold mono w-6 flex-shrink-0">①</span>
+          <div>
+            <strong class="text-slate-300">快速路径：</strong>CAS 更新 baseCount。如果成功，结束。
+            低竞争时只有这一次原子操作。
+          </div>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-cyan-400 font-bold mono w-6 flex-shrink-0">②</span>
+          <div>
+            <strong class="text-slate-300">竞争检测：</strong>CAS 失败说明有竞争。检查 counterCells 是否已初始化。
+            若未初始化，通过 <code class="mono text-slate-300">cellsBusy</code> CAS 创建初始大小为 2 的数组。
+          </div>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-cyan-400 font-bold mono w-6 flex-shrink-0">③</span>
+          <div>
+            <strong class="text-slate-300">分散写入：</strong>用 <code class="mono text-slate-300">ThreadLocalRandom.getProbe() & (n-1)</code>
+            随机选一个 Cell 做 CAS 累加。失败则换下一个 Cell 重试。
+          </div>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-cyan-400 font-bold mono w-6 flex-shrink-0">④</span>
+          <div>
+            <strong class="text-slate-300">自适应扩容：</strong>如果连续失败，说明 Cell 数量不够。
+            将 counterCells 数组扩容为 2 倍（最大不超过 NCPU），进一步降低冲突概率。
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 4: FALSE SHARING & PADDING ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">4</span>
+      <h3 class="text-xl font-bold text-white">CounterCell 的伪共享防护：从手动填充到 @Contended</h3>
+    </div>
+
+    <!-- What is False Sharing -->
+    <div class="bg-slate-900 border border-rose-500/20 rounded-2xl p-6 mb-6">
+      <h4 class="text-rose-400 font-bold text-sm mb-4">什么是伪共享（False Sharing）？</h4>
+
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+          <p>
+            CPU 缓存以 <strong class="text-slate-200">Cache Line（通常 64 字节）</strong> 为单位读写。
+            如果两个线程频繁读写的变量恰好落在<strong class="text-slate-200">同一条 Cache Line</strong> 上，
+            即使它们操作的是不同变量，也会导致缓存行在两个核之间反复传递（称为 <strong class="text-rose-300">Cache Line Bouncing</strong>）。
+          </p>
+          <p>
+            CounterCell 只有一个 long value（8字节）。如果不做处理，
+            数组中相邻的 8 个 Cell 会挤在同一条 Cache Line 里，
+            多线程分别更新不同 Cell 时依然会产生严重的伪共享。
+          </p>
+        </div>
+
+        <!-- Cache Line Visualization -->
+        <div class="space-y-3">
+          <div>
+            <div class="text-[10px] text-rose-400 font-bold mono mb-1">❌ 无填充：8 个 Cell 共享一条 Cache Line</div>
+            <div class="cache-line border border-rose-500/30">
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C0</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C1</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C2</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C3</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C4</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C5</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C6</div>
+              <div class="cache-byte bg-rose-500/20 text-rose-300">C7</div>
+            </div>
+            <div class="text-[9px] text-rose-400/60 mt-1 mono text-center">← 64 bytes Cache Line →</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-emerald-400 font-bold mono mb-1">✅ 有填充：每个 Cell 独占一条 Cache Line</div>
+            <div class="flex gap-1">
+              <div class="cache-line border border-emerald-500/30 flex-1">
+                <div class="cache-byte bg-slate-800 text-slate-600">pad</div>
+                <div class="cache-byte bg-emerald-500/20 text-emerald-300">C0</div>
+                <div class="cache-byte bg-slate-800 text-slate-600">pad</div>
+                <div class="cache-byte bg-slate-800 text-slate-600">pad</div>
+              </div>
+              <div class="cache-line border border-emerald-500/30 flex-1">
+                <div class="cache-byte bg-slate-800 text-slate-600">pad</div>
+                <div class="cache-byte bg-emerald-500/20 text-emerald-300">C1</div>
+                <div class="cache-byte bg-slate-800 text-slate-600">pad</div>
+                <div class="cache-byte bg-slate-800 text-slate-600">pad</div>
+              </div>
+            </div>
+            <div class="text-[9px] text-emerald-400/60 mt-1 mono text-center">各自独立 Cache Line</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Evolution of Padding -->
+    <div class="space-y-4">
+      <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-amber-400 font-bold text-sm">JDK 7 LongAdder: 手动 Padding</h4>
+          <span class="text-[10px] text-amber-400/60 mono">hacky but effective</span>
+        </div>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-cmt">// 通过继承链强制每个 Cell 占满一个 Cache Line</span>
+<span class="tk-kw">class</span> <span class="tk-type">Cell</span> <span class="tk-kw">extends</span> <span class="tk-type">PaddedAtomicLong</span> { ... }
+
+<span class="tk-kw">class</span> <span class="tk-type">PaddedAtomicLong</span> <span class="tk-kw">extends</span> <span class="tk-type">AtomicLong</span> {
+    <span class="tk-kw">volatile long</span> p0, p1, p2, p3, p4, p5, p6; <span class="tk-cmt">// 7×8=56 bytes padding</span>
+}
+<span class="tk-cmt">// AtomicLong.value (8B) + padding (56B) = 64B = 1 Cache Line</span>
+<span class="tk-cmt">// ⚠️ 依赖 JVM 不重排字段顺序，非官方保证</span></code></pre>
+      </div>
+
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5 ring-1 ring-emerald-500/10">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-emerald-400 font-bold text-sm">JDK 8+: @sun.misc.Contended 注解</h4>
+          <span class="text-[10px] text-emerald-400/60 mono">official JVM support</span>
+        </div>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-ann">@sun.misc.Contended</span>
+<span class="tk-kw">static final class</span> <span class="tk-type">CounterCell</span> {
+    <span class="tk-kw">volatile long</span> value;
+
+    <span class="tk-type">CounterCell</span>(<span class="tk-kw">long</span> x) { value = x; }
+}
+
+<span class="tk-cmt">// JVM 看到 @Contended 后自动在该对象前后插入 padding</span>
+<span class="tk-cmt">// ✅ 不再依赖字段排列 hack</span>
+<span class="tk-cmt">// ✅ 语义明确，编译器/JIT 不会优化掉 padding</span>
+<span class="tk-cmt">// ⚠️ 需要 -XX:-RestrictContended 才能用于非 JDK 内部类</span></code></pre>
+      </div>
+    </div>
+
+    <!-- Important caveat -->
+    <div class="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-5 mt-4">
+      <h4 class="text-indigo-300 font-bold text-sm mb-2">💡 关键细节：CounterCell 本身不是数组元素</h4>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        <code class="mono text-slate-300">counterCells</code> 是一个引用数组（<code class="mono text-slate-300">CounterCell[]</code>），
+        每个元素是指向堆上独立对象的引用。@Contended 作用于 CounterCell 对象本身，
+        确保<strong class="text-slate-200">每个 CounterCell 实例</strong>独占 Cache Line，
+        而不是让数组中的引用彼此隔离。这与 JDK7 中把 padding 字段直接嵌入数组元素的做法有本质区别。
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SUMMARY TABLE ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-400 font-bold text-sm">∑</span>
+      <h3 class="text-xl font-bold text-white">全景对比总结</h3>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-800">
+      <table class="w-full text-xs min-w-[600px]">
+        <thead>
+        <tr class="bg-slate-900/80 border-b border-slate-800">
+          <th class="text-left px-4 py-3 text-slate-400 font-semibold uppercase tracking-wider">维度</th>
+          <th class="text-center px-4 py-3 text-amber-400 font-bold">JDK 7</th>
+          <th class="text-center px-4 py-3 text-emerald-400 font-bold">JDK 8+</th>
+        </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60 text-slate-400">
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">数据结构</td>
+          <td class="text-center px-4 py-3">Segment[] + HashEntry[]</td>
+          <td class="text-center px-4 py-3">Node[] + 链表/红黑树</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">锁机制</td>
+          <td class="text-center px-4 py-3">ReentrantLock (Segment级)</td>
+          <td class="text-center px-4 py-3">CAS + synchronized (桶头级)</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">锁粒度</td>
+          <td class="text-center px-4 py-3">固定 16 段</td>
+          <td class="text-center px-4 py-3">动态 = 数组长度</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">Hash 次数</td>
+          <td class="text-center px-4 py-3">2 次（Segment + Bucket）</td>
+          <td class="text-center px-4 py-3">1 次（直接定位桶）</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">size() 实现</td>
+          <td class="text-center px-4 py-3">3次无锁尝试 + 全段加锁兜底</td>
+          <td class="text-center px-4 py-3">baseCount + CounterCell[] 无锁求和</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">计数器防伪共享</td>
+          <td class="text-center px-4 py-3">继承链手动 padding</td>
+          <td class="text-center px-4 py-3">@Contended 注解自动填充</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">synchronized 轻量保障</td>
+          <td class="text-center px-4 py-3 text-slate-600">—</td>
+          <td class="text-center px-4 py-3">JVM 锁升级（偏向→轻量→重量）</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Final Verdict -->
+    <div class="mt-8 bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+      <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+        <span class="text-xl">🏁</span> 一句话总结
+      </h3>
+      <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+        <p>
+          JDK 7 的 Segment 是<strong class="text-slate-200">软件层面的分片思想</strong>，受限于固定并发度和二次哈希；
+          JDK 8 将并发控制下沉到<strong class="text-slate-200">硬件友好的粒度</strong>——
+          CAS 解决无竞争路径，JVM 优化的 synchronized 解决低竞争路径，
+          CounterCell + @Contended 解决统计路径的伪共享。
+        </p>
+        <p>
+          这不是简单的"换锁"，而是<strong class="text-violet-400">从算法设计到 JVM 运行时再到 CPU 缓存架构的全栈协同优化</strong>。
+          理解这三层联动，才算真正读懂了 ConcurrentHashMap。
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-8 mt-8">
+  <div class="max-w-5xl mx-auto px-6 text-center">
+    <p class="text-slate-600 text-[11px]">
+      ConcurrentHashMap · Segment → CAS+synchronized · Lock Escalation · baseCount+CounterCell · @Contended · False Sharing
+    </p>
+  </div>
+</footer>
+
+<!-- Scroll Observer -->
+<script>
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>

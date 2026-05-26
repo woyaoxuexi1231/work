@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ========================================================================================
 # Docker MySQL 双实例安装脚本
-# 启动两个 MySQL 容器：主库 3306，从库 3307
+# 启动两个 MySQL 容器：主库 3307，从库 3308（避免与已有 3306 冲突）
 # ========================================================================================
 
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -12,8 +12,8 @@ set -euo pipefail
 
 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-123456}"
 MYSQL_VERSION="${MYSQL_VERSION:-8.0.35}"
-MASTER_PORT="${MASTER_PORT:-3306}"
-SLAVE_PORT="${SLAVE_PORT:-3307}"
+MASTER_PORT="${MASTER_PORT:-3307}"
+SLAVE_PORT="${SLAVE_PORT:-3308}"
 DATA_ROOT="${DATA_ROOT:-/root/mysql-docker}"
 
 MASTER_NAME="mysql-master"
