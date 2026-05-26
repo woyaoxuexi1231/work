@@ -17,6 +17,24 @@
 
 ```bash
 # 192.168.3.100 上执行
+
+# 1) 配 insecure-registries（本机 push 也要走 HTTP）
+sudo mkdir -p /etc/docker
+if command -v jq &>/dev/null && [ -f /etc/docker/daemon.json ]; then
+  # 已有配置，用 jq 合并
+  sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
+  jq '."insecure-registries" += ["192.168.3.100:5000"]' /etc/docker/daemon.json.bak \
+    | sudo tee /etc/docker/daemon.json > /dev/null
+else
+  sudo tee /etc/docker/daemon.json <<'JSON'
+{
+  "insecure-registries": ["192.168.3.100:5000"]
+}
+JSON
+fi
+sudo systemctl restart docker
+
+# 2) 启动 Registry
 docker run -d --name registry --restart=always \
   -p 5000:5000 -v /root/registry-data:/var/lib/registry \
   registry:2
@@ -62,13 +80,22 @@ Apply & Restart。
 
 ## 日常使用
 
+### 场景A：镜像已经在 Docker 主机上了
+
+```bash
+# 在 192.168.3.100 上，给已有镜像打 tag 然后推送
+docker tag poker-tracker:1.0.0 192.168.3.100:5000/poker-tracker:1.0.0
+docker push 192.168.3.100:5000/poker-tracker:1.0.0
+```
+
+### 场景B：从 Windows 构建新镜像
+
 ```powershell
-# Windows 上构建 + 推送
 docker build -t 192.168.3.100:5000/poker-tracker:1.0.0 .
 docker push 192.168.3.100:5000/poker-tracker:1.0.0
 ```
 
-K8s YAML 里镜像名：
+### K8s YAML 镜像名
 
 ```yaml
 image: 192.168.3.100:5000/poker-tracker:1.0.0
