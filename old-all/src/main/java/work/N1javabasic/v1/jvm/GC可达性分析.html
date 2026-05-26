@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P7: 可达性分析与 GC Roots</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #020617;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+      animation: float 20s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%,100% { transform: translate(0,0); }
+      33% { transform: translate(30px,-50px); }
+      66% { transform: translate(-20px,30px); }
+    }
+    .glass-card {
+      background: rgba(15,23,42,0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(148,163,184,0.1);
+      transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+    }
+    .glass-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+    }
+    .code-block {
+      background: rgba(2,6,23,0.8);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .section-anchor { scroll-margin-top: 80px; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* ===== 可达性分析动画 ===== */
+    .gc-scene {
+      position: relative;
+      width: 100%;
+      height: 420px;
+      background: rgba(2,6,23,0.6);
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,0.1);
+      overflow: hidden;
+    }
+    .gc-node {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.2;
+      transition: all 0.6s ease;
+      z-index: 10;
+    }
+    .gc-node.root {
+      background: rgba(59,130,246,0.2);
+      border: 2px solid #3b82f6;
+      color: #60a5fa;
+      box-shadow: 0 0 20px rgba(59,130,246,0.3);
+    }
+    .gc-node.root::after {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid #3b82f6;
+      opacity: 0;
+      animation: pulse-ring 2s ease-out infinite;
+    }
+    @keyframes pulse-ring {
+      0% { opacity: 0.6; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.4); }
+    }
+    .gc-node.alive {
+      background: rgba(16,185,129,0.15);
+      border: 2px solid #10b981;
+      color: #34d399;
+    }
+    .gc-node.dead {
+      background: rgba(239,68,68,0.1);
+      border: 2px solid rgba(239,68,68,0.3);
+      color: #f87171;
+      opacity: 0.4;
+    }
+    .gc-node.cycle {
+      background: rgba(245,158,11,0.15);
+      border: 2px solid #f59e0b;
+      color: #fbbf24;
+    }
+    .gc-link {
+      position: absolute;
+      height: 2px;
+      background: rgba(148,163,184,0.15);
+      transform-origin: left center;
+      transition: all 0.8s ease;
+      z-index: 5;
+    }
+    .gc-link.active {
+      background: linear-gradient(90deg, #10b981, #34d399);
+      box-shadow: 0 0 8px rgba(16,185,129,0.4);
+    }
+    .gc-link.cycle-link {
+      background: rgba(245,158,11,0.3);
+    }
+    .gc-label {
+      position: absolute;
+      font-size: 0.65rem;
+      color: #64748b;
+      font-family: 'JetBrains Mono', monospace;
+      z-index: 15;
+    }
+
+    /* 步骤指示器 */
+    .step-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(148,163,184,0.2);
+      transition: all 0.4s ease;
+    }
+    .step-dot.active {
+      background: #3b82f6;
+      box-shadow: 0 0 10px rgba(59,130,246,0.5);
+    }
+    .step-dot.done {
+      background: #10b981;
+    }
+
+    /* 面试卡片 */
+    .interview-card {
+      background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05));
+      border: 1px solid rgba(59,130,246,0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+    .interview-question {
+      background: rgba(59,130,246,0.1);
+      border-left: 3px solid #3b82f6;
+      padding: 1rem 1.25rem;
+      border-radius: 0 12px 12px 0;
+      margin-bottom: 1rem;
+    }
+    .interview-answer {
+      background: rgba(15,23,42,0.5);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    /* 对比条 */
+    .compare-bar {
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      background: rgba(148,163,184,0.1);
+    }
+    .compare-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 1s ease;
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+  <div class="bg-grid"></div>
+  <div class="glow-orb bg-blue-500 w-96 h-96 top-0 left-1/4"></div>
+  <div class="glow-orb bg-emerald-500 w-80 h-80 bottom-1/4 right-0" style="animation-delay:-7s"></div>
+  <div class="glow-orb bg-amber-500 w-64 h-64 top-1/3 right-1/4" style="animation-delay:-10s"></div>
+
+  <nav class="fixed top-0 w-full z-50 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+        </div>
+        <span class="font-bold text-lg tracking-tight text-white">JVM<span class="text-emerald-400">GC</span></span>
+      </div>
+      <div class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-400">
+        <a href="#concept" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">核心概念</a>
+        <a href="#roots" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">GC Roots</a>
+        <a href="#visual" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">可视化</a>
+        <a href="#compare" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">引用计数对比</a>
+        <a href="#interview" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">面试应答</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="relative z-10 pt-32 pb-16 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-medium mb-8">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Java 虚拟机垃圾回收核心机制
+      </div>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-emerald-100 to-slate-400">
+        可达性分析<br>与 GC Roots
+      </h1>
+      <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        从 GC Roots 出发遍历对象引用链，标记存活对象；无法到达的对象将被回收。<br>
+        深入理解为什么 JVM 选择可达性分析，而非引用计数。
+      </p>
+    </div>
+  </header>
+
+  <main class="relative z-10 max-w-5xl mx-auto px-6 pb-24 space-y-24">
+
+    <!-- ===== 核心概念 ===== -->
+    <section id="concept" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">核心概念</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-emerald-500/50 to-transparent"></div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="glass-card rounded-2xl p-8">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-2xl mb-5">🌳</div>
+          <h3 class="text-xl font-bold text-white mb-3">可达性分析算法</h3>
+          <p class="text-sm text-slate-300 leading-relaxed mb-4">
+            <span class="text-emerald-400 font-semibold">Reachability Analysis</span>，也叫<strong class="text-white">追踪式垃圾收集（Tracing GC）</strong>。
+          </p>
+          <p class="text-sm text-slate-300 leading-relaxed mb-4">
+            基本思路是：通过一系列称为 <strong class="text-white">"GC Roots"</strong> 的根对象作为起始节点集，从这些节点开始，根据引用关系向下搜索，搜索过程走过的路径称为 <strong class="text-white">"引用链"（Reference Chain）</strong>。
+          </p>
+          <p class="text-sm text-slate-300 leading-relaxed">
+            当一个对象到 GC Roots 没有任何引用链相连时（即从 GC Roots 到这个对象不可达），则证明此对象是不可能再被使用的，可以被回收。
+          </p>
+        </div>
+
+        <div class="glass-card rounded-2xl p-8">
+          <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-2xl mb-5">🎯</div>
+          <h3 class="text-xl font-bold text-white mb-3">判定对象死亡的两次标记</h3>
+          <div class="space-y-4">
+            <div class="flex items-start gap-3">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm shrink-0">1</div>
+              <div>
+                <div class="text-sm font-semibold text-white mb-1">第一次标记：可达性分析</div>
+                <p class="text-xs text-slate-400">对象没有与 GC Roots 相连的引用链，被第一次标记。</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 font-bold text-sm shrink-0">2</div>
+              <div>
+                <div class="text-sm font-semibold text-white mb-1">第二次标记：finalize() 筛选</div>
+                <p class="text-xs text-slate-400">对象覆写了 finalize() 且未执行过，放入 F-Queue 队列，由 Finalizer 线程执行。若 finalize() 中重新建立引用，则移除标记。</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center text-red-400 font-bold text-sm shrink-0">3</div>
+              <div>
+                <div class="text-sm font-semibold text-white mb-1">最终回收</div>
+                <p class="text-xs text-slate-400">两次标记都通过的对象，被垃圾收集器回收。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== GC Roots 类型 ===== -->
+    <section id="roots" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-blue-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">GC Roots 有哪些？</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-blue-500/50 to-transparent"></div>
+      </div>
+
+      <p class="text-center text-slate-400 mb-8 max-w-2xl mx-auto">
+        在 Java 技术体系里，固定可作为 GC Roots 的对象包括以下几类。面试时至少要能说出前 4 类。
+      </p>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- 1. 栈帧局部变量 -->
+        <div class="glass-card rounded-2xl p-6 hover:border-blue-500/30">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="text-xs font-semibold text-blue-400 uppercase tracking-wider">类型 1</div>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">虚拟机栈中的局部变量</h3>
+          <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            各个线程执行方法的<strong class="text-white">栈帧中的局部变量表</strong>里引用的对象。
+          </p>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 方法执行期间，obj 是 GC Root</div>
+<div class="text-purple-400">void</div> <div class="text-blue-400">method</div>() {
+    <div class="text-blue-400">Object</div> obj = <div class="text-purple-400">new</div> <div class="text-blue-400">Object</div>(); <div class="text-slate-500">// obj 在局部变量表</div>
+    <div class="text-slate-500">// method 执行期间，obj 引用的对象是 GC Root 可达</div>
+}
+          </div>
+        </div>
+
+        <!-- 2. 静态变量 -->
+        <div class="glass-card rounded-2xl p-6 hover:border-blue-500/30">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>
+            </div>
+            <div class="text-xs font-semibold text-blue-400 uppercase tracking-wider">类型 2</div>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">方法区中类静态属性</h3>
+          <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            <strong class="text-white">静态变量（static）</strong>引用的对象。只要类未被卸载，这些引用一直存在。
+          </p>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// staticRef 是 GC Root</div>
+<div class="text-purple-400">class</div> <div class="text-blue-400">AppConfig</div> {
+    <div class="text-purple-400">static</div> <div class="text-blue-400">ConnectionPool</div> pool = 
+        <div class="text-purple-400">new</div> <div class="text-blue-400">ConnectionPool</div>();
+    <div class="text-slate-500">// pool 引用的对象始终被方法区静态引用保护</div>
+}
+          </div>
+        </div>
+
+        <!-- 3. 常量 -->
+        <div class="glass-card rounded-2xl p-6 hover:border-blue-500/30">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </div>
+            <div class="text-xs font-semibold text-blue-400 uppercase tracking-wider">类型 3</div>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">方法区中常量引用的对象</h3>
+          <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            <strong class="text-white">常量（static final）</strong>引用的对象，存储在运行时常量池中。
+          </p>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 字符串常量池中的引用是 GC Root</div>
+<div class="text-purple-400">class</div> <div class="text-blue-400">Constants</div> {
+    <div class="text-purple-400">static final</div> <div class="text-blue-400">String</div> <div class="text-blue-400">API_URL</div> = 
+        <div class="text-green-400">"https://api.example.com"</div>;
+    <div class="text-slate-500">// 常量池中 "API_URL" 的引用是 GC Root</div>
+}
+          </div>
+        </div>
+
+        <!-- 4. JNI 引用 -->
+        <div class="glass-card rounded-2xl p-6 hover:border-blue-500/30">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </div>
+            <div class="text-xs font-semibold text-purple-400 uppercase tracking-wider">类型 4</div>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">JNI 引用的对象</h3>
+          <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            <strong class="text-white">Native 方法</strong>（JNI）中引用的 Java 对象。本地代码通过 JNI 持有的对象引用。
+          </p>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// C++ 代码通过 JNI 创建/持有的 Java 对象</div>
+<div class="text-slate-500">// JNIEnv->NewObject(...) 创建的对象</div>
+<div class="text-slate-500">// 只要 JNI 引用还在，对象就是 GC Root 可达</div>
+<div class="text-slate-500">// 对应 Java: Thread.start0() 等 Native 调用</div>
+          </div>
+        </div>
+
+        <!-- 5. 活跃线程 -->
+        <div class="glass-card rounded-2xl p-6 hover:border-blue-500/30">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="text-xs font-semibold text-amber-400 uppercase tracking-wider">类型 5</div>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">所有活跃线程本身</h3>
+          <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            <strong class="text-white">正在运行的线程对象</strong>本身就是 GC Root。线程存活期间，其持有的资源不会被回收。
+          </p>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// Thread 对象本身是 GC Root</div>
+<div class="text-blue-400">Thread</div> worker = <div class="text-purple-400">new</div> <div class="text-blue-400">Thread</div>(() -> { ... });
+worker.<div class="text-blue-400">start</div>();
+<div class="text-slate-500">// worker 线程存活期间，线程对象本身是 GC Root</div>
+          </div>
+        </div>
+
+        <!-- 6. 同步锁持有 -->
+        <div class="glass-card rounded-2xl p-6 hover:border-blue-500/30">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <div class="text-xs font-semibold text-rose-400 uppercase tracking-wider">类型 6</div>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">同步锁（synchronized）持有的对象</h3>
+          <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            被 <strong class="text-white">synchronized 关键字</strong>锁住的对象，在锁释放前不会被回收。
+          </p>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// lockObj 被同步锁保护，是 GC Root 可达</div>
+<div class="text-blue-400">Object</div> lockObj = <div class="text-purple-400">new</div> <div class="text-blue-400">Object</div>();
+<div class="text-purple-400">synchronized</div> (lockObj) {
+    <div class="text-slate-500">// lockObj 在此期间不会被回收</div>
+}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 p-5 rounded-xl bg-blue-500/5 border border-blue-500/10">
+        <div class="flex items-start gap-3">
+          <span class="text-blue-400 text-xl">💡</span>
+          <div>
+            <div class="text-sm font-semibold text-blue-400 mb-1">记忆口诀</div>
+            <p class="text-sm text-slate-300">
+              <strong class="text-white">"栈静常本锁"</strong> —— 栈帧局部变量、静态变量、常量、本地方法（JNI）、线程本身、同步锁对象。面试说出这 6 类，基本满分。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 可视化可达性分析 ===== -->
+    <section id="visual" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">可达性分析可视化</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-emerald-500/50 to-transparent"></div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-6 md:p-8">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h3 class="text-lg font-bold text-white">对象引用图遍历演示</h3>
+            <p class="text-sm text-slate-400 mt-1">点击"开始分析"观看从 GC Roots 出发的标记过程</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="btn-start" onclick="startGC()" class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors shadow-lg shadow-emerald-600/20">
+              ▶ 开始分析
+            </button>
+            <button id="btn-reset" onclick="resetGC()" class="px-5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold transition-colors border border-slate-700">
+              ↺ 重置
+            </button>
+          </div>
+        </div>
+
+        <div class="gc-scene" id="gc-scene">
+          <!-- GC Roots -->
+          <div class="gc-node root" id="r1" style="left:40px;top:60px;">栈帧<br>局部变量</div>
+          <div class="gc-node root" id="r2" style="left:40px;top:200px;">静态<br>变量</div>
+          <div class="gc-node root" id="r3" style="left:40px;top:340px;">活跃<br>线程</div>
+
+          <!-- 可达对象 -->
+          <div class="gc-node alive" id="a1" style="left:220px;top:40px;">Object<br>A</div>
+          <div class="gc-node alive" id="a2" style="left:220px;top:140px;">Object<br>B</div>
+          <div class="gc-node alive" id="a3" style="left:380px;top:80px;">Object<br>C</div>
+          <div class="gc-node alive" id="a4" style="left:380px;top:200px;">Object<br>D</div>
+          <div class="gc-node alive" id="a5" style="left:220px;top:260px;">Object<br>E</div>
+          <div class="gc-node alive" id="a6" style="left:380px;top:320px;">Object<br>F</div>
+
+          <!-- 循环引用（不可达） -->
+          <div class="gc-node cycle" id="c1" style="left:560px;top:100px;">Object<br>G</div>
+          <div class="gc-node cycle" id="c2" style="left:560px;top:240px;">Object<br>H</div>
+
+          <!-- 孤立不可达对象 -->
+          <div class="gc-node dead" id="d1" style="left:720px;top:170px;">Object<br>I<br><span style="font-size:0.6rem;color:#ef4444">可回收</span></div>
+
+          <!-- 连接线 -->
+          <div class="gc-link" id="l-r1-a1" style="left:104px;top:92px;width:116px;transform:rotate(-12deg);"></div>
+          <div class="gc-link" id="l-r1-a2" style="left:104px;top:108px;width:116px;transform:rotate(18deg);"></div>
+          <div class="gc-link" id="l-a1-a3" style="left:284px;top:72px;width:96px;transform:rotate(18deg);"></div>
+          <div class="gc-link" id="l-a2-a4" style="left:284px;top:172px;width:96px;transform:rotate(18deg);"></div>
+          <div class="gc-link" id="l-r2-a4" style="left:104px;top:232px;width:276px;transform:rotate(-6deg);"></div>
+          <div class="gc-link" id="l-r3-a5" style="left:104px;top:372px;width:116px;transform:rotate(-18deg);"></div>
+          <div class="gc-link" id="l-a5-a6" style="left:284px;top:292px;width:96px;transform:rotate(18deg);"></div>
+          <div class="gc-link" id="l-r3-a6" style="left:104px;top:356px;width:276px;transform:rotate(-6deg);"></div>
+
+          <!-- 循环引用线 -->
+          <div class="gc-link cycle-link" id="l-c1-c2" style="left:624px;top:132px;width:0;height:108px;transform:rotate(90deg);transform-origin:top center;"></div>
+          <div class="gc-link cycle-link" id="l-c2-c1" style="left:624px;top:240px;width:0;height:108px;transform:rotate(-90deg);transform-origin:top center;"></div>
+
+          <!-- 标签 -->
+          <div class="gc-label" style="left:160px;top:30px;color:#60a5fa;">引用链 ✓</div>
+          <div class="gc-label" style="left:300px;top:30px;color:#60a5fa;">引用链 ✓</div>
+          <div class="gc-label" style="left:520px;top:160px;color:#f59e0b;">循环引用 ✗</div>
+          <div class="gc-label" style="left:680px;top:140px;color:#ef4444;">无 GC Root 指向</div>
+
+          <!-- 状态提示 -->
+          <div id="gc-status" class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-slate-800/80 border border-slate-700 text-sm text-slate-300 font-medium">
+            等待开始...
+          </div>
+        </div>
+
+        <div class="mt-6 flex items-center justify-center gap-6">
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full border-2 border-blue-500 bg-blue-500/20"></span>
+            GC Root
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full border-2 border-emerald-500 bg-emerald-500/20"></span>
+            可达（存活）
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full border-2 border-amber-500 bg-amber-500/20"></span>
+            循环引用（不可达）
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full border-2 border-red-500/30 bg-red-500/10"></span>
+            孤立不可达（可回收）
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 引用计数 vs 可达性分析 ===== -->
+    <section id="compare" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-amber-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">引用计数 vs 可达性分析</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-amber-500/50 to-transparent"></div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-6 mb-10">
+        <!-- 引用计数 -->
+        <div class="glass-card rounded-2xl p-8 border-amber-500/10">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-2xl">🔢</div>
+            <div>
+              <h3 class="text-xl font-bold text-white">引用计数法</h3>
+              <p class="text-sm text-amber-400 font-mono">Reference Counting</p>
+            </div>
+          </div>
+
+          <p class="text-sm text-slate-300 leading-relaxed mb-4">
+            在对象中添加一个<strong class="text-white">引用计数器</strong>，每当有一个地方引用它时，计数器值 +1；当引用失效时，计数器值 -1。计数器为 0 的对象就是不可能再被使用的。
+          </p>
+
+          <div class="space-y-3 mb-5">
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>实现复杂度</span>
+                <span class="text-emerald-400">简单</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-emerald-500" style="width:30%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>回收及时性</span>
+                <span class="text-emerald-400">即时</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-emerald-500" style="width:90%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>循环引用处理</span>
+                <span class="text-red-400">无法解决 ❌</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-red-500" style="width:5%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>额外开销</span>
+                <span class="text-amber-400">较高（计数器更新）</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-amber-500" style="width:70%"></div></div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
+            <div class="text-xs font-semibold text-amber-400 mb-2">代表语言</div>
+            <div class="flex gap-2">
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">Python</span>
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">Objective-C</span>
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">Swift（ARC）</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 可达性分析 -->
+        <div class="glass-card rounded-2xl p-8 border-emerald-500/10">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-2xl">🌿</div>
+            <div>
+              <h3 class="text-xl font-bold text-white">可达性分析</h3>
+              <p class="text-sm text-emerald-400 font-mono">Reachability Analysis</p>
+            </div>
+          </div>
+
+          <p class="text-sm text-slate-300 leading-relaxed mb-4">
+            通过一系列 <strong class="text-white">GC Roots</strong> 作为起始节点，根据引用关系向下搜索，搜索走过的路径称为引用链。当一个对象到 GC Roots 没有任何引用链相连时，证明此对象不可达。
+          </p>
+
+          <div class="space-y-3 mb-5">
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>实现复杂度</span>
+                <span class="text-amber-400">较复杂</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-amber-500" style="width:70%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>回收及时性</span>
+                <span class="text-amber-400">滞后（需 GC 周期）</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-amber-500" style="width:50%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>循环引用处理</span>
+                <span class="text-emerald-400">完美解决 ✅</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-emerald-500" style="width:100%"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>额外开销</span>
+                <span class="text-emerald-400">较低（周期性遍历）</span>
+              </div>
+              <div class="compare-bar"><div class="compare-fill bg-emerald-500" style="width:40%"></div></div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+            <div class="text-xs font-semibold text-emerald-400 mb-2">代表语言 / 平台</div>
+            <div class="flex gap-2">
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">Java</span>
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">C#</span>
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">Go</span>
+              <span class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">V8（Chrome）</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 循环引用致命缺陷演示 -->
+      <div class="glass-card rounded-2xl p-8">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="text-2xl">🔄</span>
+          <h3 class="text-xl font-bold text-white">循环引用：引用计数的致命缺陷</h3>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              引用计数法最大的问题是<strong class="text-white">无法解决对象之间的循环引用</strong>。当两个对象互相引用，但没有任何外部 GC Root 指向它们时，它们的引用计数器都不为 0，导致永远无法被回收，造成内存泄漏。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              而可达性分析从 GC Roots 出发，<strong class="text-white">只要对象不在引用链上，无论对象之间如何互相引用，都会被判定为不可达并回收。</strong>
+            </p>
+            <div class="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+              <div class="text-xs font-semibold text-red-400 mb-2">为什么 JVM 不用引用计数？</div>
+              <p class="text-sm text-slate-300">
+                正是因为循环引用问题。Java 对象图结构复杂，循环引用非常常见（如双向链表、树结构的父子互相引用）。可达性分析能优雅地解决这一问题。
+              </p>
+            </div>
+          </div>
+
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 循环引用示例：引用计数法无法回收</div>
+<div class="text-purple-400">class</div> <div class="text-blue-400">Node</div> {
+    <div class="text-blue-400">Node</div> next;
+    <div class="text-blue-400">Object</div> data;
+}
+
+<div class="text-purple-400">public static void</div> <div class="text-blue-400">main</div>(<div class="text-blue-400">String</div>[] args) {
+    <div class="text-blue-400">Node</div> nodeA = <div class="text-purple-400">new</div> <div class="text-blue-400">Node</div>();
+    <div class="text-blue-400">Node</div> nodeB = <div class="text-purple-400">new</div> <div class="text-blue-400">Node</div>();
+
+    <div class="text-slate-500">// 建立循环引用</div>
+    nodeA.<div class="text-blue-400">next</div> = nodeB;  <div class="text-slate-500">// A → B</div>
+    nodeB.<div class="text-blue-400">next</div> = nodeA;  <div class="text-slate-500">// B → A</div>
+
+    <div class="text-slate-500">// 断开外部引用</div>
+    nodeA = <div class="text-purple-400">null</div>;
+    nodeB = <div class="text-purple-400">null</div>;
+
+    <div class="text-slate-500">// 此时：引用计数视角</div>
+    <div class="text-slate-500">//   A 的计数 = 1（被 B 引用）≠ 0</div>
+    <div class="text-slate-500">//   B 的计数 = 1（被 A 引用）≠ 0</div>
+    <div class="text-slate-500">//   → 引用计数法：无法回收！内存泄漏！</div>
+
+    <div class="text-slate-500">// 可达性分析视角</div>
+    <div class="text-slate-500">//   A 和 B 都不在 GC Roots 引用链上</div>
+    <div class="text-slate-500">//   → 可达性分析：判定为不可达，可回收 ✅</div>
+}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 面试应答 ===== -->
+    <section id="interview" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-blue-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">面试高频追问</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-blue-500/50 to-transparent"></div>
+      </div>
+
+      <div class="space-y-6">
+        <!-- Q1 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q1</span>
+              <p class="text-white font-medium">"GC Roots 是什么？能举几个实际的例子吗？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <strong class="text-white">标准回答：</strong>GC Roots 是一组必须活跃的对象引用，垃圾收集器从这些根节点出发进行可达性分析。常见的 GC Roots 包括：
+            </p>
+            <ul class="space-y-2 text-sm text-slate-300 mb-4">
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">①</span><span><strong class="text-white">栈帧局部变量</strong>：方法执行时局部变量表里的引用，比如 <code class="text-blue-400">Object obj = new Object()</code> 中的 obj</span></li>
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">②</span><span><strong class="text-white">静态变量</strong>：类中 <code class="text-blue-400">static</code> 引用的对象，如单例模式中的实例</span></li>
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">③</span><span><strong class="text-white">常量</strong>：<code class="text-blue-400">static final</code> 引用的对象，如字符串常量池中的引用</span></li>
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">④</span><span><strong class="text-white">JNI 引用</strong>：Native 方法中持有的 Java 对象引用</span></li>
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">⑤</span><span><strong class="text-white">活跃线程</strong>：Thread 对象本身</span></li>
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">⑥</span><span><strong class="text-white">同步锁对象</strong>：被 <code class="text-blue-400">synchronized</code> 持有的对象</span></li>
+            </ul>
+            <div class="p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
+              <p class="text-xs text-blue-300"><strong>记忆口诀：</strong>"栈静常本锁" —— 栈帧局部变量、静态变量、常量、本地方法（JNI）、线程本身、同步锁对象。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q2 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q2</span>
+              <p class="text-white font-medium">"可达性分析和引用计数有什么区别？为什么 JVM 选择可达性分析？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <strong class="text-white">核心区别：</strong>引用计数为每个对象维护一个计数器，记录被引用的次数，为 0 时回收；可达性分析从 GC Roots 出发遍历引用链，不在链上的对象回收。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <strong class="text-white">JVM 选择可达性分析的根本原因：</strong>引用计数法有一个<strong class="text-red-400">致命的缺陷——无法解决循环引用</strong>。比如对象 A 引用 B，B 引用 A，但外部没有任何 GC Root 指向它们。引用计数法下 A 和 B 的计数器都是 1，永远不会被回收，造成内存泄漏。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              而可达性分析不关心对象之间的引用关系，只关心<strong class="text-white">对象是否能从 GC Roots 到达</strong>。A 和 B 虽然互相引用，但没有 GC Root 指向它们，所以都会被判定为不可达，被正确回收。
+            </p>
+          </div>
+        </div>
+
+        <!-- Q3 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q3</span>
+              <p class="text-white font-medium">"对象不可达了就一定会被回收吗？finalize() 方法了解吗？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <strong class="text-white">不一定。</strong>对象被判定为不可达后，还要经历一次 <strong class="text-white">finalize()</strong> 的筛选过程。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              具体流程：对象没有引用链 → 第一次标记 → 检查是否覆写了 finalize() 且未执行过 → 若有，放入 F-Queue 队列 → Finalizer 线程执行 finalize() → 若 finalize() 中重新建立了与 GC Roots 的引用链，则移除标记，对象"复活"；否则第二次标记 → 最终被回收。
+            </p>
+            <div class="code-block text-xs">
+<div class="text-slate-500">// finalize() "自救" 示例（不推荐实际使用）</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">EscapeGC</div> {
+    <div class="text-purple-400">public static</div> <div class="text-blue-400">EscapeGC</div> <div class="text-blue-400">SAVE_HOOK</div> = <div class="text-purple-400">null</div>;
+
+    <div class="text-purple-400">@Override</div>
+    <div class="text-purple-400">protected void</div> <div class="text-blue-400">finalize</div>() <div class="text-purple-400">throws</div> <div class="text-blue-400">Throwable</div> {
+        <div class="text-purple-400">super</div>.<div class="text-blue-400">finalize</div>();
+        <div class="text-blue-400">System</div>.out.<div class="text-blue-400">println</div>(<div class="text-green-400">"finalize 执行，对象自救！"</div>);
+        <div class="text-blue-400">SAVE_HOOK</div> = <div class="text-purple-400">this</div>; <div class="text-slate-500">// 重新建立引用链</div>
+    }
+}
+            </div>
+            <div class="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 mt-3">
+              <p class="text-xs text-amber-300"><strong>注意：</strong>finalize() 运行代价高昂，不确定性大，且每个对象的 finalize() 最多只执行一次。现代 Java 编程中已<strong class="text-white">不推荐使用</strong>，应使用 try-finally 或 Cleaner 类替代。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q4 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q4</span>
+              <p class="text-white font-medium">"能画一下可达性分析的流程图吗？或者描述一下 GC 时发生了什么？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">可达性分析的 GC 流程：</strong>
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-center">
+              <div class="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                <div class="text-lg mb-1">🌱</div>
+                <div class="text-xs font-semibold text-blue-400">1. 枚举 GC Roots</div>
+                <div class="text-[10px] text-slate-500 mt-1">收集所有根节点引用</div>
+              </div>
+              <div class="flex items-center justify-center text-slate-600">→</div>
+              <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <div class="text-lg mb-1">🔍</div>
+                <div class="text-xs font-semibold text-emerald-400">2. 遍历对象图</div>
+                <div class="text-[10px] text-slate-500 mt-1">从 Roots 出发 DFS/BFS 搜索引用链</div>
+              </div>
+              <div class="flex items-center justify-center text-slate-600">→</div>
+              <div class="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                <div class="text-lg mb-1">🏷️</div>
+                <div class="text-xs font-semibold text-purple-400">3. 标记存活对象</div>
+                <div class="text-[10px] text-slate-500 mt-1"> reachable = true</div>
+              </div>
+            </div>
+            <div class="flex justify-center my-3"><span class="text-slate-600">↓</span></div>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-center">
+              <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <div class="text-lg mb-1">⚠️</div>
+                <div class="text-xs font-semibold text-amber-400">4. 筛选 finalize</div>
+                <div class="text-[10px] text-slate-500 mt-1">检查不可达对象的 finalize()</div>
+              </div>
+              <div class="flex items-center justify-center text-slate-600">→</div>
+              <div class="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div class="text-lg mb-1">🗑️</div>
+                <div class="text-xs font-semibold text-red-400">5. 回收不可达对象</div>
+                <div class="text-[10px] text-slate-500 mt-1">清除死亡对象，释放内存</div>
+              </div>
+              <div class="flex items-center justify-center text-slate-600">→</div>
+              <div class="p-3 rounded-xl bg-slate-700/30 border border-slate-600/30">
+                <div class="text-lg mb-1">🧹</div>
+                <div class="text-xs font-semibold text-slate-400">6. 内存整理（可选）</div>
+                <div class="text-[10px] text-slate-500 mt-1">标记-复制 / 标记-整理算法</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 底部速查 -->
+    <section class="fade-in">
+      <div class="glass-card rounded-3xl p-8 md:p-10">
+        <div class="text-center mb-8">
+          <div class="text-3xl mb-3">📋</div>
+          <h3 class="text-2xl font-bold text-white mb-2">可达性分析速查表</h3>
+          <p class="text-slate-400 text-sm">面试前 3 分钟快速回顾</p>
+        </div>
+        <div class="grid md:grid-cols-3 gap-6 text-sm">
+          <div class="p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">GC Roots 六类</div>
+            <ul class="space-y-2 text-slate-300">
+              <li>① 虚拟机栈局部变量</li>
+              <li>② 方法区静态变量</li>
+              <li>③ 方法区常量引用</li>
+              <li>④ JNI 引用</li>
+              <li>⑤ 活跃线程对象</li>
+              <li>⑥ 同步锁持有对象</li>
+            </ul>
+          </div>
+          <div class="p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3">可达性分析优势</div>
+            <ul class="space-y-2 text-slate-300">
+              <li>✅ 解决循环引用问题</li>
+              <li>✅ 不需要维护计数器</li>
+              <li>✅ 批量回收效率高</li>
+              <li>✅ 适合复杂对象图</li>
+            </ul>
+          </div>
+          <div class="p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-3">引用计数缺陷</div>
+            <ul class="space-y-2 text-slate-300">
+              <li>❌ 无法解决循环引用</li>
+              <li>❌ 每次引用变更需原子更新</li>
+              <li>❌ 并发场景需要加锁</li>
+              <li>❌ 额外内存开销（计数器）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="relative z-10 py-12 px-6 border-t border-slate-800/50">
+    <div class="max-w-5xl mx-auto text-center">
+      <p class="text-slate-600 text-sm">JVM Garbage Collection — 可达性分析与 GC Roots</p>
+    </div>
+  </footer>
+
+  <script>
+    // 渐入动画
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+    // 平滑滚动
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+
+    // GC 可视化动画
+    let gcStep = 0;
+    const steps = [
+      { status: '🔍 Step 1: 枚举 GC Roots...', active: ['r1','r2','r3'], links: [] },
+      { status: '🌿 Step 2: 从 Roots 出发遍历引用链...', active: ['r1','r2','r3','a1','a2'], links: ['l-r1-a1','l-r1-a2'] },
+      { status: '🌿 Step 2: 继续遍历...', active: ['r1','r2','r3','a1','a2','a3','a4'], links: ['l-r1-a1','l-r1-a2','l-a1-a3','l-a2-a4'] },
+      { status: '🌿 Step 2: 继续遍历...', active: ['r1','r2','r3','a1','a2','a3','a4','a5'], links: ['l-r1-a1','l-r1-a2','l-a1-a3','l-a2-a4','l-r2-a4','l-r3-a5'] },
+      { status: '🌿 Step 2: 遍历完成', active: ['r1','r2','r3','a1','a2','a3','a4','a5','a6'], links: ['l-r1-a1','l-r1-a2','l-a1-a3','l-a2-a4','l-r2-a4','l-r3-a5','l-a5-a6','l-r3-a6'] },
+      { status: '🏷️ Step 3: 标记存活对象（绿色）', active: ['r1','r2','r3','a1','a2','a3','a4','a5','a6'], links: ['l-r1-a1','l-r1-a2','l-a1-a3','l-a2-a4','l-r2-a4','l-r3-a5','l-a5-a6','l-r3-a6'], highlightAlive: true },
+      { status: '🗑️ Step 4: 判定不可达对象（G、H、I 可回收）', active: ['r1','r2','r3','a1','a2','a3','a4','a5','a6'], links: ['l-r1-a1','l-r1-a2','l-a1-a3','l-a2-a4','l-r2-a4','l-r3-a5','l-a5-a6','l-r3-a6'], showDead: true },
+    ];
+
+    function resetGC() {
+      gcStep = 0;
+      document.getElementById('gc-status').textContent = '等待开始...';
+      document.getElementById('gc-status').className = 'absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-slate-800/80 border border-slate-700 text-sm text-slate-300 font-medium';
+
+      ['r1','r2','r3','a1','a2','a3','a4','a5','a6','c1','c2','d1'].forEach(id => {
+        const el = document.getElementById(id);
+        el.style.opacity = '1';
+        el.style.transform = 'scale(1)';
+        el.style.filter = 'none';
+      });
+
+      document.querySelectorAll('.gc-link').forEach(link => {
+        link.classList.remove('active');
+      });
+
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-start').classList.remove('opacity-50');
+    }
+
+    function startGC() {
+      if (gcStep >= steps.length) { resetGC(); return; }
+      document.getElementById('btn-start').disabled = true;
+      document.getElementById('btn-start').classList.add('opacity-50');
+      runStep(0);
+    }
+
+    function runStep(idx) {
+      if (idx >= steps.length) {
+        document.getElementById('gc-status').textContent = '✅ 分析完成：可达对象已标记，不可达对象待回收';
+        document.getElementById('gc-status').className = 'absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-sm text-emerald-300 font-medium';
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-start').classList.remove('opacity-50');
+        document.getElementById('btn-start').textContent = '↺ 重新分析';
+        gcStep = steps.length;
+        return;
+      }
+
+      const step = steps[idx];
+      document.getElementById('gc-status').textContent = step.status;
+
+      // 激活节点
+      step.active.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.style.opacity = '1';
+          el.style.transform = 'scale(1.1)';
+          setTimeout(() => { el.style.transform = 'scale(1)'; }, 300);
+        }
+      });
+
+      // 激活连接线
+      step.links.forEach(linkId => {
+        const link = document.getElementById(linkId);
+        if (link) link.classList.add('active');
+      });
+
+      // 高亮存活
+      if (step.highlightAlive) {
+        ['a1','a2','a3','a4','a5','a6'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.style.boxShadow = '0 0 20px rgba(16,185,129,0.5)';
+            el.style.transform = 'scale(1.15)';
+            setTimeout(() => { el.style.transform = 'scale(1)'; }, 400);
+          }
+        });
+      }
+
+      // 显示死亡对象
+      if (step.showDead) {
+        ['c1','c2'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.style.opacity = '0.3';
+            el.style.filter = 'grayscale(100%)';
+          }
+        });
+        const d1 = document.getElementById('d1');
+        if (d1) {
+          d1.style.opacity = '0.2';
+          d1.style.filter = 'grayscale(100%) blur(1px)';
+          d1.style.transform = 'scale(0.9)';
+        }
+      }
+
+      setTimeout(() => runStep(idx + 1), 1200);
+    }
+  </script>
+</body>
+</html>

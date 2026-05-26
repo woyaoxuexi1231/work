@@ -6,34 +6,55 @@
 
 ---
 
-## 搭建
+## 1. k8s-master 上启动 Registry
 
 ```bash
-# 1. k8s-master 上一键搭建
-sudo bash setup-registry.sh
+docker run -d --name registry --restart=always \
+  -p 5000:5000 -v /root/registry-data:/var/lib/registry \
+  registry:2
 
-# 2. k8s-node1 和 k8s-node2 上分别执行
-sudo tee -a /etc/containerd/config.toml <<'EOF'
+# 验证
+curl http://192.168.3.100:5000/v2/
+# → {}  表示正常
+```
 
-[plugins."io.containerd.grpc.v1.cri".registry.mirrors."192.168.3.100:5000"]
-  endpoint = ["http://192.168.3.100:5000"]
-[plugins."io.containerd.grpc.v1.cri".registry.configs."192.168.3.100:5000".tls]
-  insecure_skip_verify = true
-EOF
+---
+
+## 2. 配置所有节点的 containerd
+
+**k8s-master / k8s-node1 / k8s-node2 都执行：**
+
+```bash
+# 把 registry 镜像地址嵌到已有的 registry.mirrors 段里面
+sudo sed -i '/\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\.mirrors\]/a\
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."192.168.3.100:5000"]\
+    endpoint = ["http://192.168.3.100:5000"]\
+  [plugins."io.containerd.grpc.v1.cri".registry.configs."192.168.3.100:5000".tls]\
+    insecure_skip_verify = true' /etc/containerd/config.toml
 
 sudo systemctl restart containerd
-
-# 3. Windows Docker Desktop → Settings → Docker Engine 加:
-#    { "insecure-registries": ["192.168.3.100:5000"] }
-#    → Apply & Restart
 ```
+
+---
+
+## 3. 配置 Windows Docker Desktop
+
+Settings → Docker Engine → 加：
+
+```json
+{
+  "insecure-registries": ["192.168.3.100:5000"]
+}
+```
+
+Apply & Restart。
 
 ---
 
 ## 日常使用
 
 ```powershell
-# Windows 上
+# Windows 上构建 + 推送
 docker build -t 192.168.3.100:5000/poker-tracker:1.0.0 .
 docker push 192.168.3.100:5000/poker-tracker:1.0.0
 ```
@@ -47,7 +68,7 @@ imagePullPolicy: Always
 
 ---
 
-## 查看 Registry 里有啥
+## 查看 Registry
 
 ```bash
 curl http://192.168.3.100:5000/v2/_catalog

@@ -92,7 +92,7 @@ docker tag poker-tracker:1.0.0 192.168.3.100:5000/poker-tracker:1.0.0
 docker push 192.168.3.100:5000/poker-tracker:1.0.0
 ```
 
-> 没有 Registry？先跑 `sudo bash setup-registry.sh`，然后给 worker 节点加配置（脚本末尾有提示）。
+> 没有 Registry？参考 [registry-setup.md](registry-setup.md) 搭建。
 
 ### 4.3 没 Registry？手动分发
 

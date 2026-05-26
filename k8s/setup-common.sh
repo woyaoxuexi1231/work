@@ -19,7 +19,7 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
 
-K8S_MASTER_IP="${K8S_MASTER_IP:-192.168.3.100}"
+K8S_MASTER_IP="${K8S_MASTER_IP:-192.168.3.90}"
 K8S_NODE1_IP="${K8S_NODE1_IP:-192.168.3.101}"
 K8S_NODE2_IP="${K8S_NODE2_IP:-192.168.3.102}"
 
