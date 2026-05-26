@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⏱️ 倒计时器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .time-digit {
+            font-family: 'SF Mono', 'Courier New', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            color: #1f2937;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            min-width: 70px;
+            text-align: center;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        .time-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .countdown-active {
+            animation: pulse 1s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">⏱️ 倒计时器</h1>
+            <p class="text-gray-500">设置时间开始倒计时</p>
+        </div>
+        
+        <!-- 时间显示 -->
+        <div class="flex items-center justify-center gap-2 mb-8">
+            <div class="text-center">
+                <div id="hours" class="time-digit">00</div>
+                <div class="time-label mt-2">时</div>
+            </div>
+            <div class="text-3xl font-bold text-gray-300 mt-[-1rem]">:</div>
+            <div class="text-center">
+                <div id="minutes" class="time-digit">05</div>
+                <div class="time-label mt-2">分</div>
+            </div>
+            <div class="text-3xl font-bold text-gray-300 mt-[-1rem]">:</div>
+            <div class="text-center">
+                <div id="seconds" class="time-digit">00</div>
+                <div class="time-label mt-2">秒</div>
+            </div>
+        </div>
+        
+        <!-- 时间设置 -->
+        <div class="flex justify-center gap-4 mb-6">
+            <div class="text-center">
+                <label class="block text-xs text-gray-500 mb-1">小时</label>
+                <input type="number" id="set-hours" min="0" max="23" value="0"
+                    class="w-16 px-3 py-2 text-center border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500">
+            </div>
+            <div class="text-center">
+                <label class="block text-xs text-gray-500 mb-1">分钟</label>
+                <input type="number" id="set-minutes" min="0" max="59" value="5"
+                    class="w-16 px-3 py-2 text-center border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500">
+            </div>
+            <div class="text-center">
+                <label class="block text-xs text-gray-500 mb-1">秒</label>
+                <input type="number" id="set-seconds" min="0" max="59" value="0"
+                    class="w-16 px-3 py-2 text-center border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500">
+            </div>
+        </div>
+        
+        <!-- 快捷按钮 -->
+        <div class="flex justify-center gap-2 mb-6">
+            <button onclick="setPreset(0, 1, 0)" class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200">1分钟</button>
+            <button onclick="setPreset(0, 5, 0)" class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200">5分钟</button>
+            <button onclick="setPreset(0, 10, 0)" class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200">10分钟</button>
+            <button onclick="setPreset(0, 30, 0)" class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200">30分钟</button>
+            <button onclick="setPreset(1, 0, 0)" class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200">1小时</button>
+        </div>
+        
+        <!-- 控制按钮 -->
+        <div class="flex justify-center gap-3">
+            <button id="start-btn" 
+                class="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-medium 
+                       hover:from-orange-600 hover:to-amber-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                ▶️ 开始
+            </button>
+            <button id="pause-btn" 
+                class="px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300" disabled>
+                ⏸️ 暂停
+            </button>
+            <button id="reset-btn" 
+                class="px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                🔄 重置
+            </button>
+        </div>
+        
+        <!-- 状态显示 -->
+        <div class="mt-6 text-center">
+            <div id="status" class="text-gray-500 text-sm">准备就绪</div>
+        </div>
+    </div>
+
+    <script>
+        const hoursEl = document.getElementById('hours');
+        const minutesEl = document.getElementById('minutes');
+        const secondsEl = document.getElementById('seconds');
+        const setHoursEl = document.getElementById('set-hours');
+        const setMinutesEl = document.getElementById('set-minutes');
+        const setSecondsEl = document.getElementById('set-seconds');
+        const startBtn = document.getElementById('start-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const statusEl = document.getElementById('status');
+        
+        let totalSeconds = 300;
+        let timer = null;
+        let isRunning = false;
+        
+        function pad(num) {
+            return num.toString().padStart(2, '0');
+        }
+        
+        function updateDisplay() {
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            const s = totalSeconds % 60;
+            
+            hoursEl.textContent = pad(h);
+            minutesEl.textContent = pad(m);
+            secondsEl.textContent = pad(s);
+            
+            if (totalSeconds <= 10) {
+                document.querySelectorAll('.time-digit').forEach(el => {
+                    el.style.color = '#ef4444';
+                    el.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+                });
+            } else {
+                document.querySelectorAll('.time-digit').forEach(el => {
+                    el.style.color = '#1f2937';
+                    el.style.background = 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)';
+                });
+            }
+        }
+        
+        function setPreset(h, m, s) {
+            setHoursEl.value = h;
+            setMinutesEl.value = m;
+            setSecondsEl.value = s;
+            totalSeconds = h * 3600 + m * 60 + s;
+            updateDisplay();
+        }
+        
+        function startTimer() {
+            if (totalSeconds <= 0) return;
+            
+            isRunning = true;
+            startBtn.disabled = true;
+            pauseBtn.disabled = false;
+            statusEl.textContent = '运行中...';
+            
+            timer = setInterval(() => {
+                if (totalSeconds > 0) {
+                    totalSeconds--;
+                    updateDisplay();
+                } else {
+                    clearInterval(timer);
+                    isRunning = false;
+                    statusEl.textContent = '⏰ 时间到！';
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    playSound();
+                    document.body.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+                    setTimeout(() => {
+                        document.body.style.background = 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)';
+                    }, 1000);
+                }
+            }, 1000);
+        }
+        
+        function pauseTimer() {
+            clearInterval(timer);
+            isRunning = false;
+            startBtn.disabled = false;
+            pauseBtn.disabled = true;
+            statusEl.textContent = '已暂停';
+        }
+        
+        function resetTimer() {
+            clearInterval(timer);
+            isRunning = false;
+            startBtn.disabled = false;
+            pauseBtn.disabled = true;
+            
+            const h = parseInt(setHoursEl.value) || 0;
+            const m = parseInt(setMinutesEl.value) || 0;
+            const s = parseInt(setSecondsEl.value) || 0;
+            totalSeconds = h * 3600 + m * 60 + s;
+            
+            updateDisplay();
+            statusEl.textContent = '准备就绪';
+        }
+        
+        function playSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+            } catch (e) {
+                console.log('Audio not supported');
+            }
+        }
+        
+        startBtn.addEventListener('click', startTimer);
+        pauseBtn.addEventListener('click', pauseTimer);
+        resetBtn.addEventListener('click', resetTimer);
+        
+        setHoursEl.addEventListener('input', resetTimer);
+        setMinutesEl.addEventListener('input', resetTimer);
+        setSecondsEl.addEventListener('input', resetTimer);
+        
+        updateDisplay();
+    </script>
+</body>
+</html>

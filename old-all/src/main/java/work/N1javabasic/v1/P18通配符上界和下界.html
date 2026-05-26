@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P18: PECS 原则 - 通配符上界与下界</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            slate: { 850: '#151f32', 950: '#0a0f1c' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Noto Sans SC', system-ui, sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* 语法高亮 Token */
+    .tok-kw { color: #c678dd; }
+    .tok-type { color: #e5c07b; }
+    .tok-str { color: #98c379; }
+    .tok-num { color: #d19a66; }
+    .tok-cmt { color: #5c6370; font-style: italic; }
+    .tok-fn { color: #61afef; }
+    .tok-var { color: #e06c75; }
+    .tok-op { color: #56b6c2; }
+    .tok-wild { color: #d19a66; font-weight: bold; }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* 动画 */
+    .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+    /* 类型层级图连线 */
+    .hierarchy-line {
+      position: absolute; left: 50%; top: 100%; width: 2px; height: 24px;
+      background: linear-gradient(to bottom, #475569, transparent);
+      transform: translateX(-50%);
+    }
+
+    /* 禁止/允许标记动画 */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-3px); }
+      75% { transform: translateX(3px); }
+    }
+    .shake { animation: shake 0.3s ease-in-out; }
+
+    /* 内存槽位 */
+    .slot {
+      transition: all 0.3s ease;
+    }
+    .slot:hover { transform: scale(1.05); }
+
+    /* Tab 切换 */
+    .tab-btn.active {
+      background: rgba(99, 102, 241, 0.15);
+      color: #818cf8;
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased selection:bg-indigo-500/30">
+
+<!-- ═══════════════════════════════════════════════════════
+     Header
+     ═══════════════════════════════════════════════════════ -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-bold tracking-widest text-indigo-400 uppercase border border-indigo-500/30 px-2 py-0.5 rounded">P18</span>
+      <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">PECS: Producer Extends, Consumer Super</h1>
+    </div>
+    <nav class="hidden md:flex items-center gap-6 text-xs font-medium text-slate-400">
+      <a href="#pecs" class="hover:text-indigo-400 transition">PECS 原则</a>
+      <a href="#extends" class="hover:text-emerald-400 transition">? extends T</a>
+      <a href="#super" class="hover:text-amber-400 transition">? super T</a>
+      <a href="#why" class="hover:text-rose-400 transition">底层原理</a>
+      <a href="#copy" class="hover:text-cyan-400 transition">经典案例</a>
+    </nav>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-16 space-y-24">
+
+  <!-- ═══════════════════════════════════════════════════════
+       Hero
+       ═══════════════════════════════════════════════════════ -->
+  <section class="text-center max-w-3xl mx-auto fade-up">
+    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-6">
+      Java Generics Core Principle
+    </div>
+    <h2 class="text-3xl sm:text-5xl font-black mb-6 leading-tight">
+      <span class="bg-gradient-to-r from-emerald-400 via-indigo-400 to-amber-400 bg-clip-text text-transparent">PECS 原则</span>
+    </h2>
+    <p class="text-xl sm:text-2xl font-light text-slate-300 mb-4">
+      Producer <span class="text-emerald-400 font-bold">Extends</span>,
+      Consumer <span class="text-amber-400 font-bold">Super</span>
+    </p>
+    <p class="text-slate-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+      这是 Java 泛型通配符设计的核心指导原则。它不是建议，而是<strong class="text-slate-200">类型安全的数学必然</strong>。
+      理解它，就理解了为什么 <code class="text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded text-sm">? extends T</code> 不能写入，
+      为什么 <code class="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded text-sm">? super T</code> 读取只能是 Object。
+    </p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Section 1: Type Hierarchy Foundation
+       ═══════════════════════════════════════════════════════ -->
+  <section class="fade-up">
+    <div class="text-center mb-10">
+      <h3 class="text-2xl font-bold text-white mb-2">前置知识：类型层级关系</h3>
+      <p class="text-slate-500 text-sm">以下所有讨论基于此继承链</p>
+    </div>
+
+    <div class="flex flex-col items-center gap-1 py-6">
+      <!-- Object -->
+      <div class="relative px-6 py-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-mono text-sm font-bold z-10">
+        Object
+        <div class="hierarchy-line"></div>
+      </div>
+      <!-- Number -->
+      <div class="relative px-6 py-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-mono text-sm font-bold z-10 mt-6">
+        Number
+        <div class="hierarchy-line"></div>
+      </div>
+      <!-- Children -->
+      <div class="flex gap-4 mt-6">
+        <div class="px-5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-bold">
+          Integer
+        </div>
+        <div class="px-5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-xs font-bold">
+          Double
+        </div>
+        <div class="px-5 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 font-mono text-xs font-bold">
+          Long
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-5 max-w-2xl mx-auto text-center">
+      <p class="text-slate-400 text-sm">
+        <code class="text-emerald-400 font-mono text-xs">Integer</code> /
+        <code class="text-amber-400 font-mono text-xs">Double</code> /
+        <code class="text-purple-400 font-mono text-xs">Long</code>
+        都是 <code class="text-indigo-400 font-mono text-xs">Number</code> 的子类，
+        <code class="text-indigo-400 font-mono text-xs">Number</code> 是
+        <code class="text-slate-300 font-mono text-xs">Object</code> 的子类。
+        <br>
+        <span class="text-slate-500 text-xs mt-2 block">⚠️ 注意：<code class="font-mono">List&lt;Integer&gt;</code> <strong>不是</strong> <code class="font-mono">List&lt;Number&gt;</code> 的子类！泛型是不变的（Invariant）。</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Section 2: ? extends T (Producer)
+       ═══════════════════════════════════════════════════════ -->
+  <section id="extends" class="fade-up">
+    <div class="grid lg:grid-cols-2 gap-8 items-start">
+      <!-- Left: Visual Memory Model -->
+      <div class="space-y-6">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider">
+          Producer Extends · 只读
+        </div>
+        <h3 class="text-2xl font-bold text-white">
+          <code class="text-emerald-400">List&lt;? extends Number&gt;</code>
+        </h3>
+        <p class="text-slate-400 text-sm leading-relaxed">
+          含义：这个列表持有的是 <strong class="text-slate-200">Number 的某个未知子类型</strong>。
+          可能是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;Integer&gt;</code>，
+          可能是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;Double&gt;</code>，
+          也可能是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;Number&gt;</code>。
+          <strong class="text-emerald-400">编译器不知道具体是哪个。</strong>
+        </p>
+
+        <!-- Memory Visualization -->
+        <div class="bg-slate-900 border border-emerald-500/20 rounded-2xl p-6">
+          <h4 class="text-emerald-400 text-xs font-bold uppercase tracking-wider mb-4">内存视角：你不知道里面装的是什么</h4>
+          <div class="flex gap-3 mb-4">
+            <div class="slot flex-1 h-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold">
+              ???<br><span class="text-[10px] text-emerald-500/60">Number 的某子类</span>
+            </div>
+            <div class="slot flex-1 h-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold">
+              ???<br><span class="text-[10px] text-emerald-500/60">Number 的某子类</span>
+            </div>
+            <div class="slot flex-1 h-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold">
+              ???<br><span class="text-[10px] text-emerald-500/60">Number 的某子类</span>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+              <span class="text-emerald-400 text-lg">✅</span>
+              <div>
+                <code class="text-xs font-mono text-emerald-300">Number n = list.get(0);</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">不管实际是什么子类型，一定是 Number → 安全读取</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-rose-500/5 border border-rose-500/10">
+              <span class="text-rose-400 text-lg">❌</span>
+              <div>
+                <code class="text-xs font-mono text-rose-300">list.add(new Integer(1));</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">如果实际是 List&lt;Double&gt;，放入 Integer → 类型污染！</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-rose-500/5 border border-rose-500/10">
+              <span class="text-rose-400 text-lg">❌</span>
+              <div>
+                <code class="text-xs font-mono text-rose-300">list.add(new Double(1.0));</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">如果实际是 List&lt;Integer&gt;，放入 Double → 同样污染！</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-500/5 border border-slate-500/10">
+              <span class="text-slate-400 text-lg">✅</span>
+              <div>
+                <code class="text-xs font-mono text-slate-300">list.add(null);</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">null 是所有引用类型的合法值 → 唯一允许的写入</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Code -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+          <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+          <span class="ml-3 text-xs text-slate-500 font-mono">ExtendsDemo.java</span>
+        </div>
+        <pre class="p-5 text-xs sm:text-sm leading-relaxed overflow-x-auto"><code><span class="tok-cmt">// 一个"生产者"方法：从列表中读取数据</span>
+<span class="tok-kw">public static double</span> <span class="tok-fn">sum</span>(
+        <span class="tok-type">List</span>&lt;<span class="tok-wild">? extends</span> <span class="tok-type">Number</span>&gt; source) {
+
+    <span class="tok-kw">double</span> total = <span class="tok-num">0</span>;
+    <span class="tok-kw">for</span> (<span class="tok-type">Number</span> n : source) {  <span class="tok-cmt">// ✅ 安全读取为 Number</span>
+        total += n.<span class="tok-fn">doubleValue</span>();
+    }
+    <span class="tok-kw">return</span> total;
+}
+
+<span class="tok-cmt">// 调用方可以传入任何 Number 子类的列表</span>
+<span class="tok-type">List</span>&lt;<span class="tok-type">Integer</span>&gt; ints = <span class="tok-type">List</span>.<span class="tok-fn">of</span>(<span class="tok-num">1</span>, <span class="tok-num">2</span>, <span class="tok-num">3</span>);
+<span class="tok-type">List</span>&lt;<span class="tok-type">Double</span>&gt; dbls = <span class="tok-type">List</span>.<span class="tok-fn">of</span>(<span class="tok-num">1.1</span>, <span class="tok-num">2.2</span>);
+
+<span class="tok-fn">sum</span>(ints);  <span class="tok-cmt">// ✅ List&lt;Integer&gt; 匹配 ? extends Number</span>
+<span class="tok-fn">sum</span>(dbls);  <span class="tok-cmt">// ✅ List&lt;Double&gt; 匹配 ? extends Number</span>
+
+<span class="tok-cmt">// ═══ 为什么不能写入？ ═══</span>
+<span class="tok-kw">void</span> <span class="tok-fn">broken</span>(<span class="tok-type">List</span>&lt;<span class="tok-wild">? extends</span> <span class="tok-type">Number</span>&gt; list) {
+    list.<span class="tok-fn">add</span>(<span class="tok-kw">new</span> <span class="tok-type">Integer</span>(<span class="tok-num">1</span>)); <span class="tok-cmt">// ❌ 编译错误!</span>
+    <span class="tok-cmt">// 如果 list 实际是 List&lt;Double&gt;，</span>
+    <span class="tok-cmt">// 你就往 Double 列表里塞了 Integer!</span>
+    <span class="tok-cmt">// 编译器无法验证安全性，直接拒绝。</span>
+
+    list.<span class="tok-fn">add</span>(<span class="tok-kw">null</span>); <span class="tok-cmt">// ✅ null 是唯一例外</span>
+}</code></pre>
+      </div>
+    </div>
+
+    <!-- Key Insight -->
+    <div class="mt-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 flex gap-4">
+      <span class="text-emerald-400 text-2xl flex-shrink-0">📖</span>
+      <div>
+        <h4 class="text-emerald-300 font-bold text-sm mb-1">PECS 之 Producer Extends</h4>
+        <p class="text-slate-400 text-sm leading-relaxed">
+          当你只需要<strong class="text-slate-200">从集合中读取</strong>数据（它是数据的生产者），使用 <code class="text-xs bg-slate-800 px-1 rounded text-emerald-300">? extends T</code>。
+          你可以安全地以 <code class="text-xs bg-slate-800 px-1 rounded">T</code> 类型读取，但<strong class="text-rose-400">不能写入任何非 null 值</strong>，
+          因为编译器无法确定实际的子类型是什么。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Section 3: ? super T (Consumer)
+       ═══════════════════════════════════════════════════════ -->
+  <section id="super" class="fade-up">
+    <div class="grid lg:grid-cols-2 gap-8 items-start">
+      <!-- Left: Code -->
+      <div class="order-2 lg:order-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+          <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+          <span class="ml-3 text-xs text-slate-500 font-mono">SuperDemo.java</span>
+        </div>
+        <pre class="p-5 text-xs sm:text-sm leading-relaxed overflow-x-auto"><code><span class="tok-cmt">// 一个"消费者"方法：向列表中写入数据</span>
+<span class="tok-kw">public static void</span> <span class="tok-fn">addNumbers</span>(
+        <span class="tok-type">List</span>&lt;<span class="tok-wild">? super</span> <span class="tok-type">Integer</span>&gt; dest) {
+
+    dest.<span class="tok-fn">add</span>(<span class="tok-num">1</span>);      <span class="tok-cmt">// ✅ Integer 安全写入</span>
+    dest.<span class="tok-fn">add</span>(<span class="tok-num">2</span>);      <span class="tok-cmt">// ✅ Integer 安全写入</span>
+    dest.<span class="tok-fn">add</span>(<span class="tok-num">3</span>);      <span class="tok-cmt">// ✅ Integer 安全写入</span>
+}
+
+<span class="tok-cmt">// 调用方可以传入 Integer 或其任何父类型的列表</span>
+<span class="tok-type">List</span>&lt;<span class="tok-type">Integer</span>&gt; ints = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();
+<span class="tok-type">List</span>&lt;<span class="tok-type">Number</span>&gt; nums = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();
+<span class="tok-type">List</span>&lt;<span class="tok-type">Object</span>&gt; objs = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();
+
+<span class="tok-fn">addNumbers</span>(ints); <span class="tok-cmt">// ✅ List&lt;Integer&gt; 匹配 ? super Integer</span>
+<span class="tok-fn">addNumbers</span>(nums); <span class="tok-cmt">// ✅ List&lt;Number&gt; 匹配 ? super Integer</span>
+<span class="tok-fn">addNumbers</span>(objs); <span class="tok-cmt">// ✅ List&lt;Object&gt; 匹配 ? super Integer</span>
+
+<span class="tok-cmt">// ═══ 为什么读取只能得到 Object？ ═══</span>
+<span class="tok-kw">void</span> <span class="tok-fn">read</span>(<span class="tok-type">List</span>&lt;<span class="tok-wild">? super</span> <span class="tok-type">Integer</span>&gt; list) {
+    <span class="tok-type">Object</span> o = list.<span class="tok-fn">get</span>(<span class="tok-num">0</span>);  <span class="tok-cmt">// ✅ 只能是 Object</span>
+
+    <span class="tok-type">Integer</span> i = list.<span class="tok-fn">get</span>(<span class="tok-num">0</span>); <span class="tok-cmt">// ❌ 编译错误!</span>
+    <span class="tok-cmt">// 如果 list 实际是 List&lt;Object&gt;，</span>
+    <span class="tok-cmt">// get(0) 可能返回 String，强转 Integer 会炸!</span>
+
+    <span class="tok-type">Number</span> n = list.<span class="tok-fn">get</span>(<span class="tok-num">0</span>);  <span class="tok-cmt">// ❌ 也不行!</span>
+    <span class="tok-cmt">// List&lt;Object&gt; 里的元素不一定是 Number</span>
+}</code></pre>
+      </div>
+
+      <!-- Right: Visual -->
+      <div class="order-1 lg:order-2 space-y-6">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-bold uppercase tracking-wider">
+          Consumer Super · 只写
+        </div>
+        <h3 class="text-2xl font-bold text-white">
+          <code class="text-amber-400">List&lt;? super Integer&gt;</code>
+        </h3>
+        <p class="text-slate-400 text-sm leading-relaxed">
+          含义：这个列表持有的是 <strong class="text-slate-200">Integer 的某个未知父类型</strong>。
+          可能是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;Integer&gt;</code>，
+          可能是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;Number&gt;</code>，
+          也可能是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;Object&gt;</code>。
+          <strong class="text-amber-400">但无论哪种，都能安全接收 Integer。</strong>
+        </p>
+
+        <!-- Memory Visualization -->
+        <div class="bg-slate-900 border border-amber-500/20 rounded-2xl p-6">
+          <h4 class="text-amber-400 text-xs font-bold uppercase tracking-wider mb-4">内存视角：你不知道上限在哪，但下限确定</h4>
+          <div class="flex gap-3 mb-4">
+            <div class="slot flex-1 h-16 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-300 font-mono text-xs font-bold">
+              ≥ Integer<br><span class="text-[10px] text-amber-500/60">Integer 的某父类</span>
+            </div>
+            <div class="slot flex-1 h-16 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-300 font-mono text-xs font-bold">
+              ≥ Integer<br><span class="text-[10px] text-amber-500/60">Integer 的某父类</span>
+            </div>
+            <div class="slot flex-1 h-16 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-300 font-mono text-xs font-bold">
+              ≥ Integer<br><span class="text-[10px] text-amber-500/60">Integer 的某父类</span>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+              <span class="text-emerald-400 text-lg">✅</span>
+              <div>
+                <code class="text-xs font-mono text-emerald-300">list.add(new Integer(42));</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">不管实际父类型是什么，一定能容纳 Integer → 安全写入</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+              <span class="text-emerald-400 text-lg">✅</span>
+              <div>
+                <code class="text-xs font-mono text-emerald-300">list.add(42); // autoboxing</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">自动装箱的 Integer 同样安全</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-rose-500/5 border border-rose-500/10">
+              <span class="text-rose-400 text-lg">❌</span>
+              <div>
+                <code class="text-xs font-mono text-rose-300">Integer i = list.get(0);</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">如果实际是 List&lt;Object&gt;，元素可能是 String → 不安全!</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-500/5 border border-slate-500/10">
+              <span class="text-slate-400 text-lg">✅</span>
+              <div>
+                <code class="text-xs font-mono text-slate-300">Object o = list.get(0);</code>
+                <p class="text-slate-500 text-[11px] mt-0.5">一切皆是 Object → 唯一安全的读取类型</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Key Insight -->
+    <div class="mt-6 bg-amber-500/5 border border-amber-500/20 rounded-xl p-5 flex gap-4">
+      <span class="text-amber-400 text-2xl flex-shrink-0">✏️</span>
+      <div>
+        <h4 class="text-amber-300 font-bold text-sm mb-1">PECS 之 Consumer Super</h4>
+        <p class="text-slate-400 text-sm leading-relaxed">
+          当你只需要<strong class="text-slate-200">向集合中写入</strong>数据（它是数据的消费者），使用 <code class="text-xs bg-slate-800 px-1 rounded text-amber-300">? super T</code>。
+          你可以安全地写入 <code class="text-xs bg-slate-800 px-1 rounded">T</code> 及其子类型，但<strong class="text-rose-400">读取时只能当作 Object</strong>，
+          因为编译器无法确定实际的父类型是什么。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Section 4: Why? The Deep Reason
+       ═══════════════════════════════════════════════════════ -->
+  <section id="why" class="fade-up">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-3">
+        <span class="bg-gradient-to-r from-rose-400 to-orange-400 bg-clip-text text-transparent">底层原理：为什么必须这样？</span>
+      </h2>
+      <p class="text-slate-500 text-sm">这不是设计偏好，而是类型安全的数学约束</p>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <!-- Why extends can't write -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+        <h3 class="text-emerald-400 font-bold text-sm mb-4 flex items-center gap-2">
+          <span class="w-6 h-6 rounded bg-emerald-500/10 flex items-center justify-center text-xs">?</span>
+          为什么 <code class="text-emerald-400">? extends T</code> 不能写入？
+        </h3>
+        <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+          <p>假设允许写入，考虑以下场景：</p>
+          <div class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-500 space-y-1">
+            <div><span class="tok-type">List</span>&lt;<span class="tok-type">Double</span>&gt; doubles = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();</div>
+            <div><span class="tok-type">List</span>&lt;<span class="tok-wild">? extends</span> <span class="tok-type">Number</span>&gt; list = doubles;</div>
+            <div class="text-rose-400">list.<span class="tok-fn">add</span>(<span class="tok-kw">new</span> <span class="tok-type">Integer</span>(<span class="tok-num">1</span>)); <span class="tok-cmt">// 💥</span></div>
+            <div><span class="tok-type">Double</span> d = doubles.<span class="tok-fn">get</span>(<span class="tok-num">0</span>); <span class="tok-cmt">// ClassCastException!</span></div>
+          </div>
+          <p>
+            <code class="text-xs bg-slate-800 px-1 rounded text-emerald-300">? extends Number</code> 是一个
+            <strong class="text-slate-300">存在类型（Existential Type）</strong>：
+            "存在某个具体的子类型 X，使得 list 是 List&lt;X&gt;"。
+            编译器知道 X 存在，但<strong class="text-rose-400">不知道 X 是什么</strong>。
+            既然不知道 X，就无法验证任何写入是否与 X 兼容。
+          </p>
+          <p class="text-slate-500 text-xs border-t border-slate-800 pt-3">
+            形式化表达：<code class="font-mono">∀ value ≠ null, ¬∃ proof(value : ?)</code><br>
+            对于任何非 null 值，都不存在它是"未知类型"实例的证明。
+          </p>
+        </div>
+      </div>
+
+      <!-- Why super reads Object -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+        <h3 class="text-amber-400 font-bold text-sm mb-4 flex items-center gap-2">
+          <span class="w-6 h-6 rounded bg-amber-500/10 flex items-center justify-center text-xs">?</span>
+          为什么 <code class="text-amber-400">? super T</code> 读取只能是 Object？
+        </h3>
+        <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+          <p>假设允许以 T 类型读取，考虑以下场景：</p>
+          <div class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-500 space-y-1">
+            <div><span class="tok-type">List</span>&lt;<span class="tok-type">Object</span>&gt; objs = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();</div>
+            <div>objs.<span class="tok-fn">add</span>(<span class="tok-str">"hello"</span>);</div>
+            <div><span class="tok-type">List</span>&lt;<span class="tok-wild">? super</span> <span class="tok-type">Integer</span>&gt; list = objs;</div>
+            <div class="text-rose-400"><span class="tok-type">Integer</span> i = list.<span class="tok-fn">get</span>(<span class="tok-num">0</span>); <span class="tok-cmt">// 💥 String→Integer!</span></div>
+          </div>
+          <p>
+            <code class="text-xs bg-slate-800 px-1 rounded text-amber-300">? super Integer</code> 的含义是
+            "存在某个父类型 Y ⊇ Integer，使得 list 是 List&lt;Y&gt;"。
+            Y 可能是 <code class="text-xs bg-slate-800 px-1 rounded">Integer</code>、<code class="text-xs bg-slate-800 px-1 rounded">Number</code>、
+            <code class="text-xs bg-slate-800 px-1 rounded">Object</code>。
+            这些类型的<strong class="text-slate-300">公共交集只有 Object</strong>。
+          </p>
+          <p class="text-slate-500 text-xs border-t border-slate-800 pt-3">
+            形式化表达：<code class="font-mono">⋂{Y | Y ⊇ T} = Object</code><br>
+            所有 T 的超类型的交集 = Object（Java 类型系统的顶元素）
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Covariance / Contravariance -->
+    <div class="mt-6 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-6">
+      <h3 class="text-indigo-300 font-bold text-sm mb-3">🎓 类型理论术语</h3>
+      <div class="grid sm:grid-cols-2 gap-4 text-sm text-slate-400">
+        <div>
+          <strong class="text-emerald-400">协变（Covariance）</strong>：<code class="text-xs bg-slate-800 px-1 rounded">? extends T</code><br>
+          子类型关系保持方向：若 A ≤ B，则 List&lt;? extends A&gt; ≤ List&lt;? extends B&gt;。<br>
+          <span class="text-slate-500 text-xs">适合只读场景（输出位置）</span>
+        </div>
+        <div>
+          <strong class="text-amber-400">逆变（Contravariance）</strong>：<code class="text-xs bg-slate-800 px-1 rounded">? super T</code><br>
+          子类型关系反转方向：若 A ≤ B，则 List&lt;? super B&gt; ≤ List&lt;? super A&gt;。<br>
+          <span class="text-slate-500 text-xs">适合只写场景（输入位置）</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Section 5: Classic Example - Collections.copy
+       ═══════════════════════════════════════════════════════ -->
+  <section id="copy" class="fade-up">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-3">
+        <span class="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">经典案例：Collections.copy()</span>
+      </h2>
+      <p class="text-slate-500 text-sm">JDK 源码中 PECS 最完美的体现</p>
+    </div>
+
+    <div class="bg-slate-900 border border-cyan-500/20 rounded-2xl overflow-hidden ring-1 ring-cyan-500/10">
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+        <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+        <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+        <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+        <span class="ml-3 text-xs text-slate-500 font-mono">java.util.Collections (JDK Source)</span>
+      </div>
+      <pre class="p-5 text-xs sm:text-sm leading-relaxed overflow-x-auto"><code><span class="tok-kw">public static</span> &lt;<span class="tok-type">T</span>&gt; <span class="tok-kw">void</span> <span class="tok-fn">copy</span>(
+        <span class="tok-type">List</span>&lt;<span class="tok-wild">? super</span> <span class="tok-type">T</span>&gt; dest,    <span class="tok-cmt">// ← Consumer: 写入目标</span>
+        <span class="tok-type">List</span>&lt;<span class="tok-wild">? extends</span> <span class="tok-type">T</span>&gt; src   <span class="tok-cmt">// ← Producer: 读取来源</span>
+) {
+    <span class="tok-kw">for</span> (<span class="tok-kw">int</span> i = <span class="tok-num">0</span>; i &lt; src.<span class="tok-fn">size</span>(); i++) {
+        dest.<span class="tok-fn">set</span>(i, src.<span class="tok-fn">get</span>(i)); <span class="tok-cmt">// 从 src 读 T，写入 dest</span>
+    }
+}
+
+<span class="tok-cmt">// ═══ 实际使用 ═══</span>
+<span class="tok-type">List</span>&lt;<span class="tok-type">Integer</span>&gt; src = <span class="tok-type">List</span>.<span class="tok-fn">of</span>(<span class="tok-num">1</span>, <span class="tok-num">2</span>, <span class="tok-num">3</span>);
+
+<span class="tok-type">List</span>&lt;<span class="tok-type">Number</span>&gt; dest1 = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();
+<span class="tok-type">Collections</span>.<span class="tok-fn">copy</span>(dest1, src); <span class="tok-cmt">// ✅ Integer → Number</span>
+
+<span class="tok-type">List</span>&lt;<span class="tok-type">Object</span>&gt; dest2 = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();
+<span class="tok-type">Collections</span>.<span class="tok-fn">copy</span>(dest2, src); <span class="tok-cmt">// ✅ Integer → Object</span>
+
+<span class="tok-type">List</span>&lt;<span class="tok-type">Double</span>&gt; dest3 = <span class="tok-kw">new</span> <span class="tok-type">ArrayList</span>&lt;&gt;();
+<span class="tok-cmt">// Collections.copy(dest3, src); // ❌ Double 不是 Integer 的超类</span></code></pre>
+    </div>
+
+    <!-- Annotation Breakdown -->
+    <div class="mt-6 grid sm:grid-cols-2 gap-4">
+      <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5">
+        <h4 class="text-emerald-400 font-bold text-sm mb-2">src: <code class="font-mono">List&lt;? extends T&gt;</code></h4>
+        <p class="text-slate-400 text-xs leading-relaxed">
+          <strong>生产者</strong>。copy 需要从 src 中 <code class="font-mono text-emerald-300">get()</code> 元素。
+          用 <code class="font-mono text-emerald-300">? extends T</code> 保证读出的元素至少是 T 类型，
+          同时允许传入 <code class="font-mono">List&lt;Integer&gt;</code> 等更具体的列表。
+        </p>
+      </div>
+      <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5">
+        <h4 class="text-amber-400 font-bold text-sm mb-2">dest: <code class="font-mono">List&lt;? super T&gt;</code></h4>
+        <p class="text-slate-400 text-xs leading-relaxed">
+          <strong>消费者</strong>。copy 需要向 dest 中 <code class="font-mono text-amber-300">set()</code> 元素。
+          用 <code class="font-mono text-amber-300">? super T</code> 保证 dest 能容纳 T 类型，
+          同时允许传入 <code class="font-mono">List&lt;Number&gt;</code> 等更宽泛的列表。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Section 6: Quick Reference Card
+       ═══════════════════════════════════════════════════════ -->
+  <section class="fade-up">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl font-bold text-white mb-2">速查卡片</h2>
+      <p class="text-slate-500 text-sm">打印贴在工位上</p>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl border border-slate-800">
+      <table class="w-full text-sm min-w-[640px]">
+        <thead>
+        <tr class="bg-slate-900/80 border-b border-slate-800">
+          <th class="text-left px-5 py-4 text-slate-400 font-semibold text-xs uppercase tracking-wider">通配符</th>
+          <th class="text-center px-4 py-4 text-xs uppercase tracking-wider">角色</th>
+          <th class="text-center px-4 py-4 text-xs uppercase tracking-wider">读取</th>
+          <th class="text-center px-4 py-4 text-xs uppercase tracking-wider">写入</th>
+          <th class="text-left px-5 py-4 text-slate-400 font-semibold text-xs uppercase tracking-wider">记忆口诀</th>
+        </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+        <tr class="hover:bg-emerald-500/[0.03] transition">
+          <td class="px-5 py-4 font-mono text-emerald-400 font-bold text-xs">? extends T</td>
+          <td class="text-center px-4 py-4">
+            <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold">Producer</span>
+          </td>
+          <td class="text-center px-4 py-4">
+            <span class="text-emerald-400">✅ 得到 T</span>
+          </td>
+          <td class="text-center px-4 py-4">
+            <span class="text-rose-400">❌ 仅 null</span>
+          </td>
+          <td class="px-5 py-4 text-slate-500 text-xs">"向上看，读安全；不知具体类型，写危险"</td>
+        </tr>
+        <tr class="hover:bg-amber-500/[0.03] transition">
+          <td class="px-5 py-4 font-mono text-amber-400 font-bold text-xs">? super T</td>
+          <td class="text-center px-4 py-4">
+            <span class="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold">Consumer</span>
+          </td>
+          <td class="text-center px-4 py-4">
+            <span class="text-slate-400">⚠️ 仅 Object</span>
+          </td>
+          <td class="text-center px-4 py-4">
+            <span class="text-emerald-400">✅ T 及子类</span>
+          </td>
+          <td class="px-5 py-4 text-slate-500 text-xs">"向下看，写安全；不知上限类型，读受限"</td>
+        </tr>
+        <tr class="hover:bg-indigo-500/[0.03] transition">
+          <td class="px-5 py-4 font-mono text-indigo-400 font-bold text-xs">&lt;T&gt; (精确)</td>
+          <td class="text-center px-4 py-4">
+            <span class="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 text-[10px] font-bold">Both</span>
+          </td>
+          <td class="text-center px-4 py-4">
+            <span class="text-emerald-400">✅ 得到 T</span>
+          </td>
+          <td class="text-center px-4 py-4">
+            <span class="text-emerald-400">✅ 写入 T</span>
+          </td>
+          <td class="px-5 py-4 text-slate-500 text-xs">"既读又写时用精确类型参数"</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Final Warning -->
+    <div class="mt-8 bg-gradient-to-r from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+      <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+        <span class="text-xl">🧭</span> 决策流程
+      </h3>
+      <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xs font-bold mt-0.5">1</span>
+          <p>这个方法/字段是否需要<strong class="text-slate-200">同时读写</strong>同一个泛型集合？<br>
+            → 是：使用精确类型参数 <code class="text-xs bg-slate-800 px-1 rounded text-indigo-300">&lt;T&gt;</code>，不用通配符。</p>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xs font-bold mt-0.5">2</span>
+          <p>只需要<strong class="text-slate-200">从中读取</strong>（它是数据源/生产者）？<br>
+            → 用 <code class="text-xs bg-slate-800 px-1 rounded text-emerald-300">? extends T</code>。最大化调用方的传入灵活性。</p>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs font-bold mt-0.5">3</span>
+          <p>只需要<strong class="text-slate-200">向其中写入</strong>（它是数据汇/消费者）？<br>
+            → 用 <code class="text-xs bg-slate-800 px-1 rounded text-amber-300">? super T</code>。最大化调用方的传入灵活性。</p>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-slate-500/10 text-slate-400 flex items-center justify-center text-xs font-bold mt-0.5">4</span>
+          <p>既不读也不写，只做结构性操作（如 <code class="text-xs bg-slate-800 px-1 rounded">size()</code>、<code class="text-xs bg-slate-800 px-1 rounded">clear()</code>）？<br>
+            → 用 <code class="text-xs bg-slate-800 px-1 rounded text-slate-300">?</code>（无界通配符），最大灵活性。</p>
+        </div>
+      </div>
+      <p class="mt-4 pt-4 border-t border-slate-800 text-slate-500 text-xs">
+        💡 <strong>Bloch's Rule</strong>（Effective Java Item 31）：<em>"Don't use wildcard types as return types."</em>
+        通配符应该出现在<strong class="text-slate-300">方法参数</strong>中以增加灵活性，而不应出现在返回值中——那只会给调用方制造麻烦。
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-10 mt-12">
+  <div class="max-w-6xl mx-auto px-6 text-center">
+    <p class="text-slate-600 text-xs">
+      P18 · PECS: Producer Extends, Consumer Super ·
+      通配符不是魔法，是类型安全的数学表达
+    </p>
+  </div>
+</footer>
+
+<!-- Scroll Animation -->
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('visible');
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
+
+  document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+</script>
+
+</body>
+</html>

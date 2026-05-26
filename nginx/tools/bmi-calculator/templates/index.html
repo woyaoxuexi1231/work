@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚖️ BMI计算器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .bmi-display {
+            font-size: 3rem;
+            font-weight: 700;
+        }
+        .bmi-blue { color: #3b82f6; }
+        .bmi-green { color: #10b981; }
+        .bmi-orange { color: #f59e0b; }
+        .bmi-red { color: #ef4444; }
+        .result-card {
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+        .result-blue { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); }
+        .result-green { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); }
+        .result-orange { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); }
+        .result-red { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); }
+        .bmi-chart-bar {
+            height: 20px;
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">⚖️ BMI计算器</h1>
+            <p class="text-gray-500">计算您的身体质量指数</p>
+        </div>
+        
+        <!-- 输入区域 -->
+        <div class="space-y-4 mb-6">
+            <div>
+                <label class="block text-sm text-gray-600 mb-2">体重 (kg)</label>
+                <input type="number" id="weight" min="1" max="300" step="0.1"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="请输入体重">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-2">身高 (cm)</label>
+                <input type="number" id="height" min="50" max="250"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="请输入身高">
+            </div>
+        </div>
+        
+        <!-- 计算按钮 -->
+        <button id="calculate-btn" 
+            class="w-full py-3 px-6 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl font-medium 
+                   hover:from-cyan-600 hover:to-blue-600 transition-all duration-300 
+                   shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 mb-6">
+            📊 计算BMI
+        </button>
+        
+        <!-- 结果显示 -->
+        <div id="result-container" class="mb-6 hidden">
+            <div id="result-card" class="result-card">
+                <div class="text-center">
+                    <div class="text-sm text-gray-500 mb-1">您的BMI指数</div>
+                    <div id="bmi-value" class="bmi-display bmi-green">0.0</div>
+                    <div id="bmi-category" class="text-lg font-medium mt-2">--</div>
+                </div>
+                <div id="bmi-advice" class="mt-4 text-sm text-gray-600">--</div>
+            </div>
+        </div>
+        
+        <!-- BMI图表 -->
+        <div>
+            <div class="text-sm text-gray-600 mb-3">BMI参考标准</div>
+            <div class="relative">
+                <div class="h-5 rounded-full overflow-hidden flex">
+                    <div class="flex-1 bg-blue-400"></div>
+                    <div class="flex-1 bg-green-400"></div>
+                    <div class="flex-1 bg-orange-400"></div>
+                    <div class="flex-1 bg-red-400"></div>
+                </div>
+                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>偏瘦</span>
+                    <span>正常</span>
+                    <span>偏胖</span>
+                    <span>肥胖</span>
+                </div>
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>&lt;18.5</span>
+                    <span>24</span>
+                    <span>28</span>
+                    <span>&gt;=28</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const weightEl = document.getElementById('weight');
+        const heightEl = document.getElementById('height');
+        const calculateBtn = document.getElementById('calculate-btn');
+        const resultContainer = document.getElementById('result-container');
+        const resultCard = document.getElementById('result-card');
+        const bmiValue = document.getElementById('bmi-value');
+        const bmiCategory = document.getElementById('bmi-category');
+        const bmiAdvice = document.getElementById('bmi-advice');
+        
+        calculateBtn.addEventListener('click', async () => {
+            const weight = weightEl.value;
+            const height = heightEl.value;
+            
+            if (!weight || !height) {
+                alert('请输入体重和身高');
+                return;
+            }
+            
+            const response = await fetch('./calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ weight, height })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                alert(result.error);
+                return;
+            }
+            
+            resultContainer.style.display = 'block';
+            
+            bmiValue.textContent = result.bmi;
+            bmiValue.className = `bmi-display bmi-${result.color}`;
+            
+            bmiCategory.textContent = result.category;
+            
+            bmiAdvice.textContent = result.advice;
+            
+            resultCard.className = `result-card result-${result.color}`;
+        });
+    </script>
+</body>
+</html>

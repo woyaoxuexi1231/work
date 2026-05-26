@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HashMap 树化阈值 8 / 6 / 2 的设计原理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: { slate: { 850: '#151f32', 950: '#0a0f1c' } }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans SC', system-ui, sans-serif; background: #0a0f1c; color: #cbd5e1; }
+        code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+        .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+        /* 泊松分布条形图 */
+        .bar { transition: height 0.6s ease, opacity 0.3s; }
+        .bar:hover { opacity: 1 !important; }
+
+        /* 滞后区间可视化 */
+        .hysteresis-track { position: relative; height: 48px; border-radius: 24px; overflow: hidden; }
+        .hysteresis-zone { position: absolute; top: 0; bottom: 0; transition: all 0.4s ease; }
+
+        /* Token colors */
+        .tk-kw { color: #c678dd; }
+        .tk-num { color: #d19a66; }
+        .tk-cmt { color: #5c6370; font-style: italic; }
+        .tk-type { color: #e5c07b; }
+        .tk-fn { color: #61afef; }
+        .tk-str { color: #98c379; }
+    </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+
+<!-- Header -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] font-bold tracking-widest text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded uppercase">Deep Dive</span>
+            <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">HashMap 树化阈值 8 · 退化阈值 6 · 缓冲差值 2</h1>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 py-16 space-y-20">
+
+    <!-- ═══════════════ HERO ═══════════════ -->
+    <section class="text-center max-w-3xl mx-auto fade-up">
+        <h2 class="text-3xl sm:text-4xl font-black mb-5 leading-tight">
+            为什么是 <span class="text-emerald-400">8</span>、<span class="text-amber-400">6</span>、<span class="text-indigo-400">2</span>？
+        </h2>
+        <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+            这三个数字不是拍脑袋定的。<code class="text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded text-sm">8</code> 来自<strong class="text-slate-200">泊松分布的概率极限</strong>，
+            <code class="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded text-sm">6</code> 是为了<strong class="text-slate-200">避免频繁转换的性能抖动</strong>，
+            <code class="text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded text-sm">2</code> 是两者之间的<strong class="text-slate-200">滞后缓冲区（Hysteresis）</strong>。
+        </p>
+    </section>
+
+    <!-- ═══════════════ SECTION 1: WHY 8 ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm">1</span>
+            <h3 class="text-xl font-bold text-white">为什么树化阈值是 8？—— 泊松分布说"几乎不可能"</h3>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-6">
+            <!-- Left: Explanation -->
+            <div class="space-y-4 text-sm text-slate-400 leading-relaxed">
+                <p>
+                    HashMap 的设计假设是：<strong class="text-slate-200">在良好的 hashCode 下，桶中元素数量服从参数 λ≈0.5 的泊松分布</strong>。
+                    JDK 源码注释中直接给出了这个分布的概率表：
+                </p>
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mono text-xs space-y-1">
+                    <div><span class="tk-num">0</span>: <span class="text-slate-500">0.60653066</span>  ← 60% 的桶是空的</div>
+                    <div><span class="tk-num">1</span>: <span class="text-slate-500">0.30326533</span>  ← 30% 的桶只有 1 个</div>
+                    <div><span class="tk-num">2</span>: <span class="text-slate-500">0.07581633</span></div>
+                    <div><span class="tk-num">3</span>: <span class="text-slate-500">0.01263606</span></div>
+                    <div><span class="tk-num">4</span>: <span class="text-slate-500">0.00157952</span></div>
+                    <div><span class="tk-num">5</span>: <span class="text-slate-500">0.00015795</span></div>
+                    <div><span class="tk-num">6</span>: <span class="text-slate-500">0.00001316</span></div>
+                    <div><span class="tk-num">7</span>: <span class="text-slate-500">0.00000094</span></div>
+                    <div class="text-emerald-400 font-bold"><span class="tk-num">8</span>: <span class="text-emerald-400">0.00000006</span>  ← 千万分之六！</div>
+                </div>
+                <p>
+                    当链表长度达到 8 时，在正常哈希分布下发生的概率仅为 <strong class="text-emerald-400">0.000006%</strong>。
+                    这意味着：<strong class="text-slate-200">如果触发了树化，几乎一定是 hashCode 出了问题</strong>（如恶意攻击或极差的哈希函数）。
+                    树化是一种<strong class="text-slate-200">防御性兜底机制</strong>，而非正常使用路径。
+                </p>
+                <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 flex gap-3">
+                    <span class="text-emerald-400 text-lg flex-shrink-0">💡</span>
+                    <p class="text-xs text-emerald-200/80 leading-relaxed">
+                        <strong>为什么不选 7 或 9？</strong><br>
+                        7 的概率是 8 的 15 倍（0.00000094 vs 0.00000006），还不够"极端"；
+                        9 虽然更安全，但会让 O(n) 退化的窗口多暴露一步。
+                        <strong class="text-emerald-300">8 是概率足够小与防护足够早的最佳平衡点。</strong>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Right: Poisson Chart -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">泊松分布概率 (λ = 0.5)</h4>
+                <div class="flex items-end gap-1.5 h-48 px-2">
+                    <!-- Bars generated with inline heights proportional to probability -->
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">60.7%</div>
+                        <div class="bar w-full rounded-t bg-slate-600 opacity-60" style="height:100%"></div>
+                        <span class="text-[10px] text-slate-500 mono">0</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">30.3%</div>
+                        <div class="bar w-full rounded-t bg-slate-600 opacity-60" style="height:50%"></div>
+                        <span class="text-[10px] text-slate-500 mono">1</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">7.6%</div>
+                        <div class="bar w-full rounded-t bg-slate-500 opacity-60" style="height:12.5%"></div>
+                        <span class="text-[10px] text-slate-500 mono">2</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">1.3%</div>
+                        <div class="bar w-full rounded-t bg-slate-500 opacity-50" style="height:2.1%"></div>
+                        <span class="text-[10px] text-slate-500 mono">3</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">0.16%</div>
+                        <div class="bar w-full rounded-t bg-slate-500 opacity-40" style="height:0.26%; min-height:2px;"></div>
+                        <span class="text-[10px] text-slate-500 mono">4</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">~0</div>
+                        <div class="bar w-full rounded-t bg-slate-500 opacity-30" style="height:0.026%; min-height:2px;"></div>
+                        <span class="text-[10px] text-slate-500 mono">5</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">~0</div>
+                        <div class="bar w-full rounded-t bg-slate-500 opacity-25" style="height:0.002%; min-height:2px;"></div>
+                        <span class="text-[10px] text-slate-500 mono">6</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition mono">~0</div>
+                        <div class="bar w-full rounded-t bg-slate-500 opacity-20" style="height:0.0002%; min-height:2px;"></div>
+                        <span class="text-[10px] text-slate-500 mono">7</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center gap-1 group">
+                        <div class="text-[9px] text-emerald-400 font-bold opacity-0 group-hover:opacity-100 transition mono">6e-8</div>
+                        <div class="bar w-full rounded-t bg-emerald-500 ring-1 ring-emerald-400/50" style="height:0.00001%; min-height:3px;"></div>
+                        <span class="text-[10px] text-emerald-400 mono font-bold">8</span>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-600 mt-3 text-center">
+                    ↑ 长度 ≥8 的概率已低于千万分之一，属于"异常事件"
+                </p>
+            </div>
+        </div>
+
+        <!-- Source Code Reference -->
+        <div class="mt-6 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-4 py-2 border-b border-slate-800 text-[10px] text-slate-500 mono">java.util.HashMap · JDK 8+ 源码注释</div>
+            <pre class="p-4 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-cmt">/*</span>
+<span class="tk-cmt"> * Because TreeNodes are about twice the size of regular nodes,</span>
+<span class="tk-cmt"> * we use them only when bins contain enough nodes to warrant use</span>
+<span class="tk-cmt"> * (see TREEIFY_THRESHOLD). And when they become too small (due to</span>
+<span class="tk-cmt"> * removal or resizing) they are converted back to plain bins.</span>
+<span class="tk-cmt"> *</span>
+<span class="tk-cmt"> * In usages with well-distributed user hashCodes, tree bins are</span>
+<span class="tk-cmt"> * rarely used.  Ideally, under random hashCodes, the frequency of</span>
+<span class="tk-cmt"> * nodes in bins follows a Poisson distribution</span>
+<span class="tk-cmt"> * (http://en.wikipedia.org/wiki/Poisson_distribution) with a</span>
+<span class="tk-cmt"> * parameter of about 0.5 on average for the default resizing</span>
+<span class="tk-cmt"> * threshold of 0.75...</span>
+<span class="tk-cmt"> *</span>
+<span class="tk-cmt"> *   0:    0.60653066</span>
+<span class="tk-cmt"> *   1:    0.30326533</span>
+<span class="tk-cmt"> *   ...</span>
+<span class="tk-cmt"> *   8:    0.00000006</span>
+<span class="tk-cmt"> */</span>
+<span class="tk-kw">static final int</span> <span class="tk-type">TREEIFY_THRESHOLD</span> = <span class="tk-num">8</span>;</code></pre>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 2: WHY 6 NOT 8 ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 font-bold text-sm">2</span>
+            <h3 class="text-xl font-bold text-white">为什么退化阈值是 6 而不是 8？—— 防止"乒乓效应"</h3>
+        </div>
+
+        <div class="space-y-5">
+            <p class="text-sm text-slate-400 leading-relaxed">
+                如果树化和退化的阈值都是 8，考虑以下灾难场景：
+            </p>
+
+            <!-- Ping-Pong Visualization -->
+            <div class="bg-slate-900 border border-rose-500/20 rounded-2xl p-6">
+                <h4 class="text-rose-400 text-xs font-bold uppercase tracking-wider mb-4">❌ 假设阈值同为 8 时的"乒乓震荡"</h4>
+                <div class="space-y-3">
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="w-16 text-right text-slate-500 mono">size=8</span>
+                        <div class="flex-1 h-8 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center px-3 text-emerald-400 font-bold">
+                            → 树化！链表变红黑树
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="w-16 text-right text-slate-500 mono">remove→7</span>
+                        <div class="flex-1 h-8 rounded bg-amber-500/10 border border-amber-500/30 flex items-center px-3 text-amber-400 font-bold">
+                            ← 退化！红黑树变回链表
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="w-16 text-right text-slate-500 mono">put→8</span>
+                        <div class="flex-1 h-8 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center px-3 text-emerald-400 font-bold">
+                            → 又树化！重新构建红黑树
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="w-16 text-right text-slate-500 mono">remove→7</span>
+                        <div class="flex-1 h-8 rounded bg-amber-500/10 border border-amber-500/30 flex items-center px-3 text-amber-400 font-bold">
+                            ← 又退化！再次拆解为链表
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="w-16 text-right text-rose-400 mono font-bold">∞ 循环</span>
+                        <div class="flex-1 h-8 rounded bg-rose-500/10 border border-rose-500/30 flex items-center px-3 text-rose-400 font-bold animate-pulse">
+                            💥 每次 put/remove 都在做 O(n) 的结构转换！
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                    <h4 class="text-amber-400 font-bold text-sm mb-2">转换代价不对称</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        <strong class="text-slate-300">链表→树</strong>：需要遍历链表 + 构建红黑树，O(n)。<br>
+                        <strong class="text-slate-300">树→链表</strong>：需要中序遍历 + 重建链表，也是 O(n)。<br>
+                        两者都不便宜。如果在临界点反复触发，性能会比单纯的 O(n) 查找还差。
+                    </p>
+                </div>
+                <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
+                    <h4 class="text-emerald-400 font-bold text-sm mb-2">✅ 设为 6 的效果</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        树化在 8 触发，退化在 6 触发。<br>
+                        即使 size 在 7~8 之间波动，也<strong class="text-slate-200">不会触发任何转换</strong>。<br>
+                        只有当元素真正持续减少到 6 以下，才确认"不再需要树结构"。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 3: THE GAP OF 2 ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold text-sm">3</span>
+            <h3 class="text-xl font-bold text-white">差值 2 的作用 —— 滞后缓冲（Hysteresis）</h3>
+        </div>
+
+        <!-- Hysteresis Visual -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-6 text-center">数轴上的状态机：滞后区间 [6, 8]</h4>
+
+            <div class="relative max-w-xl mx-auto">
+                <!-- Track -->
+                <div class="hysteresis-track bg-slate-800 border border-slate-700">
+                    <!-- List zone -->
+                    <div class="hysteresis-zone left-0 bg-blue-500/10 border-r border-blue-500/30 flex items-center justify-center text-[10px] text-blue-400 font-bold" style="width:37.5%">
+                        链表
+                    </div>
+                    <!-- Buffer zone -->
+                    <div class="hysteresis-zone bg-indigo-500/15 flex items-center justify-center text-[10px] text-indigo-300 font-bold border-x border-indigo-500/30" style="left:37.5%; width:25%;">
+                        ← 缓冲区 →
+                    </div>
+                    <!-- Tree zone -->
+                    <div class="hysteresis-zone right-0 bg-emerald-500/10 border-l border-emerald-500/30 flex items-center justify-center text-[10px] text-emerald-400 font-bold" style="left:62.5%; right:0;">
+                        红黑树
+                    </div>
+                </div>
+
+                <!-- Tick marks -->
+                <div class="flex justify-between mt-2 text-[10px] mono text-slate-500 px-1">
+                    <span>0</span>
+                    <span class="text-blue-400">≤6 退化</span>
+                    <span class="text-indigo-400">7</span>
+                    <span class="text-emerald-400">≥8 树化</span>
+                    <span>16+</span>
+                </div>
+
+                <!-- Arrows showing direction dependency -->
+                <div class="mt-4 flex justify-between text-[10px] px-4">
+                    <div class="text-blue-400">← remove 方向</div>
+                    <div class="text-emerald-400">put 方向 →</div>
+                </div>
+            </div>
+
+            <p class="text-center text-xs text-slate-500 mt-4">
+                在缓冲区 [7] 内，<strong class="text-slate-300">保持当前状态不变</strong>。状态切换取决于你从哪个方向进入。
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <div class="text-2xl mb-2">🔧</div>
+                <h4 class="text-white font-bold text-sm mb-2">工程术语：Hysteresis</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    "滞后"是控制系统中的经典概念。空调不会在 26°C 立刻停机、25.9°C 立刻启动，
+                    而是设置 26°C 停 / 24°C 启。<strong class="text-slate-300">HashMap 的 8/6 就是同一个思想。</strong>
+                </p>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <div class="text-2xl mb-2">📐</div>
+                <h4 class="text-white font-bold text-sm mb-2">为什么恰好是 2？</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    1 太小：size=7 时一次 put+remove 就会触发双向转换。<br>
+                    3+ 太大：退化门槛过低，树结构在 size=5 时才拆除，浪费内存（TreeNode 是 Node 的 2 倍大小）。<br>
+                    <strong class="text-indigo-400">2 是最小的安全间距。</strong>
+                </p>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <div class="text-2xl mb-2">🧮</div>
+                <h4 class="text-white font-bold text-sm mb-2">额外约束：MIN_TREEIFY_CAPACITY</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    即使链表 ≥8，如果总容量 &lt; 64，HashMap 会选择<strong class="text-slate-300">扩容而非树化</strong>。
+                    因为小容量下的长链更可能是容量不足导致的，扩容比建树更高效。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 4: COMPLETE DECISION FLOW ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 font-bold text-sm">4</span>
+            <h3 class="text-xl font-bold text-white">完整决策流程</h3>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div class="px-4 py-2 border-b border-slate-800 text-[10px] text-slate-500 mono">putVal() 中的树化判断逻辑（简化）</div>
+            <pre class="p-5 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-cmt">// 插入新节点后，检查是否需要树化</span>
+<span class="tk-kw">if</span> (binCount >= <span class="tk-type">TREEIFY_THRESHOLD</span> - <span class="tk-num">1</span>) {  <span class="tk-cmt">// -1 是因为计数从0开始</span>
+
+    <span class="tk-cmt">// 🔒 前置条件：容量必须 ≥ 64</span>
+    <span class="tk-kw">if</span> (tab.length < <span class="tk-type">MIN_TREEIFY_CAPACITY</span>) {
+        <span class="tk-fn">resize</span>();          <span class="tk-cmt">// 容量不够 → 先扩容，不树化</span>
+        <span class="tk-kw">break</span>;
+    }
+
+    <span class="tk-cmt">// ✅ 容量够 + 链表够长 → 树化</span>
+    <span class="tk-fn">treeifyBin</span>(tab, hash);
+}
+
+<span class="tk-cmt">// ────────────────────────────────────────</span>
+<span class="tk-cmt">// removeNode() 中，检查是否需要退化</span>
+<span class="tk-kw">if</span> (root != <span class="tk-kw">null</span> && root.size <= <span class="tk-type">UNTREEIFY_THRESHOLD</span>) {
+    <span class="tk-fn">untreeify</span>(map);   <span class="tk-cmt">// ≤ 6 → 拆树为链表</span>
+}</code></pre>
+        </div>
+
+        <!-- Summary Table -->
+        <div class="mt-6 overflow-x-auto rounded-xl border border-slate-800">
+            <table class="w-full text-xs min-w-[500px]">
+                <thead>
+                <tr class="bg-slate-900/80 border-b border-slate-800">
+                    <th class="text-left px-4 py-3 text-slate-400 font-semibold uppercase tracking-wider">常量</th>
+                    <th class="text-center px-4 py-3 text-slate-400 font-semibold uppercase tracking-wider">值</th>
+                    <th class="text-left px-4 py-3 text-slate-400 font-semibold uppercase tracking-wider">含义</th>
+                    <th class="text-left px-4 py-3 text-slate-400 font-semibold uppercase tracking-wider">设计依据</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                <tr class="hover:bg-emerald-500/[0.03] transition">
+                    <td class="px-4 py-3 mono text-emerald-400 font-bold">TREEIFY_THRESHOLD</td>
+                    <td class="text-center px-4 py-3 text-white font-bold">8</td>
+                    <td class="px-4 py-3 text-slate-300">链表 → 红黑树</td>
+                    <td class="px-4 py-3 text-slate-500">泊松分布 P(X≥8) ≈ 6×10⁻⁸，极端异常才触发</td>
+                </tr>
+                <tr class="hover:bg-amber-500/[0.03] transition">
+                    <td class="px-4 py-3 mono text-amber-400 font-bold">UNTREEIFY_THRESHOLD</td>
+                    <td class="text-center px-4 py-3 text-white font-bold">6</td>
+                    <td class="px-4 py-3 text-slate-300">红黑树 → 链表</td>
+                    <td class="px-4 py-3 text-slate-500">低于树化阈值 2，提供滞后缓冲防震荡</td>
+                </tr>
+                <tr class="hover:bg-indigo-500/[0.03] transition">
+                    <td class="px-4 py-3 mono text-indigo-400 font-bold">Buffer Gap</td>
+                    <td class="text-center px-4 py-3 text-white font-bold">2</td>
+                    <td class="px-4 py-3 text-slate-300">8 − 6 = 滞后区间</td>
+                    <td class="px-4 py-3 text-slate-500">最小安全间距，避免 size 在临界点波动时反复转换</td>
+                </tr>
+                <tr class="hover:bg-purple-500/[0.03] transition">
+                    <td class="px-4 py-3 mono text-purple-400 font-bold">MIN_TREEIFY_CAPACITY</td>
+                    <td class="text-center px-4 py-3 text-white font-bold">64</td>
+                    <td class="px-4 py-3 text-slate-300">允许树化的最小容量</td>
+                    <td class="px-4 py-3 text-slate-500">小容量优先扩容；64 = 8 × 8，与负载因子 0.75 配合</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ═══════════════ FINAL VERDICT ═══════════════ -->
+    <section class="fade-up">
+        <div class="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span class="text-xl">⚖️</span> 一句话总结
+            </h3>
+            <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+                <p>
+                    <strong class="text-emerald-400">8</strong> 不是一个"性能最优"的数字，而是一个<strong class="text-slate-200">"统计学上几乎不可能发生"的安全阈值</strong>。
+                    它的存在不是为了优化正常场景，而是为了在 hashCode 失效时，将最坏情况从 O(n) 兜底到 O(log n)。
+                </p>
+                <p>
+                    <strong class="text-amber-400">6</strong> 不是一个独立的数字，它是 <strong class="text-slate-200">8 的伴生值</strong>。
+                    它的唯一使命是与 8 之间制造一个宽度为 2 的<strong class="text-slate-200">滞后带</strong>，
+                    确保数据结构不会因为元素数量的微小波动而在两种形态之间反复横跳。
+                </p>
+                <p>
+                    <strong class="text-indigo-400">2</strong> 是这个滞后带的<strong class="text-slate-200">最小安全宽度</strong>。
+                    它保证了至少需要连续 2 次反向操作（如 put→remove）才能穿越缓冲区触发状态切换，
+                    从而将"乒乓震荡"的可能性降到工程可接受的范围。
+                </p>
+                <p class="pt-3 border-t border-slate-800 text-slate-500 text-xs">
+                    💡 这三个数字共同体现了 Java 集合框架的设计哲学：<strong class="text-slate-300">正常路径极致轻量，异常路径有兜底，状态转换有阻尼。</strong>
+                </p>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-8 mt-8">
+    <div class="max-w-5xl mx-auto px-6 text-center">
+        <p class="text-slate-600 text-[11px]">
+            HashMap Internals · TREEIFY_THRESHOLD=8 · UNTREEIFY_THRESHOLD=6 · Hysteresis Gap=2
+        </p>
+    </div>
+</footer>
+
+<!-- Scroll Observer -->
+<script>
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>

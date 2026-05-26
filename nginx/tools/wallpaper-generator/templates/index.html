@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 壁纸生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .wallpaper-preview {
+            width: 100%;
+            height: 280px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .pattern-dots {
+            background-image: radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .pattern-grid {
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+        .pattern-waves {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='rgba(255,255,255,0.1)' d='M0,96L60,112C120,128,240,160,360,160C480,160,600,128,720,122.7C840,117,960,139,1080,149.3C1200,160,1320,160,1380,160L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: repeat-x;
+            background-position: bottom;
+        }
+        .pattern-stars {
+            background-image: 
+                radial-gradient(2px 2px at 20px 30px, rgba(255,255,255,0.3), transparent),
+                radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.2), transparent),
+                radial-gradient(1px 1px at 90px 40px, rgba(255,255,255,0.4), transparent),
+                radial-gradient(2px 2px at 160px 120px, rgba(255,255,255,0.2), transparent),
+                radial-gradient(1px 1px at 230px 80px, rgba(255,255,255,0.3), transparent),
+                radial-gradient(2px 2px at 300px 150px, rgba(255,255,255,0.2), transparent);
+            background-size: 350px 200px;
+        }
+        .gradient-chip {
+            width: 50px;
+            height: 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .gradient-chip:hover {
+            transform: scale(1.1);
+        }
+        .quote-text {
+            color: white;
+            font-size: 1.25rem;
+            text-align: center;
+            padding: 0 20px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            max-width: 100%;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">🎨 壁纸生成器</h1>
+            <p class="text-gray-500">创建漂亮的渐变壁纸</p>
+        </div>
+        
+        <!-- 壁纸预览 -->
+        <div id="wallpaper-preview" class="wallpaper-preview mb-6">
+            <div id="quote-display" class="quote-text">点击生成壁纸</div>
+        </div>
+        
+        <!-- 预设渐变 -->
+        <div class="mb-6">
+            <div class="text-sm text-gray-600 mb-3">预设渐变</div>
+            <div class="flex flex-wrap gap-2">
+                <div class="gradient-chip" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)" onclick="setGradient(['#667eea', '#764ba2'])"></div>
+                <div class="gradient-chip" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" onclick="setGradient(['#f093fb', '#f5576c'])"></div>
+                <div class="gradient-chip" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)" onclick="setGradient(['#4facfe', '#00f2fe'])"></div>
+                <div class="gradient-chip" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)" onclick="setGradient(['#43e97b', '#38f9d7'])"></div>
+                <div class="gradient-chip" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%)" onclick="setGradient(['#fa709a', '#fee140'])"></div>
+                <div class="gradient-chip" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)" onclick="setGradient(['#a8edea', '#fed6e3'])"></div>
+            </div>
+        </div>
+        
+        <!-- 图案选择 -->
+        <div class="mb-6">
+            <div class="text-sm text-gray-600 mb-3">图案叠加</div>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="setPattern('none')" id="pattern-none" 
+                    class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm">无</button>
+                <button onclick="setPattern('dots')" id="pattern-dots" 
+                    class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm">圆点</button>
+                <button onclick="setPattern('grid')" id="pattern-grid" 
+                    class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm">网格</button>
+                <button onclick="setPattern('waves')" id="pattern-waves" 
+                    class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm">波浪</button>
+                <button onclick="setPattern('stars')" id="pattern-stars" 
+                    class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm">星星</button>
+            </div>
+        </div>
+        
+        <!-- 励志语录 -->
+        <div class="mb-6">
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="show-quote" checked class="w-4 h-4 text-indigo-600">
+                <span class="text-sm text-gray-600">显示励志语录</span>
+            </label>
+        </div>
+        
+        <!-- 控制按钮 -->
+        <div class="flex gap-3">
+            <button id="random-btn" 
+                class="flex-1 py-3 px-6 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-medium 
+                       hover:from-indigo-600 hover:to-purple-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎲 随机生成
+            </button>
+            <button id="download-btn" 
+                class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                📥 下载
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const wallpaperPreview = document.getElementById('wallpaper-preview');
+        const quoteDisplay = document.getElementById('quote-display');
+        const showQuoteEl = document.getElementById('show-quote');
+        const randomBtn = document.getElementById('random-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        
+        let currentGradient = ['#667eea', '#764ba2'];
+        let currentPattern = 'none';
+        let currentQuote = '点击生成壁纸';
+        
+        const quotes = [
+            '生活不止眼前的苟且，还有诗和远方',
+            '明天会更好',
+            '成功属于坚持不懈的人',
+            '相信自己，你可以的',
+            '每一天都是新的开始',
+            '不忘初心，方得始终',
+            '努力到无能为力，拼搏到感动自己',
+            '梦想还是要有的，万一实现了呢',
+            '路漫漫其修远兮，吾将上下而求索',
+            '天生我材必有用'
+        ];
+        
+        function setGradient(gradient) {
+            currentGradient = gradient;
+            updatePreview();
+        }
+        
+        function setPattern(pattern) {
+            currentPattern = pattern;
+            document.querySelectorAll('[id^="pattern-"]').forEach(btn => {
+                btn.classList.remove('bg-indigo-500', 'text-white');
+                btn.classList.add('bg-gray-100', 'text-gray-600');
+            });
+            document.getElementById(`pattern-${pattern}`).classList.remove('bg-gray-100', 'text-gray-600');
+            document.getElementById(`pattern-${pattern}`).classList.add('bg-indigo-500', 'text-white');
+            updatePreview();
+        }
+        
+        function updatePreview() {
+            wallpaperPreview.style.background = `linear-gradient(135deg, ${currentGradient[0]} 0%, ${currentGradient[1]} 100%)`;
+            
+            wallpaperPreview.className = `wallpaper-preview pattern-${currentPattern}`;
+            
+            quoteDisplay.style.display = showQuoteEl.checked ? 'block' : 'none';
+        }
+        
+        async function generateRandom() {
+            const response = await fetch('./generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    show_quote: showQuoteEl.checked
+                })
+            });
+            const result = await response.json();
+            
+            currentGradient = result.gradient;
+            currentPattern = result.pattern;
+            currentQuote = result.quote;
+            
+            quoteDisplay.textContent = currentQuote;
+            updatePreview();
+        }
+        
+        function downloadWallpaper() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1080;
+            canvas.height = 1920;
+            const ctx = canvas.getContext('2d');
+            
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, currentGradient[0]);
+            gradient.addColorStop(1, currentGradient[1]);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (showQuoteEl.checked && currentQuote) {
+                ctx.fillStyle = 'white';
+                ctx.font = '36px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.shadowBlur = 10;
+                ctx.fillText(currentQuote, canvas.width/2, canvas.height/2);
+            }
+            
+            const link = document.createElement('a');
+            link.download = 'wallpaper.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        randomBtn.addEventListener('click', generateRandom);
+        downloadBtn.addEventListener('click', downloadWallpaper);
+        showQuoteEl.addEventListener('change', updatePreview);
+        
+        generateRandom();
+    </script>
+</body>
+</html>

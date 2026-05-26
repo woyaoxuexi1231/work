@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📚 单词记忆游戏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .word-card {
+            perspective: 1000px;
+            cursor: pointer;
+        }
+        .word-card-inner {
+            position: relative;
+            width: 100%;
+            height: 120px;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .word-card.flipped .word-card-inner {
+            transform: rotateY(180deg);
+        }
+        .word-card-front, .word-card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .word-card-front {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .word-card-back {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            transform: rotateY(180deg);
+        }
+        .word-text {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        .word-meaning {
+            font-size: 1.25rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">📚 单词记忆游戏</h1>
+            <p class="text-gray-500">翻转卡片记忆单词</p>
+        </div>
+        
+        <!-- 游戏设置 -->
+        <div class="flex justify-center gap-4 mb-6">
+            <select id="category" class="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <option value="english">🇬🇧 英语单词</option>
+                <option value="chinese">🇨🇳 中文词汇</option>
+            </select>
+            <select id="count" class="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <option value="3">3个单词</option>
+                <option value="5">5个单词</option>
+                <option value="10">10个单词</option>
+            </select>
+        </div>
+        
+        <!-- 进度指示 -->
+        <div class="flex justify-center items-center gap-2 mb-6">
+            <span id="progress" class="text-sm text-gray-500">0/0</span>
+            <div class="flex gap-1">
+                <div id="star1" class="text-yellow-400">⭐</div>
+                <div id="star2" class="text-gray-300">⭐</div>
+                <div id="star3" class="text-gray-300">⭐</div>
+            </div>
+        </div>
+        
+        <!-- 单词卡片 -->
+        <div id="card-container" class="mb-6">
+            <div class="word-card">
+                <div class="word-card-inner">
+                    <div class="word-card-front">
+                        <div class="word-text">点击开始</div>
+                    </div>
+                    <div class="word-card-back">
+                        <div class="word-meaning">开始游戏</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 控制按钮 -->
+        <div class="flex justify-center gap-3">
+            <button id="start-btn" 
+                class="px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-medium 
+                       hover:from-purple-600 hover:to-pink-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎮 开始游戏
+            </button>
+            <button id="shuffle-btn" 
+                class="px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                🔀 打乱顺序
+            </button>
+        </div>
+        
+        <!-- 结果显示 -->
+        <div class="mt-6 text-center">
+            <div id="result" class="text-gray-500 text-sm"></div>
+        </div>
+    </div>
+
+    <script>
+        const categoryEl = document.getElementById('category');
+        const countEl = document.getElementById('count');
+        const startBtn = document.getElementById('start-btn');
+        const shuffleBtn = document.getElementById('shuffle-btn');
+        const cardContainer = document.getElementById('card-container');
+        const progressEl = document.getElementById('progress');
+        const resultEl = document.getElementById('result');
+        
+        let words = [];
+        let currentIndex = 0;
+        let flippedCount = 0;
+        
+        async function loadWords() {
+            const response = await fetch('./get-words', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category: categoryEl.value,
+                    count: parseInt(countEl.value)
+                })
+            });
+            const data = await response.json();
+            words = data.words;
+            currentIndex = 0;
+            flippedCount = 0;
+            updateProgress();
+            renderCard();
+            resultEl.textContent = '';
+            updateStars();
+        }
+        
+        function renderCard() {
+            if (words.length === 0) {
+                cardContainer.innerHTML = `
+                    <div class="word-card">
+                        <div class="word-card-inner">
+                            <div class="word-card-front">
+                                <div class="word-text">点击开始</div>
+                            </div>
+                            <div class="word-card-back">
+                                <div class="word-meaning">开始游戏</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            const word = words[currentIndex];
+            cardContainer.innerHTML = `
+                <div class="word-card">
+                    <div class="word-card-inner">
+                        <div class="word-card-front">
+                            <div class="word-text">${word.word}</div>
+                        </div>
+                        <div class="word-card-back">
+                            <div class="word-meaning">${word.meaning}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const card = cardContainer.querySelector('.word-card');
+            card.addEventListener('click', flipCard);
+        }
+        
+        function flipCard() {
+            const card = cardContainer.querySelector('.word-card');
+            card.classList.toggle('flipped');
+            
+            if (!card.classList.contains('flipped')) {
+                flippedCount++;
+                updateProgress();
+                updateStars();
+                
+                if (currentIndex < words.length - 1) {
+                    setTimeout(() => {
+                        currentIndex++;
+                        renderCard();
+                    }, 500);
+                } else {
+                    setTimeout(() => {
+                        resultEl.textContent = `🎉 太棒了！你已经完成了 ${words.length} 个单词的学习！`;
+                    }, 500);
+                }
+            }
+        }
+        
+        function shuffleCards() {
+            if (words.length > 0) {
+                words = words.sort(() => Math.random() - 0.5);
+                currentIndex = 0;
+                flippedCount = 0;
+                updateProgress();
+                renderCard();
+                resultEl.textContent = '';
+                updateStars();
+            }
+        }
+        
+        function updateProgress() {
+            progressEl.textContent = `${currentIndex + 1}/${words.length}`;
+        }
+        
+        function updateStars() {
+            const star1 = document.getElementById('star1');
+            const star2 = document.getElementById('star2');
+            const star3 = document.getElementById('star3');
+            
+            star1.className = 'text-yellow-400';
+            star2.className = flippedCount >= Math.ceil(words.length / 3) ? 'text-yellow-400' : 'text-gray-300';
+            star3.className = flippedCount >= Math.ceil(words.length * 2 / 3) ? 'text-yellow-400' : 'text-gray-300';
+        }
+        
+        startBtn.addEventListener('click', loadWords);
+        shuffleBtn.addEventListener('click', shuffleCards);
+    </script>
+</body>
+</html>

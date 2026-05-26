@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P12: Method.invoke 反射调用开销与 NativeAccessor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #020617;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+      animation: float 20s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%,100% { transform: translate(0,0); }
+      33% { transform: translate(30px,-50px); }
+      66% { transform: translate(-20px,30px); }
+    }
+    .glass-card {
+      background: rgba(15,23,42,0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(148,163,184,0.1);
+      transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+    }
+    .glass-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+    }
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .section-anchor { scroll-margin-top: 80px; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    .code-block {
+      position: relative;
+      background: rgba(2,6,23,0.9);
+      border: 1px solid rgba(148,163,184,0.12);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .code-block pre {
+      margin: 0;
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+      white-space: pre;
+      word-wrap: normal;
+    }
+    .code-block code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 1.75;
+      color: #e2e8f0;
+      display: block;
+    }
+    .code-block .comment { color: #64748b; font-style: italic; }
+    .code-block .keyword { color: #c084fc; }
+    .code-block .type { color: #60a5fa; }
+    .code-block .string { color: #34d399; }
+    .code-block .number { color: #fbbf24; }
+    .code-block .annotation { color: #f59e0b; }
+    .code-block .plain { color: #e2e8f0; }
+
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: rgba(148,163,184,0.1);
+      border: 1px solid rgba(148,163,184,0.15);
+      color: #94a3b8;
+      font-size: 0.7rem;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      z-index: 10;
+    }
+    .copy-btn:hover {
+      background: rgba(59,130,246,0.2);
+      border-color: rgba(59,130,246,0.3);
+      color: #60a5fa;
+    }
+    .copy-btn.copied {
+      background: rgba(16,185,129,0.2);
+      border-color: rgba(16,185,129,0.3);
+      color: #34d399;
+    }
+
+    .interview-card {
+      background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05));
+      border: 1px solid rgba(59,130,246,0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+    .interview-question {
+      background: rgba(59,130,246,0.1);
+      border-left: 3px solid #3b82f6;
+      padding: 1rem 1.25rem;
+      border-radius: 0 12px 12px 0;
+      margin-bottom: 1rem;
+    }
+    .interview-answer {
+      background: rgba(15,23,42,0.5);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    /* 调用流程时间轴 */
+    .flow-step {
+      position: relative;
+      padding-left: 36px;
+      padding-bottom: 2rem;
+    }
+    .flow-step:last-child { padding-bottom: 0; }
+    .flow-step::before {
+      content: '';
+      position: absolute;
+      left: 11px;
+      top: 28px;
+      bottom: 0;
+      width: 2px;
+      background: rgba(148,163,184,0.15);
+    }
+    .flow-step:last-child::before { display: none; }
+    .flow-dot {
+      position: absolute;
+      left: 0;
+      top: 2px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+
+    /* 性能对比条 */
+    .perf-bar {
+      height: 32px;
+      border-radius: 6px;
+      overflow: hidden;
+      background: rgba(148,163,184,0.08);
+      position: relative;
+    }
+    .perf-fill {
+      height: 100%;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: width 1.5s cubic-bezier(0.4,0,0.2,1);
+      white-space: nowrap;
+    }
+
+    /* 阈值计数器动画 */
+    .counter-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(245,158,11,0.1);
+      border: 1px solid rgba(245,158,11,0.2);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: #fbbf24;
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+  <div class="bg-grid"></div>
+  <div class="glow-orb bg-amber-500 w-80 h-80 top-0 left-0" style="animation-delay:-3s"></div>
+  <div class="glow-orb bg-blue-500 w-72 h-72 top-1/3 right-0" style="animation-delay:-8s"></div>
+  <div class="glow-orb bg-emerald-500 w-64 h-64 bottom-0 left-1/3" style="animation-delay:-13s"></div>
+
+  <nav class="fixed top-0 w-full z-50 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <span class="font-bold text-lg tracking-tight text-white">JVM<span class="text-amber-400">Reflection</span></span>
+      </div>
+      <div class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-400">
+        <a href="#concept" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">核心机制</a>
+        <a href="#native" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">NativeAccessor</a>
+        <a href="#generated" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">GeneratedAccessor</a>
+        <a href="#threshold" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">阈值机制</a>
+        <a href="#performance" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">性能对比</a>
+        <a href="#interview" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">面试</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="relative z-10 pt-32 pb-16 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm font-medium mb-8">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        Java 反射底层优化机制
+      </div>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-amber-100 to-slate-400">
+        Method.invoke<br>反射调用开销与优化
+      </h1>
+      <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        从首次 JNI 调用的沉重开销，到超过阈值后动态生成字节码的 NativeAccessor 优化，<br>
+        深入理解 Java 反射的"先慢后快"设计哲学。
+      </p>
+    </div>
+  </header>
+
+  <main class="relative z-10 max-w-5xl mx-auto px-6 pb-24 space-y-24">
+
+    <!-- ===== 核心机制概览 ===== -->
+    <section id="concept" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-amber-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">核心机制概览</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-amber-500/50 to-transparent"></div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-8 mb-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-xl font-bold text-white mb-4">反射调用的性能问题</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              Java 反射 <code class="text-blue-400">Method.invoke()</code> 看似方便，但底层存在显著性能开销。主要来源于两个方面：
+            </p>
+            <ul class="space-y-3 text-sm text-slate-300">
+              <li class="flex items-start gap-3">
+                <span class="w-6 h-6 rounded bg-red-500/10 flex items-center justify-center text-red-400 text-xs font-bold shrink-0">1</span>
+                <span><strong class="text-white">JNI 边界开销</strong>：Java 代码调用 Native 代码（C/C++）时，需要在 JVM 和 Native 之间切换上下文，涉及参数转换、栈帧切换等成本。</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="w-6 h-6 rounded bg-red-500/10 flex items-center justify-center text-red-400 text-xs font-bold shrink-0">2</span>
+                <span><strong class="text-white">运行时检查</strong>：反射调用需要运行时校验访问权限（Accessible）、参数类型匹配、方法查找等，这些都是直接调用没有的额外工作。</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-white mb-4">JVM 的优化策略</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              JDK 采用了一种<strong class="text-white">"懒加载 + 热点优化"</strong>的策略来解决反射性能问题：
+            </p>
+            <div class="space-y-3">
+              <div class="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-amber-400 font-bold text-sm">阶段一</span>
+                  <span class="text-xs text-slate-500">前 15 次调用</span>
+                </div>
+                <p class="text-xs text-slate-300">通过 <strong class="text-white">NativeMethodAccessorImpl</strong> 走 JNI 调用，保证启动速度和正确性。</p>
+              </div>
+              <div class="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-emerald-400 font-bold text-sm">阶段二</span>
+                  <span class="text-xs text-slate-500">超过 15 次后</span>
+                </div>
+                <p class="text-xs text-slate-300">JVM 动态生成 <strong class="text-white">GeneratedMethodAccessor</strong> 字节码，消除 JNI 边界，性能接近直接调用。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 调用流程图 -->
+      <div class="glass-card rounded-2xl p-8">
+        <h3 class="text-lg font-bold text-white mb-6 text-center">Method.invoke() 调用链路</h3>
+        <div class="max-w-3xl mx-auto">
+          <div class="flex flex-wrap justify-center items-center gap-2 text-xs font-mono">
+            <div class="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center">
+              <div class="text-blue-400 font-semibold">你的代码</div>
+              <div class="text-slate-500 mt-1">method.invoke(obj, args)</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center">
+              <div class="text-blue-400 font-semibold">Method.invoke</div>
+              <div class="text-slate-500 mt-1">入口方法</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center">
+              <div class="text-purple-400 font-semibold">MethodAccessor</div>
+              <div class="text-slate-500 mt-1">代理接口</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center" id="flow-native">
+              <div class="text-amber-400 font-semibold">NativeAccessor</div>
+              <div class="text-slate-500 mt-1">JNI 调用（前15次）</div>
+            </div>
+            <span class="text-slate-600">/</span>
+            <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center" id="flow-generated">
+              <div class="text-emerald-400 font-semibold">GeneratedAccessor</div>
+              <div class="text-slate-500 mt-1">字节码调用（>15次）</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-slate-800 border border-slate-700 text-center">
+              <div class="text-slate-400 font-semibold">目标方法</div>
+              <div class="text-slate-500 mt-1">实际执行</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== NativeMethodAccessorImpl ===== -->
+    <section id="native" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-2xl">🔧</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">NativeMethodAccessorImpl</h2>
+          <p class="text-sm text-amber-400 font-mono">JNI 调用 · 首次/低频调用</p>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">工作原理</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <span class="text-amber-400 font-semibold">NativeMethodAccessorImpl</span> 是反射调用的默认实现。当通过 <code class="text-blue-400">Method.invoke()</code> 调用方法时，首次会走到这个类，它通过 <strong class="text-white">JNI（Java Native Interface）</strong> 调用 JVM 底层的 Native 代码来执行目标方法。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">为什么先用 JNI？</strong>因为 JNI 实现简单、稳定，不需要动态生成字节码。对于只调用几次的反射方法，JNI 的开销可以接受，避免了生成字节码的编译成本。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">JNI 开销具体在哪？</strong>
+            </p>
+            <ul class="space-y-2 text-sm text-slate-300 mb-4">
+              <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">•</span><span><strong class="text-white">参数封箱/拆箱</strong>：基本类型需要包装成 Object（如 int → Integer）</span></li>
+              <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">•</span><span><strong class="text-white">数组拷贝</strong>：参数数组需要从 Java 堆拷贝到 Native 栈</span></li>
+              <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">•</span><span><strong class="text-white">上下文切换</strong>：JVM 执行状态 ↔ Native 执行状态的切换</span></li>
+              <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">•</span><span><strong class="text-white">安全检查</strong>：每次都要检查访问权限</span></li>
+            </ul>
+            <div class="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
+              <div class="text-xs font-semibold text-amber-400 mb-2">💡 面试话术</div>
+              <p class="text-sm text-slate-300">
+                "反射首次调用走 <span class="text-amber-400 font-semibold">NativeMethodAccessorImpl</span>，通过 JNI 调到底层 C++ 代码。JNI 有边界开销：参数要封箱、数组要拷贝、还要做权限检查。但对于低频调用，这个开销可以接受，JVM 不会一上来就生成字节码。"
+              </p>
+            </div>
+          </div>
+          <div class="code-block">
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre><code><span class="comment">// sun.reflect.NativeMethodAccessorImpl 简化源码</span>
+<span class="keyword">class</span> <span class="type">NativeMethodAccessorImpl</span> <span class="keyword">extends</span> <span class="type">MethodAccessorImpl</span> {
+    <span class="keyword">private final</span> <span class="type">Method</span> method;
+    <span class="keyword">private int</span> numInvocations = <span class="number">0</span>;
+
+    <span class="type">NativeMethodAccessorImpl</span>(<span class="type">Method</span> m) {
+        <span class="keyword">this</span>.method = m;
+    }
+
+    <span class="keyword">public</span> <span class="type">Object</span> <span class="plain">invoke</span>(<span class="type">Object</span> obj, <span class="type">Object</span>[] args)
+        <span class="keyword">throws</span> <span class="type">IllegalArgumentException</span>, <span class="type">InvocationTargetException</span> {
+
+        <span class="comment">// 每次调用计数 +1</span>
+        <span class="keyword">if</span> (++numInvocations &gt; <span class="number">15</span>) {
+            <span class="comment">// 超过阈值，生成字节码版本</span>
+            <span class="type">MethodAccessor</span> acc = <span class="plain">generateMethodAccessor</span>();
+            <span class="comment">// 替换当前的 accessor</span>
+            <span class="plain">setMethodAccessor</span>(acc);
+            <span class="keyword">return</span> acc.<span class="plain">invoke</span>(obj, args);
+        }
+
+        <span class="comment">// 走 JNI 调用</span>
+        <span class="keyword">return</span> <span class="plain">invoke0</span>(method, obj, args);
+    }
+
+    <span class="keyword">private static native</span> <span class="type">Object</span> <span class="plain">invoke0</span>(<span class="type">Method</span> m, <span class="type">Object</span> obj, <span class="type">Object</span>[] args);
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== GeneratedMethodAccessor ===== -->
+    <section id="generated" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-2xl">⚡</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">GeneratedMethodAccessor</h2>
+          <p class="text-sm text-emerald-400 font-mono">动态字节码 · 消除 JNI 开销</p>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">工作原理</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              当同一个反射方法的调用次数超过阈值（默认 <span class="counter-box">15</span> 次）后，JVM 会触发 <strong class="text-white">动态字节码生成</strong>机制。通过 <code class="text-blue-400">sun.reflect.ClassFileAssembler</code> 在内存中直接拼装出一个新的类，这个类实现了 <code class="text-blue-400">MethodAccessor</code> 接口，内部直接调用目标方法，完全绕过 JNI。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">生成的类长什么样？</strong>假设你要反射调用 <code class="text-blue-400">UserService.sayHello(String)</code>，JVM 会生成类似这样的类（类名通常是 <code class="text-slate-400">sun.reflect.GeneratedMethodAccessorXXX</code>）：
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              这个生成的类<strong class="text-white">没有 JNI 调用</strong>，没有参数封箱，没有权限检查（在生成时已验证过），本质上就是一段"直接调用目标方法"的字节码，性能几乎和直接调用一样。
+            </p>
+            <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+              <div class="text-xs font-semibold text-emerald-400 mb-2">💡 面试话术</div>
+              <p class="text-sm text-slate-300">
+                "当调用超过 15 次，JVM 会用 <span class="text-emerald-400 font-semibold">ClassFileAssembler</span> 动态生成一个 GeneratedMethodAccessor 类。这个类直接调用目标方法，不走 JNI，没有参数封箱和权限检查，性能和直接调用几乎一样。类名通常是 sun.reflect.GeneratedMethodAccessorXXX，存在堆外内存的 Metaspace 里。"
+              </p>
+            </div>
+          </div>
+          <div class="code-block">
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre><code><span class="comment">// JVM 动态生成的类（类似下面这样）</span>
+<span class="comment">// 类名: sun.reflect.GeneratedMethodAccessor1</span>
+<span class="keyword">public class</span> <span class="type">GeneratedMethodAccessor1</span>
+    <span class="keyword">extends</span> <span class="type">MethodAccessorImpl</span> {
+
+    <span class="comment">// 生成的 invoke 方法：直接调用目标方法</span>
+    <span class="keyword">public</span> <span class="type">Object</span> <span class="plain">invoke</span>(<span class="type">Object</span> obj, <span class="type">Object</span>[] args) {
+        <span class="comment">// 直接强转为目标类，无 JNI 过渡</span>
+        <span class="type">UserService</span> target = (<span class="type">UserService</span>) obj;
+
+        <span class="comment">// 直接解包参数（无需封箱）</span>
+        <span class="type">String</span> arg0 = (<span class="type">String</span>) args[<span class="number">0</span>];
+
+        <span class="comment">// 直接调用！没有 JNI 边界开销</span>
+        target.<span class="plain">sayHello</span>(arg0);
+
+        <span class="keyword">return null</span>;
+    }
+}
+
+<span class="comment">// 对比：NativeAccessor 的调用方式</span>
+<span class="comment">// nativeInvoke(target, "sayHello", args) → JNI 过渡 → C++ 层 → 返回</span>
+<span class="comment">//</span>
+<span class="comment">// GeneratedAccessor 的调用方式</span>
+<span class="comment">// target.sayHello(arg) → 直接跳转 → 无 JNI 开销</span></code></pre>
+          </div>
+        </div>
+
+        <!-- 字节码生成过程 -->
+        <div class="mt-8 p-6 rounded-xl bg-slate-900/50 border border-slate-800">
+          <h4 class="text-sm font-bold text-white mb-6 text-center">动态字节码生成过程</h4>
+          <div class="max-w-3xl mx-auto space-y-4">
+            <div class="flow-step">
+              <div class="flow-dot bg-blue-500/20 text-blue-400 border border-blue-500/30">1</div>
+              <div class="text-sm font-semibold text-white mb-1">调用次数达到阈值（15 次）</div>
+              <p class="text-xs text-slate-400">NativeMethodAccessorImpl 的 numInvocations 计数器超过阈值</p>
+            </div>
+            <div class="flow-step">
+              <div class="flow-dot bg-purple-500/20 text-purple-400 border border-purple-500/30">2</div>
+              <div class="text-sm font-semibold text-white mb-1">触发 MethodAccessorGenerator</div>
+              <p class="text-xs text-slate-400">调用 sun.reflect.MethodAccessorGenerator.generateMethodAccessor()</p>
+            </div>
+            <div class="flow-step">
+              <div class="flow-dot bg-amber-500/20 text-amber-400 border border-amber-500/30">3</div>
+              <div class="text-sm font-semibold text-white mb-1">ClassFileAssembler 拼装字节码</div>
+              <p class="text-xs text-slate-400">在内存中构建 .class 文件格式的字节数组，包含类头、方法表、字节码指令</p>
+            </div>
+            <div class="flow-step">
+              <div class="flow-dot bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">4</div>
+              <div class="text-sm font-semibold text-white mb-1">Unsafe.defineClass 加载类</div>
+              <p class="text-xs text-slate-400">通过 Unsafe 将字节数组直接加载到 Metaspace，无需磁盘文件</p>
+            </div>
+            <div class="flow-step">
+              <div class="flow-dot bg-blue-500/20 text-blue-400 border border-blue-500/30">5</div>
+              <div class="text-sm font-semibold text-white mb-1">替换 Method 的 accessor</div>
+              <p class="text-xs text-slate-400">Method 对象内部的 methodAccessor 引用指向新生成的 GeneratedMethodAccessor</p>
+            </div>
+            <div class="flow-step">
+              <div class="flow-dot bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">6</div>
+              <div class="text-sm font-semibold text-white mb-1">后续调用走 GeneratedAccessor</div>
+              <p class="text-xs text-slate-400">所有后续 invoke() 直接调用生成的字节码，JNI 开销完全消除</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 阈值机制 ===== -->
+    <section id="threshold" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-2xl">🔢</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">阈值机制：为什么是 15 次？</h2>
+          <p class="text-sm text-blue-400 font-mono">sun.reflect.inflationThreshold</p>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">阈值参数</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              JVM 通过 <span class="counter-box">-Dsun.reflect.inflationThreshold=15</span> 参数控制反射调用的"膨胀阈值"。默认值为 <strong class="text-white">15</strong>，表示同一个反射方法被调用 15 次后，会从 NativeAccessor 切换到 GeneratedAccessor。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">为什么是 15？</strong>这是一个经验值，平衡了两个因素：
+            </p>
+            <ul class="space-y-2 text-sm text-slate-300 mb-4">
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">•</span><span><strong class="text-white">不能太小</strong>：如果阈值是 1，那几乎每次反射调用都要生成字节码，编译成本反而更高</span></li>
+              <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">•</span><span><strong class="text-white">不能太大</strong>：如果阈值是 1000，那高频反射场景要忍受 1000 次 JNI 开销</span></li>
+            </ul>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              15 次是一个<strong class="text-white">"大多数低频调用不会触发，高频调用很快受益"</strong>的折中值。你可以通过启动参数调整：
+            </p>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">复制</button>
+              <pre><code><span class="comment">// 调整阈值为 0：第一次调用就生成字节码（不推荐，启动慢）</span>
+java -Dsun.reflect.inflationThreshold=<span class="number">0</span> MyApp
+
+<span class="comment">// 调整阈值为 100：更慢切换，适合极低频调用场景</span>
+java -Dsun.reflect.inflationThreshold=<span class="number">100</span> MyApp
+
+<span class="comment">// 关闭 inflation（始终走 JNI）</span>
+java -Dsun.reflect.noInflation=<span class="keyword">true</span> MyApp</code></pre>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">Inflation 过程演示</h3>
+            <div class="space-y-3">
+              <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-slate-400">调用次数</span>
+                  <span class="text-xs font-mono text-amber-400">1 ~ 15</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+                  <span class="text-sm text-white font-medium">NativeMethodAccessorImpl</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1 ml-5">JNI 调用，每次 +1 计数</p>
+              </div>
+              <div class="flex justify-center"><span class="text-slate-600 text-lg">↓</span></div>
+              <div class="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-amber-400">第 16 次调用</span>
+                  <span class="text-xs font-mono text-amber-400">numInvocations = 16 &gt; 15</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                  <span class="text-sm text-amber-400 font-medium">触发 generateMethodAccessor()</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1 ml-5">生成字节码，替换 accessor 引用</p>
+              </div>
+              <div class="flex justify-center"><span class="text-slate-600 text-lg">↓</span></div>
+              <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-slate-400">调用次数</span>
+                  <span class="text-xs font-mono text-emerald-400">17+</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  <span class="text-sm text-white font-medium">GeneratedMethodAccessor</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1 ml-5">直接字节码调用，无 JNI 开销</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 性能对比 ===== -->
+    <section id="performance" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-red-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">性能对比</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-emerald-500/50 to-transparent"></div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-8">
+        <div class="text-center mb-8">
+          <p class="text-sm text-slate-400">单次调用耗时对比（相对值，越小越好）</p>
+        </div>
+        <div class="max-w-2xl mx-auto space-y-5">
+          <div>
+            <div class="flex justify-between text-sm text-slate-300 mb-2">
+              <span class="font-medium">直接调用</span>
+              <span class="text-emerald-400 font-mono">1x（基准）</span>
+            </div>
+            <div class="perf-bar"><div class="perf-fill bg-emerald-500" style="width:8%">直接调用</div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm text-slate-300 mb-2">
+              <span class="font-medium">GeneratedMethodAccessor（>15次后）</span>
+              <span class="text-blue-400 font-mono">~1.5x</span>
+            </div>
+            <div class="perf-bar"><div class="perf-fill bg-blue-500" style="width:12%">GeneratedAccessor</div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm text-slate-300 mb-2">
+              <span class="font-medium">NativeMethodAccessorImpl（前15次）</span>
+              <span class="text-amber-400 font-mono">~10x</span>
+            </div>
+            <div class="perf-bar"><div class="perf-fill bg-amber-500" style="width:80%">NativeAccessor（JNI）</div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm text-slate-300 mb-2">
+              <span class="font-medium">关闭 inflation（始终 JNI）</span>
+              <span class="text-red-400 font-mono">~10x（永远慢）</span>
+            </div>
+            <div class="perf-bar"><div class="perf-fill bg-red-500" style="width:80%">始终 JNI</div></div>
+          </div>
+        </div>
+
+        <div class="mt-8 p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+          <h4 class="text-sm font-bold text-white mb-4">实际压测代码</h4>
+          <div class="code-block">
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre><code><span class="comment">// 反射调用性能测试</span>
+<span class="keyword">public class</span> <span class="type">ReflectBenchmark</span> {
+    <span class="keyword">public static void</span> <span class="plain">main</span>(<span class="type">String</span>[] args) <span class="keyword">throws</span> <span class="type">Exception</span> {
+        <span class="type">Method</span> method = <span class="type">TargetClass</span>.<span class="keyword">class</span>.<span class="plain">getMethod</span>(<span class="string">"sayHello"</span>, <span class="type">String</span>.<span class="keyword">class</span>);
+        <span class="type">TargetClass</span> target = <span class="keyword">new</span> <span class="type">TargetClass</span>();
+
+        <span class="comment">// 热身：触发 inflation</span>
+        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; <span class="number">20</span>; i++) {
+            method.<span class="plain">invoke</span>(target, <span class="string">"test"</span>);
+        }
+
+        <span class="comment">// 正式测试</span>
+        <span class="keyword">long</span> start = <span class="type">System</span>.<span class="plain">nanoTime</span>();
+        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; <span class="number">1000000</span>; i++) {
+            method.<span class="plain">invoke</span>(target, <span class="string">"test"</span>);
+        }
+        <span class="keyword">long</span> reflectTime = <span class="type">System</span>.<span class="plain">nanoTime</span>() - start;
+
+        <span class="comment">// 直接调用对比</span>
+        start = <span class="type">System</span>.<span class="plain">nanoTime</span>();
+        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; <span class="number">1000000</span>; i++) {
+            target.<span class="plain">sayHello</span>(<span class="string">"test"</span>);
+        }
+        <span class="keyword">long</span> directTime = <span class="type">System</span>.<span class="plain">nanoTime</span>() - start;
+
+        <span class="type">System</span>.out.<span class="plain">println</span>(<span class="string">"反射: "</span> + reflectTime / <span class="number">1000000</span> + <span class="string">" ns/op"</span>);
+        <span class="type">System</span>.out.<span class="plain">println</span>(<span class="string">"直接: "</span> + directTime / <span class="number">1000000</span> + <span class="string">" ns/op"</span>);
+        <span class="comment">// 结果：热身后反射性能接近直接调用</span>
+    }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 面试高频追问 ===== -->
+    <section id="interview" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-blue-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">面试高频追问</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-blue-500/50 to-transparent"></div>
+      </div>
+
+      <div class="space-y-6">
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q1</span>
+              <p class="text-white font-medium">"反射为什么慢？JVM 是怎么优化反射性能的？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              反射慢主要有两个原因：<strong class="text-white">一是 JNI 边界开销</strong>，Java 调用 Native 代码需要上下文切换、参数封箱、数组拷贝；<strong class="text-white">二是运行时检查</strong>，每次都要校验访问权限、参数类型匹配。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              JVM 的优化策略是<strong class="text-white">"Inflation"机制</strong>：前 15 次调用走 <span class="text-amber-400 font-semibold">NativeMethodAccessorImpl</span>（JNI），超过 15 次后动态生成 <span class="text-emerald-400 font-semibold">GeneratedMethodAccessor</span> 字节码类，直接调用目标方法，完全消除 JNI 开销。热身后的反射性能接近直接调用。
+            </p>
+          </div>
+        </div>
+
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q2</span>
+              <p class="text-white font-medium">"GeneratedMethodAccessor 是怎么生成的？存在哪里？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              当调用次数超过阈值（默认 15），<code class="text-blue-400">MethodAccessorGenerator</code> 会使用 <code class="text-blue-400">ClassFileAssembler</code> 在内存中直接拼装字节码，生成一个继承 <code class="text-blue-400">MethodAccessorImpl</code> 的类。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              生成的类通过 <code class="text-blue-400">Unsafe.defineClass()</code> 直接加载到 <strong class="text-white">Metaspace（方法区）</strong>，不需要磁盘 .class 文件。类名格式为 <code class="text-slate-400">sun.reflect.GeneratedMethodAccessorXXX</code>（XXX 是递增数字）。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              由于这些类是动态生成的，如果反射调用非常频繁且方法很多，Metaspace 可能会被撑大，极端情况下会抛出 <span class="text-amber-400 font-semibold">OutOfMemoryError: Metaspace</span>。
+            </p>
+          </div>
+        </div>
+
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q3</span>
+              <p class="text-white font-medium">"反射调用的阈值可以调整吗？什么场景需要调整？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              可以通过 JVM 参数 <code class="text-blue-400">-Dsun.reflect.inflationThreshold=N</code> 调整阈值。默认是 15。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <strong class="text-white">调大阈值（如 100）</strong>：适合反射调用极少的场景，避免不必要的字节码生成，节省 Metaspace。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <strong class="text-white">调小阈值（如 0）</strong>：适合反射调用非常频繁的场景，第一次调用就生成字节码，但启动时会有编译开销。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">关闭 inflation</strong>：<code class="text-blue-400">-Dsun.reflect.noInflation=true</code> 让所有反射始终走 JNI，适合对动态生成类有安全限制的环境（但性能差）。
+            </p>
+          </div>
+        </div>
+
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q4</span>
+              <p class="text-white font-medium">"Method.setAccessible(true) 对性能有什么影响？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              <code class="text-blue-400">setAccessible(true)</code> 的作用是<strong class="text-white">跳过 Java 语言访问检查</strong>（如 private 方法的访问控制）。但它本身不会直接提升调用性能。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              真正的性能提升来自<strong class="text-white">Inflation 机制</strong>生成的 GeneratedAccessor。生成的字节码在拼装时已经确认了访问权限，所以后续调用不需要再做权限检查。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              如果不调 <code class="text-blue-400">setAccessible(true)</code> 就去调用 private 方法，会抛出 <code class="text-blue-400">IllegalAccessException</code>。所以 <code class="text-blue-400">setAccessible(true)</code> 是"能不能调用"的问题，不是"快不快"的问题——但配合 Inflation 后，确实能达到接近直接调用的性能。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 底部速查 -->
+    <section class="fade-in">
+      <div class="glass-card rounded-3xl p-8 md:p-10">
+        <div class="text-center mb-8">
+          <div class="text-3xl mb-3">📋</div>
+          <h3 class="text-2xl font-bold text-white mb-2">反射优化速查表</h3>
+          <p class="text-slate-400 text-sm">面试前快速回顾</p>
+        </div>
+        <div class="grid md:grid-cols-3 gap-6 text-sm">
+          <div class="p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-3">阶段一：NativeAccessor</div>
+            <ul class="space-y-2 text-slate-300">
+              <li>• 调用次数：1 ~ 15 次</li>
+              <li>• 实现：JNI 调用 C++</li>
+              <li>• 开销：参数封箱、数组拷贝、上下文切换</li>
+              <li>• 性能：比直接调用慢 ~10 倍</li>
+            </ul>
+          </div>
+          <div class="p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3">阶段二：GeneratedAccessor</div>
+            <ul class="space-y-2 text-slate-300">
+              <li>• 触发条件：调用次数 > 15</li>
+              <li>• 实现：动态生成字节码</li>
+              <li>• 工具：ClassFileAssembler</li>
+              <li>• 加载：Unsafe.defineClass → Metaspace</li>
+              <li>• 性能：接近直接调用（~1.5x）</li>
+            </ul>
+          </div>
+          <div class="p-5 rounded-xl bg-slate-800/50 border border-slate-700">
+            <div class="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">JVM 参数</div>
+            <ul class="space-y-2 text-slate-300 font-mono text-xs">
+              <li>-Dsun.reflect.inflationThreshold=15</li>
+              <li>-Dsun.reflect.noInflation=true</li>
+              <li class="text-slate-500">（关闭 inflation，始终 JNI）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="relative z-10 py-12 px-6 border-t border-slate-800/50">
+    <div class="max-w-5xl mx-auto text-center">
+      <p class="text-slate-600 text-sm">Java Reflection Optimization — Method.invoke 与 NativeAccessor</p>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+
+    function copyCode(btn) {
+      const pre = btn.parentElement.querySelector('pre');
+      const code = pre.querySelector('code');
+      let text = '';
+      code.childNodes.forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.ELEMENT_NODE) {
+          text += node.textContent;
+        }
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '已复制 ✓';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '复制';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JDK 1.7 HashMap Resize 死循环 · 精确复现</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background: #0a0f1c; color: #cbd5e1; }
+        code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* SVG 样式 */
+        svg { overflow: visible; }
+        .node-circle { transition: cx 0.5s ease, cy 0.5s ease, fill 0.3s, stroke 0.3s; }
+        .node-text { transition: x 0.5s ease, y 0.5s ease; pointer-events: none; user-select: none; }
+        .arrow-path { fill: none; stroke-width: 2; transition: d 0.5s ease, stroke 0.3s, opacity 0.3s; marker-end: url(#arrowhead); }
+        .arrow-path.loop { stroke: #f43f5e; stroke-width: 3; marker-end: url(#arrowhead-red); animation: pulse-stroke 1s infinite; }
+        @keyframes pulse-stroke { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* 代码高亮行 */
+        .code-line { display: block; padding: 1px 8px; margin: 0 -8px; border-radius: 4px; transition: background 0.2s; }
+        .code-line.active-a { background: rgba(59,130,246,0.15); border-left: 3px solid #3b82f6; }
+        .code-line.active-b { background: rgba(245,158,11,0.15); border-left: 3px solid #f59e0b; }
+
+        /* 变量标签 */
+        .var-tag { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; white-space: nowrap; transition: all 0.4s ease; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- Header -->
+<header class="border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 h-12 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] font-bold tracking-widest text-rose-500 border border-rose-500/40 px-2 py-0.5 rounded uppercase">JDK 1.7 Bug</span>
+            <h1 class="text-sm font-semibold text-slate-200">HashMap Transfer 死循环精确复现</h1>
+        </div>
+        <div class="flex items-center gap-4 text-[11px]">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>Thread A</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>Thread B</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Dead Loop</span>
+        </div>
+    </div>
+</header>
+
+<main class="flex-1 max-w-6xl mx-auto w-full px-4 py-8 grid lg:grid-cols-12 gap-6">
+
+    <!-- LEFT: Controls + Code -->
+    <div class="lg:col-span-4 space-y-4 flex flex-col">
+        <!-- Controls -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div class="flex gap-2 mb-3">
+                <button id="btn-prev" class="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium transition">← 上一步</button>
+                <button id="btn-next" class="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow-lg shadow-indigo-500/20">下一步 →</button>
+            </div>
+            <button id="btn-reset" class="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-400 transition">重置</button>
+            <div class="mt-3 pt-3 border-t border-slate-800">
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1">当前步骤 <span id="step-num" class="text-slate-300">0/7</span></div>
+                <p id="step-desc" class="text-xs text-slate-300 leading-relaxed min-h-[3rem]"></p>
+            </div>
+        </div>
+
+        <!-- Code Panel -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex-1 min-h-0">
+            <div class="px-4 py-2 border-b border-slate-800 text-[10px] text-slate-500 mono">HashMap.java · transfer() · JDK 1.7</div>
+            <pre class="p-4 text-[11px] leading-relaxed mono overflow-x-auto"><code><span id="L1"  class="code-line"><span class="text-purple-400">void</span> <span class="text-blue-300">transfer</span>(Entry[] newTable) {</span>
+<span id="L2"  class="code-line">  Entry[] src = table;</span>
+<span id="L3"  class="code-line">  <span class="text-purple-400">for</span> (<span class="text-purple-400">int</span> j=0; j&lt;src.length; j++) {</span>
+<span id="L4"  class="code-line">    Entry e = src[j];</span>
+<span id="L5"  class="code-line">    <span class="text-purple-400">if</span> (e != <span class="text-purple-400">null</span>) {</span>
+<span id="L6"  class="code-line">      src[j] = <span class="text-purple-400">null</span>;</span>
+<span id="L7"  class="code-line">      <span class="text-purple-400">do</span> {</span>
+<span id="L8"  class="code-line">        Entry next = e.next; <span class="text-slate-500">// ① 保存后继</span></span>
+<span id="L9"  class="code-line">        <span class="text-purple-400">int</span> i = indexFor(e.hash, newTable.length);</span>
+<span id="L10" class="code-line">        e.next = newTable[i]; <span class="text-slate-500">// ② 头插法</span></span>
+<span id="L11" class="code-line">        newTable[i] = e;      <span class="text-slate-500">// ③ 更新桶头</span></span>
+<span id="L12" class="code-line">        e = next;             <span class="text-slate-500">// ④ 移动指针</span></span>
+<span id="L13" class="code-line">      } <span class="text-purple-400">while</span> (e != <span class="text-purple-400">null</span>);</span>
+<span id="L14" class="code-line">    }</span>
+<span id="L15" class="code-line">  }</span>
+<span id="L16" class="code-line">}</span></code></pre>
+        </div>
+    </div>
+
+    <!-- RIGHT: SVG Canvas -->
+    <div class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl relative overflow-hidden flex flex-col">
+        <!-- Legend overlay -->
+        <div class="absolute top-3 right-3 flex gap-3 text-[10px] text-slate-500 z-10">
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-slate-500 inline-block"></span>旧链表</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-emerald-500 inline-block"></span>新链表</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-amber-500 inline-block dashed"></span>线程持有</span>
+        </div>
+
+        <svg id="canvas" class="flex-1 w-full" viewBox="0 0 700 420">
+            <defs>
+                <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#64748b"/>
+                </marker>
+                <marker id="arrowhead-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#10b981"/>
+                </marker>
+                <marker id="arrowhead-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#f43f5e"/>
+                </marker>
+                <marker id="arrowhead-amber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#f59e0b"/>
+                </marker>
+            </defs>
+
+            <!-- Background zones -->
+            <rect x="20" y="20" width="300" height="160" rx="12" fill="#0f172a" stroke="#1e293b" stroke-dasharray="4"/>
+            <text x="36" y="44" fill="#475569" font-size="11" font-weight="700" font-family="JetBrains Mono">OLD TABLE (size=2)</text>
+
+            <rect x="20" y="220" width="660" height="180" rx="12" fill="#022c22" fill-opacity="0.3" stroke="#065f46" stroke-dasharray="4"/>
+            <text x="36" y="244" fill="#059669" font-size="11" font-weight="700" font-family="JetBrains Mono">NEW TABLE (size=4)</text>
+
+            <!-- Thread stack zones -->
+            <rect id="zone-a" x="370" y="20" width="150" height="160" rx="10" fill="#1e3a5f" fill-opacity="0.2" stroke="#3b82f6" stroke-opacity="0.3" stroke-dasharray="3"/>
+            <text x="385" y="42" fill="#3b82f6" font-size="10" font-weight="700" font-family="JetBrains Mono">THREAD A STACK</text>
+
+            <rect id="zone-b" x="540" y="20" width="140" height="160" rx="10" fill="#451a03" fill-opacity="0.2" stroke="#f59e0b" stroke-opacity="0.3" stroke-dasharray="3"/>
+            <text x="555" y="42" fill="#f59e0b" font-size="10" font-weight="700" font-family="JetBrains Mono">THREAD B STACK</text>
+
+            <!-- Dynamic elements injected by JS -->
+            <g id="arrows-layer"></g>
+            <g id="nodes-layer"></g>
+            <g id="labels-layer"></g>
+        </svg>
+    </div>
+</main>
+
+<script>
+  /**
+   * ═══════════════════════════════════════════════════════
+   *  SIMULATION ENGINE
+   *
+   *  Scenario: Old bucket[1] has chain A→B→null
+   *  Both A and B hash to new bucket[1] (same index after resize)
+   *
+   *  Key insight: Thread B is suspended AFTER reading e.next=B
+   *  but BEFORE executing e.next=newTable[i]. When it resumes,
+   *  newTable[i] already contains the REVERSED chain from Thread A,
+   *  causing B.next=A and A.next=B → cycle.
+   * ═══════════════════════════════════════════════════════
+   */
+
+// Node positions (x, y) for each state
+  const POS = {
+    old: {
+      A: { x: 100, y: 100 },
+      B: { x: 220, y: 100 },
+    },
+    new: {
+      // New bucket[1] head position
+      head: { x: 120, y: 310 },
+      A:    { x: 120, y: 310 },
+      B:    { x: 260, y: 310 },
+      // Reversed positions
+      A_rev: { x: 260, y: 310 },
+      B_rev: { x: 120, y: 310 },
+    },
+    stackA: {
+      e:    { x: 445, y: 80 },
+      next: { x: 445, y: 140 },
+    },
+    stackB: {
+      e:    { x: 610, y: 80 },
+      next: { x: 610, y: 140 },
+    }
+  };
+
+  const STEPS = [
+    {
+      desc: "初始状态：OldTable[1] = A → B → null。两个线程同时检测到 size > threshold，各自创建 NewTable，进入 transfer()。",
+      line: null,
+      thread: null,
+      nodes: {
+        A: { x: POS.old.A.x, y: POS.old.A.y, color: '#334155', stroke: '#64748b' },
+        B: { x: POS.old.B.x, y: POS.old.B.y, color: '#334155', stroke: '#64748b' },
+      },
+      arrows: [
+        { from: 'A', to: 'B', color: '#64748b', marker: 'arrowhead' },
+      ],
+      labels: []
+    },
+    {
+      desc: "【线程 A】执行 L4-L8：e=A, next=B。准备处理节点 A。",
+      line: 'L8',
+      thread: 'A',
+      nodes: {
+        A: { x: POS.old.A.x, y: POS.old.A.y, color: '#1e3a5f', stroke: '#3b82f6' },
+        B: { x: POS.old.B.x, y: POS.old.B.y, color: '#334155', stroke: '#64748b' },
+        Ae: { x: POS.stackA.e.x, y: POS.stackA.e.y, color: '#1e3a5f', stroke: '#3b82f6', label: 'e=A' },
+        Anext: { x: POS.stackA.next.x, y: POS.stackA.next.y, color: '#1e3a5f', stroke: '#3b82f6', label: 'next=B' },
+      },
+      arrows: [
+        { from: 'A', to: 'B', color: '#64748b', marker: 'arrowhead' },
+        { from: 'Ae', to: 'A', color: '#3b82f6', marker: 'arrowhead', dash: true },
+        { from: 'Anext', to: 'B', color: '#3b82f6', marker: 'arrowhead', dash: true },
+      ],
+      labels: []
+    },
+    {
+      desc: "【线程 A】执行 L10-L12：A.next=null (新桶为空), New[1]=A, e=next=B。<br>A 已被移入新表。继续下一轮循环。",
+      line: 'L12',
+      thread: 'A',
+      nodes: {
+        A: { x: POS.new.A.x, y: POS.new.A.y, color: '#065f46', stroke: '#10b981' },
+        B: { x: POS.old.B.x, y: POS.old.B.y, color: '#1e3a5f', stroke: '#3b82f6' },
+        Ae: { x: POS.stackA.e.x, y: POS.stackA.e.y, color: '#1e3a5f', stroke: '#3b82f6', label: 'e=B' },
+      },
+      arrows: [
+        { from: 'Ae', to: 'B', color: '#3b82f6', marker: 'arrowhead', dash: true },
+      ],
+      labels: [{ text: 'New[1]', x: 60, y: 315, color: '#10b981' }]
+    },
+    {
+      desc: "【线程 A】第二轮：e=B, next=null。执行 L10：<strong>B.next = New[1] = A</strong>（头插法！）。<br>然后 New[1]=B, e=null。循环结束。",
+      line: 'L10',
+      thread: 'A',
+      nodes: {
+        A: { x: POS.new.A_rev.x, y: POS.new.A_rev.y, color: '#065f46', stroke: '#10b981' },
+        B: { x: POS.new.B_rev.x, y: POS.new.B_rev.y, color: '#065f46', stroke: '#10b981' },
+      },
+      arrows: [
+        { from: 'B', to: 'A', color: '#10b981', marker: 'arrowhead-green' },
+      ],
+      labels: [{ text: 'New[1]', x: 60, y: 315, color: '#10b981' }]
+    },
+    {
+      desc: "✅ 线程 A 完成迁移。NewTable[1] = B → A → null。链表被<strong>反转</strong>了。<br>⚠️ 此时【线程 B】其实早已进入循环！它在 L8 处被挂起，局部变量快照：e=A, next=B。",
+      line: 'L8',
+      thread: 'B',
+      nodes: {
+        A: { x: POS.new.A_rev.x, y: POS.new.A_rev.y, color: '#065f46', stroke: '#10b981' },
+        B: { x: POS.new.B_rev.x, y: POS.new.B_rev.y, color: '#065f46', stroke: '#10b981' },
+        Be: { x: POS.stackB.e.x, y: POS.stackB.e.y, color: '#451a03', stroke: '#f59e0b', label: 'e=A ⚠️' },
+        Bnext: { x: POS.stackB.next.x, y: POS.stackB.next.y, color: '#451a03', stroke: '#f59e0b', label: 'next=B ⚠️' },
+      },
+      arrows: [
+        { from: 'B', to: 'A', color: '#10b981', marker: 'arrowhead-green' },
+        { from: 'Be', to: 'A', color: '#f59e0b', marker: 'arrowhead-amber', dash: true },
+        { from: 'Bnext', to: 'B', color: '#f59e0b', marker: 'arrowhead-amber', dash: true },
+      ],
+      labels: [{ text: 'New[1]', x: 60, y: 315, color: '#10b981' }]
+    },
+    {
+      desc: "💥 【线程 B 恢复】执行 L10：<strong>A.next = New[1]</strong>。<br>New[1] 现在是 B！所以 <strong>A.next = B</strong>。<br>但 B.next 已经被线程 A 设为 A！<br>→ <strong>A↔B 形成双向环！</strong>",
+      line: 'L10',
+      thread: 'B',
+      nodes: {
+        A: { x: POS.new.A_rev.x, y: POS.new.A_rev.y, color: '#4c0519', stroke: '#f43f5e' },
+        B: { x: POS.new.B_rev.x, y: POS.new.B_rev.y, color: '#4c0519', stroke: '#f43f5e' },
+        Be: { x: POS.stackB.e.x, y: POS.stackB.e.y, color: '#451a03', stroke: '#f59e0b', label: 'e=A' },
+        Bnext: { x: POS.stackB.next.x, y: POS.stackB.next.y, color: '#451a03', stroke: '#f59e0b', label: 'next=B' },
+      },
+      arrows: [
+        { from: 'B', to: 'A', color: '#f43f5e', marker: 'arrowhead-red', loop: true },
+        { from: 'A', to: 'B', color: '#f43f5e', marker: 'arrowhead-red', loop: true },
+      ],
+      labels: [
+        { text: 'New[1]', x: 60, y: 315, color: '#f43f5e' },
+        { text: '☠ DEAD LOOP', x: 190, y: 280, color: '#f43f5e', size: 14, bold: true },
+      ]
+    },
+    {
+      desc: "☠️ 后续任何 get(key) 若命中此桶，将陷入 A→B→A→B... 无限循环，CPU 100%。<br><br><strong>根因总结：</strong>头插法在并发下反转链表 + 线程持有过期引用 = 回环指针。JDK 1.8 改用尾插法彻底修复。",
+      line: 'L13',
+      thread: 'B',
+      nodes: {
+        A: { x: POS.new.A_rev.x, y: POS.new.A_rev.y, color: '#4c0519', stroke: '#f43f5e' },
+        B: { x: POS.new.B_rev.x, y: POS.new.B_rev.y, color: '#4c0519', stroke: '#f43f5e' },
+      },
+      arrows: [
+        { from: 'B', to: 'A', color: '#f43f5e', marker: 'arrowhead-red', loop: true },
+        { from: 'A', to: 'B', color: '#f43f5e', marker: 'arrowhead-red', loop: true },
+      ],
+      labels: [
+        { text: 'New[1]', x: 60, y: 315, color: '#f43f5e' },
+        { text: '☠ DEAD LOOP', x: 190, y: 280, color: '#f43f5e', size: 14, bold: true },
+      ]
+    }
+  ];
+
+  class Renderer {
+    constructor() {
+      this.svg = document.getElementById('canvas');
+      this.nodesLayer = document.getElementById('nodes-layer');
+      this.arrowsLayer = document.getElementById('arrows-layer');
+      this.labelsLayer = document.getElementById('labels-layer');
+      this.stepIdx = 0;
+
+      this.initControls();
+      this.render();
+    }
+
+    initControls() {
+      document.getElementById('btn-next').onclick = () => { if (this.stepIdx < STEPS.length - 1) { this.stepIdx++; this.render(); } };
+      document.getElementById('btn-prev').onclick = () => { if (this.stepIdx > 0) { this.stepIdx--; this.render(); } };
+      document.getElementById('btn-reset').onclick = () => { this.stepIdx = 0; this.render(); };
+    }
+
+    render() {
+      const step = STEPS[this.stepIdx];
+
+      // Update UI
+      document.getElementById('step-num').textContent = `${this.stepIdx}/${STEPS.length - 1}`;
+      document.getElementById('step-desc').innerHTML = step.desc;
+
+      // Highlight code
+      document.querySelectorAll('.code-line').forEach(el => el.classList.remove('active-a', 'active-b'));
+      if (step.line) {
+        const el = document.getElementById(step.line);
+        if (el) el.classList.add(step.thread === 'A' ? 'active-a' : 'active-b');
+      }
+
+      // Render nodes
+      this.renderNodes(step.nodes);
+
+      // Render arrows (delayed slightly so nodes are in position)
+      requestAnimationFrame(() => this.renderArrows(step.arrows));
+
+      // Render labels
+      this.renderLabels(step.labels);
+    }
+
+    renderNodes(nodes) {
+      // Remove old nodes that no longer exist
+      const existingIds = new Set(Object.keys(nodes));
+      this.nodesLayer.querySelectorAll('[data-id]').forEach(el => {
+        if (!existingIds.has(el.dataset.id)) el.remove();
+      });
+
+      for (const [id, cfg] of Object.entries(nodes)) {
+        let g = this.nodesLayer.querySelector(`[data-id="${id}"]`);
+        if (!g) {
+          g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          g.dataset.id = id;
+
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('r', '22');
+          circle.classList.add('node-circle');
+
+          const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          text.setAttribute('text-anchor', 'middle');
+          text.setAttribute('dominant-baseline', 'central');
+          text.setAttribute('font-size', '14');
+          text.setAttribute('font-weight', '700');
+          text.setAttribute('font-family', 'JetBrains Mono');
+          text.classList.add('node-text');
+
+          g.appendChild(circle);
+          g.appendChild(text);
+          this.nodesLayer.appendChild(g);
+        }
+
+        const circle = g.querySelector('circle');
+        const text = g.querySelector('text');
+
+        circle.setAttribute('cx', cfg.x);
+        circle.setAttribute('cy', cfg.y);
+        circle.setAttribute('fill', cfg.color);
+        circle.setAttribute('stroke', cfg.stroke);
+        circle.setAttribute('stroke-width', '2.5');
+
+        // Display label or node letter
+        const displayText = cfg.label || id.replace(/^(A|B)/, '$1');
+        text.textContent = cfg.label ? '' : id;
+        text.setAttribute('x', cfg.x);
+        text.setAttribute('y', cfg.y);
+        text.setAttribute('fill', '#fff');
+
+        // If it's a stack variable, show label below
+        if (cfg.label) {
+          text.textContent = '';
+          // Add/update label element
+          let lbl = g.querySelector('.var-label');
+          if (!lbl) {
+            lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            lbl.classList.add('var-label');
+            lbl.setAttribute('text-anchor', 'middle');
+            lbl.setAttribute('font-size', '10');
+            lbl.setAttribute('font-weight', '700');
+            lbl.setAttribute('font-family', 'JetBrains Mono');
+            g.appendChild(lbl);
+          }
+          lbl.textContent = cfg.label;
+          lbl.setAttribute('x', cfg.x);
+          lbl.setAttribute('y', cfg.y + 36);
+          lbl.setAttribute('fill', cfg.stroke);
+        } else {
+          const lbl = g.querySelector('.var-label');
+          if (lbl) lbl.remove();
+        }
+      }
+    }
+
+    renderArrows(arrows) {
+      this.arrowsLayer.innerHTML = '';
+
+      for (const arrow of arrows) {
+        const fromNode = this.nodesLayer.querySelector(`[data-id="${arrow.from}"] circle`);
+        const toNode = this.nodesLayer.querySelector(`[data-id="${arrow.to}"] circle`);
+        if (!fromNode || !toNode) continue;
+
+        const fx = parseFloat(fromNode.getAttribute('cx'));
+        const fy = parseFloat(fromNode.getAttribute('cy'));
+        const tx = parseFloat(toNode.getAttribute('cx'));
+        const ty = parseFloat(toNode.getAttribute('cy'));
+
+        // Calculate edge points (offset by radius)
+        const dx = tx - fx;
+        const dy = ty - fy;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const r = 24; // radius + stroke
+
+        if (dist < 1) continue;
+
+        const sx = fx + (dx/dist) * r;
+        const sy = fy + (dy/dist) * r;
+        const ex = tx - (dx/dist) * r;
+        const ey = ty - (dy/dist) * r;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+
+        // For loop arrows, use curved path
+        if (arrow.loop) {
+          // Two nodes side by side, draw arcs above and below
+          const midX = (sx + ex) / 2;
+          const midY = (sy + ey) / 2;
+          const curveOffset = 50;
+
+          // Determine which direction this arrow goes
+          if (fx < tx) {
+            // Left to right: curve above
+            path.setAttribute('d', `M${sx},${sy} Q${midX},${midY - curveOffset} ${ex},${ey}`);
+          } else {
+            // Right to left: curve below
+            path.setAttribute('d', `M${sx},${sy} Q${midX},${midY + curveOffset} ${ex},${ey}`);
+          }
+          path.classList.add('loop');
+        } else {
+          path.setAttribute('d', `M${sx},${sy} L${ex},${ey}`);
+        }
+
+        path.classList.add('arrow-path');
+        path.setAttribute('stroke', arrow.color);
+        path.setAttribute('marker-end', `url(#${arrow.marker})`);
+        if (arrow.dash) path.setAttribute('stroke-dasharray', '6,4');
+
+        this.arrowsLayer.appendChild(path);
+      }
+    }
+
+    renderLabels(labels) {
+      this.labelsLayer.innerHTML = '';
+      for (const lbl of labels) {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.textContent = lbl.text;
+        text.setAttribute('x', lbl.x);
+        text.setAttribute('y', lbl.y);
+        text.setAttribute('fill', lbl.color);
+        text.setAttribute('font-size', lbl.size || 11);
+        text.setAttribute('font-weight', lbl.bold ? '700' : '600');
+        text.setAttribute('font-family', 'JetBrains Mono');
+        this.labelsLayer.appendChild(text);
+      }
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => new Renderer());
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+[Unit]
+Description=Nginx Log Collector Service
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/nginx/conf
+
+# Python 脚本路径
+ExecStart=/usr/bin/python3 /opt/nginx/conf/nginx_log_collector_direct.py
+
+# 环境变量
+Environment="PYTHONUNBUFFERED=1"
+Environment="LANG=en_US.UTF-8"
+
+# 重启策略
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# 日志
+StandardOutput=journal+console
+StandardError=journal+console
+SyslogIdentifier=nginx-log-collector
+
+# 安全设置
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/nginx/conf /var/log/nginx
+
+[Install]
+WantedBy=multi-user.target

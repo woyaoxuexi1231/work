@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📱 二维码生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .qr-container {
+            background: white;
+            border: 2px dashed #e5e7eb;
+            border-radius: 16px;
+            padding: 2rem;
+            min-height: 240px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">📱 二维码生成器</h1>
+            <p class="text-gray-500">输入内容生成二维码</p>
+        </div>
+        
+        <div class="mb-4">
+            <label class="block text-sm text-gray-600 mb-2">输入内容</label>
+            <textarea id="content" rows="3" 
+                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                placeholder="输入网址、文本、电话等..."></textarea>
+        </div>
+        
+        <div class="mb-6">
+            <div class="flex justify-between text-sm mb-2">
+                <span class="text-gray-700">二维码大小</span>
+                <span class="text-emerald-600 font-bold" id="size-value">200px</span>
+            </div>
+            <input type="range" id="size" min="100" max="300" value="200" step="20"
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+        </div>
+        
+        <div class="qr-container mb-6">
+            <img id="qr-image" src="" alt="二维码" class="max-w-full max-h-[200px] hidden">
+            <div id="placeholder" class="text-gray-400 text-center">
+                <div class="text-4xl mb-2">📷</div>
+                <div>输入内容后点击生成</div>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button id="generate-btn" 
+                class="flex-1 py-3 px-6 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium 
+                       hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎨 生成二维码
+            </button>
+            <button id="download-btn" 
+                class="py-3 px-6 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300" disabled>
+                📥 下载
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const contentEl = document.getElementById('content');
+        const sizeEl = document.getElementById('size');
+        const sizeValueEl = document.getElementById('size-value');
+        const generateBtn = document.getElementById('generate-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const qrImage = document.getElementById('qr-image');
+        const placeholder = document.getElementById('placeholder');
+        
+        sizeEl.addEventListener('input', () => {
+            sizeValueEl.textContent = sizeEl.value + 'px';
+        });
+        
+        generateBtn.addEventListener('click', async () => {
+            const data = {
+                content: contentEl.value,
+                size: parseInt(sizeEl.value)
+            };
+            
+            const response = await fetch('./generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            if (result.image) {
+                qrImage.src = result.image;
+                qrImage.style.display = 'block';
+                placeholder.style.display = 'none';
+                downloadBtn.disabled = false;
+            }
+        });
+        
+        downloadBtn.addEventListener('click', () => {
+            if (qrImage.src) {
+                const link = document.createElement('a');
+                link.href = qrImage.src;
+                link.download = 'qrcode.png';
+                link.click();
+            }
+        });
+    </script>
+</body>
+</html>

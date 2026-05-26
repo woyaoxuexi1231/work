@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>😂 笑话生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .joke-box {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-radius: 16px;
+            padding: 1.5rem;
+            min-height: 120px;
+        }
+        .joke-setup {
+            font-size: 1.1rem;
+            color: #92400e;
+            margin-bottom: 1rem;
+        }
+        .joke-punchline {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #78350f;
+        }
+        .type-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .type-pun { background: rgba(168, 85, 247, 0.2); color: #7c3aed; }
+        .type-programming { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .type-life { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">😂 笑话生成器</h1>
+            <p class="text-gray-500">每天一笑，烦恼全消</p>
+        </div>
+        
+        <!-- 类型选择 -->
+        <div class="flex justify-center gap-2 mb-6">
+            <button onclick="selectType('all')" id="type-all" 
+                class="px-4 py-2 bg-amber-500 text-white rounded-full text-sm font-medium">
+                全部
+            </button>
+            <button onclick="selectType('pun')" id="type-pun" 
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200">
+                冷笑话
+            </button>
+            <button onclick="selectType('programming')" id="type-programming" 
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200">
+                程序员
+            </button>
+            <button onclick="selectType('life')" id="type-life" 
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200">
+                生活
+            </button>
+        </div>
+        
+        <!-- 笑话显示 -->
+        <div id="joke-box" class="joke-box mb-6 text-center">
+            <div class="joke-setup">点击下方按钮获取笑话</div>
+            <div class="joke-punchline opacity-0"></div>
+        </div>
+        
+        <!-- 类型标签 -->
+        <div class="text-center mb-6">
+            <span id="type-badge" class="type-badge type-pun hidden">冷笑话</span>
+        </div>
+        
+        <!-- 控制按钮 -->
+        <div class="flex justify-center gap-3">
+            <button id="get-joke-btn" 
+                class="px-8 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-medium 
+                       hover:from-amber-600 hover:to-orange-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                😆 获取新笑话
+            </button>
+            <button id="laugh-btn" 
+                class="px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                😂 哈哈
+            </button>
+        </div>
+        
+        <!-- 笑声统计 -->
+        <div class="mt-6 text-center">
+            <div id="laugh-count" class="text-gray-500 text-sm">😄 已笑 0 次</div>
+        </div>
+    </div>
+
+    <script>
+        const getJokeBtn = document.getElementById('get-joke-btn');
+        const laughBtn = document.getElementById('laugh-btn');
+        const jokeBox = document.getElementById('joke-box');
+        const typeBadge = document.getElementById('type-badge');
+        const laughCountEl = document.getElementById('laugh-count');
+        
+        let currentType = 'all';
+        let laughCount = 0;
+        let currentJoke = null;
+        
+        function selectType(type) {
+            currentType = type;
+            document.querySelectorAll('[id^="type-"]').forEach(btn => {
+                btn.classList.remove('bg-amber-500', 'text-white');
+                btn.classList.add('bg-gray-100', 'text-gray-600');
+            });
+            document.getElementById(`type-${type}`).classList.remove('bg-gray-100', 'text-gray-600');
+            document.getElementById(`type-${type}`).classList.add('bg-amber-500', 'text-white');
+        }
+        
+        async function getJoke() {
+            const response = await fetch('./get-joke', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: currentType })
+            });
+            currentJoke = await response.json();
+            displayJoke();
+        }
+        
+        function displayJoke() {
+            const setupEl = jokeBox.querySelector('.joke-setup');
+            const punchlineEl = jokeBox.querySelector('.joke-punchline');
+            
+            setupEl.textContent = currentJoke.setup;
+            punchlineEl.textContent = '';
+            punchlineEl.style.opacity = '0';
+            
+            typeBadge.textContent = getTypeLabel(currentJoke.type);
+            typeBadge.className = `type-badge type-${currentJoke.type}`;
+            typeBadge.style.display = 'inline-block';
+            
+            setTimeout(() => {
+                punchlineEl.textContent = currentJoke.punchline;
+                punchlineEl.style.opacity = '1';
+            }, 1500);
+        }
+        
+        function getTypeLabel(type) {
+            const labels = {
+                'pun': '冷笑话',
+                'programming': '程序员',
+                'life': '生活'
+            };
+            return labels[type] || '笑话';
+        }
+        
+        function laugh() {
+            if (currentJoke) {
+                laughCount++;
+                laughCountEl.textContent = `😄 已笑 ${laughCount} 次`;
+                
+                jokeBox.style.transform = 'scale(1.05)';
+                setTimeout(() => {
+                    jokeBox.style.transform = 'scale(1)';
+                }, 200);
+            }
+        }
+        
+        getJokeBtn.addEventListener('click', getJoke);
+        laughBtn.addEventListener('click', laugh);
+        
+        getJoke();
+    </script>
+</body>
+</html>
