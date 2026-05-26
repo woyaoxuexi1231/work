@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 日期与时间工具类演进史</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              dark: { 850: '#121826', 900: '#0d1117', 950: '#080b10' },
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        * { scrollbar-width: thin; scrollbar-color: #374151 #111827; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+
+        .timeline-line {
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899, #f97316, #10b981);
+        }
+
+        .card-glow-blue { box-shadow: 0 0 30px -5px rgba(59,130,246,0.15); }
+        .card-glow-purple { box-shadow: 0 0 30px -5px rgba(139,92,246,0.15); }
+        .card-glow-pink { box-shadow: 0 0 30px -5px rgba(236,72,153,0.15); }
+        .card-glow-orange { box-shadow: 0 0 30px -5px rgba(249,115,22,0.15); }
+        .card-glow-green { box-shadow: 0 0 30px -5px rgba(16,185,129,0.15); }
+
+        .card-glow-blue:hover { box-shadow: 0 0 50px -5px rgba(59,130,246,0.25); }
+        .card-glow-purple:hover { box-shadow: 0 0 50px -5px rgba(139,92,246,0.25); }
+        .card-glow-pink:hover { box-shadow: 0 0 50px -5px rgba(236,72,153,0.25); }
+        .card-glow-orange:hover { box-shadow: 0 0 50px -5px rgba(249,115,22,0.25); }
+        .card-glow-green:hover { box-shadow: 0 0 50px -5px rgba(16,185,129,0.25); }
+
+        .fade-in { opacity: 0; transform: translateY(30px); transition: all 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+        .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+        .code-block {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 1px solid rgba(99,102,241,0.15);
+        }
+
+        .badge { backdrop-filter: blur(8px); }
+
+        .hero-gradient {
+            background: radial-gradient(ellipse at 50% 0%, rgba(59,130,246,0.15) 0%, transparent 60%),
+            radial-gradient(ellipse at 80% 50%, rgba(139,92,246,0.1) 0%, transparent 50%),
+            radial-gradient(ellipse at 20% 80%, rgba(16,185,129,0.1) 0%, transparent 50%);
+        }
+
+        .pros-item::before { content: '✓'; margin-right: 8px; font-weight: 700; }
+        .cons-item::before { content: '✗'; margin-right: 8px; font-weight: 700; }
+
+        .tag-deprecated { background: linear-gradient(135deg, #991b1b, #dc2626); }
+        .tag-legacy { background: linear-gradient(135deg, #92400e, #d97706); }
+        .tag-thirdparty { background: linear-gradient(135deg, #5b21b6, #7c3aed); }
+        .tag-modern { background: linear-gradient(135deg, #065f46, #10b981); }
+        .tag-current { background: linear-gradient(135deg, #1e40af, #3b82f6); }
+
+        @keyframes pulse-dot {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+        }
+        .pulse-dot { animation: pulse-dot 2s infinite; }
+
+        .comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+
+        details summary { cursor: pointer; list-style: none; }
+        details summary::-webkit-details-marker { display: none; }
+        details summary::before { content: '▶'; display: inline-block; margin-right: 8px; transition: transform 0.3s; font-size: 0.75em; }
+        details[open] summary::before { transform: rotate(90deg); }
+
+        .nav-blur { backdrop-filter: blur(16px) saturate(180%); background: rgba(13,17,23,0.75); }
+    </style>
+</head>
+<body class="bg-dark-950 text-gray-200 font-sans antialiased">
+
+<!-- Navigation -->
+<nav class="fixed top-0 left-0 right-0 z-50 nav-blur border-b border-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">☕</div>
+                <span class="font-semibold text-white hidden sm:block">Java DateTime Evolution</span>
+            </div>
+            <div class="hidden md:flex items-center gap-6 text-sm">
+                <a href="#era1" class="text-gray-400 hover:text-blue-400 transition-colors">Date</a>
+                <a href="#era2" class="text-gray-400 hover:text-purple-400 transition-colors">Calendar</a>
+                <a href="#era3" class="text-gray-400 hover:text-pink-400 transition-colors">SimpleDateFormat</a>
+                <a href="#era4" class="text-gray-400 hover:text-orange-400 transition-colors">Joda-Time</a>
+                <a href="#era5" class="text-gray-400 hover:text-green-400 transition-colors">java.time</a>
+                <a href="#comparison" class="text-gray-400 hover:text-yellow-400 transition-colors">对比总结</a>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero Section -->
+<header class="hero-gradient min-h-screen flex items-center justify-center relative overflow-hidden pt-16">
+    <div class="absolute inset-0 overflow-hidden">
+        <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl"></div>
+    </div>
+    <div class="relative z-10 text-center max-w-5xl mx-auto px-4">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8">
+            <span class="w-2 h-2 rounded-full bg-blue-400 pulse-dot"></span>
+            从 1996 到 2014，跨越 18 年的演进之路
+        </div>
+        <h1 class="text-5xl sm:text-6xl lg:text-7xl font-black text-white leading-tight mb-6">
+            Java 日期与时间
+            <br>
+            <span class="bg-gradient-to-r from-blue-400 via-purple-400 to-green-400 bg-clip-text text-transparent">
+                    工具类演进史
+                </span>
+        </h1>
+        <p class="text-lg sm:text-xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed">
+            从 <code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded font-mono text-base">java.util.Date</code> 的混沌初开，
+            到 <code class="text-green-400 bg-green-500/10 px-2 py-0.5 rounded font-mono text-base">java.time</code> 的终极方案——<br>
+            一段充满设计缺陷、社区抗争与自我革新的技术史诗。
+        </p>
+
+        <!-- Timeline Preview -->
+        <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mb-16">
+            <a href="#era1" class="group flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:border-blue-500/50 transition-all">
+                <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                <span class="text-sm text-gray-300 group-hover:text-blue-400 transition-colors">1996 · Date</span>
+            </a>
+            <div class="hidden sm:block text-gray-600">→</div>
+            <a href="#era2" class="group flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:border-purple-500/50 transition-all">
+                <span class="w-3 h-3 rounded-full bg-purple-500"></span>
+                <span class="text-sm text-gray-300 group-hover:text-purple-400 transition-colors">1997 · Calendar</span>
+            </a>
+            <div class="hidden sm:block text-gray-600">→</div>
+            <a href="#era3" class="group flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:border-pink-500/50 transition-all">
+                <span class="w-3 h-3 rounded-full bg-pink-500"></span>
+                <span class="text-sm text-gray-300 group-hover:text-pink-400 transition-colors">1997 · SDF</span>
+            </a>
+            <div class="hidden sm:block text-gray-600">→</div>
+            <a href="#era4" class="group flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:border-orange-500/50 transition-all">
+                <span class="w-3 h-3 rounded-full bg-orange-500"></span>
+                <span class="text-sm text-gray-300 group-hover:text-orange-400 transition-colors">2002 · Joda-Time</span>
+            </a>
+            <div class="hidden sm:block text-gray-600">→</div>
+            <a href="#era5" class="group flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:border-green-500/50 transition-all">
+                <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                <span class="text-sm text-gray-300 group-hover:text-green-400 transition-colors">2014 · java.time</span>
+            </a>
+        </div>
+
+        <div class="animate-bounce text-gray-500">
+            <svg class="w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+            </svg>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20 relative">
+
+    <!-- Vertical Timeline Line (Desktop) -->
+    <div class="hidden lg:block absolute left-1/2 top-20 bottom-20 w-0.5 timeline-line opacity-20 transform -translate-x-1/2"></div>
+
+    <!-- ============================================================ -->
+    <!-- ERA 1: java.util.Date -->
+    <!-- ============================================================ -->
+    <section id="era1" class="mb-32 fade-in">
+        <div class="grid lg:grid-cols-2 gap-8 lg:gap-16 items-start">
+            <!-- Left: Info Card -->
+            <div class="order-2 lg:order-1">
+                <div class="bg-gray-900/80 border border-gray-800 rounded-2xl p-8 card-glow-blue transition-all duration-500">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="tag-current text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">第一代</span>
+                        <span class="tag-deprecated text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">已弃用大部分方法</span>
+                    </div>
+
+                    <h2 class="text-3xl font-bold text-white mb-2">java.util.Date</h2>
+                    <p class="text-blue-400 font-mono text-sm mb-6">JDK 1.0 · 1996年1月</p>
+
+                    <!-- 背景 -->
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-blue-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            诞生背景
+                        </h3>
+                        <p class="text-gray-400 leading-relaxed">
+                            Java 诞生之初，急需一个表示"时间点"的基础类。<code class="font-mono text-blue-300 text-sm">java.util.Date</code>
+                            被设计为 Java 中最基础的日期时间类，本质上是对 Unix 时间戳（毫秒数）的简单封装。
+                            它模仿了 C 语言的 <code class="font-mono text-sm text-gray-300">time_t</code> 概念，同时加入了日期解析、格式化、比较等功能——
+                            将所有职责塞进了一个类中。
+                        </p>
+                    </div>
+
+                    <!-- 解决的问题 -->
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-blue-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            解决了什么
+                        </h3>
+                        <ul class="space-y-2 text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-1">•</span>
+                                提供了 Java 中第一个时间表示方式，基于 UTC 1970-01-01 的毫秒偏移量
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-1">•</span>
+                                支持基本的日期创建、比较（before/after）和简单运算
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-1">•</span>
+                                内置了 <code class="font-mono text-sm">toString()</code> 可直接输出可读字符串
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- 优缺点 -->
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div class="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
+                            <h4 class="text-green-400 font-semibold mb-3 text-sm uppercase tracking-wider">优点</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="pros-item text-green-300/80">概念简单直观，底层就是毫秒时间戳</li>
+                                <li class="pros-item text-green-300/80">实现了 Serializable 和 Comparable</li>
+                                <li class="pros-item text-green-300/80">被所有后续 API 兼容</li>
+                            </ul>
+                        </div>
+                        <div class="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+                            <h4 class="text-red-400 font-semibold mb-3 text-sm uppercase tracking-wider">缺点</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="cons-item text-red-300/80"><strong>可变对象</strong>，线程不安全</li>
+                                <li class="cons-item text-red-300/80">月份从 <strong>0</strong> 开始（0=一月）</li>
+                                <li class="cons-item text-red-300/80">年份从 <strong>1900</strong> 开始偏移</li>
+                                <li class="cons-item text-red-300/80">大量方法被 @Deprecated</li>
+                                <li class="cons-item text-red-300/80">无时区概念，国际化差</li>
+                                <li class="cons-item text-red-300/80">职责混乱：同时承担日期+时间+格式化</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Code -->
+            <div class="order-1 lg:order-2 lg:sticky lg:top-24">
+                <div class="code-block rounded-2xl p-6 overflow-hidden">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="ml-3 text-gray-500 text-sm font-mono">DateDemo.java</span>
+                    </div>
+                    <pre class="text-sm font-mono leading-relaxed overflow-x-auto"><code><span class="text-gray-500">// ❌ 反人类的月份从0开始</span>
+<span class="text-purple-400">Date</span> date = <span class="text-blue-400">new</span> <span class="text-purple-400">Date</span>(<span class="text-orange-300">2024</span> - <span class="text-orange-300">1900</span>, <span class="text-orange-300">0</span>, <span class="text-orange-300">1</span>);
+<span class="text-gray-500">// 2024年1月1日 → 年份要减1900，月份写0</span>
+
+<span class="text-gray-500">// ❌ 可变对象 → 线程不安全</span>
+<span class="text-purple-400">Date</span> d = <span class="text-blue-400">new</span> <span class="text-purple-400">Date</span>();
+d.<span class="text-yellow-300">setYear</span>(<span class="text-orange-300">120</span>);  <span class="text-gray-500">// 被外部修改！Deprecated!</span>
+d.<span class="text-yellow-300">setMonth</span>(<span class="text-orange-300">5</span>);  <span class="text-gray-500">// 6月（不是5月！）</span>
+
+<span class="text-gray-500">// ❌ getYear() 返回距1900的偏移</span>
+<span class="text-purple-400">Date</span> now = <span class="text-blue-400">new</span> <span class="text-purple-400">Date</span>();
+System.out.<span class="text-yellow-300">println</span>(now.<span class="text-yellow-300">getYear</span>());
+<span class="text-gray-500">// 输出: 126 (而不是 2026)</span>
+
+<span class="text-gray-500">// ❌ 职责混乱：一个类干了太多事</span>
+date.<span class="text-yellow-300">getHours</span>();    <span class="text-gray-500">// 时间？</span>
+date.<span class="text-yellow-300">getDate</span>();     <span class="text-gray-500">// 日期中的"日"？</span>
+date.<span class="text-yellow-300">getDay</span>();     <span class="text-gray-500">// 星期几？（0=周日）</span>
+date.<span class="text-yellow-300">toLocaleString</span>(); <span class="text-gray-500">// 格式化？Deprecated!</span></code></pre>
+                </div>
+
+                <!-- Warning Box -->
+                <div class="mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex gap-3">
+                    <span class="text-amber-400 text-xl flex-shrink-0">⚠️</span>
+                    <p class="text-amber-200/80 text-sm">
+                        <strong>历史评价：</strong>在一次社区投票中，<code class="font-mono">Date/Calendar</code> 被评为
+                        <strong>"Java 最烂 API" 第二名</strong>（仅次于 XML/DOM）。
+                        JDK 1.1 就弃用了 Date 的大部分方法，堪称"出道即翻车"。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- ERA 2: java.util.Calendar -->
+    <!-- ============================================================ -->
+    <section id="era2" class="mb-32 fade-in">
+        <div class="grid lg:grid-cols-2 gap-8 lg:gap-16 items-start">
+            <!-- Left: Code -->
+            <div class="lg:sticky lg:top-24">
+                <div class="code-block rounded-2xl p-6 overflow-hidden">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="ml-3 text-gray-500 text-sm font-mono">CalendarDemo.java</span>
+                    </div>
+                    <pre class="text-sm font-mono leading-relaxed overflow-x-auto"><code><span class="text-gray-500">// 获取一个 Calendar 实例（工厂方法）</span>
+<span class="text-purple-400">Calendar</span> cal = <span class="text-purple-400">Calendar</span>.<span class="text-yellow-300">getInstance</span>();
+
+<span class="text-gray-500">// ❌ 月份依然从 0 开始！</span>
+cal.<span class="text-yellow-300">set</span>(<span class="text-orange-300">2024</span>, <span class="text-orange-300">0</span>, <span class="text-orange-300">15</span>); <span class="text-gray-500">// 2024年1月15日</span>
+cal.<span class="text-yellow-300">set</span>(<span class="text-orange-300">2024</span>, <span class="text-purple-400">Calendar</span>.JANUARY, <span class="text-orange-300">15</span>); <span class="text-gray-500">// 稍微好点</span>
+
+<span class="text-gray-500">// ❌ API 极其繁琐</span>
+cal.<span class="text-yellow-300">add</span>(<span class="text-purple-400">Calendar</span>.DATE, <span class="text-orange-300">7</span>);     <span class="text-gray-500">// +7天</span>
+cal.<span class="text-yellow-300">add</span>(<span class="text-purple-400">Calendar</span>.MONTH, <span class="text-orange-300">-1</span>);   <span class="text-gray-500">// -1月</span>
+cal.<span class="text-yellow-300">roll</span>(<span class="text-purple-400">Calendar</span>.DAY_OF_MONTH, <span class="text-orange-300">3</span>);
+
+<span class="text-gray-500">// ❌ 取值要用 get()，魔法数字满天飞</span>
+<span class="text-purple-400">int</span> year  = cal.<span class="text-yellow-300">get</span>(<span class="text-purple-400">Calendar</span>.YEAR);
+<span class="text-purple-400">int</span> month = cal.<span class="text-yellow-300">get</span>(<span class="text-purple-400">Calendar</span>.MONTH) + <span class="text-orange-300">1</span>; <span class="text-gray-500">// +1!</span>
+<span class="text-purple-400">int</span> dow   = cal.<span class="text-yellow-300">get</span>(<span class="text-purple-400">Calendar</span>.DAY_OF_WEEK);
+
+<span class="text-gray-500">// ❌ 可变 + 非线程安全</span>
+<span class="text-purple-400">Calendar</span> shared = <span class="text-purple-400">Calendar</span>.<span class="text-yellow-300">getInstance</span>();
+<span class="text-gray-500">// 多线程共享 shared 并调用 set/add → 数据错乱!</span></code></pre>
+                </div>
+            </div>
+
+            <!-- Right: Info Card -->
+            <div>
+                <div class="bg-gray-900/80 border border-gray-800 rounded-2xl p-8 card-glow-purple transition-all duration-500">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="tag-current text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">第二代</span>
+                        <span class="tag-legacy text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">遗留代码</span>
+                    </div>
+
+                    <h2 class="text-3xl font-bold text-white mb-2">java.util.Calendar</h2>
+                    <p class="text-purple-400 font-mono text-sm mb-6">JDK 1.1 · 1997年2月</p>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-purple-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            诞生背景
+                        </h3>
+                        <p class="text-gray-400 leading-relaxed">
+                            <code class="font-mono text-sm">Date</code> 的大部分方法在 JDK 1.1 就被标记为 Deprecated，
+                            Sun 引入了 <code class="font-mono text-sm">Calendar</code> 作为替代方案。其核心目标是：
+                            将"时间瞬间"（Date）和"日历系统"（Calendar）解耦，同时提供国际化的日历支持（如日本和历、佛历等）。
+                        </p>
+                    </div>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-purple-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            解决了什么
+                        </h3>
+                        <ul class="space-y-2 text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <span class="text-purple-400 mt-1">•</span>
+                                提供了日历计算能力：<code class="font-mono text-sm">add()</code>、<code class="font-mono text-sm">roll()</code>、日期字段提取
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-purple-400 mt-1">•</span>
+                                支持多日历系统（GregorianCalendar 只是其中一种）
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-purple-400 mt-1">•</span>
+                                引入了 <code class="font-mono text-sm">TimeZone</code> 和 <code class="font-mono text-sm">Locale</code> 支持
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-purple-400 mt-1">•</span>
+                                提供了工厂方法 <code class="font-mono text-sm">getInstance()</code>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div class="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
+                            <h4 class="text-green-400 font-semibold mb-3 text-sm uppercase tracking-wider">相比 Date 的进步</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="pros-item text-green-300/80">支持日历运算（加减天/月/年）</li>
+                                <li class="pros-item text-green-300/80">支持多日历系统和本地化</li>
+                                <li class="pros-item text-green-300/80">时区感知（可设置 TimeZone）</li>
+                                <li class="pros-item text-green-300/80">Date/Calendar 职责分离</li>
+                            </ul>
+                        </div>
+                        <div class="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+                            <h4 class="text-red-400 font-semibold mb-3 text-sm uppercase tracking-wider">新的问题</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="cons-item text-red-300/80"><strong>可变 + 非线程安全</strong>（变本加厉）</li>
+                                <li class="cons-item text-red-300/80">月份<strong>依然从 0</strong> 开始</li>
+                                <li class="cons-item text-red-300/80">API <strong>极其繁琐</strong>，大量魔法常量</li>
+                                <li class="cons-item text-red-300/80">性能差：初始化重量级对象</li>
+                                <li class="cons-item text-red-300/80">日期/时间字段<strong>无法直接格式化</strong></li>
+                                <li class="cons-item text-red-300/80">星期从周日开始（1=SUNDAY）</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- ERA 3: SimpleDateFormat -->
+    <!-- ============================================================ -->
+    <section id="era3" class="mb-32 fade-in">
+        <div class="grid lg:grid-cols-2 gap-8 lg:gap-16 items-start">
+            <!-- Left: Info Card -->
+            <div class="order-2 lg:order-1">
+                <div class="bg-gray-900/80 border border-gray-800 rounded-2xl p-8 card-glow-pink transition-all duration-500">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="tag-current text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">配套工具</span>
+                        <span class="tag-deprecated text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">线程不安全</span>
+                    </div>
+
+                    <h2 class="text-3xl font-bold text-white mb-2">SimpleDateFormat</h2>
+                    <p class="text-pink-400 font-mono text-sm mb-6">java.text · JDK 1.1 · 1997年</p>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-pink-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            诞生背景
+                        </h3>
+                        <p class="text-gray-400 leading-relaxed">
+                            随着 Date 和 Calendar 剥离了格式化能力（Date 的 toString/toLocaleString 被废弃），
+                            Java 需要一个专门的日期格式化/解析类。<code class="font-mono text-sm">SimpleDateFormat</code>
+                            作为 <code class="font-mono text-sm">DateFormat</code> 的具体实现被引入 <code class="font-mono text-sm">java.text</code> 包。
+                            它通过模式字符串（如 <code class="font-mono text-sm">"yyyy-MM-dd HH:mm:ss"</code>）实现灵活的格式化与解析。
+                        </p>
+                    </div>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-pink-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            解决了什么
+                        </h3>
+                        <ul class="space-y-2 text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <span class="text-pink-400 mt-1">•</span>
+                                将格式化/解析职责从 Date 中分离，实现单一职责
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-pink-400 mt-1">•</span>
+                                支持自定义模式字符串，灵活的日期格式化
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-pink-400 mt-1">•</span>
+                                支持字符串到 Date 对象的双向转换（parse / format）
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-pink-400 mt-1">•</span>
+                                支持 Locale 本地化格式化
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div class="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
+                            <h4 class="text-green-400 font-semibold mb-3 text-sm uppercase tracking-wider">优点</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="pros-item text-green-300/80">模式字符串直观灵活</li>
+                                <li class="pros-item text-green-300/80">支持双向转换（format + parse）</li>
+                                <li class="pros-item text-green-300/80">支持本地化与自定义时区</li>
+                            </ul>
+                        </div>
+                        <div class="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+                            <h4 class="text-red-400 font-semibold mb-3 text-sm uppercase tracking-wider">致命缺陷</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="cons-item text-red-300/80"><strong>非线程安全！</strong>这是最臭名昭著的 Bug 来源</li>
+                                <li class="cons-item text-red-300/80">static SDF 实例在多线程下会<strong>静默产生错误日期</strong></li>
+                                <li class="cons-item text-red-300/80">只能配合 Date 使用，不能独立表示日期</li>
+                                <li class="cons-item text-red-300/80">解析错误时抛异常而非返回 Optional</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Classic Bug Example -->
+                    <div class="mt-6 bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+                        <h4 class="text-red-400 font-semibold mb-2 text-sm">💀 经典线上事故模式</h4>
+                        <pre class="text-xs font-mono text-gray-400 overflow-x-auto"><code><span class="text-gray-500">// 这是无数线上事故的根源 ↓</span>
+<span class="text-blue-400">private static final</span> <span class="text-purple-400">SimpleDateFormat</span> SDF
+    = <span class="text-blue-400">new</span> <span class="text-purple-400">SimpleDateFormat</span>(<span class="text-green-400">"yyyy-MM-dd"</span>);
+
+<span class="text-gray-500">// 多线程调用 → 随机返回错误日期！</span>
+<span class="text-blue-400">public</span> String <span class="text-yellow-300">format</span>(<span class="text-purple-400">Date</span> d) {
+    <span class="text-blue-400">return</span> SDF.<span class="text-yellow-300">format</span>(d); <span class="text-gray-500">// 线程不安全！</span>
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Code -->
+            <div class="order-1 lg:order-2 lg:sticky lg:top-24">
+                <div class="code-block rounded-2xl p-6 overflow-hidden">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="ml-3 text-gray-500 text-sm font-mono">SimpleDateFormatDemo.java</span>
+                    </div>
+                    <pre class="text-sm font-mono leading-relaxed overflow-x-auto"><code><span class="text-gray-500">// 基本用法：格式化</span>
+<span class="text-purple-400">SimpleDateFormat</span> sdf = <span class="text-blue-400">new</span> <span class="text-purple-400">SimpleDateFormat</span>(
+    <span class="text-green-400">"yyyy-MM-dd HH:mm:ss"</span>
+);
+
+<span class="text-purple-400">Date</span> now = <span class="text-blue-400">new</span> <span class="text-purple-400">Date</span>();
+String str = sdf.<span class="text-yellow-300">format</span>(now);
+<span class="text-gray-500">// "2026-05-26 13:13:00"</span>
+
+<span class="text-gray-500">// 基本用法：解析</span>
+<span class="text-purple-400">Date</span> date = sdf.<span class="text-yellow-300">parse</span>(<span class="text-green-400">"2024-01-15 10:30:00"</span>);
+
+<span class="text-gray-500">// 本地化格式化</span>
+<span class="text-purple-400">DateFormat</span> df = <span class="text-purple-400">DateFormat</span>.<span class="text-yellow-300">getDateInstance</span>(
+    <span class="text-purple-400">DateFormat</span>.LONG,
+    <span class="text-purple-400">Locale</span>.CHINA
+);
+<span class="text-gray-500">// "2024年1月15日"</span>
+
+<span class="text-gray-500">// ⚠️ 常见的"安全"用法（但很繁琐）</span>
+<span class="text-purple-400">ThreadLocal</span>&lt;<span class="text-purple-400">SimpleDateFormat</span>&gt; safe =
+    <span class="text-purple-400">ThreadLocal</span>.<span class="text-yellow-300">withInitial</span>(() -&gt;
+        <span class="text-blue-400">new</span> <span class="text-purple-400">SimpleDateFormat</span>(<span class="text-green-400">"yyyy-MM-dd"</span>)
+    );
+<span class="text-gray-500">// 每个线程一个实例，终于安全了…但好累</span></code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- ERA 4: Joda-Time -->
+    <!-- ============================================================ -->
+    <section id="era4" class="mb-32 fade-in">
+        <div class="grid lg:grid-cols-2 gap-8 lg:gap-16 items-start">
+            <!-- Left: Code -->
+            <div class="lg:sticky lg:top-24">
+                <div class="code-block rounded-2xl p-6 overflow-hidden">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="ml-3 text-gray-500 text-sm font-mono">JodaTimeDemo.java</span>
+                    </div>
+                    <pre class="text-sm font-mono leading-relaxed overflow-x-auto"><code><span class="text-gray-500">// ✅ 终于正常了！月份从 1 开始</span>
+<span class="text-purple-400">LocalDate</span> date = <span class="text-blue-400">new</span> <span class="text-purple-400">LocalDate</span>(<span class="text-orange-300">2024</span>, <span class="text-orange-300">1</span>, <span class="text-orange-300">15</span>);
+<span class="text-gray-500">// 2024年1月15日 — 符合人类直觉!</span>
+
+<span class="text-gray-500">// ✅ 不可变 → 线程安全</span>
+<span class="text-purple-400">LocalDate</span> tomorrow = date.<span class="text-yellow-300">plusDays</span>(<span class="text-orange-300">1</span>);
+<span class="text-gray-500">// date 不变，返回新对象</span>
+
+<span class="text-gray-500">// ✅ 流式 API，极其直观</span>
+<span class="text-purple-400">DateTime</span> dt = <span class="text-blue-400">new</span> <span class="text-purple-400">DateTime</span>()
+    .<span class="text-yellow-300">plusYears</span>(<span class="text-orange-300">1</span>)
+    .<span class="text-yellow-300">minusMonths</span>(<span class="text-orange-300">2</span>)
+    .<span class="text-yellow-300">plusDays</span>(<span class="text-orange-300">7</span>)
+    .<span class="text-yellow-300">withHourOfDay</span>(<span class="text-orange-300">14</span>);
+
+<span class="text-gray-500">// ✅ 日期间隔计算</span>
+<span class="text-purple-400">Days</span> days = <span class="text-purple-400">Days</span>.<span class="text-yellow-300">daysBetween</span>(date1, date2);
+<span class="text-purple-400">Period</span> period = <span class="text-blue-400">new</span> <span class="text-purple-400">Period</span>(date1, date2);
+
+<span class="text-gray-500">// ✅ 丰富的格式化器</span>
+<span class="text-purple-400">DateTimeFormatter</span> fmt =
+    <span class="text-purple-400">DateTimeFormat</span>.<span class="text-yellow-300">forPattern</span>(<span class="text-green-400">"yyyy-MM-dd"</span>);
+String str = fmt.<span class="text-yellow-300">print</span>(date);</code></pre>
+                </div>
+
+                <!-- Fun Fact -->
+                <div class="mt-4 bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 flex gap-3">
+                    <span class="text-orange-400 text-xl flex-shrink-0">💡</span>
+                    <p class="text-orange-200/80 text-sm">
+                        <strong>趣闻：</strong>Joda-Time 的作者 <strong>Stephen Colebourne</strong> 后来主导了
+                        <strong>JSR-310</strong> 规范的制定，将 Joda-Time 的设计思想直接带入了 JDK 8 的
+                        <code class="font-mono">java.time</code> 包——可以说是"社区倒逼官方改革"的经典案例。
+                    </p>
+                </div>
+            </div>
+
+            <!-- Right: Info Card -->
+            <div>
+                <div class="bg-gray-900/80 border border-gray-800 rounded-2xl p-8 card-glow-orange transition-all duration-500">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="tag-thirdparty text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">第三方库</span>
+                        <span class="bg-orange-500/20 text-orange-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider border border-orange-500/30">社区之光</span>
+                    </div>
+
+                    <h2 class="text-3xl font-bold text-white mb-2">Joda-Time</h2>
+                    <p class="text-orange-400 font-mono text-sm mb-6">Third-party · 2002年首发 · Stephen Colebourne</p>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-orange-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            诞生背景
+                        </h3>
+                        <p class="text-gray-400 leading-relaxed">
+                            经过近5年的实战洗礼，Java 开发者对 Date/Calendar 的不满达到顶点。Stephen Colebourne
+                            在 2002 年创建了 Joda-Time——一个完全重新设计的日期时间库。
+                            它从底层重新思考"什么是日期"、"什么是时间"，引入了 <strong>不可变性</strong>、<strong>类型安全</strong>、
+                            <strong>领域驱动设计</strong> 等现代理念，迅速成为 Java 生态中最受欢迎的第三方库之一。
+                        </p>
+                    </div>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-orange-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            解决了什么
+                        </h3>
+                        <ul class="space-y-2 text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <span class="text-orange-400 mt-1">•</span>
+                                <strong>不可变设计</strong>：所有核心类都是不可变的，天然线程安全
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-orange-400 mt-1">•</span>
+                                <strong>类型分离</strong>：LocalDate、LocalTime、DateTime、Interval、Period、Duration 各司其职
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-orange-400 mt-1">•</span>
+                                <strong>流式 API</strong>：<code class="font-mono text-sm">plusDays().minusMonths()</code> 链式调用
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-orange-400 mt-1">•</span>
+                                <strong>月份从 1 开始</strong>：终于符合人类直觉
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-orange-400 mt-1">•</span>
+                                强大的时区与夏令时支持
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div class="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
+                            <h4 class="text-green-400 font-semibold mb-3 text-sm uppercase tracking-wider">革命性进步</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="pros-item text-green-300/80">不可变 + 线程安全</li>
+                                <li class="pros-item text-green-300/80">API 设计优雅直观</li>
+                                <li class="pros-item text-green-300/80">丰富的类型体系</li>
+                                <li class="pros-item text-green-300/80">性能远优于 Calendar</li>
+                                <li class="pros-item text-green-300/80">完善的文档和测试</li>
+                            </ul>
+                        </div>
+                        <div class="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+                            <h4 class="text-red-400 font-semibold mb-3 text-sm uppercase tracking-wider">局限</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="cons-item text-red-300/80">第三方依赖，需额外引入 JAR</li>
+                                <li class="cons-item text-red-300/80">与 JDK 原生 Date 互操作需转换</li>
+                                <li class="cons-item text-red-300/80">使用 Chronology 系统增加复杂度</li>
+                                <li class="cons-item text-red-300/80">null 处理不够优雅（Java 8 前无 Optional）</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- ERA 5: java.time (JSR-310) -->
+    <!-- ============================================================ -->
+    <section id="era5" class="mb-32 fade-in">
+        <div class="grid lg:grid-cols-2 gap-8 lg:gap-16 items-start">
+            <!-- Left: Info Card -->
+            <div class="order-2 lg:order-1">
+                <div class="bg-gray-900/80 border border-green-500/20 rounded-2xl p-8 card-glow-green transition-all duration-500">
+                    <div class="flex items-center gap-3 mb-6">
+                        <span class="tag-modern text-xs font-bold px-3 py-1 rounded-full text-white uppercase tracking-wider">第三代 · 终极方案</span>
+                        <span class="bg-green-500/20 text-green-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider border border-green-500/30">当前标准</span>
+                    </div>
+
+                    <h2 class="text-3xl font-bold text-white mb-2">java.time <span class="text-lg text-gray-500 font-normal">(JSR-310)</span></h2>
+                    <p class="text-green-400 font-mono text-sm mb-6">JDK 8 · 2014年3月 · Stephen Colebourne 主导</p>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-green-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            诞生背景
+                        </h3>
+                        <p class="text-gray-400 leading-relaxed">
+                            Joda-Time 在社区的巨大成功证明了：Java 需要一个全新的日期时间 API。
+                            2007 年，Stephen Colebourne 提交了 <strong>JSR-310</strong>（新的日期时间 API 规范），
+                            经过 7 年的打磨，最终随 <strong>JDK 8</strong>（2014年3月）发布。
+                            它继承了 Joda-Time 的精华，同时修正了其中的设计缺陷（如 null 处理、Chronology 过度复杂等），
+                            并充分利用了 Java 8 的新特性（Lambda、Optional 等）。
+                        </p>
+                    </div>
+
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold text-green-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            解决了什么（彻底解决所有历史问题）
+                        </h3>
+                        <ul class="space-y-2 text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>所有核心类不可变且线程安全</strong>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>清晰的类型分离</strong>：LocalDate / LocalTime / LocalDateTime / ZonedDateTime / Instant / OffsetDateTime 各司其职
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>流式 API + Temporal 接口体系</strong>：统一的 plus/minus/with 方法
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>DateTimeFormatter 线程安全</strong>，且支持预定义格式
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>完善的时区支持</strong>：ZoneId + ZoneRules + 夏令时处理
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>Period（日期差）和 Duration（时间差）</strong>分离
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                <strong>TemporalAdjuster</strong>：灵活的日期调整器（"下个周一"、"月末最后一天"）
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 mt-1">•</span>
+                                与旧 API 的互操作桥梁（<code class="font-mono text-sm">Date.from()</code> / <code class="font-mono text-sm">.toInstant()</code>）
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div class="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
+                            <h4 class="text-green-400 font-semibold mb-3 text-sm uppercase tracking-wider">相比所有前辈的优势</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="pros-item text-green-300/80">JDK 内置，零依赖</li>
+                                <li class="pros-item text-green-300/80">不可变 + 线程安全</li>
+                                <li class="pros-item text-green-300/80">API 设计堪称教科书</li>
+                                <li class="pros-item text-green-300/80">类型体系完备且清晰</li>
+                                <li class="pros-item text-green-300/80">TemporalAdjuster 扩展性极强</li>
+                                <li class="pros-item text-green-300/80">DateTimeFormatter 线程安全</li>
+                                <li class="pros-item text-green-300/80">完善的时区与日历系统</li>
+                            </ul>
+                        </div>
+                        <div class="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+                            <h4 class="text-red-400 font-semibold mb-3 text-sm uppercase tracking-wider">仍有不足</h4>
+                            <ul class="space-y-2 text-sm text-gray-400">
+                                <li class="cons-item text-red-300/80">类数量多，学习曲线较陡</li>
+                                <li class="cons-item text-red-300/80">与旧代码互操作需要转换</li>
+                                <li class="cons-item text-red-300/80">不支持纳秒以下精度</li>
+                                <li class="cons-item text-red-300/80">JDBC/ORM 框架兼容曾滞后</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Code -->
+            <div class="order-1 lg:order-2 lg:sticky lg:top-24">
+                <div class="code-block rounded-2xl p-6 overflow-hidden">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="ml-3 text-gray-500 text-sm font-mono">JavaTimeDemo.java</span>
+                    </div>
+                    <pre class="text-sm font-mono leading-relaxed overflow-x-auto"><code><span class="text-gray-500">// ✅ LocalDate — 纯日期，不可变</span>
+<span class="text-purple-400">LocalDate</span> today = <span class="text-purple-400">LocalDate</span>.<span class="text-yellow-300">now</span>();
+<span class="text-purple-400">LocalDate</span> birthday = <span class="text-purple-400">LocalDate</span>.<span class="text-yellow-300">of</span>(<span class="text-orange-300">1995</span>, <span class="text-orange-300">6</span>, <span class="text-orange-300">15</span>);
+<span class="text-purple-400">LocalDate</span> nextWeek = today.<span class="text-yellow-300">plusWeeks</span>(<span class="text-orange-300">1</span>);
+
+<span class="text-gray-500">// ✅ 流式计算</span>
+<span class="text-purple-400">LocalDateTime</span> meeting = <span class="text-purple-400">LocalDateTime</span>.<span class="text-yellow-300">now</span>()
+    .<span class="text-yellow-300">plusDays</span>(<span class="text-orange-300">3</span>)
+    .<span class="text-yellow-300">withHour</span>(<span class="text-orange-300">14</span>)
+    .<span class="text-yellow-300">withMinute</span>(<span class="text-orange-300">30</span>);
+
+<span class="text-gray-500">// ✅ TemporalAdjuster — "下个周一"</span>
+<span class="text-purple-400">LocalDate</span> nextMonday = today.<span class="text-yellow-300">with</span>(
+    <span class="text-purple-400">TemporalAdjusters</span>.<span class="text-yellow-300">next</span>(<span class="text-purple-400">DayOfWeek</span>.MONDAY)
+);
+
+<span class="text-gray-500">// ✅ 线程安全的格式化</span>
+<span class="text-purple-400">DateTimeFormatter</span> fmt =
+    <span class="text-purple-400">DateTimeFormatter</span>.<span class="text-yellow-300">ofPattern</span>(<span class="text-green-400">"yyyy-MM-dd HH:mm"</span>);
+String str = meeting.<span class="text-yellow-300">format</span>(fmt);
+<span class="text-purple-400">LocalDateTime</span> parsed = <span class="text-purple-400">LocalDateTime</span>.<span class="text-yellow-300">parse</span>(str, fmt);
+
+<span class="text-gray-500">// ✅ 时区处理</span>
+<span class="text-purple-400">ZonedDateTime</span> tokyoTime = <span class="text-purple-400">ZonedDateTime</span>.<span class="text-yellow-300">now</span>(
+    <span class="text-purple-400">ZoneId</span>.<span class="text-yellow-300">of</span>(<span class="text-green-400">"Asia/Tokyo"</span>)
+);
+
+<span class="text-gray-500">// ✅ Period vs Duration 语义清晰</span>
+<span class="text-purple-400">Period</span> age = <span class="text-purple-400">Period</span>.<span class="text-yellow-300">between</span>(birthday, today);
+<span class="text-purple-400">Duration</span> elapsed = <span class="text-purple-400">Duration</span>.<span class="text-yellow-300">between</span>(start, end);
+
+<span class="text-gray-500">// ✅ 与旧 API 互操作</span>
+<span class="text-purple-400">Instant</span> instant = oldDate.<span class="text-yellow-300">toInstant</span>();
+<span class="text-purple-400">Date</span> legacy = <span class="text-purple-400">Date</span>.<span class="text-yellow-300">from</span>(instant);</code></pre>
+                </div>
+
+                <!-- Success Box -->
+                <div class="mt-4 bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex gap-3">
+                    <span class="text-green-400 text-xl flex-shrink-0">🎉</span>
+                    <p class="text-green-200/80 text-sm">
+                        <strong>最终定论：</strong>java.time 是目前 Java 中处理日期时间的 <strong>唯一推荐方案</strong>。
+                        所有新项目都应直接使用 java.time 包，老项目应逐步迁移。Spring Boot、MyBatis、Hibernate
+                        等主流框架已全面支持。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Comparison Section -->
+    <!-- ============================================================ -->
+    <section id="comparison" class="mb-20 fade-in">
+        <div class="text-center mb-16">
+            <h2 class="text-4xl font-bold text-white mb-4">全面对比</h2>
+            <p class="text-gray-400 text-lg max-w-2xl mx-auto">一张表看清 18 年的演进脉络</p>
+        </div>
+
+        <!-- Comparison Table -->
+        <div class="overflow-x-auto rounded-2xl border border-gray-800">
+            <table class="w-full text-sm">
+                <thead>
+                <tr class="bg-gray-900/80">
+                    <th class="text-left px-6 py-4 text-gray-400 font-semibold">特性</th>
+                    <th class="text-center px-4 py-4 text-blue-400 font-semibold">
+                        <div>Date</div>
+                        <div class="text-xs text-gray-500 font-normal">1996</div>
+                    </th>
+                    <th class="text-center px-4 py-4 text-purple-400 font-semibold">
+                        <div>Calendar</div>
+                        <div class="text-xs text-gray-500 font-normal">1997</div>
+                    </th>
+                    <th class="text-center px-4 py-4 text-pink-400 font-semibold">
+                        <div>SimpleDateFormat</div>
+                        <div class="text-xs text-gray-500 font-normal">1997</div>
+                    </th>
+                    <th class="text-center px-4 py-4 text-orange-400 font-semibold">
+                        <div>Joda-Time</div>
+                        <div class="text-xs text-gray-500 font-normal">2002</div>
+                    </th>
+                    <th class="text-center px-4 py-4 text-green-400 font-semibold">
+                        <div>java.time</div>
+                        <div class="text-xs text-gray-500 font-normal">2014</div>
+                    </th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800/50">
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">不可变性</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗ 可变</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗ 可变</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗ 可变</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓ 不可变</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓ 不可变</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">线程安全</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">月份起始</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">从 0</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">从 0</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-gray-500">N/A</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">从 1</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">从 1</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">日期运算</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">无</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-yellow-400">繁琐</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-gray-500">N/A</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">流式</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">流式</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">格式化</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">toString</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-yellow-400">需 SDF</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">核心功能</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">内置</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">内置+线程安全</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">时区支持</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">无</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-yellow-400">基础</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-yellow-400">基础</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">完善</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">完善</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">类型体系</td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">单一</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-yellow-400">单一</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-gray-500">单一</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">丰富</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">最丰富</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">JDK 内置</td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-red-400">✗ 第三方</span></td>
+                    <td class="text-center px-4 py-3"><span class="text-green-400">✓</span></td>
+                </tr>
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="px-6 py-3 text-gray-300 font-medium">当前状态</td>
+                    <td class="text-center px-4 py-3">
+                        <span class="bg-red-500/20 text-red-400 px-2 py-1 rounded-full text-xs font-medium">不推荐</span>
+                    </td>
+                    <td class="text-center px-4 py-3">
+                        <span class="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full text-xs font-medium">不推荐</span>
+                    </td>
+                    <td class="text-center px-4 py-3">
+                        <span class="bg-red-500/20 text-red-400 px-2 py-1 rounded-full text-xs font-medium">不推荐</span>
+                    </td>
+                    <td class="text-center px-4 py-3">
+                        <span class="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full text-xs font-medium">维护模式</span>
+                    </td>
+                    <td class="text-center px-4 py-3">
+                        <span class="bg-green-500/20 text-green-400 px-2 py-1 rounded-full text-xs font-medium">✅ 推荐使用</span>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Core Classes of java.time -->
+    <!-- ============================================================ -->
+    <section class="mb-20 fade-in">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-white mb-4">java.time 核心类速查</h2>
+            <p class="text-gray-400">选对类型，事半功倍</p>
+        </div>
+
+        <div class="comparison-grid">
+            <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-6 hover:border-green-500/30 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center text-green-400 font-mono font-bold text-xs">LD</span>
+                    <div>
+                        <h3 class="text-white font-semibold">LocalDate</h3>
+                        <p class="text-gray-500 text-xs">纯日期，无时间无时区</p>
+                    </div>
+                </div>
+                <code class="text-xs font-mono text-gray-400 bg-gray-800/50 px-2 py-1 rounded block">2024-01-15</code>
+                <p class="text-gray-500 text-xs mt-2">场景：生日、节假日、到期日</p>
+            </div>
+
+            <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-6 hover:border-blue-500/30 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 font-mono font-bold text-xs">LT</span>
+                    <div>
+                        <h3 class="text-white font-semibold">LocalTime</h3>
+                        <p class="text-gray-500 text-xs">纯时间，无日期无时区</p>
+                    </div>
+                </div>
+                <code class="text-xs font-mono text-gray-400 bg-gray-800/50 px-2 py-1 rounded block">14:30:00</code>
+                <p class="text-gray-500 text-xs mt-2">场景：闹钟、营业开始时间</p>
+            </div>
+
+            <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-6 hover:border-purple-500/30 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 font-mono font-bold text-xs">LDT</span>
+                    <div>
+                        <h3 class="text-white font-semibold">LocalDateTime</h3>
+                        <p class="text-gray-500 text-xs">日期+时间，无时区</p>
+                    </div>
+                </div>
+                <code class="text-xs font-mono text-gray-400 bg-gray-800/50 px-2 py-1 rounded block">2024-01-15T14:30</code>
+                <p class="text-gray-500 text-xs mt-2">场景：本地事件、日志时间</p>
+            </div>
+
+            <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-6 hover:border-orange-500/30 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center text-orange-400 font-mono font-bold text-xs">ZDT</span>
+                    <div>
+                        <h3 class="text-white font-semibold">ZonedDateTime</h3>
+                        <p class="text-gray-500 text-xs">日期+时间+时区</p>
+                    </div>
+                </div>
+                <code class="text-xs font-mono text-gray-400 bg-gray-800/50 px-2 py-1 rounded block text-[11px]">2024-01-15T14:30+08:00[Asia/Shanghai]</code>
+                <p class="text-gray-500 text-xs mt-2">场景：跨时区会议、航班时刻</p>
+            </div>
+
+            <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-6 hover:border-pink-500/30 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-10 h-10 rounded-lg bg-pink-500/10 flex items-center justify-center text-pink-400 font-mono font-bold text-xs">I</span>
+                    <div>
+                        <h3 class="text-white font-semibold">Instant</h3>
+                        <p class="text-gray-500 text-xs">时间戳（机器视角）</p>
+                    </div>
+                </div>
+                <code class="text-xs font-mono text-gray-400 bg-gray-800/50 px-2 py-1 rounded block">2024-01-15T06:30:00Z</code>
+                <p class="text-gray-500 text-xs mt-2">场景：记录事件、API 时间戳</p>
+            </div>
+
+            <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-6 hover:border-yellow-500/30 transition-colors">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-400 font-mono font-bold text-xs">P/D</span>
+                    <div>
+                        <h3 class="text-white font-semibold">Period / Duration</h3>
+                        <p class="text-gray-500 text-xs">时间间隔</p>
+                    </div>
+                </div>
+                <code class="text-xs font-mono text-gray-400 bg-gray-800/50 px-2 py-1 rounded block">P1Y2M3D / PT2H30M</code>
+                <p class="text-gray-500 text-xs mt-2">场景：年龄计算、耗时统计</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Migration Guide -->
+    <!-- ============================================================ -->
+    <section class="mb-20 fade-in">
+        <div class="bg-gradient-to-br from-gray-900 to-gray-900/80 border border-gray-800 rounded-2xl p-8 sm:p-12">
+            <h2 class="text-3xl font-bold text-white mb-8 text-center">迁移速查：旧 → 新</h2>
+
+            <div class="space-y-4">
+                <details class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden group">
+                    <summary class="px-6 py-4 text-white font-medium hover:bg-gray-800/80 transition-colors flex items-center justify-between">
+                        <span>Date → Instant / LocalDateTime</span>
+                        <svg class="w-5 h-5 text-gray-500 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-6 pb-4">
+                            <pre class="text-sm font-mono text-gray-400 bg-gray-900/50 rounded-lg p-4 overflow-x-auto"><code><span class="text-gray-500">// Date → Instant</span>
+<span class="text-purple-400">Instant</span> instant = oldDate.<span class="text-yellow-300">toInstant</span>();
+
+<span class="text-gray-500">// Date → LocalDateTime</span>
+<span class="text-purple-400">LocalDateTime</span> ldt = oldDate.<span class="text-yellow-300">toInstant</span>()
+    .<span class="text-yellow-300">atZone</span>(<span class="text-purple-400">ZoneId</span>.<span class="text-yellow-300">systemDefault</span>())
+    .<span class="text-yellow-300">toLocalDateTime</span>();
+
+<span class="text-gray-500">// Instant → Date</span>
+<span class="text-purple-400">Date</span> date = <span class="text-purple-400">Date</span>.<span class="text-yellow-300">from</span>(instant);</code></pre>
+                    </div>
+                </details>
+
+                <details class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden group">
+                    <summary class="px-6 py-4 text-white font-medium hover:bg-gray-800/80 transition-colors flex items-center justify-between">
+                        <span>Calendar → ZonedDateTime / LocalDateTime</span>
+                        <svg class="w-5 h-5 text-gray-500 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-6 pb-4">
+                            <pre class="text-sm font-mono text-gray-400 bg-gray-900/50 rounded-lg p-4 overflow-x-auto"><code><span class="text-gray-500">// Calendar → ZonedDateTime</span>
+<span class="text-purple-400">ZonedDateTime</span> zdt = <span class="text-purple-400">ZonedDateTime</span>.<span class="text-yellow-300">ofInstant</span>(
+    calendar.<span class="text-yellow-300">toInstant</span>(),
+    calendar.<span class="text-yellow-300">getTimeZone</span>().<span class="text-yellow-300">toZoneId</span>()
+);
+
+<span class="text-gray-500">// Calendar → LocalDateTime</span>
+<span class="text-purple-400">LocalDateTime</span> ldt = zdt.<span class="text-yellow-300">toLocalDateTime</span>();</code></pre>
+                    </div>
+                </details>
+
+                <details class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden group">
+                    <summary class="px-6 py-4 text-white font-medium hover:bg-gray-800/80 transition-colors flex items-center justify-between">
+                        <span>SimpleDateFormat → DateTimeFormatter</span>
+                        <svg class="w-5 h-5 text-gray-500 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-6 pb-4">
+                            <pre class="text-sm font-mono text-gray-400 bg-gray-900/50 rounded-lg p-4 overflow-x-auto"><code><span class="text-gray-500">// ❌ 旧方式：线程不安全</span>
+<span class="text-purple-400">SimpleDateFormat</span> sdf = <span class="text-blue-400">new</span> <span class="text-purple-400">SimpleDateFormat</span>(<span class="text-green-400">"yyyy-MM-dd"</span>);
+<span class="text-purple-400">String</span> str = sdf.<span class="text-yellow-300">format</span>(<span class="text-blue-400">new</span> <span class="text-purple-400">Date</span>());
+
+<span class="text-gray-500">// ✅ 新方式：线程安全，可声明为 static final</span>
+<span class="text-purple-400">DateTimeFormatter</span> fmt = <span class="text-purple-400">DateTimeFormatter</span>.<span class="text-yellow-300">ofPattern</span>(<span class="text-green-400">"yyyy-MM-dd"</span>);
+<span class="text-purple-400">String</span> str = <span class="text-purple-400">LocalDate</span>.<span class="text-yellow-300">now</span>().<span class="text-yellow-300">format</span>(fmt);</code></pre>
+                    </div>
+                </details>
+
+                <details class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden group">
+                    <summary class="px-6 py-4 text-white font-medium hover:bg-gray-800/80 transition-colors flex items-center justify-between">
+                        <span>java.sql.Date / Timestamp → LocalDate / Instant</span>
+                        <svg class="w-5 h-5 text-gray-500 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-6 pb-4">
+                            <pre class="text-sm font-mono text-gray-400 bg-gray-900/50 rounded-lg p-4 overflow-x-auto"><code><span class="text-gray-500">// java.sql.Date → LocalDate</span>
+<span class="text-purple-400">LocalDate</span> ld = sqlDate.<span class="text-yellow-300">toLocalDate</span>();
+
+<span class="text-gray-500">// java.sql.Timestamp → LocalDateTime / Instant</span>
+<span class="text-purple-400">LocalDateTime</span> ldt = sqlTimestamp.<span class="text-yellow-300">toLocalDateTime</span>();
+<span class="text-purple-400">Instant</span> instant = sqlTimestamp.<span class="text-yellow-300">toInstant</span>();
+
+<span class="text-gray-500">// 反向转换</span>
+<span class="text-purple-400">java.sql.Date</span> sd = <span class="text-purple-400">java.sql.Date</span>.<span class="text-yellow-300">valueOf</span>(localDate);
+<span class="text-purple-400">Timestamp</span> ts = <span class="text-purple-400">Timestamp</span>.<span class="text-yellow-300">valueOf</span>(localDateTime);</code></pre>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Timeline Summary -->
+    <!-- ============================================================ -->
+    <section class="fade-in">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-white mb-4">演进时间轴</h2>
+        </div>
+
+        <div class="relative">
+            <!-- Horizontal line -->
+            <div class="hidden md:block absolute top-1/2 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500/50 via-purple-500/50 to-green-500/50 transform -translate-y-1/2"></div>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
+                <div class="text-center relative">
+                    <div class="w-4 h-4 rounded-full bg-blue-500 mx-auto mb-4 ring-4 ring-blue-500/20 hidden md:block"></div>
+                    <div class="bg-gray-900/80 border border-blue-500/20 rounded-xl p-4">
+                        <div class="text-blue-400 font-bold text-2xl">1996</div>
+                        <div class="text-white font-semibold mt-1">java.util.Date</div>
+                        <div class="text-gray-500 text-xs mt-2">混沌初开<br>问题重重</div>
+                    </div>
+                </div>
+                <div class="text-center relative">
+                    <div class="w-4 h-4 rounded-full bg-purple-500 mx-auto mb-4 ring-4 ring-purple-500/20 hidden md:block"></div>
+                    <div class="bg-gray-900/80 border border-purple-500/20 rounded-xl p-4">
+                        <div class="text-purple-400 font-bold text-2xl">1997</div>
+                        <div class="text-white font-semibold mt-1">Calendar + SDF</div>
+                        <div class="text-gray-500 text-xs mt-2">试图修补<br>雪上加霜</div>
+                    </div>
+                </div>
+                <div class="text-center relative">
+                    <div class="w-4 h-4 rounded-full bg-orange-500 mx-auto mb-4 ring-4 ring-orange-500/20 hidden md:block"></div>
+                    <div class="bg-gray-900/80 border border-orange-500/20 rounded-xl p-4">
+                        <div class="text-orange-400 font-bold text-2xl">2002</div>
+                        <div class="text-white font-semibold mt-1">Joda-Time</div>
+                        <div class="text-gray-500 text-xs mt-2">社区自救<br>曙光初现</div>
+                    </div>
+                </div>
+                <div class="text-center relative">
+                    <div class="w-4 h-4 rounded-full bg-yellow-500 mx-auto mb-4 ring-4 ring-yellow-500/20 hidden md:block"></div>
+                    <div class="bg-gray-900/80 border border-yellow-500/20 rounded-xl p-4">
+                        <div class="text-yellow-400 font-bold text-2xl">2007</div>
+                        <div class="text-white font-semibold mt-1">JSR-310 提案</div>
+                        <div class="text-gray-500 text-xs mt-2">官方立项<br>七年打磨</div>
+                    </div>
+                </div>
+                <div class="text-center relative">
+                    <div class="w-4 h-4 rounded-full bg-green-500 mx-auto mb-4 ring-4 ring-green-500/20 hidden md:block"></div>
+                    <div class="bg-gray-900/80 border border-green-500/20 rounded-xl p-4">
+                        <div class="text-green-400 font-bold text-2xl">2014</div>
+                        <div class="text-white font-semibold mt-1">java.time</div>
+                        <div class="text-gray-500 text-xs mt-2">终极方案<br>尘埃落定</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-gray-800/50 py-12 mt-20">
+    <div class="max-w-6xl mx-auto px-4 text-center">
+        <p class="text-gray-500 text-sm mb-2">
+            Java DateTime Evolution · 从 <code class="font-mono text-blue-400">Date</code> 到 <code class="font-mono text-green-400">java.time</code> 的 18 年演进之路
+        </p>
+        <p class="text-gray-600 text-xs">
+            新项目请始终使用 <code class="font-mono text-green-400">java.time</code> 包 · 告别 Date、Calendar 和 SimpleDateFormat
+        </p>
+    </div>
+</footer>
+
+<!-- Scroll Animation Script -->
+<script>
+  // Intersection Observer for fade-in animations
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+  // Smooth scroll for anchor links
+  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+      e.preventDefault();
+      const target = document.querySelector(this.getAttribute('href'));
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // Navbar active state
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('nav a[href^="#"]');
+
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(section => {
+      const sectionTop = section.offsetTop - 100;
+      if (window.scrollY >= sectionTop) {
+        current = section.getAttribute('id');
+      }
+    });
+
+    navLinks.forEach(link => {
+      link.classList.remove('text-white');
+      if (link.getAttribute('href') === '#' + current) {
+        link.classList.add('text-white');
+      }
+    });
+  });
+</script>
+</body>
+</html>
