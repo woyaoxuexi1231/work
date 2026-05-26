@@ -1,14 +1,22 @@
 # 本地 Docker Registry 搭建
 
-## 作用
+## 架构
 
-镜像构建后推到本地 Registry，所有 K8s 节点自动拉取，不用手动 scp 镜像到每台机器。
+```
+192.168.3.100 (Docker 主机)
+  └── Registry :5000         ← 镜像仓库，运行在这台机器上
+
+192.168.3.90  k8s-master     ← 只跑 K8s，containerd 从 Registry 拉镜像
+192.168.3.101 k8s-node1
+192.168.3.102 k8s-node2
+```
 
 ---
 
-## 1. k8s-master 上启动 Registry
+## 1. 在 Docker 主机上启动 Registry
 
 ```bash
+# 192.168.3.100 上执行
 docker run -d --name registry --restart=always \
   -p 5000:5000 -v /root/registry-data:/var/lib/registry \
   registry:2
@@ -20,12 +28,11 @@ curl http://192.168.3.100:5000/v2/
 
 ---
 
-## 2. 配置所有节点的 containerd
+## 2. 配置所有 K8s 节点
 
-**k8s-master / k8s-node1 / k8s-node2 都执行：**
+**192.168.3.90 / 192.168.3.101 / 192.168.3.102 都执行：**
 
 ```bash
-# 把 registry 镜像地址嵌到已有的 registry.mirrors 段里面
 sudo sed -i '/\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\.mirrors\]/a\
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."192.168.3.100:5000"]\
     endpoint = ["http://192.168.3.100:5000"]\
@@ -34,6 +41,8 @@ sudo sed -i '/\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\.mirrors\]/a\
 
 sudo systemctl restart containerd
 ```
+
+> 注意：K8s 节点不需要装 Docker，containerd 本身就认识 registry 地址。
 
 ---
 
@@ -71,6 +80,7 @@ imagePullPolicy: Always
 ## 查看 Registry
 
 ```bash
-curl http://192.168.3.100:5000/v2/_catalog
-curl http://192.168.3.100:5000/v2/poker-tracker/tags/list
+# 在 192.168.3.100 上
+curl http://127.0.0.1:5000/v2/_catalog
+curl http://127.0.0.1:5000/v2/poker-tracker/tags/list
 ```
