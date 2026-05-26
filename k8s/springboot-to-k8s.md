@@ -85,35 +85,30 @@ bash run.sh
 JAR_FILE=poker-tracker-1.0.0-SNAPSHOT.jar IMAGE_NAME=poker-tracker:1.0.0 bash run.sh
 ```
 
-### 4.2 导出并传到 k8s-master
+### 4.2 推送镜像（如有本地 Registry）
+
+```powershell
+docker tag poker-tracker:1.0.0 192.168.3.100:5000/poker-tracker:1.0.0
+docker push 192.168.3.100:5000/poker-tracker:1.0.0
+```
+
+> 没有 Registry？先跑 `sudo bash setup-registry.sh`，然后给 worker 节点加配置（脚本末尾有提示）。
+
+### 4.3 没 Registry？手动分发
 
 ```powershell
 docker save poker-tracker:1.0.0 -o poker-tracker.tar
 scp poker-tracker.tar hulei@192.168.3.100:~/
 ```
 
-### 4.3 在 k8s-master 上导入 containerd
-
 ```bash
+# k8s-master 上
 docker load -i ~/poker-tracker.tar
 docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -
-crictl images | grep poker
+# 同样操作 k8s-node1 / k8s-node2
 ```
 
-> **重要**：`imagePullPolicy: Never` 意味着 Pod 被调度到哪个节点，哪个节点就必须有镜像。把镜像也分发到 worker 节点：
->
-> ```bash
-> for node in k8s-node1 k8s-node2; do
->   scp ~/poker-tracker.tar root@$node:~/
->   ssh root@$node "docker load -i ~/poker-tracker.tar && docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -"
-> done
-> ```
->
-> 如果不想分发，也可以在 Deployment 的 `spec.template.spec` 下加一行把 Pod 锁在 master：
-> ```yaml
-> nodeSelector:
->   node-role.kubernetes.io/control-plane: ""
-> ```
+
 
 ---
 
@@ -141,8 +136,8 @@ spec:
     spec:
       containers:
       - name: poker-tracker
-        image: poker-tracker:1.0.0
-        imagePullPolicy: Never    # 本地导入的镜像，不要尝试拉取
+        image: 192.168.3.100:5000/poker-tracker:1.0.0
+        imagePullPolicy: Always
         ports:
         - containerPort: 8084
           name: http
@@ -358,8 +353,8 @@ spec:
     spec:
       containers:
       - name: poker-tracker
-        image: poker-tracker:1.0.0
-        imagePullPolicy: Never
+        image: 192.168.3.100:5000/poker-tracker:1.0.0
+        imagePullPolicy: Always
         ports:
         - containerPort: 8084
         resources:
@@ -450,16 +445,13 @@ JAR_FILE=poker-tracker-1.0.0-SNAPSHOT.jar IMAGE_NAME=poker-tracker:1.0.0 bash ru
 ```
 
 ```powershell
-# 2. 导出 + 传到 k8s-master
-docker save poker-tracker:1.0.0 -o poker-tracker.tar
-scp poker-tracker.tar hulei@192.168.3.100:~/
+# 2. 推送到本地 Registry
+docker tag poker-tracker:1.0.0 192.168.3.100:5000/poker-tracker:1.0.0
+docker push 192.168.3.100:5000/poker-tracker:1.0.0
 ```
 
 ```bash
-# 3. k8s-master 上导入 containerd + 部署
-docker load -i ~/poker-tracker.tar
-docker save poker-tracker:1.0.0 | ctr -n k8s.io images import -
-
+# 3. k8s-master 上部署
 kubectl apply -f ~/poker-k8s/all.yaml
 kubectl wait --for=condition=ready pod -l app=poker-tracker --timeout=120s
 kubectl get svc poker-tracker
