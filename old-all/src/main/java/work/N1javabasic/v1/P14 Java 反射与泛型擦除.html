@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P14: 反射与泛型擦除的获取边界</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              slate: { 850: '#151f32', 950: '#0a0f1c' }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans SC', system-ui, sans-serif; }
+        code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* 代码高亮简易模拟 */
+        .tok-kw { color: #c678dd; } /* keyword */
+        .tok-type { color: #e5c07b; } /* type */
+        .tok-str { color: #98c379; } /* string */
+        .tok-num { color: #d19a66; } /* number */
+        .tok-cmt { color: #5c6370; font-style: italic; } /* comment */
+        .tok-fn { color: #61afef; } /* function */
+        .tok-ann { color: #e06c75; } /* annotation */
+        .tok-op { color: #56b6c2; } /* operator */
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+        /* 卡片动画 */
+        .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+        /* 对比表格 */
+        .matrix-cell { transition: background 0.2s; }
+        .matrix-row:hover .matrix-cell { background: rgba(99, 102, 241, 0.05); }
+
+        /* 警告框脉冲 */
+        @keyframes subtle-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .pulse-icon { animation: subtle-pulse 2s ease-in-out infinite; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased selection:bg-indigo-500/30">
+
+<!-- ═══════════════════════════════════════════════════════
+     Header
+     ═══════════════════════════════════════════════════════ -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold tracking-widest text-indigo-400 uppercase border border-indigo-500/30 px-2 py-0.5 rounded">P14</span>
+            <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">反射与泛型擦除的获取边界</h1>
+        </div>
+        <nav class="hidden md:flex items-center gap-6 text-xs font-medium text-slate-400">
+            <a href="#erasure" class="hover:text-indigo-400 transition">擦除本质</a>
+            <a href="#boundary" class="hover:text-emerald-400 transition">获取边界</a>
+            <a href="#typeref" class="hover:text-amber-400 transition">TypeReference</a>
+            <a href="#truth" class="hover:text-rose-400 transition">残酷真相</a>
+        </nav>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-16 space-y-24">
+
+    <!-- ═══════════════════════════════════════════════════════
+         Hero / Core Concept
+         ═══════════════════════════════════════════════════════ -->
+    <section class="text-center max-w-3xl mx-auto fade-up">
+        <h2 class="text-3xl sm:text-4xl font-black mb-6 leading-tight">
+            泛型信息并没有完全消失<br>
+            <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">它只是换了个地方藏起来</span>
+        </h2>
+        <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+            Java 泛型在编译期执行类型检查后，会在字节码层面进行<strong class="text-slate-200">擦除（Erasure）</strong>。
+            但这并不意味着所有泛型信息都消失了。<code class="text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded text-sm">Method.getGenericParameterTypes()</code>
+            和 <code class="text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded text-sm">Field.getGenericType()</code>
+            依然能从 <strong class="text-slate-200">Signature 属性</strong> 中还原出完整的泛型签名。
+        </p>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         Section 1: The Two APIs
+         ═══════════════════════════════════════════════════════ -->
+    <section id="erasure" class="fade-up">
+        <div class="grid lg:grid-cols-2 gap-8 items-start">
+            <!-- Left: Explanation -->
+            <div class="space-y-6">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                    核心 API 对比
+                </div>
+                <h3 class="text-2xl font-bold text-white">同一个方法，两个截然不同的视角</h3>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                    JVM 规范允许在 class 文件中保留 <code class="text-xs bg-slate-800 px-1 rounded">Signature</code> 属性用于反射。
+                    这就是为什么我们能在运行时"看到"泛型——但仅限于<strong class="text-slate-200">声明处</strong>。
+                </p>
+
+                <div class="space-y-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-mono text-xs font-bold">Raw</span>
+                            <code class="text-rose-400 text-sm font-bold">getParameterTypes()</code>
+                        </div>
+                        <p class="text-slate-400 text-sm mb-3">返回<strong class="text-slate-300">擦除后的原始类型</strong>。这是 JVM 实际执行时看到的类型。</p>
+                        <div class="bg-slate-950 rounded-lg p-3 font-mono text-xs text-slate-500">
+                            List&lt;String&gt; → <span class="text-rose-400">java.util.List</span><br>
+                            Map&lt;String, Integer&gt; → <span class="text-rose-400">java.util.Map</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5 ring-1 ring-emerald-500/10">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-mono text-xs font-bold">Gen</span>
+                            <code class="text-emerald-400 text-sm font-bold">getGenericParameterTypes()</code>
+                        </div>
+                        <p class="text-slate-400 text-sm mb-3">返回<strong class="text-slate-300">包含泛型信息的 Type</strong>。如果参数是泛型，返回 <code class="text-xs bg-slate-800 px-1 rounded">ParameterizedType</code>；否则退化为 <code class="text-xs bg-slate-800 px-1 rounded">Class</code>。</p>
+                        <div class="bg-slate-950 rounded-lg p-3 font-mono text-xs text-slate-500">
+                            List&lt;String&gt; → <span class="text-emerald-400">java.util.List&lt;java.lang.String&gt;</span><br>
+                            Map&lt;String, Integer&gt; → <span class="text-emerald-400">java.util.Map&lt;java.lang.String, java.lang.Integer&gt;</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Code Demo -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+                    <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                    <span class="ml-3 text-xs text-slate-500 font-mono">ReflectionDemo.java</span>
+                </div>
+                <pre class="p-5 text-xs sm:text-sm leading-relaxed overflow-x-auto"><code><span class="tok-kw">public class</span> <span class="tok-type">UserService</span> {
+    <span class="tok-kw">public void</span> <span class="tok-fn">save</span>(<span class="tok-type">List</span>&lt;<span class="tok-type">String</span>&gt; names,
+                     <span class="tok-type">Map</span>&lt;<span class="tok-type">String</span>, <span class="tok-type">Integer</span>&gt; scores) {}
+}
+
+<span class="tok-type">Method</span> m = <span class="tok-type">UserService</span>.class
+    .<span class="tok-fn">getMethod</span>(<span class="tok-str">"save"</span>, <span class="tok-type">List</span>.class, <span class="tok-type">Map</span>.class);
+
+<span class="tok-cmt">// ❌ 擦除后的原始类型</span>
+<span class="tok-type">Class</span>&lt;?&gt;[] raw = m.<span class="tok-fn">getParameterTypes</span>();
+<span class="tok-cmt">// [interface java.util.List, interface java.util.Map]</span>
+
+<span class="tok-cmt">// ✅ 带泛型签名的完整类型</span>
+<span class="tok-type">Type</span>[] generic = m.<span class="tok-fn">getGenericParameterTypes</span>();
+<span class="tok-cmt">// [java.util.List&lt;java.lang.String&gt;,</span>
+<span class="tok-cmt">//  java.util.Map&lt;java.lang.String, java.lang.Integer&gt;]</span>
+
+<span class="tok-cmt">// 安全提取泛型参数</span>
+<span class="tok-kw">if</span> (generic[<span class="tok-num">0</span>] <span class="tok-kw">instanceof</span> <span class="tok-type">ParameterizedType</span>) {
+    <span class="tok-type">ParameterizedType</span> pt = (<span class="tok-type">ParameterizedType</span>) generic[<span class="tok-num">0</span>];
+    <span class="tok-type">Type</span>[] args = pt.<span class="tok-fn">getActualTypeArguments</span>();
+    <span class="tok-cmt">// args[0] = java.lang.String ✅</span>
+}</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         Section 2: Boundary Matrix
+         ═══════════════════════════════════════════════════════ -->
+    <section id="boundary" class="fade-up">
+        <div class="text-center mb-10">
+            <h2 class="text-2xl sm:text-3xl font-bold mb-3">
+                <span class="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">获取边界：能 vs 不能</span>
+            </h2>
+            <p class="text-slate-500 text-sm">这是理解泛型反射最关键的一张表</p>
+        </div>
+
+        <div class="overflow-x-auto rounded-2xl border border-slate-800">
+            <table class="w-full text-sm min-w-[700px]">
+                <thead>
+                <tr class="bg-slate-900/80 border-b border-slate-800">
+                    <th class="text-left px-5 py-4 text-slate-400 font-semibold text-xs uppercase tracking-wider w-1/3">场景</th>
+                    <th class="text-center px-4 py-4 text-xs uppercase tracking-wider w-1/6">
+                        <span class="text-emerald-400 font-bold">能拿到</span>
+                    </th>
+                    <th class="text-center px-4 py-4 text-xs uppercase tracking-wider w-1/6">
+                        <span class="text-rose-400 font-bold">拿不到</span>
+                    </th>
+                    <th class="text-left px-5 py-4 text-slate-400 font-semibold text-xs uppercase tracking-wider">原因</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                <!-- Row 1 -->
+                <tr class="matrix-row">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300">字段声明</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">private List&lt;String&gt; names;</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-emerald-400 text-lg">✓</span></td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">Signature 属性保留在字段元数据中</td>
+                </tr>
+                <!-- Row 2 -->
+                <tr class="matrix-row">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300">方法参数/返回值</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">void save(List&lt;String&gt; list)</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-emerald-400 text-lg">✓</span></td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">Signature 属性保留在方法元数据中</td>
+                </tr>
+                <!-- Row 3 -->
+                <tr class="matrix-row">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300">类/接口继承声明</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">class StrList extends ArrayList&lt;String&gt;</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-emerald-400 text-lg">✓</span></td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">GenericSuperclass / GenericInterfaces 保留</td>
+                </tr>
+                <!-- Row 4: CAN'T -->
+                <tr class="matrix-row bg-rose-500/[0.02]">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-rose-300">局部变量</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">List&lt;String&gt; list = new ...;</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-rose-400 text-lg">✗</span></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">局部变量表不存储 Signature，编译后彻底擦除</td>
+                </tr>
+                <!-- Row 5: CAN'T -->
+                <tr class="matrix-row bg-rose-500/[0.02]">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-rose-300">new 表达式</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">new ArrayList&lt;String&gt;()</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-rose-400 text-lg">✗</span></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">对象实例上不携带任何泛型信息</td>
+                </tr>
+                <!-- Row 6: CAN'T -->
+                <tr class="matrix-row bg-rose-500/[0.02]">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-rose-300">纯泛型类型参数</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">&lt;T&gt; void process(T item)</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-rose-400 text-lg">✗</span></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">T 被擦除为 Object（或上界），调用时的实际类型不可知</td>
+                </tr>
+                <!-- Row 7: CAN'T -->
+                <tr class="matrix-row bg-rose-500/[0.02]">
+                    <td class="matrix-cell px-5 py-4 text-slate-300 font-medium">
+                        <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-rose-300">数组元素的泛型</code><br>
+                        <span class="text-slate-500 text-xs mt-1 block">List&lt;String&gt;[] arrays</span>
+                    </td>
+                    <td class="matrix-cell text-center px-4 py-4"></td>
+                    <td class="matrix-cell text-center px-4 py-4"><span class="text-rose-400 text-lg">✗</span></td>
+                    <td class="matrix-cell px-5 py-4 text-slate-500 text-xs">Java 禁止创建泛型数组，即使通过绕过手段也无法反射获取</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Key Insight Box -->
+        <div class="mt-6 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-5 flex gap-4">
+            <span class="text-indigo-400 text-2xl flex-shrink-0 pulse-icon">💡</span>
+            <div>
+                <h4 class="text-indigo-300 font-bold text-sm mb-1">一句话总结边界规则</h4>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                    <strong class="text-slate-200">凡是写在"声明处"（字段、方法签名、类继承）的泛型 → 能拿到。</strong><br>
+                    <strong class="text-slate-200">凡是出现在"使用处"（局部变量、new、方法调用传参）的泛型 → 拿不到。</strong><br>
+                    因为 Signature 属性只存在于类文件的结构元数据中，不存在于字节码指令和对象实例中。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         Section 3: TypeReference Pattern
+         ═══════════════════════════════════════════════════════ -->
+    <section id="typeref" class="fade-up">
+        <div class="grid lg:grid-cols-5 gap-8 items-start">
+            <!-- Left: Explanation (3 cols) -->
+            <div class="lg:col-span-3 space-y-6">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-bold uppercase tracking-wider">
+                    经典模式
+                </div>
+                <h3 class="text-2xl font-bold text-white">TypeReference：用匿名子类"偷渡"泛型</h3>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                    Jackson、Gson、Fastjson 等序列化框架的核心技巧。既然 <code class="text-xs bg-slate-800 px-1 rounded">new ArrayList&lt;String&gt;()</code>
+                    无法携带泛型信息，那就创建一个<strong class="text-slate-200">匿名内部类</strong>来继承一个带具体泛型的父类——
+                    这样泛型信息就被"固化"在了子类的 <code class="text-xs bg-slate-800 px-1 rounded">GenericSuperclass</code> 中。
+                </p>
+
+                <div class="space-y-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                        <h4 class="text-amber-400 font-bold text-sm mb-3">原理拆解</h4>
+                        <ol class="space-y-3 text-sm text-slate-400">
+                            <li class="flex gap-3">
+                                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs font-bold">1</span>
+                                <span>定义抽象类 <code class="text-xs bg-slate-800 px-1 rounded text-amber-300">TypeReference&lt;T&gt;</code>，构造函数中通过 <code class="text-xs bg-slate-800 px-1 rounded">getClass().getGenericSuperclass()</code> 提取 T</span>
+                            </li>
+                            <li class="flex gap-3">
+                                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs font-bold">2</span>
+                                <span>用户创建 <code class="text-xs bg-slate-800 px-1 rounded text-amber-300">new TypeReference&lt;List&lt;String&gt;&gt;() {}</code>（注意末尾的 <code class="text-amber-400">{}</code>）</span>
+                            </li>
+                            <li class="flex gap-3">
+                                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs font-bold">3</span>
+                                <span>这个 <code class="text-xs bg-slate-800 px-1 rounded">{}</code> 生成了一个匿名子类，其 <code class="text-xs bg-slate-800 px-1 rounded">GenericSuperclass</code> = <code class="text-xs text-emerald-400">TypeReference&lt;List&lt;String&gt;&gt;</code></span>
+                            </li>
+                            <li class="flex gap-3">
+                                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs font-bold">4</span>
+                                <span>从 <code class="text-xs bg-slate-800 px-1 rounded">ParameterizedType.getActualTypeArguments()[0]</code> 中提取出 <code class="text-xs text-emerald-400">List&lt;String&gt;</code></span>
+                            </li>
+                        </ol>
+                    </div>
+
+                    <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 flex gap-3">
+                        <span class="text-amber-400 text-lg flex-shrink-0">⚠️</span>
+                        <p class="text-amber-200/80 text-xs leading-relaxed">
+                            <strong>关键：</strong>末尾的 <code class="font-mono text-amber-300">{}</code> 绝对不能省略！
+                            没有它就不是匿名子类，而是直接实例化父类，<code class="font-mono">getGenericSuperclass()</code>
+                            返回的是 <code class="font-mono text-rose-400">TypeReference&lt;T&gt;</code>（T 未被绑定），提取失败。
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Code (2 cols) -->
+            <div class="lg:col-span-2 space-y-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                    <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+                        <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                        <span class="ml-3 text-xs text-slate-500 font-mono">TypeReference.java</span>
+                    </div>
+                    <pre class="p-4 text-[11px] sm:text-xs leading-relaxed overflow-x-auto"><code><span class="tok-kw">public abstract class</span> <span class="tok-type">TypeReference</span>&lt;<span class="tok-type">T</span>&gt; {
+    <span class="tok-kw">private final</span> <span class="tok-type">Type</span> type;
+
+    <span class="tok-kw">protected</span> <span class="tok-fn">TypeReference</span>() {
+        <span class="tok-type">Type</span> superType = <span class="tok-fn">getClass</span>()
+            .<span class="tok-fn">getGenericSuperclass</span>();
+
+        <span class="tok-kw">if</span> (superType <span class="tok-kw">instanceof</span>
+                <span class="tok-type">ParameterizedType</span>) {
+            <span class="tok-type">ParameterizedType</span> pt =
+                (<span class="tok-type">ParameterizedType</span>) superType;
+            <span class="tok-kw">this</span>.type = pt
+                .<span class="tok-fn">getActualTypeArguments</span>()[<span class="tok-num">0</span>];
+        } <span class="tok-kw">else</span> {
+            <span class="tok-kw">throw new</span> <span class="tok-type">IllegalArgumentException</span>(
+                <span class="tok-str">"必须用匿名子类: new TypeReference&lt;X&gt;(){}"</span>
+            );
+        }
+    }
+
+    <span class="tok-kw">public</span> <span class="tok-type">Type</span> <span class="tok-fn">getType</span>() {
+        <span class="tok-kw">return</span> type;
+    }
+}
+
+<span class="tok-cmt">// ✅ 正确使用</span>
+<span class="tok-type">TypeReference</span>&lt;<span class="tok-type">List</span>&lt;<span class="tok-type">String</span>&gt;&gt; ref =
+    <span class="tok-kw">new</span> <span class="tok-type">TypeReference</span>&lt;<span class="tok-type">List</span>&lt;<span class="tok-type">String</span>&gt;&gt;() {};
+
+ref.<span class="tok-fn">getType</span>();
+<span class="tok-cmt">// → java.util.List&lt;java.lang.String&gt; ✅</span>
+
+<span class="tok-cmt">// ❌ 错误使用（缺少 {}）</span>
+<span class="tok-type">TypeReference</span>&lt;<span class="tok-type">List</span>&lt;<span class="tok-type">String</span>&gt;&gt; bad =
+    <span class="tok-kw">new</span> <span class="tok-type">TypeReference</span>&lt;<span class="tok-type">List</span>&lt;<span class="tok-type">String</span>&gt;&gt;();
+<span class="tok-cmt">// → 抛出 IllegalArgumentException!</span></code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         Section 4: The Cruel Truth
+         ═══════════════════════════════════════════════════════ -->
+    <section id="truth" class="fade-up">
+        <div class="text-center mb-10">
+            <h2 class="text-2xl sm:text-3xl font-bold mb-3">
+                <span class="bg-gradient-to-r from-rose-400 to-orange-400 bg-clip-text text-transparent">残酷真相：拿到了也不是你想象的那种"拿到"</span>
+            </h2>
+            <p class="text-slate-500 text-sm">即使 getGenericParameterTypes 成功返回，也必须清醒认识到以下限制</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-5">
+            <!-- Truth 1 -->
+            <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">1</span>
+                    <h3 class="text-white font-bold">拿到的是"描述"，不是"类型本身"</h3>
+                </div>
+                <p class="text-slate-400 text-sm leading-relaxed mb-3">
+                    <code class="text-xs bg-slate-800 px-1 rounded text-rose-300">ParameterizedType</code> 只是一个<strong class="text-slate-300">元数据描述对象</strong>，
+                    它不是 <code class="text-xs bg-slate-800 px-1 rounded">List&lt;String&gt;.class</code>（这种东西根本不存在）。
+                    你不能用它做 <code class="text-xs bg-slate-800 px-1 rounded">instanceof</code>、不能 <code class="text-xs bg-slate-800 px-1 rounded">newInstance()</code>、
+                    不能传给需要 <code class="text-xs bg-slate-800 px-1 rounded">Class&lt;T&gt;</code> 的方法。
+                </p>
+                <div class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-500">
+                    <span class="tok-cmt">// 你能做的：查询、比较、序列化框架内部使用</span><br>
+                    <span class="tok-cmt">// 你不能做的：用它创建实例或做运行时类型检查</span>
+                </div>
+            </div>
+
+            <!-- Truth 2 -->
+            <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">2</span>
+                    <h3 class="text-white font-bold">嵌套泛型的递归地狱</h3>
+                </div>
+                <p class="text-slate-400 text-sm leading-relaxed mb-3">
+                    对于 <code class="text-xs bg-slate-800 px-1 rounded text-rose-300">Map&lt;String, List&lt;Set&lt;Integer&gt;&gt;&gt;</code>，
+                    <code class="text-xs bg-slate-800 px-1 rounded">getActualTypeArguments()</code> 返回的每个元素可能又是 <code class="text-xs bg-slate-800 px-1 rounded">ParameterizedType</code>、
+                    <code class="text-xs bg-slate-800 px-1 rounded">WildcardType</code>、<code class="text-xs bg-slate-800 px-1 rounded">GenericArrayType</code> 或 <code class="text-xs bg-slate-800 px-1 rounded">TypeVariable</code>。
+                    你必须写<strong class="text-slate-300">递归解析器</strong>才能完整还原类型树。
+                </p>
+                <div class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-500">
+                    Type → ParameterizedType? WildcardType?<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ GenericArrayType? TypeVariable?<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Class? ← 只有这一种能直接用
+                </div>
+            </div>
+
+            <!-- Truth 3 -->
+            <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">3</span>
+                    <h3 class="text-white font-bold">通配符 ≠ 具体类型</h3>
+                </div>
+                <p class="text-slate-400 text-sm leading-relaxed mb-3">
+                    当声明为 <code class="text-xs bg-slate-800 px-1 rounded text-rose-300">List&lt;? extends Number&gt;</code> 时，
+                    你拿到的是 <code class="text-xs bg-slate-800 px-1 rounded">WildcardType</code>，只能查到上界 <code class="text-xs bg-slate-800 px-1 rounded">Number</code>。
+                    你永远无法知道运行时实际传入的是 <code class="text-xs bg-slate-800 px-1 rounded">Integer</code> 还是 <code class="text-xs bg-slate-800 px-1 rounded">Double</code>。
+                </p>
+                <div class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-500">
+                    <span class="tok-cmt">// WildcardType.getUpperBounds() → [Number]</span><br>
+                    <span class="tok-cmt">// 但实际值可能是 Integer, Double, Float...</span><br>
+                    <span class="tok-cmt">// 反射无法区分它们</span>
+                </div>
+            </div>
+
+            <!-- Truth 4 -->
+            <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">4</span>
+                    <h3 class="text-white font-bold">TypeVariable 是"占位符"，不是"答案"</h3>
+                </div>
+                <p class="text-slate-400 text-sm leading-relaxed mb-3">
+                    对于 <code class="text-xs bg-slate-800 px-1 rounded text-rose-300">&lt;T&gt; void process(T item)</code>，
+                    <code class="text-xs bg-slate-800 px-1 rounded">getGenericParameterTypes()</code> 返回的是 <code class="text-xs bg-slate-800 px-1 rounded">TypeVariable</code>（名为 "T"），
+                    而不是调用时传入的实际类型。<strong class="text-slate-300">调用处的类型信息在编译后就永远丢失了。</strong>
+                </p>
+                <div class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-500">
+                    <span class="tok-cmt">// TypeVariable.getName() → "T"</span><br>
+                    <span class="tok-cmt">// TypeVariable.getBounds() → [Object]</span><br>
+                    <span class="tok-cmt">// 调用 process("hello") 时，"String" 已丢失</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Final Verdict -->
+        <div class="mt-8 bg-gradient-to-r from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span class="text-xl">⚖️</span> 最终结论
+            </h3>
+            <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+                <p>
+                    <strong class="text-emerald-400">能拿到的：</strong>
+                    声明处的完整泛型签名（字段、方法参数/返回值、类继承关系）。这些信息以 <code class="text-xs bg-slate-800 px-1 rounded">Signature</code>
+                    属性的形式保存在 class 文件中，通过 <code class="text-xs bg-slate-800 px-1 rounded">getGenericXxx()</code> 系列 API 可以完整还原为
+                    <code class="text-xs bg-slate-800 px-1 rounded">Type</code> 对象树。
+                </p>
+                <p>
+                    <strong class="text-rose-400">拿不到的：</strong>
+                    使用处的泛型信息（局部变量、new 表达式、方法调用时的实际类型参数）。这些在编译后被彻底擦除，
+                    不存在于字节码中，也不存在于对象实例中。<strong class="text-slate-300">没有任何反射手段可以恢复它们。</strong>
+                </p>
+                <p>
+                    <strong class="text-amber-400">拿到了也不等于：</strong>
+                    拿到了一个可用的 <code class="text-xs bg-slate-800 px-1 rounded">Class</code> 对象。你拿到的是一个<strong class="text-slate-300">类型描述符（Type Descriptor）</strong>，
+                    它只能用于查询和框架内部的类型推导（如 JSON 反序列化、ORM 映射、依赖注入），
+                    不能用于运行时类型检查、实例创建或任何需要真正 <code class="text-xs bg-slate-800 px-1 rounded">Class&lt;T&gt;</code> 的场景。
+                </p>
+                <p class="pt-2 text-slate-500 text-xs border-t border-slate-800">
+                    💡 TypeReference 的本质：利用"匿名子类将泛型固化到类继承声明中"这一特性，把原本属于"使用处"的类型信息，
+                    巧妙地转化为"声明处"的类型信息，从而绕过擦除限制。这是一种优雅的 Hack，但不是魔法。
+                </p>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-10 mt-12">
+    <div class="max-w-6xl mx-auto px-6 text-center">
+        <p class="text-slate-600 text-xs">
+            P14 · 反射与泛型擦除的获取边界 ·
+            <code class="text-slate-500 font-mono">getGenericParameterTypes()</code> ≠ 万能钥匙
+        </p>
+    </div>
+</footer>
+
+<!-- Scroll Animation -->
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('visible');
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
+
+  document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+</script>
+
+</body>
+</html>

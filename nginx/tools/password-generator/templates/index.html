@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔐 随机密码生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .password-display {
+            font-family: 'SF Mono', 'Courier New', monospace;
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .checkbox-label {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .checkbox-label:hover {
+            color: #667eea;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.4);
+        }
+        input[type="checkbox"] {
+            accent-color: #667eea;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">🔐 随机密码生成器</h1>
+            <p class="text-gray-500">生成安全、随机的密码</p>
+        </div>
+        
+        <div class="mb-6 p-4 bg-gray-50 rounded-xl text-center">
+            <div class="text-sm text-gray-500 mb-2">生成的密码</div>
+            <div id="password" class="password-display font-bold min-h-[40px]">点击生成按钮</div>
+        </div>
+        
+        <div class="space-y-4 mb-6">
+            <div>
+                <div class="flex justify-between text-sm mb-2">
+                    <span class="text-gray-700">密码长度</span>
+                    <span class="text-purple-600 font-bold" id="length-value">12</span>
+                </div>
+                <input type="range" id="length" min="4" max="64" value="12" 
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+            </div>
+            
+            <div class="space-y-3">
+                <label class="checkbox-label flex items-center gap-3">
+                    <input type="checkbox" id="uppercase" checked class="w-5 h-5">
+                    <span class="text-gray-700">🔤 大写字母 (A-Z)</span>
+                </label>
+                <label class="checkbox-label flex items-center gap-3">
+                    <input type="checkbox" id="lowercase" checked class="w-5 h-5">
+                    <span class="text-gray-700">🔡 小写字母 (a-z)</span>
+                </label>
+                <label class="checkbox-label flex items-center gap-3">
+                    <input type="checkbox" id="numbers" checked class="w-5 h-5">
+                    <span class="text-gray-700">🔢 数字 (0-9)</span>
+                </label>
+                <label class="checkbox-label flex items-center gap-3">
+                    <input type="checkbox" id="symbols" class="w-5 h-5">
+                    <span class="text-gray-700">🔣 特殊字符 (!@#$%)</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button id="generate-btn" 
+                class="flex-1 py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl font-medium 
+                       hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎲 生成密码
+            </button>
+            <button id="copy-btn" 
+                class="py-3 px-6 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                📋 复制
+            </button>
+        </div>
+        
+        <div class="mt-4 text-center">
+            <div id="copy-message" class="text-green-500 text-sm opacity-0 transition-opacity">✓ 已复制到剪贴板</div>
+        </div>
+    </div>
+
+    <script>
+        const passwordEl = document.getElementById('password');
+        const lengthEl = document.getElementById('length');
+        const lengthValueEl = document.getElementById('length-value');
+        const generateBtn = document.getElementById('generate-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const copyMessage = document.getElementById('copy-message');
+        
+        lengthEl.addEventListener('input', () => {
+            lengthValueEl.textContent = lengthEl.value;
+        });
+        
+        generateBtn.addEventListener('click', async () => {
+            const data = {
+                length: parseInt(lengthEl.value),
+                include_uppercase: document.getElementById('uppercase').checked,
+                include_lowercase: document.getElementById('lowercase').checked,
+                include_numbers: document.getElementById('numbers').checked,
+                include_symbols: document.getElementById('symbols').checked
+            };
+            
+            const response = await fetch('./generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            if (result.password) {
+                passwordEl.textContent = result.password;
+            }
+        });
+        
+        copyBtn.addEventListener('click', async () => {
+            const password = passwordEl.textContent;
+            if (password && password !== '点击生成按钮') {
+                await navigator.clipboard.writeText(password);
+                copyMessage.style.opacity = '1';
+                setTimeout(() => {
+                    copyMessage.style.opacity = '0';
+                }, 2000);
+            }
+        });
+        
+        generateBtn.click();
+    </script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔄 单位转换器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .swap-btn {
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .swap-btn:hover {
+            transform: rotate(180deg);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">🔄 单位转换器</h1>
+            <p class="text-gray-500">快速转换各种单位</p>
+        </div>
+        
+        <!-- 转换类型选择 -->
+        <div class="flex justify-center gap-2 mb-6">
+            <button onclick="setType('length')" id="type-length" 
+                class="px-4 py-2 bg-rose-500 text-white rounded-full text-sm font-medium">
+                📏 长度
+            </button>
+            <button onclick="setType('weight')" id="type-weight" 
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200">
+                ⚖️ 重量
+            </button>
+            <button onclick="setType('temperature')" id="type-temperature" 
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200">
+                🌡️ 温度
+            </button>
+            <button onclick="setType('volume')" id="type-volume" 
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200">
+                📦 体积
+            </button>
+        </div>
+        
+        <!-- 转换区域 -->
+        <div class="flex items-center gap-4">
+            <!-- 输入 -->
+            <div class="flex-1">
+                <input type="number" id="input-value" value="1"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-lg">
+                <select id="from-unit" class="w-full mt-2 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500">
+                    <option value="米">米</option>
+                </select>
+            </div>
+            
+            <!-- 交换按钮 -->
+            <div class="swap-btn text-2xl text-gray-400 mt-6" onclick="swapUnits()">↔️</div>
+            
+            <!-- 输出 -->
+            <div class="flex-1">
+                <div id="output-value" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-lg text-gray-700 font-medium">
+                    --
+                </div>
+                <select id="to-unit" class="w-full mt-2 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500">
+                    <option value="千米">千米</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- 转换按钮 -->
+        <button id="convert-btn" 
+            class="w-full mt-6 py-3 px-6 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-xl font-medium 
+                   hover:from-rose-600 hover:to-pink-600 transition-all duration-300 
+                   shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+            ⚡ 转换
+        </button>
+    </div>
+
+    <script>
+        const unitData = {
+            'length': ['米', '千米', '厘米', '毫米', '英寸', '英尺', '码', '英里'],
+            'weight': ['千克', '克', '毫克', '吨', '磅', '盎司'],
+            'temperature': ['摄氏度', '华氏度', '开尔文'],
+            'volume': ['立方米', '升', '毫升', '立方厘米', '立方英寸', '加仑']
+        };
+        
+        const inputValue = document.getElementById('input-value');
+        const fromUnit = document.getElementById('from-unit');
+        const toUnit = document.getElementById('to-unit');
+        const outputValue = document.getElementById('output-value');
+        const convertBtn = document.getElementById('convert-btn');
+        
+        let currentType = 'length';
+        
+        function setType(type) {
+            currentType = type;
+            document.querySelectorAll('[id^="type-"]').forEach(btn => {
+                btn.classList.remove('bg-rose-500', 'text-white');
+                btn.classList.add('bg-gray-100', 'text-gray-600');
+            });
+            document.getElementById(`type-${type}`).classList.remove('bg-gray-100', 'text-gray-600');
+            document.getElementById(`type-${type}`).classList.add('bg-rose-500', 'text-white');
+            
+            updateUnits();
+        }
+        
+        function updateUnits() {
+            const units = unitData[currentType];
+            fromUnit.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join('');
+            toUnit.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join('');
+            
+            if (currentType === 'length') {
+                fromUnit.value = '米';
+                toUnit.value = '千米';
+            } else if (currentType === 'weight') {
+                fromUnit.value = '千克';
+                toUnit.value = '磅';
+            } else if (currentType === 'temperature') {
+                fromUnit.value = '摄氏度';
+                toUnit.value = '华氏度';
+            } else {
+                fromUnit.value = '升';
+                toUnit.value = '加仑';
+            }
+        }
+        
+        function swapUnits() {
+            const temp = fromUnit.value;
+            fromUnit.value = toUnit.value;
+            toUnit.value = temp;
+            convert();
+        }
+        
+        async function convert() {
+            const response = await fetch('./convert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: currentType,
+                    from_unit: fromUnit.value,
+                    to_unit: toUnit.value,
+                    value: inputValue.value
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                outputValue.textContent = result.error;
+            } else {
+                outputValue.textContent = result.result;
+            }
+        }
+        
+        convertBtn.addEventListener('click', convert);
+        inputValue.addEventListener('input', convert);
+        fromUnit.addEventListener('change', convert);
+        toUnit.addEventListener('change', convert);
+        
+        convert();
+    </script>
+</body>
+</html>

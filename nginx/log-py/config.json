@@ -1,0 +1,30 @@
+{
+  "nginx": {
+    "log_file": "/var/log/nginx/access_json.log",
+    "position_file": "/opt/nginx/conf/nginx_log_position.txt"
+  },
+  "mysql": {
+    "host": "192.168.3.100",
+    "port": 3306,
+    "user": "root",
+    "password": "123456",
+    "database": "test",
+    "charset": "utf8mb4"
+  },
+  "collector": {
+    "batch_size": 100,
+    "check_interval": 5,
+    "enable_monitoring": true,
+    "monitoring_interval": 3600
+  },
+  "log_rotation": {
+    "enabled": true,
+    "rotate_days": 7,
+    "compress": true
+  },
+  "performance": {
+    "connection_pool_size": 10,
+    "connection_timeout": 30,
+    "query_timeout": 60
+  }
+}

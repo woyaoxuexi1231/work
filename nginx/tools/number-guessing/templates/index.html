@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 猜数字游戏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .number-display {
+            font-size: 4rem;
+            font-weight: 700;
+            font-family: 'SF Mono', 'Courier New', monospace;
+        }
+        .result-hint {
+            padding: 1rem;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+        .hint-low { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+        .hint-high { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+        .hint-correct { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+        .hint-info { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">🎯 猜数字游戏</h1>
+            <p class="text-gray-500">猜一个神秘数字</p>
+        </div>
+        
+        <!-- 设置区域 -->
+        <div class="flex justify-center gap-4 mb-6">
+            <div class="text-center">
+                <label class="block text-xs text-gray-500 mb-1">最小值</label>
+                <input type="number" id="min-num" min="1" max="99" value="1"
+                    class="w-16 px-3 py-2 text-center border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500">
+            </div>
+            <div class="text-xl font-bold text-gray-300 mt-6">-</div>
+            <div class="text-center">
+                <label class="block text-xs text-gray-500 mb-1">最大值</label>
+                <input type="number" id="max-num" min="2" max="1000" value="100"
+                    class="w-16 px-3 py-2 text-center border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500">
+            </div>
+        </div>
+        
+        <!-- 进度条 -->
+        <div class="mb-6">
+            <div class="flex justify-between text-xs text-gray-500 mb-2">
+                <span id="range-min">1</span>
+                <span id="attempts">尝试次数: 0</span>
+                <span id="range-max">100</span>
+            </div>
+            <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full bg-gradient-to-r from-lime-400 to-green-500 transition-all duration-500" style="width: 50%"></div>
+            </div>
+        </div>
+        
+        <!-- 结果提示 -->
+        <div id="result-hint" class="result-hint hint-info text-center mb-6">
+            点击开始游戏，猜一个数字！
+        </div>
+        
+        <!-- 输入区域 -->
+        <div class="flex gap-3 mb-6">
+            <input type="number" id="guess-input" 
+                class="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-lime-500 text-center text-2xl font-bold"
+                placeholder="输入猜测">
+            <button id="guess-btn" 
+                class="px-6 py-3 bg-gradient-to-r from-lime-500 to-green-500 text-white rounded-xl font-medium 
+                       hover:from-lime-600 hover:to-green-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎯 猜
+            </button>
+        </div>
+        
+        <!-- 猜测历史 -->
+        <div class="mb-6">
+            <div class="text-sm text-gray-600 mb-2">猜测历史</div>
+            <div id="guess-history" class="flex flex-wrap gap-2 min-h-[40px]"></div>
+        </div>
+        
+        <!-- 控制按钮 -->
+        <div class="flex justify-center gap-3">
+            <button id="start-btn" 
+                class="px-8 py-3 bg-gradient-to-r from-lime-500 to-green-500 text-white rounded-xl font-medium 
+                       hover:from-lime-600 hover:to-green-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎮 开始游戏
+            </button>
+            <button id="reset-btn" 
+                class="px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                🔄 重置
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const minNumEl = document.getElementById('min-num');
+        const maxNumEl = document.getElementById('max-num');
+        const guessInput = document.getElementById('guess-input');
+        const guessBtn = document.getElementById('guess-btn');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const resultHint = document.getElementById('result-hint');
+        const guessHistory = document.getElementById('guess-history');
+        const attemptsEl = document.getElementById('attempts');
+        const rangeMinEl = document.getElementById('range-min');
+        const rangeMaxEl = document.getElementById('range-max');
+        const progressBar = document.getElementById('progress-bar');
+        
+        let secretNumber = null;
+        let attempts = 0;
+        let currentMin = 1;
+        let currentMax = 100;
+        
+        async function startGame() {
+            const min = parseInt(minNumEl.value) || 1;
+            const max = parseInt(maxNumEl.value) || 100;
+            
+            if (min >= max) {
+                alert('最小值必须小于最大值');
+                return;
+            }
+            
+            const response = await fetch('./start-game', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ min, max })
+            });
+            const result = await response.json();
+            
+            secretNumber = result.secret_number;
+            currentMin = result.min;
+            currentMax = result.max;
+            attempts = 0;
+            
+            guessInput.disabled = false;
+            guessBtn.disabled = false;
+            guessInput.focus();
+            
+            updateUI();
+            clearHistory();
+            
+            resultHint.className = 'result-hint hint-info';
+            resultHint.textContent = `我已经想好了一个 ${currentMin} 到 ${currentMax} 之间的数字，猜猜看！`;
+        }
+        
+        async function makeGuess() {
+            const guess = guessInput.value;
+            
+            if (!guess || secretNumber === null) return;
+            
+            const response = await fetch('./guess', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ secret_number: secretNumber, guess })
+            });
+            const result = await response.json();
+            
+            attempts++;
+            updateUI();
+            addToHistory(parseInt(guess), result.result);
+            
+            if (result.result === 'correct') {
+                resultHint.className = 'result-hint hint-correct';
+                resultHint.textContent = result.message;
+                guessInput.disabled = true;
+                guessBtn.disabled = true;
+            } else if (result.result === 'low') {
+                resultHint.className = 'result-hint hint-low';
+                resultHint.textContent = result.message;
+                currentMin = parseInt(guess) + 1;
+            } else if (result.result === 'high') {
+                resultHint.className = 'result-hint hint-high';
+                resultHint.textContent = result.message;
+                currentMax = parseInt(guess) - 1;
+            }
+            
+            updateRange();
+            guessInput.value = '';
+            guessInput.focus();
+        }
+        
+        function updateUI() {
+            attemptsEl.textContent = `尝试次数: ${attempts}`;
+        }
+        
+        function updateRange() {
+            rangeMinEl.textContent = currentMin;
+            rangeMaxEl.textContent = currentMax;
+            
+            const range = parseInt(maxNumEl.value) - parseInt(minNumEl.value);
+            const position = (currentMin - parseInt(minNumEl.value)) / range * 50;
+            const width = (currentMax - currentMin) / range * 100;
+            
+            progressBar.style.left = position + '%';
+            progressBar.style.width = Math.max(5, width) + '%';
+        }
+        
+        function addToHistory(guess, result) {
+            const badge = document.createElement('span');
+            badge.className = `px-3 py-1 rounded-full text-sm font-medium ${
+                result === 'correct' ? 'bg-green-100 text-green-700' :
+                result === 'low' ? 'bg-blue-100 text-blue-700' :
+                'bg-amber-100 text-amber-700'
+            }`;
+            badge.textContent = guess;
+            guessHistory.appendChild(badge);
+        }
+        
+        function clearHistory() {
+            guessHistory.innerHTML = '';
+        }
+        
+        function resetGame() {
+            secretNumber = null;
+            attempts = 0;
+            currentMin = parseInt(minNumEl.value) || 1;
+            currentMax = parseInt(maxNumEl.value) || 100;
+            
+            guessInput.disabled = true;
+            guessBtn.disabled = true;
+            guessInput.value = '';
+            
+            updateUI();
+            updateRange();
+            clearHistory();
+            
+            resultHint.className = 'result-hint hint-info';
+            resultHint.textContent = '点击开始游戏，猜一个数字！';
+        }
+        
+        startBtn.addEventListener('click', startGame);
+        resetBtn.addEventListener('click', resetGame);
+        guessBtn.addEventListener('click', makeGuess);
+        
+        guessInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                makeGuess();
+            }
+        });
+        
+        resetGame();
+    </script>
+</body>
+</html>

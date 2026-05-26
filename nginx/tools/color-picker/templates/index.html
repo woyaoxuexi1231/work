@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 颜色选择器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .color-preview {
+            width: 100%;
+            height: 160px;
+            border-radius: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+        .color-chip {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .color-chip:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .preset-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .preset-color:hover {
+            transform: scale(1.15);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-md">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">🎨 颜色选择器</h1>
+            <p class="text-gray-500">选择或生成漂亮的颜色</p>
+        </div>
+        
+        <!-- 颜色预览 -->
+        <div id="color-preview" class="color-preview mb-6 bg-gradient-to-r from-purple-500 to-pink-500"></div>
+        
+        <!-- 颜色值显示 -->
+        <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="text-center p-3 bg-gray-50 rounded-xl">
+                <div class="text-xs text-gray-500 mb-1">HEX</div>
+                <div id="hex-value" class="font-mono text-sm text-gray-800">#8B5CF6</div>
+            </div>
+            <div class="text-center p-3 bg-gray-50 rounded-xl">
+                <div class="text-xs text-gray-500 mb-1">RGB</div>
+                <div id="rgb-value" class="font-mono text-sm text-gray-800">139,92,246</div>
+            </div>
+            <div class="text-center p-3 bg-gray-50 rounded-xl">
+                <div class="text-xs text-gray-500 mb-1">HSL</div>
+                <div id="hsl-value" class="font-mono text-sm text-gray-800">264°,60%,66%</div>
+            </div>
+        </div>
+        
+        <!-- 颜色输入 -->
+        <div class="flex gap-3 mb-6">
+            <input type="color" id="color-input" value="#8B5CF6"
+                class="w-16 h-12 rounded-xl cursor-pointer border-0">
+            <input type="text" id="hex-input" value="#8B5CF6"
+                class="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 font-mono">
+        </div>
+        
+        <!-- 预设颜色 -->
+        <div class="mb-6">
+            <div class="text-sm text-gray-600 mb-3">预设颜色</div>
+            <div class="flex flex-wrap gap-2">
+                <div class="preset-color" style="background: #FF6B6B" onclick="setColor('#FF6B6B')"></div>
+                <div class="preset-color" style="background: #4ECDC4" onclick="setColor('#4ECDC4')"></div>
+                <div class="preset-color" style="background: #45B7D1" onclick="setColor('#45B7D1')"></div>
+                <div class="preset-color" style="background: #96CEB4" onclick="setColor('#96CEB4')"></div>
+                <div class="preset-color" style="background: #FFEAA7" onclick="setColor('#FFEAA7')"></div>
+                <div class="preset-color" style="background: #DDA0DD" onclick="setColor('#DDA0DD')"></div>
+                <div class="preset-color" style="background: #98D8C8" onclick="setColor('#98D8C8')"></div>
+                <div class="preset-color" style="background: #F7DC6F" onclick="setColor('#F7DC6F')"></div>
+                <div class="preset-color" style="background: #BB8FCE" onclick="setColor('#BB8FCE')"></div>
+                <div class="preset-color" style="background: #85C1E9" onclick="setColor('#85C1E9')"></div>
+            </div>
+        </div>
+        
+        <!-- 操作按钮 -->
+        <div class="flex gap-3 mb-6">
+            <button id="random-btn" 
+                class="flex-1 py-3 px-6 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-xl font-medium 
+                       hover:from-violet-600 hover:to-fuchsia-600 transition-all duration-300 
+                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                🎲 随机颜色
+            </button>
+            <button id="copy-btn" 
+                class="py-3 px-6 bg-gray-100 text-gray-700 rounded-xl font-medium 
+                       hover:bg-gray-200 transition-all duration-300">
+                📋 复制
+            </button>
+        </div>
+        
+        <!-- 调色板生成 -->
+        <div>
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-sm text-gray-600">生成调色板</div>
+                <button id="palette-btn" 
+                    class="text-sm text-violet-600 hover:text-violet-700 font-medium">
+                    生成
+                </button>
+            </div>
+            <div id="palette" class="flex gap-2">
+                <div class="color-chip bg-gray-200"></div>
+                <div class="color-chip bg-gray-300"></div>
+                <div class="color-chip bg-gray-400"></div>
+                <div class="color-chip bg-gray-500"></div>
+                <div class="color-chip bg-gray-600"></div>
+            </div>
+        </div>
+        
+        <div class="mt-4 text-center">
+            <div id="copy-message" class="text-green-500 text-sm opacity-0 transition-opacity">✓ 已复制到剪贴板</div>
+        </div>
+    </div>
+
+    <script>
+        const colorPreview = document.getElementById('color-preview');
+        const colorInput = document.getElementById('color-input');
+        const hexInput = document.getElementById('hex-input');
+        const hexValue = document.getElementById('hex-value');
+        const rgbValue = document.getElementById('rgb-value');
+        const hslValue = document.getElementById('hsl-value');
+        const randomBtn = document.getElementById('random-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const paletteBtn = document.getElementById('palette-btn');
+        const palette = document.getElementById('palette');
+        const copyMessage = document.getElementById('copy-message');
+        
+        function hexToRgb(hex) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return { r, g, b };
+        }
+        
+        function rgbToHsl(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+            
+            if (max === min) { h = s = 0; }
+            else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                    case g: h = ((b - r) / d + 2) / 6; break;
+                    case b: h = ((r - g) / d + 4) / 6; break;
+                }
+            }
+            return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+        }
+        
+        function updateColor(color) {
+            colorPreview.style.background = color;
+            hexValue.textContent = color.toUpperCase();
+            hexInput.value = color;
+            colorInput.value = color;
+            
+            const rgb = hexToRgb(color);
+            rgbValue.textContent = `${rgb.r},${rgb.g},${rgb.b}`;
+            
+            const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+            hslValue.textContent = `${hsl.h}°,${hsl.s}%,${hsl.l}%`;
+        }
+        
+        function setColor(color) {
+            updateColor(color);
+        }
+        
+        colorInput.addEventListener('input', (e) => {
+            updateColor(e.target.value);
+        });
+        
+        hexInput.addEventListener('input', (e) => {
+            const value = e.target.value;
+            if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+                updateColor(value);
+                colorInput.value = value;
+            }
+        });
+        
+        randomBtn.addEventListener('click', async () => {
+            const response = await fetch('./random', { method: 'POST' });
+            const result = await response.json();
+            updateColor(result.color);
+        });
+        
+        copyBtn.addEventListener('click', async () => {
+            await navigator.clipboard.writeText(hexValue.textContent);
+            copyMessage.style.opacity = '1';
+            setTimeout(() => {
+                copyMessage.style.opacity = '0';
+            }, 2000);
+        });
+        
+        paletteBtn.addEventListener('click', async () => {
+            const response = await fetch('./palette', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count: 5 })
+            });
+            const result = await response.json();
+            const chips = palette.querySelectorAll('.color-chip');
+            result.palette.forEach((color, index) => {
+                if (chips[index]) {
+                    chips[index].style.background = color;
+                    chips[index].onclick = () => updateColor(color);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

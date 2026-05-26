@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库 - 题目列表</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; min-height: 100vh; }
+        .container { max-width: 980px; margin: 0 auto; padding: 40px 20px; }
+        .header { margin-bottom: 30px; }
+        .header h1 { font-size: 28px; font-weight: 700; color: #1d1d1f; margin-bottom: 8px; }
+        .header p { font-size: 15px; color: #86868b; }
+
+        /* 分类标签 */
+        .category-bar { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+        .category-tag {
+            padding: 8px 18px; border-radius: 20px; font-size: 14px; font-weight: 500;
+            border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; cursor: pointer;
+            transition: all 0.2s ease; user-select: none;
+        }
+        .category-tag:hover { border-color: #0071e3; color: #0071e3; }
+        .category-tag.active { background: #0071e3; border-color: #0071e3; color: #fff; }
+        .category-tag .count { font-size: 12px; opacity: 0.7; margin-left: 4px; }
+
+        /* 知识卡片 */
+        .knowledge-list { display: flex; flex-direction: column; gap: 12px; }
+        .knowledge-item {
+            background: #fff; border-radius: 14px; padding: 20px 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); cursor: pointer;
+            transition: all 0.2s ease; border: 1px solid transparent;
+        }
+        .knowledge-item:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.1); border-color: #e8e8ed; }
+        .knowledge-item .meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .knowledge-item .category-badge {
+            font-size: 12px; padding: 2px 10px; border-radius: 10px;
+            background: #f0f0f5; color: #6e6e73; font-weight: 500;
+        }
+        .knowledge-item .title { font-size: 17px; font-weight: 600; color: #1d1d1f; line-height: 1.4; }
+        .knowledge-item .summary {
+            font-size: 14px; color: #86868b; margin-top: 6px; line-height: 1.5;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .knowledge-item .time { font-size: 12px; color: #aeaeb2; margin-top: 8px; }
+
+        /* 详情弹窗 */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4); z-index: 999; opacity: 0; visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0.9);
+            width: 90%; max-width: 800px; max-height: 85vh; background: #fff;
+            border-radius: 20px; z-index: 1000; opacity: 0; visibility: hidden;
+            transition: all 0.3s ease; overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+        .modal.show { opacity: 1; visibility: visible; transform: translate(-50%,-50%) scale(1); }
+        .modal-header {
+            padding: 20px 24px; border-bottom: 1px solid #e8e8ed;
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+        }
+        .modal-header .modal-title { flex: 1; }
+        .modal-header .modal-title h2 { font-size: 18px; font-weight: 600; color: #1d1d1f; }
+        .modal-header .modal-title .category-badge { display: inline-block; margin-top: 6px; }
+        .modal-close {
+            width: 36px; height: 36px; border-radius: 50%; background: #f5f5f7;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            font-size: 18px; color: #86868b; flex-shrink: 0;
+            transition: all 0.2s ease; border: none;
+        }
+        .modal-close:hover { background: #e8e8ed; }
+        .modal-body {
+            padding: 24px; overflow-y: auto; max-height: calc(85vh - 100px);
+            font-size: 15px; line-height: 1.7; color: #1d1d1f;
+        }
+        .modal-body pre {
+            background: #f5f5f7; border-radius: 8px; padding: 16px; overflow-x: auto;
+            font-size: 13px; line-height: 1.5; margin: 12px 0;
+        }
+        .modal-body code { background: #f5f5f7; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+        .modal-body h1, .modal-body h2, .modal-body h3 { margin-top: 20px; margin-bottom: 10px; }
+        .modal-body h1 { font-size: 22px; }
+        .modal-body h2 { font-size: 19px; }
+        .modal-body h3 { font-size: 16px; }
+        .modal-body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+        .modal-body th, .modal-body td { border: 1px solid #d2d2d7; padding: 8px 12px; text-align: left; }
+        .modal-body th { background: #f5f5f7; font-weight: 600; }
+        .modal-body hr { border: none; border-top: 1px solid #e8e8ed; margin: 16px 0; }
+        .modal-body blockquote {
+            border-left: 4px solid #0071e3; padding: 8px 16px; margin: 12px 0;
+            background: #f5f7fa; border-radius: 0 8px 8px 0;
+        }
+        .modal-loading { text-align: center; padding: 40px; color: #86868b; }
+
+        /* 分页 */
+        .pagination {
+            display: flex; justify-content: center; align-items: center; gap: 8px;
+            margin-top: 28px; flex-wrap: wrap;
+        }
+        .page-btn {
+            padding: 8px 16px; border-radius: 8px; border: 1px solid #d2d2d7;
+            background: #fff; color: #1d1d1f; font-size: 14px; cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .page-btn:hover:not(:disabled):not(.active) { border-color: #0071e3; color: #0071e3; }
+        .page-btn.active { background: #0071e3; border-color: #0071e3; color: #fff; }
+        .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .loading { text-align: center; padding: 60px 20px; color: #86868b; }
+        .loading .spinner {
+            width: 32px; height: 32px; border: 3px solid #e8e8ed; border-top-color: #0071e3;
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty { text-align: center; padding: 60px 20px; color: #86868b; }
+        .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    </style>
+
+    <style>
+        .btn-random {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 10px 22px; border-radius: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff; font-size: 15px; font-weight: 600; text-decoration: none;
+            transition: all 0.2s ease; box-shadow: 0 4px 15px rgba(102,126,234,0.3);
+        }
+        .btn-random:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(102,126,234,0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>知识库</h1>
+            <p>MD 文件解析的学习笔记列表</p>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;">
+            <a href="/tools/knowledge/random" class="btn-random">🎲 随机一题</a>
+        <div class="category-bar" id="categoryBar">
+            <div class="category-tag active" data-category="">全部</div>
+        </div>
+        </div>
+
+        <!-- 列表 -->
+        <div class="knowledge-list" id="knowledgeList"></div>
+
+        <!-- 分页 -->
+        <div class="pagination" id="pagination"></div>
+
+        <!-- 加载状态 -->
+        <div class="loading" id="loading" style="display:none;">
+            <div class="spinner"></div>
+            <div>加载中...</div>
+        </div>
+
+        <!-- 空状态 -->
+        <div class="empty" id="empty" style="display:none;">
+            <div class="empty-icon">📭</div>
+            <div>暂无数据</div>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="modal" id="modal">
+        <div class="modal-header">
+            <div class="modal-title">
+                <h2 id="modalTitle"></h2>
+                <span class="category-badge" id="modalCategory"></span>
+            </div>
+            <button class="modal-close" id="modalClose">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            <div class="modal-loading">加载中...</div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let currentCategory = '';
+        let totalPages = 0;
+
+        const BASE_URL = '/tools/knowledge';
+
+        // 格式化文本（简单的 Markdown 转 HTML）
+        function mdToHtml(text) {
+            if (!text) return '';
+            let html = escapeHtml(text);
+            // 代码块
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            // 行内代码
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // 加粗
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            // 标题
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            // 分割线
+            html = html.replace(/^---$/gm, '<hr>');
+            // 引用
+            html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+            // 表格
+            html = html.replace(/\|(.+)\|/g, function(match) {
+                if (match.includes('---')) return '';
+                const cells = match.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
+                return `<tr>${cells}</tr>`;
+            });
+            // 换行
+            html = html.replace(/\n\n/g, '</p><p>');
+            html = html.replace(/\n/g, '<br>');
+            return `<p>${html}</p>`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 加载分类
+        async function loadCategories() {
+            try {
+                const res = await fetch(`${BASE_URL}/api/categories`);
+                const categories = await res.json();
+                const bar = document.getElementById('categoryBar');
+                const allTag = bar.querySelector('[data-category=""]');
+                allTag.textContent = '全部';
+
+                categories.forEach(cat => {
+                    const tag = document.createElement('div');
+                    tag.className = 'category-tag' + (currentCategory === cat.category ? ' active' : '');
+                    tag.dataset.category = cat.category;
+                    tag.textContent = `${cat.category} (${cat.count})`;
+                    tag.addEventListener('click', () => {
+                        currentCategory = cat.category;
+                        currentPage = 1;
+                        render();
+                    });
+                    bar.appendChild(tag);
+                });
+            } catch (e) {
+                console.error('加载分类失败', e);
+            }
+        }
+
+        // 加载列表
+        async function loadList() {
+            const listEl = document.getElementById('knowledgeList');
+            const loadingEl = document.getElementById('loading');
+            const emptyEl = document.getElementById('empty');
+            const paginationEl = document.getElementById('pagination');
+
+            listEl.style.display = 'none';
+            paginationEl.style.display = 'none';
+            emptyEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+
+            try {
+                const params = new URLSearchParams({ page: currentPage, pageSize: 20 });
+                if (currentCategory) params.set('category', currentCategory);
+
+                const res = await fetch(`${BASE_URL}/api/list?${params}`);
+                const data = await res.json();
+                const items = data.data || [];
+
+                loadingEl.style.display = 'none';
+
+                if (items.length === 0) {
+                    emptyEl.style.display = 'block';
+                    listEl.style.display = 'none';
+                    paginationEl.style.display = 'none';
+                    return;
+                }
+
+                listEl.style.display = 'flex';
+                listEl.innerHTML = items.map(item => `
+                    <div class="knowledge-item" data-id="${item.id}">
+                        <div class="meta">
+                            <span class="category-badge">${escapeHtml(item.category)}</span>
+                        </div>
+                        <div class="title">${escapeHtml(item.title)}</div>
+                        <div class="summary">${escapeHtml(item.summary)}${item.summary.length >= 200 ? '...' : ''}</div>
+                        <div class="time">${item.create_time || ''}</div>
+                    </div>
+                `).join('');
+
+                // 点击卡片查看详情
+                document.querySelectorAll('.knowledge-item').forEach(el => {
+                    el.addEventListener('click', () => showDetail(el.dataset.id));
+                });
+
+                // 分页
+                totalPages = data.totalPages || 0;
+                renderPagination();
+                paginationEl.style.display = 'flex';
+
+            } catch (e) {
+                console.error('加载列表失败', e);
+                loadingEl.style.display = 'none';
+                emptyEl.style.display = 'block';
+                emptyEl.querySelector('.empty-icon').textContent = '❌';
+                emptyEl.querySelector('.empty-icon').nextElementSibling.textContent = '加载失败，请重试';
+            }
+        }
+
+        function renderPagination() {
+            const paginationEl = document.getElementById('pagination');
+            if (totalPages <= 1) { paginationEl.innerHTML = ''; return; }
+
+            let html = '';
+            html += `<button class="page-btn" onclick="goPage(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''}>上一页</button>`;
+
+            let start = Math.max(1, currentPage - 2);
+            let end = Math.min(totalPages, currentPage + 2);
+            if (start > 1) html += '<button class="page-btn" onclick="goPage(1)">1</button>';
+            if (start > 2) html += '<button class="page-btn" disabled>...</button>';
+
+            for (let i = start; i <= end; i++) {
+                html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+            }
+
+            if (end < totalPages - 1) html += '<button class="page-btn" disabled>...</button>';
+            if (end < totalPages) html += `<button class="page-btn" onclick="goPage(${totalPages})">${totalPages}</button>`;
+
+            html += `<button class="page-btn" onclick="goPage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>下一页</button>`;
+
+            paginationEl.innerHTML = html;
+        }
+
+        function goPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadList();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 显示详情
+        async function showDetail(id) {
+            const modal = document.getElementById('modal');
+            const overlay = document.getElementById('modalOverlay');
+            const titleEl = document.getElementById('modalTitle');
+            const categoryEl = document.getElementById('modalCategory');
+            const bodyEl = document.getElementById('modalBody');
+
+            modal.classList.add('show');
+            overlay.classList.add('show');
+            bodyEl.innerHTML = '<div class="modal-loading">加载中...</div>';
+
+            try {
+                const res = await fetch(`${BASE_URL}/api/detail?id=${id}`);
+                const data = await res.json();
+                titleEl.textContent = data.title || '';
+                categoryEl.textContent = data.category || '';
+                categoryEl.className = 'category-badge';
+                bodyEl.innerHTML = mdToHtml(data.content || '');
+            } catch (e) {
+                bodyEl.innerHTML = '<div style="text-align:center;padding:40px;color:#ff4757;">加载失败</div>';
+            }
+        }
+
+        function hideModal() {
+            document.getElementById('modal').classList.remove('show');
+            document.getElementById('modalOverlay').classList.remove('show');
+        }
+
+        // 渲染
+        function render() {
+            // 更新分类标签高亮
+            document.querySelectorAll('.category-tag').forEach(el => {
+                el.classList.toggle('active', el.dataset.category === currentCategory);
+            });
+            loadList();
+        }
+
+        // 事件绑定
+        document.querySelector('[data-category=""]').addEventListener('click', () => {
+            currentCategory = '';
+            currentPage = 1;
+            render();
+        });
+        document.getElementById('modalClose').addEventListener('click', hideModal);
+        document.getElementById('modalOverlay').addEventListener('click', hideModal);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') hideModal();
+        });
+
+        // 初始化
+        loadCategories();
+        loadList();
+    </script>
+</body>
+</html>

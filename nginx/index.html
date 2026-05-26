@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Apps</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+            background: #000;
+            min-height: 100vh;
+            padding: 60px 20px 40px;
+            position: relative;
+        }
+
+        /* 微妙渐变背景 */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(ellipse at top, #1a1a2e 0%, #000 70%),
+                radial-gradient(ellipse at bottom right, #16213e 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 420px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* 简洁标题 */
+        .logo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo-text {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 2px;
+        }
+
+        /* 应用列表 */
+        .app-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .app-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.2s ease;
+        }
+
+        .app-item:active {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(0.98);
+        }
+
+        .app-icon {
+            width: 48px;
+            height: 48px;
+            min-width: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .app-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .app-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .app-desc {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .arrow {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 18px;
+        }
+
+        /* 悬浮按钮 */
+        .ip-float-btn {
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 9999;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        .ip-float-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .ip-float-btn:active {
+            transform: scale(0.95);
+        }
+
+        .ip-float-btn-icon {
+            font-size: 24px;
+            color: #fff;
+        }
+
+        .ip-float-btn-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 16px;
+            height: 16px;
+            background: #ff4757;
+            border-radius: 50%;
+            display: none;
+            animation: pulse 1.5s infinite;
+        }
+
+        .ip-float-btn-badge.show {
+            display: block;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+
+        /* IP弹窗遮罩 */
+        .ip-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9998;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .ip-modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* IP弹窗 */
+        .ip-modal {
+            position: fixed;
+            bottom: 150px;
+            right: 20px;
+            width: 320px;
+            background: rgba(20, 20, 30, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 9999;
+            transform: scale(0.9) translateY(20px);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .ip-modal.show {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .ip-modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .ip-modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ip-modal-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .ip-modal-close:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .ip-modal-body {
+            padding: 20px;
+        }
+
+        .ip-display {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .ip-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .ip-value {
+            font-size: 22px;
+            font-weight: 600;
+            color: #fff;
+            font-family: 'SF Mono', 'Courier New', monospace;
+            word-break: break-all;
+        }
+
+        .ip-status {
+            font-size: 13px;
+            color: #2ed573;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .ip-status.error {
+            color: #ff4757;
+        }
+
+        .ip-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2ed573;
+        }
+
+        .ip-status.error .ip-status-dot {
+            background: #ff4757;
+        }
+
+        .ip-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .ip-btn {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .ip-btn-refresh {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+
+        .ip-btn-refresh:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .ip-btn-refresh:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .ip-btn-copy {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .ip-btn-copy:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .ip-btn-copy.copied {
+            background: #2ed573;
+            border-color: #2ed573;
+        }
+
+        .ip-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .ip-cache-time {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.35);
+            text-align: center;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <div class="logo-text">APPS</div>
+        </div>
+
+        <div class="app-list">
+            <a href="/let-it-cook-client/" class="app-item">
+                <div class="app-icon">🍳</div>
+                <div class="app-info">
+                    <div class="app-name">Let-It-Cook</div>
+                    <div class="app-desc">智能烹饪助手</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/poker/" class="app-item">
+                <div class="app-icon">🃏</div>
+                <div class="app-info">
+                    <div class="app-name">Poker</div>
+                    <div class="app-desc">德扑计分器</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/poker-odds/" class="app-item">
+                <div class="app-icon">📈</div>
+                <div class="app-info">
+                    <div class="app-name">Odds Calculator</div>
+                    <div class="app-desc">胜率计算器</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/log-screen/" class="app-item">
+                <div class="app-icon">📊</div>
+                <div class="app-info">
+                    <div class="app-name">Log Screen</div>
+                    <div class="app-desc">日志数据大屏</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <!-- 工具集 -->
+            <div class="app-item" style="background: rgba(102, 126, 234, 0.1); border-color: rgba(102, 126, 234, 0.2);">
+                <div class="app-icon" style="background: rgba(102, 126, 234, 0.2);">🛠️</div>
+                <div class="app-info">
+                    <div class="app-name" style="color: #a5b4fc;">工具集</div>
+                    <div class="app-desc">实用小工具集合</div>
+                </div>
+                <div class="arrow">›</div>
+            </div>
+
+            <a href="/tools/password/" class="app-item">
+                <div class="app-icon">🔐</div>
+                <div class="app-info">
+                    <div class="app-name">密码生成器</div>
+                    <div class="app-desc">生成安全随机密码</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/qrcode/" class="app-item">
+                <div class="app-icon">📱</div>
+                <div class="app-info">
+                    <div class="app-name">二维码生成器</div>
+                    <div class="app-desc">生成自定义二维码</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/color/" class="app-item">
+                <div class="app-icon">🎨</div>
+                <div class="app-info">
+                    <div class="app-name">颜色选择器</div>
+                    <div class="app-desc">HEX/RGB/HSL转换</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/countdown/" class="app-item">
+                <div class="app-icon">⏱️</div>
+                <div class="app-info">
+                    <div class="app-name">倒计时器</div>
+                    <div class="app-desc">自定义时间倒计时</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/word-memory/" class="app-item">
+                <div class="app-icon">📚</div>
+                <div class="app-info">
+                    <div class="app-name">单词记忆</div>
+                    <div class="app-desc">翻转卡片学习</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/joke/" class="app-item">
+                <div class="app-icon">😂</div>
+                <div class="app-info">
+                    <div class="app-name">笑话生成器</div>
+                    <div class="app-desc">每日一笑解忧愁</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/bmi/" class="app-item">
+                <div class="app-icon">⚖️</div>
+                <div class="app-info">
+                    <div class="app-name">BMI计算器</div>
+                    <div class="app-desc">计算身体质量指数</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/unit/" class="app-item">
+                <div class="app-icon">🔄</div>
+                <div class="app-info">
+                    <div class="app-name">单位转换器</div>
+                    <div class="app-desc">多单位快速转换</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/wallpaper/" class="app-item">
+                <div class="app-icon">🖼️</div>
+                <div class="app-info">
+                    <div class="app-name">壁纸生成器</div>
+                    <div class="app-desc">渐变壁纸制作</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/number-guessing/" class="app-item">
+                <div class="app-icon">🎯</div>
+                <div class="app-info">
+                    <div class="app-name">猜数字游戏</div>
+                    <div class="app-desc">趣味数字猜谜</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+
+            <a href="/tools/knowledge/" class="app-item">
+                <div class="app-icon">📖</div>
+                <div class="app-info">
+                    <div class="app-name">知识库</div>
+                    <div class="app-desc">MD解析学习笔记</div>
+                </div>
+                <div class="arrow">›</div>
+            </a>
+        </div>
+    </div>
+
+    <!-- 悬浮按钮 -->
+    <div class="ip-float-btn" id="ipFloatBtn">
+        <span class="ip-float-btn-icon">📍</span>
+        <div class="ip-float-btn-badge" id="ipBadge"></div>
+    </div>
+
+    <!-- 遮罩层 -->
+    <div class="ip-modal-overlay" id="ipOverlay"></div>
+
+    <!-- IP弹窗 -->
+    <div class="ip-modal" id="ipModal">
+        <div class="ip-modal-header">
+            <div class="ip-modal-title">📍 真实IP</div>
+            <div class="ip-modal-close" id="ipCloseBtn">✕</div>
+        </div>
+        <div class="ip-modal-body">
+            <div class="ip-display">
+                <div class="ip-label">你的IP地址</div>
+                <div class="ip-value" id="ipValue">获取中...</div>
+                <div class="ip-status" id="ipStatus">
+                    <span class="ip-status-dot"></span>
+                    <span id="ipStatusText">正在获取</span>
+                </div>
+            </div>
+            <div class="ip-actions">
+                <button class="ip-btn ip-btn-refresh" id="ipRefreshBtn">
+                    <span>🔄</span>
+                    <span>刷新IP</span>
+                </button>
+                <button class="ip-btn ip-btn-copy" id="ipCopyBtn">
+                    <span>📋</span>
+                    <span>复制</span>
+                </button>
+            </div>
+            <div class="ip-cache-time" id="ipCacheTime"></div>
+        </div>
+    </div>
+</body>
+</html>
+<script>
+(function() {
+    const IP_CACHE_KEY = 'common_real_ip';
+    const IP_CACHE_TIMESTAMP_KEY = 'common_real_ip_timestamp';
+    const IP_CACHE_DURATION = 10 * 60 * 1000;
+
+    // DOM元素
+    const floatBtn = document.getElementById('ipFloatBtn');
+    const modal = document.getElementById('ipModal');
+    const overlay = document.getElementById('ipOverlay');
+    const closeBtn = document.getElementById('ipCloseBtn');
+    const refreshBtn = document.getElementById('ipRefreshBtn');
+    const copyBtn = document.getElementById('ipCopyBtn');
+    const ipValue = document.getElementById('ipValue');
+    const ipStatus = document.getElementById('ipStatus');
+    const ipStatusText = document.getElementById('ipStatusText');
+    const ipCacheTime = document.getElementById('ipCacheTime');
+    const ipBadge = document.getElementById('ipBadge');
+
+    let isDragging = false;
+    let hasMoved = false;
+    let startX, startY, initialX, initialY;
+
+    function getCachedIP() {
+        try {
+            const cachedIP = localStorage.getItem(IP_CACHE_KEY);
+            const cachedTime = localStorage.getItem(IP_CACHE_TIMESTAMP_KEY);
+            if (cachedIP && cachedTime) {
+                const elapsed = Date.now() - parseInt(cachedTime);
+                if (elapsed < IP_CACHE_DURATION) {
+                    return { ip: cachedIP, time: cachedTime };
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function saveIPToCache(ip) {
+        try {
+            localStorage.setItem(IP_CACHE_KEY, ip);
+            localStorage.setItem(IP_CACHE_TIMESTAMP_KEY, Date.now().toString());
+        } catch (e) {}
+    }
+
+    function isValidIP(ip) {
+        if (!ip || typeof ip !== 'string') return false;
+        ip = ip.trim();
+        const ipv4Pattern = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        return ipv4Pattern.test(ip);
+    }
+
+    const IP_API_LIST = [
+        { url: 'https://api.ipify.org?format=json', type: 'json', extract: 'ip', group: 1 },
+        { url: 'https://api64.ipify.org?format=json', type: 'json', extract: 'ip', group: 1 },
+        { url: 'https://ip.seeip.org/json', type: 'json', extract: 'ip', group: 2 },
+        { url: 'https://api.my-ip.io/v2/ip', type: 'json', extract: 'ip', group: 2 },
+        { url: 'https://icanhazip.com', type: 'text', group: 3 },
+        { url: 'https://ifconfig.me/ip', type: 'text', group: 3 }
+    ];
+
+    async function fetchIP(showLoading = true) {
+        if (showLoading) {
+            ipValue.textContent = '获取中...';
+            ipStatus.className = 'ip-status';
+            ipStatusText.textContent = '正在获取';
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<span class="ip-spinner"></span><span>获取中</span>';
+        }
+
+        const createRequest = (api) => {
+            return new Promise((resolve) => {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => {
+                    controller.abort();
+                    resolve({ success: false });
+                }, 5000);
+
+                fetch(api.url, { signal: controller.signal, cache: 'no-cache' })
+                .then(async (response) => {
+                    clearTimeout(timeout);
+                    if (!response.ok) { resolve({ success: false }); return; }
+                    let ip = '';
+                    if (api.type === 'json') {
+                        const data = await response.json();
+                        ip = data[api.extract] || '';
+                    } else {
+                        ip = (await response.text()).trim();
+                    }
+                    resolve({ success: isValidIP(ip), ip: ip });
+                })
+                .catch(() => { clearTimeout(timeout); resolve({ success: false }); });
+            });
+        };
+
+        for (const group of [1, 2, 3]) {
+            const groupApis = IP_API_LIST.filter(api => api.group === group);
+            const results = await Promise.allSettled(groupApis.map(createRequest));
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value.success) {
+                    saveIPToCache(result.value.ip);
+                    updateIPDisplay(result.value.ip);
+                    return result.value.ip;
+                }
+            }
+        }
+
+        // 获取失败
+        updateIPDisplay(null);
+        return null;
+    }
+
+    function updateIPDisplay(ip) {
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = '<span>🔄</span><span>刷新IP</span>';
+
+        if (ip) {
+            ipValue.textContent = ip;
+            ipStatus.className = 'ip-status';
+            ipStatusText.textContent = '已获取';
+            ipBadge.classList.remove('show');
+        } else {
+            ipValue.textContent = '获取失败';
+            ipStatus.className = 'ip-status error';
+            ipStatusText.textContent = '请点击刷新重试';
+            ipBadge.classList.add('show');
+        }
+
+        const cached = getCachedIP();
+        if (cached) {
+            const date = new Date(parseInt(cached.time));
+            const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            ipCacheTime.textContent = `缓存时间: ${timeStr}`;
+        } else {
+            ipCacheTime.textContent = '';
+        }
+    }
+
+    // 弹窗控制
+    function showModal() {
+        modal.classList.add('show');
+        overlay.classList.add('show');
+        const cached = getCachedIP();
+        if (cached) {
+            updateIPDisplay(cached.ip);
+        } else {
+            fetchIP(true);
+        }
+    }
+
+    function hideModal() {
+        modal.classList.remove('show');
+        overlay.classList.remove('show');
+    }
+
+    // 拖拽逻辑
+    function startDrag(e) {
+        isDragging = true;
+        hasMoved = false;
+        const touch = e.touches ? e.touches[0] : e;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        initialX = floatBtn.offsetLeft;
+        initialY = floatBtn.offsetTop;
+        floatBtn.style.transition = 'none';
+    }
+
+    function doDrag(e) {
+        if (!isDragging) return;
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+            hasMoved = true;
+        }
+
+        let newX = initialX + dx;
+        let newY = initialY + dy;
+
+        const maxX = window.innerWidth - floatBtn.offsetWidth;
+        const maxY = window.innerHeight - floatBtn.offsetHeight;
+        newX = Math.max(0, Math.min(newX, maxX));
+        newY = Math.max(0, Math.min(newY, maxY));
+
+        floatBtn.style.right = 'auto';
+        floatBtn.style.bottom = 'auto';
+        floatBtn.style.left = newX + 'px';
+        floatBtn.style.top = newY + 'px';
+    }
+
+    function endDrag(e) {
+        if (!isDragging) return;
+        isDragging = false;
+        floatBtn.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
+        
+        if (!hasMoved) {
+            if (modal.classList.contains('show')) {
+                hideModal();
+            } else {
+                showModal();
+            }
+        }
+    }
+
+    // 复制IP
+    async function copyIP() {
+        const cached = getCachedIP();
+        if (!cached) return;
+        
+        try {
+            await navigator.clipboard.writeText(cached.ip);
+            copyBtn.classList.add('copied');
+            copyBtn.innerHTML = '<span>✅</span><span>已复制</span>';
+            setTimeout(() => {
+                copyBtn.classList.remove('copied');
+                copyBtn.innerHTML = '<span>📋</span><span>复制</span>';
+            }, 2000);
+        } catch (e) {
+            // 降级方案
+            const textarea = document.createElement('textarea');
+            textarea.value = cached.ip;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            copyBtn.classList.add('copied');
+            copyBtn.innerHTML = '<span>✅</span><span>已复制</span>';
+            setTimeout(() => {
+                copyBtn.classList.remove('copied');
+                copyBtn.innerHTML = '<span>📋</span><span>复制</span>';
+            }, 2000);
+        }
+    }
+
+    // 事件监听
+    floatBtn.addEventListener('mousedown', startDrag);
+    floatBtn.addEventListener('touchstart', startDrag, { passive: false });
+    document.addEventListener('mousemove', doDrag);
+    document.addEventListener('touchmove', doDrag, { passive: false });
+    document.addEventListener('mouseup', endDrag);
+    document.addEventListener('touchend', endDrag);
+
+    closeBtn.addEventListener('click', hideModal);
+    overlay.addEventListener('click', hideModal);
+    refreshBtn.addEventListener('click', () => fetchIP(true));
+    copyBtn.addEventListener('click', copyIP);
+
+    // ESC关闭
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('show')) {
+            hideModal();
+        }
+    });
+
+    // 初始化获取IP
+    fetchAndCacheIP();
+
+    async function fetchAndCacheIP() {
+        const cached = getCachedIP();
+        if (cached) {
+            console.log('IP已缓存:', cached.ip);
+            return;
+        }
+        await fetchIP(false);
+    }
+})();
+</script>
