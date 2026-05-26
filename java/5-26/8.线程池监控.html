@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线程池实战：无界队列陷阱 · 参数荒谬配置 · 崩溃前感知监控</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: { slate: { 850: '#151f32', 950: '#0a0f1c' } }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans SC', system-ui, sans-serif; background: #0a0f1c; color: #cbd5e1; }
+        code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+        .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+        /* Flow diagram nodes */
+        .flow-node {
+            padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 600;
+            display: flex; align-items: center; gap: 8px; position: relative;
+            transition: all 0.3s;
+        }
+        .flow-arrow {
+            width: 2px; height: 24px; margin: 0 auto; position: relative;
+        }
+        .flow-arrow::after {
+            content: ''; position: absolute; bottom: -4px; left: -4px;
+            border-left: 5px solid transparent; border-right: 5px solid transparent;
+        }
+        .flow-label {
+            position: absolute; right: -80px; top: 50%; transform: translateY(-50%);
+            font-size: 10px; white-space: nowrap; padding: 2px 6px; border-radius: 4px;
+        }
+
+        /* Token colors */
+        .tk-kw { color: #c678dd; }
+        .tk-num { color: #d19a66; }
+        .tk-cmt { color: #5c6370; font-style: italic; }
+        .tk-type { color: #e5c07b; }
+        .tk-fn { color: #61afef; }
+        .tk-var { color: #e06c75; }
+        .tk-str { color: #98c379; }
+
+        /* Alert pulse */
+        @keyframes alert-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+        }
+        .alert-active { animation: alert-pulse 1.5s ease-in-out infinite; }
+
+        /* Gauge */
+        .gauge-ring {
+            stroke-dasharray: 283; stroke-dashoffset: 283;
+            transition: stroke-dashoffset 1s cubic-bezier(0.22,1,0.36,1);
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+
+<!-- Header -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] font-bold tracking-widest text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded uppercase">Production Reality</span>
+            <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">ThreadPoolExecutor · Unbounded Queue Trap · Pre-crash Monitoring</h1>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 py-16 space-y-20">
+
+    <!-- ═══════════════ HERO ═══════════════ -->
+    <section class="text-center max-w-3xl mx-auto fade-up">
+        <h2 class="text-3xl sm:text-4xl font-black mb-5 leading-tight">
+            别再背八股了：<br>
+            <span class="text-amber-400">线程池</span>在生产环境是怎么崩的
+        </h2>
+        <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+            面试官问你"核心线程→队列→最大线程→拒绝策略"的流程，你倒背如流。
+            但线上真正出事故时，问题从来不是"流程记错了"，而是<strong class="text-slate-200">参数配对了但语义理解错了</strong>。
+            本篇用真实故障视角重讲交互流程，拆解无界队列下 maxPoolSize 的荒谬性，
+            最后给出一套<strong class="text-slate-200">在 OOM 之前就能救命的监控方案</strong>。
+        </p>
+    </section>
+
+    <!-- ═══════════════ SECTION 1: REAL INTERACTION FLOW ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold text-sm">1</span>
+            <h3 class="text-xl font-bold text-white">提交流程的"真实版"：不是流程图，是决策树</h3>
+        </div>
+
+        <p class="text-sm text-slate-400 leading-relaxed mb-6">
+            教科书画的是线性流水线。但 <code class="mono text-indigo-300">execute()</code> 源码里是一个<strong class="text-slate-200">三层 if-else 决策树</strong>，
+            每一层的失败才会触发下一层。理解这个"失败驱动"的逻辑，才能理解为什么参数顺序如此反直觉。
+        </p>
+
+        <div class="grid lg:grid-cols-5 gap-0 items-start mb-6">
+            <!-- Flow Diagram -->
+            <div class="lg:col-span-2 flex flex-col items-center space-y-0">
+                <!-- Step 1 -->
+                <div class="flow-node bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 w-56 justify-center">
+                    workerCount &lt; corePoolSize?
+                </div>
+                <div class="flow-arrow bg-emerald-500/30">
+                    <div class="flow-label text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">YES → addWorker(core=true)</div>
+                </div>
+                <div class="flow-arrow bg-slate-700" style="height:8px;"></div>
+
+                <!-- Step 2 -->
+                <div class="flow-node bg-blue-500/10 border border-blue-500/30 text-blue-300 w-56 justify-center">
+                    workQueue.offer(task)?
+                </div>
+                <div class="flow-arrow bg-blue-500/30">
+                    <div class="flow-label text-blue-400 bg-blue-500/10 border border-blue-500/20">true → 入队成功，结束</div>
+                </div>
+                <div class="flow-arrow bg-slate-700" style="height:8px;"></div>
+
+                <!-- Step 3 -->
+                <div class="flow-node bg-purple-500/10 border border-purple-500/30 text-purple-300 w-56 justify-center">
+                    workerCount &lt; maxPoolSize?
+                </div>
+                <div class="flow-arrow bg-purple-500/30">
+                    <div class="flow-label text-purple-400 bg-purple-500/10 border border-purple-500/20">YES → addWorker(core=false)</div>
+                </div>
+                <div class="flow-arrow bg-slate-700" style="height:8px;"></div>
+
+                <!-- Step 4 -->
+                <div class="flow-node bg-rose-500/10 border border-rose-500/30 text-rose-300 w-56 justify-center alert-active">
+                    reject(task) 💥
+                </div>
+            </div>
+
+            <!-- Real-world annotations -->
+            <div class="lg:col-span-3 space-y-4 pl-4 lg:pl-8 pt-2">
+                <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-4">
+                    <h4 class="text-emerald-400 font-bold text-xs mb-2">🟢 第一层：创建核心线程</h4>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">
+                        <strong class="text-slate-300">注意：</strong>这里用的是 <code class="mono text-[10px]">&lt;</code> 不是 <code class="mono text-[10px]">&lt;=</code>。
+                        当 workerCount == corePoolSize 时直接跳过，进入第二层。
+                        <br><br>
+                        <strong class="text-amber-300">实战经验：</strong>addWorker 内部有双重 CAS（ctl + workerSet），
+                        高并发提交时大量线程会 CAS 失败然后重试。这不是瓶颈，但会产生短暂的 CPU 尖峰。
+                    </p>
+                </div>
+
+                <div class="bg-slate-900 border border-blue-500/20 rounded-xl p-4">
+                    <h4 class="text-blue-400 font-bold text-xs mb-2">🔵 第二层：尝试入队（关键转折点）</h4>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">
+                        <strong class="text-rose-300">这是整个流程最反直觉的地方：</strong>
+                        只有当队列<strong class="text-slate-200">满了（offer 返回 false）</strong>时，才会走到第三层创建非核心线程。
+                        <br><br>
+                        这意味着：<strong class="text-slate-200">只要队列还有空间，即使当前活跃线程数远小于 maxPoolSize，也不会创建新线程。</strong>
+                        这就是为什么"有界队列 + 合理的 maxPoolSize"才是正确搭配——队列满得越快，非核心线程创建得越早。
+                    </p>
+                </div>
+
+                <div class="bg-slate-900 border border-purple-500/20 rounded-xl p-4">
+                    <h4 class="text-purple-400 font-bold text-xs mb-2">🟣 第三层：创建非核心线程</h4>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">
+                        走到这里说明两件事同时成立：<br>
+                        ① 队列已满（或 offer 失败）<br>
+                        ② 当前线程数还没到上限<br>
+                        <br>
+                        <strong class="text-amber-300">实战经验：</strong>非核心线程的空闲存活时间由 keepAliveTime 控制。
+                        在高波动负载下，这些线程会被反复创建和销毁，带来额外的 GC 压力。
+                        如果波动频繁，考虑适当增大 corePoolSize 而非依赖弹性。
+                    </p>
+                </div>
+
+                <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-4">
+                    <h4 class="text-rose-400 font-bold text-xs mb-2">🔴 第四层：拒绝策略</h4>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">
+                        走到这里意味着<strong class="text-rose-300">系统已经过载</strong>。
+                        AbortPolicy 抛异常只是表象，真正的信号是：你的容量规划出了问题。
+                        <br><br>
+                        <strong class="text-emerald-300">生产建议：</strong>永远不要用默认的 AbortPolicy。
+                        至少用 CallerRunsPolicy 做背压，或者自定义策略记录指标 + 降级。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 2: UNBOUNDED QUEUE TRAP ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">2</span>
+            <h3 class="text-xl font-bold text-white">无界队列下 maxPoolSize 还有意义吗？</h3>
+        </div>
+
+        <div class="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-6 mb-6">
+            <h4 class="text-rose-400 font-bold text-lg mb-3 text-center">答案：完全没有意义。它是一个死参数。</h4>
+            <p class="text-sm text-slate-400 leading-relaxed text-center max-w-2xl mx-auto">
+                回顾决策树第二层：<code class="mono text-rose-300">workQueue.offer(task)</code>。
+                LinkedBlockingQueue / ArrayBlockingQueue(cap=Integer.MAX_VALUE) 的 offer()
+                <strong class="text-slate-200">永远不会返回 false</strong>。
+                因此执行流<strong class="text-rose-300">永远走不到第三层</strong>，maxPoolSize 形同虚设。
+            </p>
+        </div>
+
+        <!-- The absurd config -->
+        <div class="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 mb-6 ring-1 ring-amber-500/10">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🤡</span>
+                <h4 class="text-amber-400 font-bold text-lg">可笑配置解剖</h4>
+            </div>
+
+            <div class="bg-slate-950 rounded-lg p-4 mb-4">
+                <pre class="text-[11px] mono text-slate-400 leading-relaxed"><code><span class="tk-cmt">// 某项目线上真实配置（已脱敏）</span>
+<span class="tk-type">ThreadPoolExecutor</span> pool = <span class="tk-kw">new</span> <span class="tk-type">ThreadPoolExecutor</span>(
+    <span class="tk-num">10</span>,                          <span class="tk-cmt">// corePoolSize</span>
+    <span class="tk-num">20</span>,                          <span class="tk-cmt">// maxPoolSize ← 写了个寂寞</span>
+    <span class="tk-num">60</span>, TimeUnit.SECONDS,         <span class="tk-cmt">// keepAliveTime ← 也是寂寞</span>
+    <span class="tk-kw">new</span> <span class="tk-type">LinkedBlockingQueue</span>&lt;&gt;()   <span class="tk-cmt">// 默认容量 Integer.MAX_VALUE ≈ 21亿</span>
+);</code></pre>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+                    <h5 class="text-amber-300 font-bold text-sm">这个配置实际等价于什么？</h5>
+                    <ul class="space-y-2 ml-2">
+                        <li class="flex gap-2">
+                            <span class="text-rose-400 font-bold">①</span>
+                            <div><strong class="text-slate-300">永远只有 10 个线程干活</strong><br>
+                                无论提交多少任务，线程数永远不会超过 corePoolSize=10。maxPoolSize=20 这行代码从未被执行过。</div>
+                        </li>
+                        <li class="flex gap-2">
+                            <span class="text-rose-400 font-bold">②</span>
+                            <div><strong class="text-slate-300">keepAliveTime=60s 完全无效</strong><br>
+                                因为没有非核心线程会被创建，所以没有线程会因为空闲而被回收。</div>
+                        </li>
+                        <li class="flex gap-2">
+                            <span class="text-rose-400 font-bold">③</span>
+                            <div><strong class="text-slate-300">拒绝策略永远不会触发</strong><br>
+                                队列容量 21 亿，按每秒 1 万任务算，需要 59 小时才能填满。在此之前 JVM 早就 OOM 了。</div>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+                    <h5 class="text-rose-300 font-bold text-sm">灾难链条</h5>
+                    <div class="space-y-2">
+                        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                            <p class="text-[10px] text-rose-200/80">
+                                <strong>T+0s:</strong> 下游服务变慢，任务处理时间从 10ms → 500ms
+                            </p>
+                        </div>
+                        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                            <p class="text-[10px] text-rose-200/80">
+                                <strong>T+5s:</strong> 10 个线程全部阻塞，新任务开始堆积。队列以 2000/s 速度增长
+                            </p>
+                        </div>
+                        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                            <p class="text-[10px] text-rose-200/80">
+                                <strong>T+30s:</strong> 队列积压 6 万任务。每个任务持有请求上下文 ~2KB → 堆内存额外占用 120MB
+                            </p>
+                        </div>
+                        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                            <p class="text-[10px] text-rose-200/80">
+                                <strong>T+2min:</strong> 队列 24 万任务 → 480MB。GC 频率飙升，STW 增加 → 处理更慢 → 恶性循环
+                            </p>
+                        </div>
+                        <div class="bg-rose-500/20 border border-rose-500/40 rounded-lg p-3 alert-active">
+                            <p class="text-[10px] text-rose-100 font-bold">
+                                <strong>T+5min:</strong> Full GC 无法回收（任务仍被引用）→ OutOfMemoryError → 进程崩溃 💀
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-4">
+                <h5 class="text-emerald-300 font-bold text-xs mb-2">✅ 正确做法</h5>
+                <pre class="text-[10px] mono text-emerald-200/70 leading-relaxed"><code><span class="tk-cmt">// 方案 A：有界队列 + 合理 max（推荐）</span>
+<span class="tk-kw">new</span> ThreadPoolExecutor(<span class="tk-num">10</span>, <span class="tk-num">20</span>, <span class="tk-num">60</span>, SECONDS,
+    <span class="tk-kw">new</span> ArrayBlockingQueue&lt;&gt;(<span class="tk-num">1000</span>),
+    <span class="tk-kw">new</span> CallerRunsPolicy());  <span class="tk-cmt">// 队列满时调用者自己干，天然背压</span>
+
+<span class="tk-cmt">// 方案 B：如果确实需要缓冲大量任务</span>
+<span class="tk-kw">new</span> ThreadPoolExecutor(<span class="tk-num">10</span>, <span class="tk-num">20</span>, <span class="tk-num">60</span>, SECONDS,
+    <span class="tk-kw">new</span> ResizableCapacityLinkedBlockingQueue&lt;&gt;(<span class="tk-num">5000</span>),  <span class="tk-cmt">// 自定义可动态调整容量的队列</span>
+    <span class="tk-kw">new</span> LoggingRejectPolicy());  <span class="tk-cmt">// 拒绝时打日志+指标，不丢任务</span></code></pre>
+            </div>
+        </div>
+
+        <!-- Why do people write this? -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h4 class="text-slate-300 font-bold text-sm mb-3">为什么这种配置如此普遍？</h4>
+            <div class="grid md:grid-cols-3 gap-4 text-xs text-slate-400 leading-relaxed">
+                <div>
+                    <strong class="text-amber-300 block mb-1">1. Executors 工厂方法的毒害</strong>
+                    <code class="mono text-[10px]">Executors.newFixedThreadPool(n)</code>
+                    底层就是 core=n, max=n, LinkedBlockingQueue(∞)。
+                    很多人复制粘贴后改了 core/max 却没改队列。
+                </div>
+                <div>
+                    <strong class="text-amber-300 block mb-1">2. "怕拒绝"的心理</strong>
+                    开发者担心有界队列导致任务被拒，于是用无界队列"保险"。
+                    殊不知把"显式拒绝"变成了"隐性 OOM"——后者更难排查、破坏力更大。
+                </div>
+                <div>
+                    <strong class="text-amber-300 block mb-1">3. 不理解决策树顺序</strong>
+                    以为 maxPoolSize 是"队列满了之后的兜底"，
+                    实际上它是"队列满了之后才有机会生效的参数"。
+                    无界队列让这个前提永远不成立。
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 3: MONITORING DESIGN ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm">3</span>
+            <h3 class="text-xl font-bold text-white">崩溃前感知：线程池监控的正确设计</h3>
+        </div>
+
+        <p class="text-sm text-slate-400 leading-relaxed mb-6">
+            大多数团队只监控"活跃线程数"和"队列大小"。这两个指标<strong class="text-slate-200">太滞后了</strong>——
+            当你看到队列暴涨时，OOM 可能只剩 30 秒。你需要的是<strong class="text-emerald-300">领先指标</strong>。
+        </p>
+
+        <!-- Three-tier monitoring -->
+        <div class="space-y-4 mb-6">
+            <!-- Tier 1: Leading Indicators -->
+            <div class="bg-slate-900 border border-emerald-500/20 rounded-2xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-emerald-400 text-xl">📡</span>
+                    <div>
+                        <h4 class="text-emerald-400 font-bold text-sm">第一层：领先指标（提前 30s~5min 预警）</h4>
+                        <p class="text-[10px] text-slate-500">这些指标在队列明显堆积之前就会发出信号</p>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="space-y-3">
+                        <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                            <h5 class="text-emerald-300 font-bold text-xs mb-1">① 任务排队等待时间 (Queue Latency)</h5>
+                            <p class="text-[10px] text-slate-400 leading-relaxed mb-2">
+                                在任务包装器中记录 <code class="mono text-[9px]">submitTimestamp</code>，
+                                线程开始执行时计算 <code class="mono text-[9px]">now - submitTimestamp</code>。
+                            </p>
+                            <p class="text-[10px] text-emerald-200/70 leading-relaxed">
+                                <strong>告警阈值：</strong>P99 &gt; 500ms → WARNING | P99 &gt; 2s → CRITICAL<br>
+                                <strong>为什么领先：</strong>即使队列绝对值不大，等待时间突增说明处理能力已跟不上提交速率。
+                            </p>
+                        </div>
+
+                        <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                            <h5 class="text-emerald-300 font-bold text-xs mb-1">② 队列增长率 (Queue Growth Rate)</h5>
+                            <p class="text-[10px] text-slate-400 leading-relaxed mb-2">
+                                <code class="mono text-[9px]">ΔqueueSize / Δtime</code>，每秒采样。
+                            </p>
+                            <p class="text-[10px] text-emerald-200/70 leading-relaxed">
+                                <strong>告警阈值：</strong>连续 3 个采样周期 &gt; 0 → WARNING<br>
+                                <strong>为什么领先：</strong>队列绝对值 500 不可怕，但如果每秒涨 200，10 秒后就 2500。
+                                增长率是"加速度"，比"位置"更早反映趋势。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                            <h5 class="text-emerald-300 font-bold text-xs mb-1">③ 线程饱和度 (Saturation Ratio)</h5>
+                            <p class="text-[10px] text-slate-400 leading-relaxed mb-2">
+                                <code class="mono text-[9px]">activeCount / maximumPoolSize</code>
+                            </p>
+                            <p class="text-[10px] text-emerald-200/70 leading-relaxed">
+                                <strong>告警阈值：</strong>&gt; 80% 持续 10s → WARNING | &gt; 95% → CRITICAL<br>
+                                <strong>为什么领先：</strong>所有线程都在忙 = 下一个任务必然排队。
+                                这是队列增长的<strong class="text-slate-300">前置条件</strong>。
+                            </p>
+                        </div>
+
+                        <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                            <h5 class="text-emerald-300 font-bold text-xs mb-1">④ 拒绝次数 / 背压触发率</h5>
+                            <p class="text-[10px] text-slate-400 leading-relaxed mb-2">
+                                自定义 RejectedExecutionHandler 中计数。
+                            </p>
+                            <p class="text-[10px] text-emerald-200/70 leading-relaxed">
+                                <strong>告警阈值：</strong>&gt; 0 → CRITICAL（拒绝本身就是事故）<br>
+                                <strong>为什么重要：</strong>如果你用了 CallerRunsPolicy，没有拒绝但有背压，
+                                需要监控<strong class="text-slate-300">调用者线程的执行耗时</strong>作为替代指标。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tier 2: Lagging but Essential -->
+            <div class="bg-slate-900 border border-blue-500/20 rounded-2xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-blue-400 text-xl">📊</span>
+                    <h4 class="text-blue-400 font-bold text-sm">第二层：基础指标（必须有，但不能只靠它们告警）</h4>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <div class="text-slate-500 text-[10px] mb-1">poolSize</div>
+                        <div class="text-blue-300 font-bold mono">当前线程总数</div>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <div class="text-slate-500 text-[10px] mb-1">activeCount</div>
+                        <div class="text-blue-300 font-bold mono">正在执行的</div>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <div class="text-slate-500 text-[10px] mb-1">queueSize</div>
+                        <div class="text-blue-300 font-bold mono">排队中的任务数</div>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <div class="text-slate-500 text-[10px] mb-1">completedTaskCount</div>
+                        <div class="text-blue-300 font-bold mono">已完成总数</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tier 3: JVM Context -->
+            <div class="bg-slate-900 border border-purple-500/20 rounded-2xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-purple-400 text-xl">🧠</span>
+                    <h4 class="text-purple-400 font-bold text-sm">第三层：JVM 上下文（区分"线程池问题"还是"全局问题"）</h4>
+                </div>
+                <div class="grid md:grid-cols-3 gap-3 text-xs text-slate-400 leading-relaxed">
+                    <div class="bg-slate-800/50 rounded-lg p-3">
+                        <strong class="text-purple-300 block mb-1">Heap Usage %</strong>
+                        队列堆积 + 堆使用率高 → 确认是内存风险。<br>
+                        队列堆积 + 堆正常 → 可能是下游超时，不是内存问题。
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3">
+                        <strong class="text-purple-300 block mb-1">GC Pause Time</strong>
+                        STW 期间所有线程暂停 → 恢复后任务瞬间堆积。<br>
+                        这种堆积是自愈的，不应触发 CRITICAL 告警。
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3">
+                        <strong class="text-purple-300 block mb-1">Thread Count (JVM)</strong>
+                        如果多个线程池同时饱和 → 全局性问题（如下游挂了）。<br>
+                        单个池饱和 → 局部问题（如某个接口流量突增）。
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Implementation Code -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-4 py-2 border-b border-slate-800 text-[10px] text-slate-500 mono">MonitorableThreadPool.java · 可观测线程池封装</div>
+            <pre class="p-5 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-kw">public class</span> <span class="tk-type">MonitorableThreadPool</span> <span class="tk-kw">extends</span> <span class="tk-type">ThreadPoolExecutor</span> {
+
+    <span class="tk-kw">private final</span> <span class="tk-type">MeterRegistry</span> registry;
+    <span class="tk-kw">private final</span> <span class="tk-type">Timer</span> queueLatencyTimer;
+    <span class="tk-kw">private final</span> <span class="tk-type">AtomicLong</span> rejectCount = <span class="tk-kw">new</span> AtomicLong();
+
+    <span class="tk-kw">public</span> <span class="tk-fn">MonitorableThreadPool</span>(..., MeterRegistry registry) {
+        <span class="tk-kw">super</span>(...);
+        <span class="tk-kw">this</span>.registry = registry;
+        <span class="tk-kw">this</span>.queueLatencyTimer = Timer.builder(<span class="tk-str">"pool.queue.latency"</span>)
+            .register(registry);
+
+        <span class="tk-cmt">// 注册 Gauge（实时采集，非推送）</span>
+        Gauge.builder(<span class="tk-str">"pool.saturation"</span>, <span class="tk-kw">this</span>,
+            p -> (<span class="tk-kw">double</span>) p.getActiveCount() / p.getMaximumPoolSize())
+            .register(registry);
+
+        Gauge.builder(<span class="tk-str">"pool.queue.size"</span>, <span class="tk-kw">this</span>,
+            p -> p.getQueue().size())
+            .register(registry);
+    }
+
+    <span class="tk-ann">@Override</span>
+    <span class="tk-kw">protected void</span> <span class="tk-fn">beforeExecute</span>(Thread t, Runnable r) {
+        <span class="tk-kw">if</span> (r <span class="tk-kw">instanceof</span> TimedTask tt) {
+            <span class="tk-cmt">// ✅ 领先指标：排队等待时间</span>
+            queueLatencyTimer.record(
+                System.nanoTime() - tt.submitNanos, NANOSECONDS);
+        }
+        <span class="tk-kw">super</span>.beforeExecute(t, r);
+    }
+
+    <span class="tk-ann">@Override</span>
+    <span class="tk-kw">public void</span> <span class="tk-fn">execute</span>(Runnable command) {
+        <span class="tk-cmt">// 包装任务，注入提交时间戳</span>
+        <span class="tk-kw">super</span>.execute(<span class="tk-kw">new</span> TimedTask(command, System.nanoTime()));
+    }
+
+    <span class="tk-cmt">// ✅ 自定义拒绝策略：计数 + 降级</span>
+    <span class="tk-kw">public class</span> <span class="tk-type">AlertingRejectPolicy</span> <span class="tk-kw">implements</span> <span class="tk-type">RejectedExecutionHandler</span> {
+        <span class="tk-ann">@Override</span>
+        <span class="tk-kw">public void</span> <span class="tk-fn">rejectedExecution</span>(Runnable r, ThreadPoolExecutor e) {
+            rejectCount.incrementAndGet();
+            log.error(<span class="tk-str">"Pool rejected! active={} queue={} size={}"</span>,
+                e.getActiveCount(), e.getQueue().size(), e.getPoolSize());
+            <span class="tk-cmt">// 降级：CallerRuns 或丢弃并记录</span>
+            <span class="tk-kw">if</span> (!e.isShutdown()) r.run();
+        }
+    }
+}</code></pre>
+        </div>
+
+        <!-- Alert Strategy -->
+        <div class="mt-6 bg-gradient-to-r from-emerald-500/5 to-blue-500/5 border border-emerald-500/20 rounded-2xl p-6">
+            <h4 class="text-white font-bold text-sm mb-4">🚨 分级告警策略示例</h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs min-w-[500px]">
+                    <thead>
+                    <tr class="border-b border-slate-700">
+                        <th class="text-left py-2 text-slate-500 font-semibold">级别</th>
+                        <th class="text-left py-2 text-slate-500 font-semibold">触发条件</th>
+                        <th class="text-left py-2 text-slate-500 font-semibold">动作</th>
+                        <th class="text-left py-2 text-slate-500 font-semibold">响应时间</th>
+                    </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/40 text-slate-400">
+                    <tr>
+                        <td class="py-2 text-emerald-400 font-bold">INFO</td>
+                        <td class="py-2">saturation &gt; 60% 持续 30s</td>
+                        <td class="py-2">Dashboard 标黄，Slack 通知</td>
+                        <td class="py-2 mono">观察即可</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 text-amber-400 font-bold">WARNING</td>
+                        <td class="py-2">queueLatency P99 &gt; 1s 或 growthRate &gt; 0 连续 5 周期</td>
+                        <td class="py-2">On-call 群消息 + 自动扩容（若支持）</td>
+                        <td class="py-2 mono">&lt; 5min</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 text-rose-400 font-bold">CRITICAL</td>
+                        <td class="py-2">saturation &gt; 95% 且 queueLatency P99 &gt; 5s，或 reject &gt; 0</td>
+                        <td class="py-2">电话告警 + 自动熔断下游 + 降级开关</td>
+                        <td class="py-2 mono">&lt; 1min</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 text-rose-500 font-bold">FATAL</td>
+                        <td class="py-2">heap &gt; 85% 且 queueSize &gt; capacity×70%</td>
+                        <td class="py-2">紧急限流 + 准备重启预案</td>
+                        <td class="py-2 mono">立即</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ FINAL SUMMARY ═══════════════ -->
+    <section class="fade-up">
+        <div class="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span class="text-xl">🏁</span> 工程守则
+            </h3>
+            <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+                <p>
+                    <strong class="text-amber-400">关于流程：</strong>不要背"核心→队列→最大→拒绝"的口诀。
+                    记住它是<strong class="text-slate-200">失败驱动的决策树</strong>：每一层都是因为上一层"搞不定"才触发的。
+                    理解了这一点，参数的含义自然清晰。
+                </p>
+                <p>
+                    <strong class="text-rose-400">关于无界队列：</strong>
+                    <code class="mono text-rose-300">core=10, max=20, LinkedBlockingQueue()</code>
+                    是一个<strong class="text-slate-200">伪装成弹性池的固定大小池 + 定时炸弹</strong>。
+                    max 和 keepAlive 是死代码，OOM 是唯一终点。
+                    如果你在线上看到了这个配置，现在就去改。
+                </p>
+                <p>
+                    <strong class="text-emerald-400">关于监控：</strong>
+                    队列大小是"车速表"，排队等待时间和增长率才是"加速度计"。
+                    等看到车速表爆表再踩刹车就晚了——你需要在加速阶段就感知到危险。
+                    <strong class="text-slate-200">好的监控不是在崩溃后告诉你"它崩了"，而是在崩溃前告诉你"它快要崩了"</strong>。
+                </p>
+                <p class="pt-3 border-t border-slate-800 text-xs text-slate-500">
+                    💡 <strong class="text-slate-300">一句话总结：</strong>
+                    线程池的参数决定了它的"形状"，队列类型决定了它的"命运"，
+                    而监控决定了你能不能在它走向命运之前把它拉回来。
+                </p>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-8 mt-8">
+    <div class="max-w-5xl mx-auto px-6 text-center">
+        <p class="text-slate-600 text-[11px]">
+            ThreadPoolExecutor · Unbounded Queue Trap · maxPoolSize Dead Parameter · Pre-crash Monitoring · Queue Latency · Saturation Ratio
+        </p>
+    </div>
+</footer>
+
+<!-- Scroll Observer -->
+<script>
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>
