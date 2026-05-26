@@ -16,7 +16,7 @@
 #   ✓ 备份和恢复: 自动备份原有配置，支持恢复
 #
 # 默认配置参数:
-#   - IP地址: 192.168.3.102
+#   - IP地址: 192.168.3.90
 #   - 子网掩码: 255.255.255.0 (/24)
 #   - 网关: 192.168.3.2 (VMware NAT默认网关)
 #   - DNS1: 8.8.8.8 (Google Public DNS)
@@ -49,7 +49,7 @@
 #      sudo IP_ADDR=10.0.0.100 GATEWAY=10.0.0.1 DNS1=114.114.114.114 bash ubuntu_config_static_ip.sh
 #
 # 环境变量:
-#   IP_ADDR        - 要配置的静态IP地址 (默认: 192.168.3.102)
+#   IP_ADDR        - 要配置的静态IP地址 (默认: 192.168.3.90)
 #   GATEWAY        - 默认网关地址 (默认: 192.168.3.2)
 #   NETMASK        - 子网掩码 (默认: 255.255.255.0)
 #   DNS            - DNS服务器列表，逗号分隔 (默认: 223.5.5.5,8.8.8.8)
@@ -106,7 +106,7 @@
 #   sudo bash ubuntu_config_static_ip.sh
 #
 #   # 自定义配置
-#   STATIC_IP="192.168.3.102/24" GATEWAY="192.168.3.2" DNS="8.8.8.8" sudo bash ubuntu_config_static_ip.sh
+#   STATIC_IP="192.168.3.90/24" GATEWAY="192.168.3.2" DNS="8.8.8.8" sudo bash ubuntu_config_static_ip.sh
 #
 # 特性：
 #   - 自动检测网卡接口
@@ -123,9 +123,9 @@ set -euo pipefail
 
 # 网络配置（支持 VMware 桥接模式和 NAT 模式）
 # 子网: 192.168.3.0/24
-# 静态IP: 192.168.3.102
+# 静态IP: 192.168.3.90
 # 网关: 192.168.3.1 (桥接模式常用网关，NAT模式通常为子网.2)
-STATIC_IP="${STATIC_IP:-192.168.3.102/24}"
+STATIC_IP="${STATIC_IP:-192.168.3.90/24}"
 GATEWAY="${GATEWAY:-192.168.3.1}"
 # 默认DNS配置（国内常用DNS + Google备用）
 DNS="${DNS:-223.5.5.5,8.8.8.8}"
@@ -844,7 +844,7 @@ elif [[ ${FAILED_TESTS} -gt 0 ]]; then
   log_warn ""
   log_warn "  2. 检查 IP 地址和网关是否在同一子网："
   log_warn "     IP: ${STATIC_IP}，网关: ${GATEWAY}"
-  log_warn "     例如：IP 192.168.3.102/24，网关应该是 192.168.3.x"
+  log_warn "     例如：IP 192.168.3.90/24，网关应该是 192.168.3.x"
   log_warn ""
   log_warn "  3. 验证 Netplan 配置语法："
   log_warn "     sudo netplan generate"

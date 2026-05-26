@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P8: 四种引用类型 — 强、软、弱、虚</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #020617;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+      animation: float 20s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%,100% { transform: translate(0,0); }
+      33% { transform: translate(30px,-50px); }
+      66% { transform: translate(-20px,30px); }
+    }
+    .glass-card {
+      background: rgba(15,23,42,0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(148,163,184,0.1);
+      transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+    }
+    .glass-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+    }
+    .code-block {
+      background: rgba(2,6,23,0.8);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .fade-in {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .section-anchor { scroll-margin-top: 80px; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* 引用强度条 */
+    .ref-bar {
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(148,163,184,0.1);
+      position: relative;
+    }
+    .ref-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 1.5s cubic-bezier(0.4,0,0.2,1);
+    }
+    .ref-bar-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 0.65rem;
+      color: #64748b;
+    }
+
+    /* 引用类型卡片 */
+    .ref-card-strong { border-color: rgba(239,68,68,0.2); }
+    .ref-card-strong:hover { border-color: rgba(239,68,68,0.5); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5), 0 0 20px rgba(239,68,68,0.1); }
+    .ref-card-soft { border-color: rgba(245,158,11,0.2); }
+    .ref-card-soft:hover { border-color: rgba(245,158,11,0.5); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5), 0 0 20px rgba(245,158,11,0.1); }
+    .ref-card-weak { border-color: rgba(59,130,246,0.2); }
+    .ref-card-weak:hover { border-color: rgba(59,130,246,0.5); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5), 0 0 20px rgba(59,130,246,0.1); }
+    .ref-card-phantom { border-color: rgba(139,92,246,0.2); }
+    .ref-card-phantom:hover { border-color: rgba(139,92,246,0.5); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5), 0 0 20px rgba(139,92,246,0.1); }
+
+    /* 面试卡片 */
+    .interview-card {
+      background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05));
+      border: 1px solid rgba(59,130,246,0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+    .interview-question {
+      background: rgba(59,130,246,0.1);
+      border-left: 3px solid #3b82f6;
+      padding: 1rem 1.25rem;
+      border-radius: 0 12px 12px 0;
+      margin-bottom: 1rem;
+    }
+    .interview-answer {
+      background: rgba(15,23,42,0.5);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    /* 生命周期时间轴 */
+    .timeline-item {
+      position: relative;
+      padding-left: 28px;
+      padding-bottom: 1.5rem;
+      border-left: 2px solid rgba(148,163,184,0.15);
+    }
+    .timeline-item:last-child {
+      border-left: 2px solid transparent;
+      padding-bottom: 0;
+    }
+    .timeline-dot {
+      position: absolute;
+      left: -7px;
+      top: 2px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid;
+      background: #020617;
+    }
+
+    /* 对比表格 */
+    .compare-table th {
+      background: rgba(15,23,42,0.8);
+      color: #94a3b8;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      padding: 0.875rem 1rem;
+      text-align: left;
+    }
+    .compare-table td {
+      padding: 0.875rem 1rem;
+      border-bottom: 1px solid rgba(148,163,184,0.08);
+      color: #cbd5e1;
+      font-size: 0.85rem;
+    }
+    .compare-table tr:hover td {
+      background: rgba(59,130,246,0.03);
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+  <div class="bg-grid"></div>
+  <div class="glow-orb bg-red-500 w-80 h-80 top-0 left-0" style="animation-delay:-3s"></div>
+  <div class="glow-orb bg-amber-500 w-72 h-72 top-1/3 right-0" style="animation-delay:-8s"></div>
+  <div class="glow-orb bg-violet-500 w-64 h-64 bottom-0 left-1/3" style="animation-delay:-13s"></div>
+
+  <nav class="fixed top-0 w-full z-50 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-400">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <span class="font-bold text-lg tracking-tight text-white">JVM<span class="text-violet-400">Reference</span></span>
+      </div>
+      <div class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-400">
+        <a href="#overview" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">概览</a>
+        <a href="#strong" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">强引用</a>
+        <a href="#soft" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">软引用</a>
+        <a href="#weak" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">弱引用</a>
+        <a href="#phantom" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">虚引用</a>
+        <a href="#interview" class="px-3 py-2 rounded-lg hover:text-white hover:bg-slate-800/50 transition-colors">面试</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="relative z-10 pt-32 pb-16 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-sm font-medium mb-8">
+        <span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
+        Java 引用机制核心知识
+      </div>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-violet-100 to-slate-400">
+        四种引用类型<br>强 · 软 · 弱 · 虚
+      </h1>
+      <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        从永不回收的强引用，到 OOM 前才回收的软引用，再到下次 GC 即消亡的弱引用，<br>
+        以及仅用于跟踪回收的虚引用——掌握它们，才能写出内存友好的 Java 代码。
+      </p>
+    </div>
+  </header>
+
+  <main class="relative z-10 max-w-5xl mx-auto px-6 pb-24 space-y-24">
+
+    <!-- ===== 概览：引用强度可视化 ===== -->
+    <section id="overview" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-violet-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">引用强度概览</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-violet-500/50 to-transparent"></div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-8 mb-8">
+        <div class="text-center mb-6">
+          <p class="text-sm text-slate-400">引用强度从左到右递减，回收时机越来越早</p>
+        </div>
+        <div class="space-y-6 max-w-3xl mx-auto">
+          <!-- 强引用 -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                <span class="text-xl">💪</span>
+                <span class="font-bold text-white">强引用 Strong</span>
+              </div>
+              <span class="text-xs font-semibold text-red-400">永不回收</span>
+            </div>
+            <div class="ref-bar"><div class="ref-bar-fill bg-red-500" style="width:100%"></div></div>
+            <div class="ref-bar-labels"><span>强</span><span>GC 无视</span></div>
+          </div>
+          <!-- 软引用 -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                <span class="text-xl">🧽</span>
+                <span class="font-bold text-white">软引用 Soft</span>
+              </div>
+              <span class="text-xs font-semibold text-amber-400">OOM 前回收</span>
+            </div>
+            <div class="ref-bar"><div class="ref-bar-fill bg-amber-500" style="width:75%"></div></div>
+            <div class="ref-bar-labels"><span>软</span><span>内存不足时回收</span></div>
+          </div>
+          <!-- 弱引用 -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                <span class="text-xl">🍃</span>
+                <span class="font-bold text-white">弱引用 Weak</span>
+              </div>
+              <span class="text-xs font-semibold text-blue-400">下次 GC 回收</span>
+            </div>
+            <div class="ref-bar"><div class="ref-bar-fill bg-blue-500" style="width:45%"></div></div>
+            <div class="ref-bar-labels"><span>弱</span><span>每次 GC 都回收</span></div>
+          </div>
+          <!-- 虚引用 -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                <span class="text-xl">👻</span>
+                <span class="font-bold text-white">虚引用 Phantom</span>
+              </div>
+              <span class="text-xs font-semibold text-violet-400">随时回收 / 仅跟踪</span>
+            </div>
+            <div class="ref-bar"><div class="ref-bar-fill bg-violet-500" style="width:10%"></div></div>
+            <div class="ref-bar-labels"><span>虚</span><span>形同虚设，仅通知</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 对比表格 -->
+      <div class="glass-card rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full compare-table">
+            <thead>
+              <tr>
+                <th>引用类型</th>
+                <th>回收时机</th>
+                <th>获取对象</th>
+                <th>典型应用场景</th>
+                <th>对应类</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="ref-card-strong">
+                <td class="font-medium text-red-400">强引用</td>
+                <td>永不回收</td>
+                <td>直接获取</td>
+                <td>普通对象引用</td>
+                <td class="font-mono text-xs">无（默认）</td>
+              </tr>
+              <tr>
+                <td class="font-medium text-amber-400">软引用</td>
+                <td>内存不足时（OOM 前）</td>
+                <td>可能为 null</td>
+                <td>图片缓存、页面缓存</td>
+                <td class="font-mono text-xs">SoftReference</td>
+              </tr>
+              <tr>
+                <td class="font-medium text-blue-400">弱引用</td>
+                <td>下次 GC 时</td>
+                <td>可能为 null</td>
+                <td>WeakHashMap、ThreadLocal</td>
+                <td class="font-mono text-xs">WeakReference</td>
+              </tr>
+              <tr>
+                <td class="font-medium text-violet-400">虚引用</td>
+                <td>随时回收 / 无影响</td>
+                <td>始终为 null</td>
+                <td>跟踪对象回收、堆外内存清理</td>
+                <td class="font-mono text-xs">PhantomReference</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 强引用 ===== -->
+    <section id="strong" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center text-2xl">💪</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">强引用 Strong Reference</h2>
+          <p class="text-sm text-red-400 font-mono">默认引用类型 · 永不回收</p>
+        </div>
+      </div>
+
+      <div class="glass-card ref-card-strong rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">概念</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              强引用是 Java 中最普遍的引用类型，<span class="text-red-400 font-semibold">只要强引用存在，垃圾收集器永远不会回收被引用的对象</span>。即使内存不足，JVM 宁愿抛出 OutOfMemoryError 也不会回收强引用对象。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">实际例子：</strong>你日常写的 <code class="text-blue-400">Object obj = new Object()</code> 就是强引用。只要 <code class="text-blue-400">obj</code> 这个变量还在作用域内，或者没有被显式置为 <code class="text-purple-400">null</code>，对象就不会被 GC。
+            </p>
+            <div class="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+              <div class="text-xs font-semibold text-red-400 mb-2">💡 面试话术</div>
+              <p class="text-sm text-slate-300">
+                "强引用就是默认的引用类型，代码里直接 <code class="text-blue-400">new</code> 出来的对象都是强引用。只要引用还在，GC 永远不会动它。内存不够就 OOM，也不会回收强引用对象。"
+              </p>
+            </div>
+          </div>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 强引用示例：永不回收</div>
+<div class="text-blue-400">Object</div> strongRef = <div class="text-purple-400">new</div> <div class="text-blue-400">Object</div>();
+<div class="text-slate-500">// strongRef 是强引用</div>
+<div class="text-slate-500">// 只要 strongRef 不为 null，对象就不会被回收</div>
+
+<div class="text-slate-500">// 即使内存紧张，GC 也不会回收这个对象</div>
+<div class="text-slate-500">// 除非：</div>
+strongRef = <div class="text-purple-400">null</div>;  <div class="text-slate-500">// 显式断开引用</div>
+<div class="text-slate-500">// 或者 strongRef 超出作用域（方法结束、局部变量表清理）</div>
+<div class="text-slate-500">// 此时对象才变为 GC Roots 不可达，下次 GC 回收</div>
+
+<div class="text-slate-500">// 内存泄漏的常见原因：强引用未释放</div>
+<div class="text-purple-400">static</div> <div class="text-blue-400">List</div>&lt;<div class="text-blue-400">Object</div>&gt; <div class="text-blue-400">CACHE</div> = <div class="text-purple-400">new</div> <div class="text-blue-400">ArrayList</div>&lt;&gt;();
+<div class="text-purple-400">public void</div> <div class="text-blue-400">add</div>(<div class="text-blue-400">Object</div> obj) {
+    <div class="text-blue-400">CACHE</div>.<div class="text-blue-400">add</div>(obj);  <div class="text-slate-500">// 强引用，永不释放 → 内存泄漏</div>
+}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 软引用 ===== -->
+    <section id="soft" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-2xl">🧽</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">软引用 Soft Reference</h2>
+          <p class="text-sm text-amber-400 font-mono">OOM 前回收 · 缓存场景</p>
+        </div>
+      </div>
+
+      <div class="glass-card ref-card-soft rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">概念</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              软引用用来描述一些<strong class="text-white">还有用但非必需</strong>的对象。当系统内存不足时（即将发生 OOM 前），JVM 会把软引用对象列入回收范围进行二次回收。如果这次回收后内存仍然不够，才会抛出 OOM。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">实际例子：</strong>图片缓存。App 加载了很多大图，用软引用包装。内存充足时图片都在；内存紧张时，JVM 自动回收这些图片对象释放内存，App 只需要在获取时判断是否为 null，为 null 则重新加载。
+            </p>
+            <div class="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
+              <div class="text-xs font-semibold text-amber-400 mb-2">💡 面试话术</div>
+              <p class="text-sm text-slate-300">
+                "软引用适合<strong class="text-white">缓存场景</strong>。比如图片缓存，内存够的时候图片留着，内存不够了 JVM 自动回收这些缓存对象。通过 <code class="text-blue-400">get()</code> 获取，返回 null 就说明被回收了，需要重新加载。"
+              </p>
+            </div>
+          </div>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 软引用示例：图片缓存</div>
+<div class="text-purple-400">import</div> java.lang.ref.<div class="text-blue-400">SoftReference</div>;
+
+<div class="text-purple-400">public class</div> <div class="text-blue-400">ImageCache</div> {
+    <div class="text-slate-500">// 软引用缓存：内存不足时自动回收</div>
+    <div class="text-purple-400">private</div> <div class="text-blue-400">Map</div>&lt;<div class="text-blue-400">String</div>, <div class="text-blue-400">SoftReference</div>&lt;<div class="text-blue-400">Bitmap</div>&gt;&gt; <div class="text-blue-400">cache</div> = 
+        <div class="text-purple-400">new</div> <div class="text-blue-400">HashMap</div>&lt;&gt;();
+
+    <div class="text-purple-400">public void</div> <div class="text-blue-400">put</div>(<div class="text-blue-400">String</div> key, <div class="text-blue-400">Bitmap</div> bitmap) {
+        <div class="text-blue-400">cache</div>.<div class="text-blue-400">put</div>(key, <div class="text-purple-400">new</div> <div class="text-blue-400">SoftReference</div>&lt;&gt;(bitmap));
+    }
+
+    <div class="text-purple-400">public</div> <div class="text-blue-400">Bitmap</div> <div class="text-blue-400">get</div>(<div class="text-blue-400">String</div> key) {
+        <div class="text-blue-400">SoftReference</div>&lt;<div class="text-blue-400">Bitmap</div>&gt; ref = <div class="text-blue-400">cache</div>.<div class="text-blue-400">get</div>(key);
+        <div class="text-purple-400">if</div> (ref != <div class="text-purple-400">null</div>) {
+            <div class="text-blue-400">Bitmap</div> bitmap = ref.<div class="text-blue-400">get</div>();
+            <div class="text-purple-400">if</div> (bitmap != <div class="text-purple-400">null</div>) {
+                <div class="text-purple-400">return</div> bitmap;  <div class="text-slate-500">// 缓存命中</div>
+            }
+        }
+        <div class="text-slate-500">// 为 null：已被 GC 回收，需要重新加载</div>
+        <div class="text-purple-400">return</div> <div class="text-blue-400">loadFromDisk</div>(key);
+    }
+}
+
+<div class="text-slate-500">// 关键行为：</div>
+<div class="text-slate-500">// 1. 内存充足 → get() 返回对象</div>
+<div class="text-slate-500">// 2. 内存不足（OOM 前）→ JVM 回收 SoftReference 对象</div>
+<div class="text-slate-500">// 3. 回收后 get() 返回 null → 业务层重新加载</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 弱引用 ===== -->
+    <section id="weak" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-2xl">🍃</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">弱引用 Weak Reference</h2>
+          <p class="text-sm text-blue-400 font-mono">下次 GC 即回收 · WeakHashMap / ThreadLocal</p>
+        </div>
+      </div>
+
+      <div class="glass-card ref-card-weak rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">概念</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              弱引用也是描述非必需对象，但它的强度比软引用更弱。<span class="text-blue-400 font-semibold">被弱引用关联的对象只能生存到下一次垃圾收集发生为止</span>。当 GC 工作时，无论内存是否足够，都会回收只被弱引用关联的对象。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">实际例子 1：WeakHashMap。</strong>它的键是弱引用的。当某个键不再被外部强引用持有时，下次 GC 时这个键值对会被自动从 Map 中移除。非常适合做<strong class="text-white">自动清理的缓存</strong>。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">实际例子 2：ThreadLocal。</strong>ThreadLocalMap 中的 Entry 继承自 WeakReference，key（ThreadLocal 对象）是弱引用。当 ThreadLocal 的强引用被置为 null 后，下次 GC 会回收 key，但 value 还是强引用，可能造成内存泄漏——这就是为什么使用 ThreadLocal 后必须调用 <code class="text-blue-400">remove()</code>。
+            </p>
+            <div class="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+              <div class="text-xs font-semibold text-blue-400 mb-2">💡 面试话术</div>
+              <p class="text-sm text-slate-300">
+                "弱引用比软引用更脆弱，<strong class="text-white">每次 GC 都会回收</strong>。WeakHashMap 的键就是弱引用，外部不再引用这个键时，GC 后 Map 里对应的条目自动消失。ThreadLocal 也用了弱引用做键，但值是强引用，所以用完必须 remove，否则 value 会泄漏。"
+              </p>
+            </div>
+          </div>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 弱引用示例 1：WeakHashMap 自动清理</div>
+<div class="text-blue-400">Map</div>&lt;<div class="text-blue-400">Object</div>, <div class="text-blue-400">String</div>&gt; <div class="text-blue-400">weakMap</div> = <div class="text-purple-400">new</div> <div class="text-blue-400">WeakHashMap</div>&lt;&gt;();
+
+<div class="text-blue-400">Object</div> key = <div class="text-purple-400">new</div> <div class="text-blue-400">Object</div>();
+<div class="text-blue-400">weakMap</div>.<div class="text-blue-400">put</div>(key, <div class="text-green-400">"value"</div>);
+<div class="text-blue-400">System</div>.out.<div class="text-blue-400">println</div>(<div class="text-blue-400">weakMap</div>.<div class="text-blue-400">size</div>());  <div class="text-slate-500">// 1</div>
+
+key = <div class="text-purple-400">null</div>;  <div class="text-slate-500">// 断开强引用</div>
+<div class="text-blue-400">System</div>.<div class="text-blue-400">gc</div>();  <div class="text-slate-500">// 建议 GC（实际由 JVM 决定）</div>
+
+<div class="text-slate-500">// 下次 GC 后，WeakHashMap 中的这个 entry 自动移除</div>
+<div class="text-slate-500">// 因为 key 只被弱引用持有，GC 会回收它</div>
+
+<div class="text-slate-500">// ───────────────────────────────────────</div>
+
+<div class="text-slate-500">// 弱引用示例 2：ThreadLocal 的内存泄漏风险</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">ThreadLocalDemo</div> {
+    <div class="text-slate-500">// ThreadLocalMap 的 Entry 结构（简化）：</div>
+    <div class="text-slate-500">// Entry extends WeakReference&lt;ThreadLocal&lt;?&gt;&gt;</div>
+    <div class="text-slate-500">//   key   → WeakReference（ThreadLocal 对象）</div>
+    <div class="text-slate-500">//   value → 强引用（用户存的值）</div>
+
+    <div class="text-purple-400">static</div> <div class="text-blue-400">ThreadLocal</div>&lt;<div class="text-blue-400">User</div>&gt; <div class="text-blue-400">tl</div> = <div class="text-purple-400">new</div> <div class="text-blue-400">ThreadLocal</div>&lt;&gt;();
+
+    <div class="text-purple-400">public void</div> <div class="text-blue-400">service</div>() {
+        <div class="text-blue-400">tl</div>.<div class="text-blue-400">set</div>(<div class="text-purple-400">new</div> <div class="text-blue-400">User</div>());  <div class="text-slate-500">// value 是强引用</div>
+        <div class="text-slate-500">// ... 业务逻辑 ...</div>
+        <div class="text-blue-400">tl</div>.<div class="text-blue-400">remove</div>();  <div class="text-slate-500">// ✅ 必须 remove！</div>
+        <div class="text-slate-500">// 否则线程池复用线程时，value 一直强引用，泄漏</div>
+    }
+}
+          </div>
+        </div>
+
+        <!-- ThreadLocal 图解 -->
+        <div class="mt-8 p-6 rounded-xl bg-slate-900/50 border border-slate-800">
+          <h4 class="text-sm font-bold text-white mb-4 text-center">ThreadLocal 内存泄漏原理</h4>
+          <div class="grid md:grid-cols-2 gap-6">
+            <div class="text-center">
+              <div class="text-xs text-red-400 font-semibold mb-3">❌ 不 remove() → 内存泄漏</div>
+              <div class="inline-block text-left font-mono text-xs space-y-1">
+                <div class="text-slate-500">Thread（线程池复用）</div>
+                <div class="text-slate-400">└─ threadLocals (ThreadLocalMap)</div>
+                <div class="text-slate-400">   └─ Entry[] table</div>
+                <div class="text-slate-400">      └─ Entry[0]</div>
+                <div class="text-blue-400">         ├─ key → WeakReference</div>
+                <div class="text-slate-500">         │        └─ null (GC 后)</div>
+                <div class="text-red-400">         └─ value → User对象（强引用！永远泄漏）</div>
+              </div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-emerald-400 font-semibold mb-3">✅ remove() → 安全</div>
+              <div class="inline-block text-left font-mono text-xs space-y-1">
+                <div class="text-slate-500">Thread（线程池复用）</div>
+                <div class="text-slate-400">└─ threadLocals (ThreadLocalMap)</div>
+                <div class="text-slate-400">   └─ Entry[] table</div>
+                <div class="text-slate-400">      └─ Entry[0]</div>
+                <div class="text-blue-400">         ├─ key → WeakReference</div>
+                <div class="text-slate-500">         │        └─ null (GC 后)</div>
+                <div class="text-emerald-400">         └─ value → null（remove 已清理）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 虚引用 ===== -->
+    <section id="phantom" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-8">
+        <div class="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center text-2xl">👻</div>
+        <div>
+          <h2 class="text-2xl font-bold text-white">虚引用 Phantom Reference</h2>
+          <p class="text-sm text-violet-400 font-mono">随时回收 · 仅用于跟踪对象回收 / 堆外内存清理</p>
+        </div>
+      </div>
+
+      <div class="glass-card ref-card-phantom rounded-2xl p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3">概念</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              虚引用是最弱的一种引用关系。<span class="text-violet-400 font-semibold">一个对象是否有虚引用的存在，完全不会对其生存时间构成影响，也无法通过虚引用来取得一个对象实例。</span>为一个对象设置虚引用关联的唯一目的就是<strong class="text-white">能在这个对象被收集器回收时收到一个系统通知</strong>（通过 ReferenceQueue）。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+              <strong class="text-white">实际例子：DirectByteBuffer 的堆外内存清理。</strong>NIO 的 DirectByteBuffer 分配的是堆外内存（不受 JVM 堆 GC 管理）。当 DirectByteBuffer 对象被 GC 回收时，需要同时清理其对应的堆外内存。这个清理动作就是通过虚引用 + ReferenceQueue 机制实现的——Cleaner 对象（虚引用）感知到 DirectByteBuffer 被回收后，调用 <code class="text-blue-400">unsafe.freeMemory()</code> 释放堆外内存。
+            </p>
+            <div class="p-4 rounded-xl bg-violet-500/5 border border-violet-500/10">
+              <div class="text-xs font-semibold text-violet-400 mb-2">💡 面试话术</div>
+              <p class="text-sm text-slate-300">
+                "虚引用形同虚设，<code class="text-blue-400">get()</code> 永远返回 null，它的存在就是为了<strong class="text-white">跟踪对象什么时候被回收</strong>。最经典的例子是 NIO 的 DirectByteBuffer——对象在 JVM 堆里，但数据在堆外内存。当 DirectByteBuffer 被 GC 回收时，虚引用感知到，触发 Cleaner 去释放堆外内存，防止堆外内存泄漏。"
+              </p>
+            </div>
+          </div>
+          <div class="code-block text-xs">
+<div class="text-slate-500">// 虚引用示例：DirectByteBuffer 堆外内存清理原理</div>
+<div class="text-slate-500">// 源码简化示意：</div>
+
+<div class="text-purple-400">public class</div> <div class="text-blue-400">DirectByteBuffer</div> <div class="text-purple-400">extends</div> <div class="text-blue-400">MappedByteBuffer</div> {
+    <div class="text-slate-500">// 堆外内存地址</div>
+    <div class="text-purple-400">private long</div> <div class="text-blue-400">address</div>;
+
+    <div class="text-slate-500">// Cleaner 是 PhantomReference 的子类</div>
+    <div class="text-purple-400">private final</div> <div class="text-blue-400">Cleaner</div> <div class="text-blue-400">cleaner</div>;
+
+    <div class="text-blue-400">DirectByteBuffer</div>(<div class="text-purple-400">int</div> cap) {
+        <div class="text-purple-400">super</div>(-<div class="text-amber-400">1</div>, <div class="text-amber-400">0</div>, cap, cap);
+        <div class="text-slate-500">// 分配堆外内存</div>
+        <div class="text-purple-400">this</div>.<div class="text-blue-400">address</div> = <div class="text-blue-400">unsafe</div>.<div class="text-blue-400">allocateMemory</div>(cap);
+
+        <div class="text-slate-500">// 创建 Cleaner（虚引用），绑定 this 和清理动作</div>
+        <div class="text-purple-400">this</div>.<div class="text-blue-400">cleaner</div> = <div class="text-blue-400">Cleaner</div>.<div class="text-blue-400">create</div>(<div class="text-purple-400">this</div>, <div class="text-purple-400">new</div> <div class="text-blue-400">Deallocator</div>(address, cap));
+    }
+}
+
+<div class="text-slate-500">// Cleaner 继承自 PhantomReference&lt;Object&gt;</div>
+<div class="text-purple-400">public class</div> <div class="text-blue-400">Cleaner</div> <div class="text-purple-400">extends</div> <div class="text-blue-400">PhantomReference</div>&lt;<div class="text-blue-400">Object</div>&gt; {
+    <div class="text-purple-400">private final</div> <div class="text-blue-400">Runnable</div> <div class="text-blue-400">thunk</div>;  <div class="text-slate-500">// 清理动作</div>
+
+    <div class="text-purple-400">private static final</div> <div class="text-blue-400">ReferenceQueue</div>&lt;<div class="text-blue-400">Object</div>&gt; <div class="text-blue-400">dummyQueue</div> = 
+        <div class="text-purple-400">new</div> <div class="text-blue-400">ReferenceQueue</div>&lt;&gt;();
+
+    <div class="text-purple-400">public static</div> <div class="text-blue-400">Cleaner</div> <div class="text-blue-400">create</div>(<div class="text-blue-400">Object</div> obj, <div class="text-blue-400">Runnable</div> action) {
+        <div class="text-purple-400">return new</div> <div class="text-blue-400">Cleaner</div>(obj, action);
+    }
+
+    <div class="text-purple-400">private</div> <div class="text-blue-400">Cleaner</div>(<div class="text-blue-400">Object</div> referent, <div class="text-blue-400">Runnable</div> action) {
+        <div class="text-purple-400">super</div>(referent, <div class="text-blue-400">dummyQueue</div>);  <div class="text-slate-500">// 虚引用 + ReferenceQueue</div>
+        <div class="text-purple-400">this</div>.<div class="text-blue-400">thunk</div> = action;
+    }
+}
+
+<div class="text-slate-500">// 当 DirectByteBuffer 被 GC 回收时：</div>
+<div class="text-slate-500">// 1. Cleaner（虚引用）被放入 ReferenceQueue</div>
+<div class="text-slate-500">// 2. ReferenceHandler 线程从队列取出 Cleaner</div>
+<div class="text-slate-500">// 3. 执行 thunk（Deallocator）→ unsafe.freeMemory(address)</div>
+<div class="text-slate-500">// 4. 堆外内存被释放</div>
+          </div>
+        </div>
+
+        <!-- 虚引用工作流图解 -->
+        <div class="mt-8 p-6 rounded-xl bg-slate-900/50 border border-slate-800">
+          <h4 class="text-sm font-bold text-white mb-6 text-center">虚引用 + ReferenceQueue 工作流程</h4>
+          <div class="flex flex-wrap justify-center items-center gap-3 text-xs font-mono">
+            <div class="p-3 rounded-lg bg-violet-500/10 border border-violet-500/20 text-center">
+              <div class="text-violet-400 font-semibold">DirectByteBuffer</div>
+              <div class="text-slate-500 mt-1">JVM 堆内对象</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-violet-500/10 border border-violet-500/20 text-center">
+              <div class="text-violet-400 font-semibold">Cleaner</div>
+              <div class="text-slate-500 mt-1">PhantomReference</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-slate-800 border border-slate-700 text-center">
+              <div class="text-slate-400 font-semibold">GC 回收</div>
+              <div class="text-slate-500 mt-1">对象被清除</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
+              <div class="text-amber-400 font-semibold">ReferenceQueue</div>
+              <div class="text-slate-500 mt-1">Cleaner 入队</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+              <div class="text-emerald-400 font-semibold">Deallocator</div>
+              <div class="text-slate-500 mt-1">freeMemory()</div>
+            </div>
+            <span class="text-slate-600">→</span>
+            <div class="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center">
+              <div class="text-blue-400 font-semibold">堆外内存</div>
+              <div class="text-slate-500 mt-1">被释放</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 面试高频追问 ===== -->
+    <section id="interview" class="section-anchor fade-in">
+      <div class="flex items-center gap-4 mb-10">
+        <div class="h-px flex-1 bg-gradient-to-r from-blue-500/50 to-transparent"></div>
+        <h2 class="text-3xl font-bold text-white">面试高频追问</h2>
+        <div class="h-px flex-1 bg-gradient-to-l from-blue-500/50 to-transparent"></div>
+      </div>
+
+      <div class="space-y-6">
+        <!-- Q1 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q1</span>
+              <p class="text-white font-medium">"Java 有哪几种引用类型？分别什么特点？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed">
+              Java 有四种引用类型，强度从高到低：<strong class="text-red-400">强引用</strong>（默认，永不回收）、<strong class="text-amber-400">软引用</strong>（内存不足时回收，适合缓存）、<strong class="text-blue-400">弱引用</strong>（下次 GC 即回收，WeakHashMap/ThreadLocal）、<strong class="text-violet-400">虚引用</strong>（形同虚设，仅用于跟踪回收通知，如 DirectByteBuffer 堆外内存清理）。
+            </p>
+          </div>
+        </div>
+
+        <!-- Q2 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q2</span>
+              <p class="text-white font-medium">"WeakHashMap 是怎么实现自动清理的？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed">
+              WeakHashMap 的 <code class="text-blue-400">Entry</code> 继承自 <code class="text-blue-400">WeakReference</code>，它的 <strong class="text-white">key 是弱引用</strong>。当外部对 key 的强引用被断开，key 只剩下 WeakHashMap 内部的弱引用。下次 GC 时，key 对象被回收，对应的 Entry 会被放入 ReferenceQueue。WeakHashMap 在每次 <code class="text-blue-400">get/put/size</code> 等操作时检查 ReferenceQueue，把 key 已经被回收的 Entry 从 Map 中移除，实现自动清理。
+            </p>
+          </div>
+        </div>
+
+        <!-- Q3 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q3</span>
+              <p class="text-white font-medium">"ThreadLocal 为什么用弱引用做 key？有什么内存泄漏风险？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              ThreadLocalMap 的 Entry 中，<strong class="text-white">key 是弱引用</strong>（指向 ThreadLocal 对象），<strong class="text-white">value 是强引用</strong>（指向用户存储的对象）。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              用弱引用做 key 的目的是：当 ThreadLocal 的强引用被置为 null（比如 <code class="text-blue-400">tl = null</code>），下次 GC 时 key（ThreadLocal 对象）能被回收，避免 ThreadLocal 对象本身泄漏。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              但问题是：<strong class="text-red-400">value 仍然是强引用</strong>。如果线程是线程池里的线程（长期存活），而 key 被 GC 回收后变成了 null，这个 Entry 就变成了 <code class="text-slate-400">(null → User对象)</code> 的状态——value 永远无法被访问到，但又不会被回收，造成内存泄漏。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              <strong class="text-white">解决方案：</strong>使用完 ThreadLocal 后，必须调用 <code class="text-blue-400">tl.remove()</code> 手动清理 value。或者使用 <code class="text-blue-400">try-finally</code> 块确保 remove 被执行。
+            </p>
+          </div>
+        </div>
+
+        <!-- Q4 -->
+        <div class="interview-card">
+          <div class="interview-question">
+            <div class="flex items-start gap-3">
+              <span class="text-blue-400 font-bold text-lg">Q4</span>
+              <p class="text-white font-medium">"虚引用有什么用？get() 为什么永远返回 null？"</p>
+            </div>
+          </div>
+          <div class="interview-answer">
+            <p class="text-sm text-slate-300 leading-relaxed mb-3">
+              虚引用的设计目的就是<strong class="text-white">跟踪对象被回收的事件</strong>，而不是获取对象。如果 <code class="text-blue-400">get()</code> 能返回对象，那用户拿到对象后又可能建立强引用，导致对象无法被回收，违背了虚引用的设计初衷。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              典型应用是 <strong class="text-white">NIO 的 DirectByteBuffer</strong>。DirectByteBuffer 对象在 JVM 堆里，但它指向的内存是堆外内存（不受 JVM GC 管理）。当 DirectByteBuffer 被 GC 回收时，JVM 通过虚引用机制感知到，触发 Cleaner 去调用 <code class="text-blue-400">unsafe.freeMemory()</code> 释放堆外内存。如果没有虚引用，堆外内存就会泄漏。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 生命周期对比时间轴 ===== -->
+    <section class="fade-in">
+      <div class="glass-card rounded-3xl p-8 md:p-10">
+        <div class="text-center mb-8">
+          <h3 class="text-2xl font-bold text-white mb-2">四种引用生命周期对比</h3>
+          <p class="text-slate-400 text-sm">从对象创建到回收的完整时间线</p>
+        </div>
+
+        <div class="max-w-2xl mx-auto">
+          <!-- 强引用 -->
+          <div class="timeline-item">
+            <div class="timeline-dot border-red-500"></div>
+            <div class="text-sm font-bold text-red-400 mb-1">强引用 Strong</div>
+            <div class="text-xs text-slate-400 mb-2">创建 → 永不回收（除非引用断开）</div>
+            <div class="p-3 rounded-lg bg-red-500/5 border border-red-500/10 text-xs text-slate-300">
+              <code class="text-blue-400">Object o = new Object()</code> → 只要 o 不为 null，对象永远存活。OOM 也不回收。
+            </div>
+          </div>
+
+          <!-- 软引用 -->
+          <div class="timeline-item">
+            <div class="timeline-dot border-amber-500"></div>
+            <div class="text-sm font-bold text-amber-400 mb-1">软引用 Soft</div>
+            <div class="text-xs text-slate-400 mb-2">创建 → 内存不足时回收</div>
+            <div class="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-xs text-slate-300">
+              <code class="text-blue-400">new SoftReference(obj)</code> → 内存够时 get() 返回对象；OOM 前 JVM 回收它。
+            </div>
+          </div>
+
+          <!-- 弱引用 -->
+          <div class="timeline-item">
+            <div class="timeline-dot border-blue-500"></div>
+            <div class="text-sm font-bold text-blue-400 mb-1">弱引用 Weak</div>
+            <div class="text-xs text-slate-400 mb-2">创建 → 下次 GC 立即回收</div>
+            <div class="p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 text-xs text-slate-300">
+              <code class="text-blue-400">new WeakReference(obj)</code> → 无论内存是否充足，下次 GC 必回收。WeakHashMap 键自动清理。
+            </div>
+          </div>
+
+          <!-- 虚引用 -->
+          <div class="timeline-item">
+            <div class="timeline-dot border-violet-500"></div>
+            <div class="text-sm font-bold text-violet-400 mb-1">虚引用 Phantom</div>
+            <div class="text-xs text-slate-400 mb-2">创建 → 随时回收 / 仅通知</div>
+            <div class="p-3 rounded-lg bg-violet-500/5 border border-violet-500/10 text-xs text-slate-300">
+              <code class="text-blue-400">new PhantomReference(obj, queue)</code> → get() 始终 null。对象回收时入队，触发清理动作（如释放堆外内存）。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="relative z-10 py-12 px-6 border-t border-slate-800/50">
+    <div class="max-w-5xl mx-auto text-center">
+      <p class="text-slate-600 text-sm">Java Reference Types — 强 · 软 · 弱 · 虚</p>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+
+    // 引用强度条动画
+    setTimeout(() => {
+      document.querySelectorAll('.ref-bar-fill').forEach(bar => {
+        bar.style.width = bar.style.width;
+      });
+    }, 500);
+  </script>
+</body>
+</html>
