@@ -163,7 +163,11 @@ public class FactoryBeanDemo {
                 return 1; // affected rows
             }
             // Object 方法（toString, hashCode, equals）走正常逻辑
-            return method.invoke(this, args);
+            try {
+                return method.invoke(this, args);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

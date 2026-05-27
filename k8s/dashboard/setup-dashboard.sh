@@ -231,22 +231,64 @@ if kubectl get deployment kubernetes-dashboard -n "$DASHBOARD_NS" &>/dev/null; t
     kubectl delete deployment kubernetes-dashboard dashboard-metrics-scraper -n "$DASHBOARD_NS" --ignore-not-found=true 2>/dev/null
 fi
 
-# 多个镜像源，依次尝试
-DASHBOARD_URLS=(
-    "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
-    "https://cdn.jsdelivr.net/gh/kubernetes/dashboard@v2.7.0/aio/deploy/recommended.yaml"
-    "https://ghproxy.com/https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
-)
-installed=false
-for url in "${DASHBOARD_URLS[@]}"; do
-    log_info "尝试: $url"
-    if curl -fsSL --connect-timeout 5 "$url" 2>/dev/null | kubectl apply --validate=false -f - 2>/dev/null; then
-        installed=true
+# 下载 Dashboard YAML，然后尝试多个国内镜像源替换镜像
+DASHBOARD_URL="https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
+DASHBOARD_YAML_ORIG="/tmp/k8s-dashboard-orig.yaml"
+DASHBOARD_YAML="/tmp/k8s-dashboard-recommended.yaml"
+
+log_info "下载 Dashboard 部署文件..."
+for url in \
+    "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml" \
+    "https://cdn.jsdelivr.net/gh/kubernetes/dashboard@v2.7.0/aio/deploy/recommended.yaml" \
+    "https://ghproxy.com/https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"; do
+    if curl -fsSL --connect-timeout 10 "$url" -o "$DASHBOARD_YAML_ORIG" 2>/dev/null; then
+        log_info "下载成功: $url"
         break
     fi
-    log_warn "该源不可用，尝试下一个..."
 done
-$installed || { log_error "所有镜像源均不可用，请检查网络"; exit 1; }
+[ -f "$DASHBOARD_YAML_ORIG" ] || { log_error "无法下载 Dashboard YAML，请检查网络"; exit 1; }
+
+# 国内可用镜像源列表（格式: 镜像前缀|dashboard镜像名|scraper镜像名）
+MIRROR_LIST=(
+    "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io|kubernetesui/dashboard:v2.7.0|kubernetesui/metrics-scraper:v1.0.9"
+    "docker.1panel.live|kubernetesui/dashboard:v2.7.0|kubernetesui/metrics-scraper:v1.0.9"
+    "dockerhub.icu|kubernetesui/dashboard:v2.7.0|kubernetesui/metrics-scraper:v1.0.9"
+    "registry.cn-hangzhou.aliyuncs.com/google_containers|kubernetes-dashboard:v2.7.0|metrics-scraper:v1.0.9"
+)
+img_ok=false
+for entry in "${MIRROR_LIST[@]}"; do
+    IFS='|' read -r prefix dash_img scraper_img <<< "$entry"
+    test_img="${prefix}/${dash_img}"
+    log_info "尝试镜像: $test_img"
+    # 用 crictl 测试能否拉取
+    if crictl pull "$test_img" &>/dev/null; then
+        log_info "镜像可用: $prefix"
+        # 替换 YAML 中的镜像地址
+        cp "$DASHBOARD_YAML_ORIG" "$DASHBOARD_YAML"
+        sed -i "s|kubernetesui/dashboard:v2.7.0|${prefix}/kubernetesui/dashboard:v2.7.0|g" "$DASHBOARD_YAML"
+        sed -i "s|kubernetesui/metrics-scraper:v1.0.9|${prefix}/kubernetesui/metrics-scraper:v1.0.9|g" "$DASHBOARD_YAML"
+        # 阿里云的镜像名不含 kubernetesui/ 前缀
+        if [[ "$prefix" == *"aliyuncs"* ]]; then
+            cp "$DASHBOARD_YAML_ORIG" "$DASHBOARD_YAML"
+            sed -i "s|kubernetesui/dashboard:v2.7.0|${prefix}/kubernetes-dashboard:v2.7.0|g" "$DASHBOARD_YAML"
+            sed -i "s|kubernetesui/metrics-scraper:v1.0.9|${prefix}/metrics-scraper:v1.0.9|g" "$DASHBOARD_YAML"
+        fi
+        img_ok=true
+        break
+    fi
+    log_warn "镜像不可用: $prefix"
+done
+
+if ! $img_ok; then
+    log_error "所有国内镜像源均不可用！"
+    log_info "请手动在服务器上拉取镜像后重新运行脚本"
+    rm -f "$DASHBOARD_YAML_ORIG"
+    exit 1
+fi
+
+log_info "应用 Dashboard 配置..."
+kubectl apply --validate=false -f "$DASHBOARD_YAML"
+rm -f "$DASHBOARD_YAML" "$DASHBOARD_YAML_ORIG"
 
 # ============================================================
 # Step 3: 配置 NodePort

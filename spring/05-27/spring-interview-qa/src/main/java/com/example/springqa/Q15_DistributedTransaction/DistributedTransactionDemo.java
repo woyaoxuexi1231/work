@@ -129,8 +129,10 @@ public class DistributedTransactionDemo {
     static class TccInventoryService implements TccResource {
         // 冻结量（模拟数据库）
         private final Map<String, Integer> frozenStock = new ConcurrentHashMap<>();
-        private final Map<String, Integer> realStock = new ConcurrentHashMap<>(
-                Map.of("PROD-001", 100));
+        private final Map<String, Integer> realStock = new ConcurrentHashMap<>();
+        {
+            realStock.put("PROD-001", 100);
+        }
 
         @Override
         public void tryPhase(String productId, int quantity) {
