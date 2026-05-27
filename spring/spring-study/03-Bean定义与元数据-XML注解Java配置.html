@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bean 定义与元数据：XML、注解、Java 配置 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:all .2s}.toc a:hover{color:#cba6f7}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring Boot</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">Spring Framework 核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">📋 Bean 定义与元数据：XML、注解、Java 配置</h1>
+<p class="text-[#a6adc8] mt-2">三种配置方式的演进、设计动机、以及为什么"注解赢了"</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#part1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#part2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#part3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="part1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">三种方式对比</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">方式</th><th class="text-left py-3 px-3 text-white">年代</th><th class="text-left py-3 px-3 text-white">Bean 声明</th><th class="text-left py-3 px-3 text-white">依赖注入</th><th class="text-left py-3 px-3 text-white">适用</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-3 px-3 font-bold text-[#f38ba8]">XML</td><td class="py-3 px-3">2004</td><td class="py-3 px-3"><code>&lt;bean id="us" class="..."/&gt;</code></td><td class="py-3 px-3"><code>&lt;constructor-arg ref="repo"/&gt;</code></td><td class="py-3 px-3">第三方类、遗留系统</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-3 px-3 font-bold text-[#fab387]">注解</td><td class="py-3 px-3">2007</td><td class="py-3 px-3"><code>@Component</code> + 扫描</td><td class="py-3 px-3"><code>@Autowired</code></td><td class="py-3 px-3">自己写的业务类</td></tr>
+<tr><td class="py-3 px-3 font-bold text-[#a6e3a1]">Java Config</td><td class="py-3 px-3">2009</td><td class="py-3 px-3"><code>@Configuration + @Bean</code></td><td class="py-3 px-3">方法参数 / 方法调用</td><td class="py-3 px-3">第三方类、复杂初始化</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a]">
+<h4 class="text-[#f38ba8] font-bold mb-2">XML 配置</h4>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>&lt;bean id="userRepo"
+  class="com.ex.UserRepository"/&gt;
+
+&lt;bean id="userService"
+  class="com.ex.UserService"&gt;
+  &lt;constructor-arg ref="userRepo"/&gt;
+&lt;/bean&gt;</code></pre>
+<p class="text-xs text-[#a6adc8] mt-2">✅ 类不用改<br>❌ 极其冗长</p>
+</div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a]">
+<h4 class="text-[#fab387] font-bold mb-2">注解</h4>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>@Repository
+public class UserRepository { }
+
+@Service
+public class UserService {
+  @Autowired
+  private UserRepository repo;
+}</code></pre>
+<p class="text-xs text-[#a6adc8] mt-2">✅ 代码即配置<br>❌ 类必须能改</p>
+</div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a]">
+<h4 class="text-[#a6e3a1] font-bold mb-2">Java Config</h4>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>@Configuration
+public class AppConfig {
+  @Bean
+  public UserRepo repo() {
+    return new UserRepo();
+  }
+  @Bean
+  public UserService svc() {
+    return new UserService(repo());
+  }
+}</code></pre>
+<p class="text-xs text-[#a6adc8] mt-2">✅ 类型安全+灵活<br>❌ 需要 @Configuration</p>
+</div>
+</div>
+</section>
+
+<section id="part2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂的设计原理</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<h3 class="text-lg font-bold text-white">🤔 如果只有 XML 配置，会发生什么？</h3>
+<div class="mt-3 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">痛点：</strong>一个中型项目可能有 200+ 个 Bean。每个 Bean 在 XML 中至少 3 行，加上依赖声明 → 一个 applicationContext.xml 轻松上千行。添加一个新 Service 需要同时改 Java 类和 XML，<strong class="text-white">大脑要在两种语言之间来回切换</strong>。重命名一个类，XML 里不会自动更新 → 运行时 ClassNotFoundException。</p>
+<p>Rod Johnson 在 Spring 2.5（2007）引入 @Component 和 @Autowired 时说过一句经典的话："<strong class="text-white">代码本身就是最好的配置文档</strong>"。注解让"配置"回到了代码中——你不需要再维护一份平行的 XML 来描述代码结构。</p>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<h3 class="text-lg font-bold text-white">💡 设计巧思：BeanDefinition — 统一元数据模型</h3>
+<div class="mt-3 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">这是 Spring 最精妙的设计之一：</strong>无论你用 XML、注解还是 Java Config，最终都会转化成<strong class="text-[#89b4fa]">同一种数据结构——BeanDefinition</strong>。容器只认 BeanDefinition，不关心它的来源。</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 三者殊途同归：
+XML     → XmlBeanDefinitionReader 解析 → BeanDefinition
+@Component + 扫描 → ClassPathBeanDefinitionScanner → BeanDefinition
+@Bean   → ConfigurationClassPostProcessor 解析 → BeanDefinition
+                            ↓
+              DefaultListableBeanFactory.beanDefinitionMap
+              (ConcurrentHashMap&lt;String, BeanDefinition&gt;)
+                            ↓
+                  容器统一处理：实例化、注入、初始化</code></pre>
+<p>这意味着你可以在一个项目里<strong class="text-white">混用三种方式</strong>：自己写的 Service 用 @Component，第三方 DataSource 用 @Bean，遗留的 Struts Action 用 XML。它们和平共处，因为最终都是 BeanDefinition。</p>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<h3 class="text-lg font-bold text-white">🔬 BeanDefinition 里到底存了什么？</h3>
+<div class="mt-3 text-sm text-[#a6adc8]">
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>BeanDefinition {
+    String beanClassName;      // 全限定类名
+    String scope;              // singleton / prototype
+    boolean lazyInit;          // 是否懒加载
+    String[] dependsOn;        // 依赖的 Bean 名
+    ConstructorArgumentValues; // 构造器参数
+    MutablePropertyValues;     // 属性值
+    String initMethodName;     // init-method
+    String destroyMethodName;  // destroy-method
+    boolean primary;           // 是否首选
+    // ...
+}</code></pre>
+<p class="mt-3">这就是 Bean 的"蓝图"。容器在 getBean() 时读取这份蓝图，按图施工。</p>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<h3 class="text-lg font-bold text-white">⚠️ 边界：XML 和注解定义同名 Bean，谁赢？</h3>
+<div class="mt-3 text-sm text-[#a6adc8]">
+<p>取决于<strong class="text-white">加载顺序</strong>。XML 通常后加载（ApplicationContext 构造时传入 xml 路径），后加载的会<strong class="text-white">覆盖</strong>先加载的同名 BeanDefinition。如果 XML 中 bean id="userService" 和 @Service("userService") 同时存在 → XML 的覆盖注解的。</p>
+<p>Spring Boot 中，自动配置的 Bean 用 @ConditionalOnMissingBean 主动退让给用户定义的 Bean——这是一种"自觉"的优先级机制，避免暴力覆盖。</p>
+</div>
+</div>
+</section>
+
+<section id="part3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">XML、注解、Java Config，现在项目里你推荐用哪种？</p></div></div>
+<div class="flex items-start gap-3 mb-4 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">混合使用。自己写的业务类用 @Component + @Autowired（最少代码）；第三方类或需要复杂初始化的用 @Bean；XML 基本不用，除非维护遗留系统。没有一种方式能覆盖所有场景。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic">💬 考核意图：看你有没有"非此即彼"的二极管思维。真正做过项目的人知道混用是常态。</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Bean 方法上能加 @Scope 吗？initMethod 和 @PostConstruct 哪个更好？</p></div></div>
+<div class="flex items-start gap-3 mb-4 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">能，@Scope 可以标在 @Bean 上。initMethod 和 @PostConstruct 不冲突——但如果 @Bean 返回的类本身有 @PostConstruct，两者都执行（@PostConstruct 先）。initMethod 的优势是：你可以对一个<strong class="text-white">第三方类</strong>（不能改源码）指定它的初始化方法——@PostConstruct 做不到这一点，因为你要在类里加注解。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">如果 XML 中定义了一个 Bean，注解扫描也扫到了同名的，到底哪个生效？</p></div></div>
+<div class="flex items-start gap-3 mb-4 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">后加载的覆盖先加载的。如果 ApplicationContext 的构造是先注册注解扫描再加载 XML → XML 覆盖注解。但这是"无声覆盖"——不会报错、不会警告，排查起来非常痛苦。所以 Spring Boot 默认不用 XML，从根本上规避了这个问题。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic">💬 深挖意图：考察你是否理解 Spring Boot "去 XML 化"不只是赶时髦，而是解决了一个真实的"配置来源冲突"问题。</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">你的多数据源组件如果用 @Bean 注册了多个 DataSource，怎么区分谁是主谁是备？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 @Bean("masterDataSource") 和 @Bean("slaveDataSource") 命名区分，配合 @Qualifier 或 Map 注入。切换策略单独抽象（RoutingStrategy），不写在 @Bean 定义中。Java Config 的类型安全让这些设计决策在编译期就可验证——如果用 XML，一个拼写错误要到运行期才知道。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+</section>
+
+</main>
+
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · Bean 定义与元数据 · XML / 注解 / Java Config</footer>
+</body>
+</html>

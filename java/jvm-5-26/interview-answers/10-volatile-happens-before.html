@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 10 问 · volatile 内存屏障与 happens-before 验证 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(168,85,247,0.02)); border-left: 3px solid #a855f7; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .danger-box { background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02)); border-left: 3px solid #ef4444; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="09-jmm-detail.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded">JMM · 第 10 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="11-final-jmm.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            volatile <span class="text-purple-400">内存屏障</span>与 happens-before 验证
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            volatile 写 happens-before 后续 volatile 读——这条规则的实现靠的是 JVM 在 volatile 访问前后插入的四种内存屏障。StoreLoad 是最重的屏障，因为它要同时完成 Store Buffer 刷新和缓存行失效。用代码验证这个规则，关键是要暴露指令重排序。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. 内存屏障排列 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">1</span>
+            四种内存屏障的排列顺序
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 mb-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>volatile 写 的内存屏障排列：
+┌──────────────────────────────┐
+│  普通写操作                   │
+│  ...                         │
+│  【StoreStore 屏障】          │  ← 禁止上面的普通写和下面的 volatile 写重排
+│  volatile 写                 │
+│  【StoreLoad 屏障】  ← 最关键  │  ← 禁止 volatile 写和后面的读/写重排
+│  【？？？这里不能再有写】       │
+│  后续读/写操作                │
+└──────────────────────────────┘
+
+volatile 读 的内存屏障排列：
+┌──────────────────────────────┐
+│  普通读/写操作                │
+│  ...                         │
+│  【LoadLoad 屏障】            │  ← 禁止上面的普通读和下面的 volatile 读重排
+│  【LoadStore 屏障】           │  ← 禁止上面的普通写和下面的 volatile 读重排
+│  volatile 读                 │
+│  【LoadLoad 屏障】            │
+│  【LoadStore 屏障】           │
+│  后续读/写操作                │
+└──────────────────────────────┘
+
+四种屏障的功能：
+  StoreStore  — 确保屏障前的写操作先于屏障后的写操作
+  StoreLoad   — 确保屏障前的写操作先于屏障后的读操作（最重的屏障）
+  LoadLoad    — 确保屏障前的读操作先于屏障后的读操作
+  LoadStore   — 确保屏障前的读操作先于屏障后的写操作</code></pre>
+        </div>
+
+        <div class="danger-box p-4 rounded-lg mb-5">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>🔥 为什么 StoreLoad 是最重的屏障？</strong>
+                它要完成两件事：① 刷新 Store Buffer（让屏障前的写对所有 CPU 可见）；
+                ② 使其他 CPU 的缓存行失效（让屏障后的读能读到最新值）。
+                在 x86 上，StoreLoad 屏障通过 <code class="text-red-400 bg-slate-800 px-1 rounded">lock</code> 前缀或 <code class="text-red-400 bg-slate-800 px-1 rounded">mfence</code> 指令实现，
+                这两个都会锁住总线或缓存，开销很大。其他三种屏障在 x86 上天然被硬件保证（x86 是强内存模型），
+                所以 x86 上 volatile 写后的 StoreLoad 是唯一的实际屏障——这也是 volatile 比 synchronized 轻量但仍不够"免费"的原因。
+            </p>
+        </div>
+    </section>
+
+    <!-- 2. 验证代码 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">2</span>
+            用纯 Java 验证 volatile 禁止指令重排序
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 mb-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>/**
+ * 暴露指令重排序的经典代码。
+ * 如果没有 volatile 或内存屏障，x=0, y=0 的组合是可以出现的。
+ * 要复现需要跑几十万次，用 -XX:-TieredCompilation 加速 JIT。
+ */
+public class ReorderDemo {
+    static int x = 0, y = 0;
+    static int a = 0, b = 0;
+    
+    // ★ 去掉 volatile 后，x=0, y=0 偶尔会出现
+    // ★ 加上 volatile 后，x=0, y=0 永远不会出现
+    // static volatile int x = 0, y = 0;  // 修复版本
+    
+    public static void main(String[] args) throws InterruptedException {
+        int count = 0;
+        while (true) {
+            x = 0; y = 0; a = 0; b = 0;
+            count++;
+            
+            Thread t1 = new Thread(() -> {
+                a = 1;      // ① 普通写
+                x = b;      // ② 读 b，写 x
+                // 如果没有屏障，①和②可能被重排！
+                // CPU 可能先执行 x=b (读到 b=0)，
+                // 再执行 a=1
+            });
+            
+            Thread t2 = new Thread(() -> {
+                b = 1;      // ③ 普通写
+                y = a;      // ④ 读 a，写 y
+                // 同样，③和④可能被重排
+            });
+            
+            t1.start(); t2.start();
+            t1.join(); t2.join();
+            
+            // 如果 x=0 且 y=0，说明发生了重排序
+            if (x == 0 && y == 0) {
+                System.out.println("重排序发生！第 " + count + " 次迭代");
+                System.out.println("x=" + x + ", y=" + y);
+                break;
+            }
+        }
+    }
+}
+
+// 理论上的结果：
+// 如果没有重排序，可能的 (x, y) 组合：
+//   (0, 1): t1 先执行完
+//   (1, 0): t2 先执行完
+//   (1, 1): 交替执行
+// 
+// 如果出现 (0, 0)：说明 t1 的 x=b 在 a=1 之前执行了
+//                   且 t2 的 y=a 在 b=1 之前执行了
+//   → 指令重排序被证实
+
+// ★ 如何增大复现概率：
+//   1. 加上 -XX:-TieredCompilation -Xcomp 强制编译
+//   2. 关闭分层编译，让 JIT 更激进地优化
+//   3. 多核 CPU 上跑（核心越多，Store Buffer 竞争越明显）</code></pre>
+        </div>
+
+        <div class="highlight-box p-4 rounded-lg">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>💡 为什么要跑很多次才能复现？</strong>现代 x86 CPU 是"强内存模型"（TSO: Total Store Order），
+                它天然禁止了 LoadLoad、LoadStore、StoreStore 的重排序。但<strong>StoreLoad 重排序在 x86 上仍然存在</strong>——
+                CPU 的 Store Buffer 可能导致一个核心的写在另一个核心看来是"晚到的"。
+                这个 demo 就是利用 Store Buffer 的异步特性来暴露重排序。
+                如果把 x 和 y 都声明为 volatile，就插入了 StoreLoad 屏障，这个问题就消失了。
+            </p>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试要点
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 屏障排列（必须脱口而出）</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> volatile 写前：StoreStore</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> volatile 写后：StoreLoad（最重）</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> volatile 读前：LoadLoad + LoadStore</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> volatile 读后：LoadLoad + LoadStore</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> x86 TSO 下只有 StoreLoad 需要真正插入屏障</li>
+                </ul>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">🔬 验证思路</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> 四变量 demo：a, b 普通变量；x, y 读取结果</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> x=0, y=0 出现 → 重排序被暴露</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> Store Buffer 是 StoreLoad 重排序的硬件根源</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="09-jmm-detail.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="11-final-jmm.html" class="px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-500/20 transition-colors flex items-center gap-2">下一问：final 内存语义 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>

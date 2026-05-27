@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 11 问 · final 的内存语义与 String 不可变性 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(168,85,247,0.02)); border-left: 3px solid #a855f7; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .danger-box { background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02)); border-left: 3px solid #ef4444; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="10-volatile-happens-before.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded">JMM · 第 11 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="index.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">返回索引 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            final 的内存语义与<span class="text-purple-400">String 不可变性</span>
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            final 在 JMM 里不仅仅是"不能修改"——它有特殊的 freeze 语义。构造函数中对 final 字段的写入，与随后通过其他线程读取该对象引用之间，JMM 保证没有重排序。但如果 this 在构造函数中逸出，final 的保证就失效了。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. final 的 freeze 语义 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">1</span>
+            final 字段的 freeze 语义
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">JMM 对 final 的两条特殊规则</h3>
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">规则 1：构造函数内 final 字段的写入，与对象的引用赋值给其他变量之间，禁止重排序</h4>
+                    <div class="code-dark rounded-lg p-3 mt-2 overflow-x-auto">
+                        <pre class="text-xs text-slate-300"><code>// JMM 保证：
+class SafeObj {
+    final int x;
+    SafeObj() {
+        x = 42;            // ① 写入 final 字段
+    }                      // ② 构造函数结束 → ★ freeze 操作
+}
+// freeze 操作插入 StoreStore 屏障！
+// 确保 x=42 在对象引用被发布之前对所有 CPU 可见
+
+SafeObj obj = new SafeObj();  // ③ 把引用赋给 obj
+
+// ★★ JMM 保证：任何线程通过 obj 读取 obj.x 一定看到 42
+// 不会看到 0（默认值），即使没有 volatile 或 synchronized
+
+// 对比非 final 字段：
+class UnsafeObj {
+    int x;
+    UnsafeObj() { x = 42; }
+}
+// 另一线程可能看到 x = 0（默认值）！
+// 因为 x = 42 和 UnsafeObj 引用赋值之间可能被重排序</code></pre>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">规则 2：读 final 字段时，JMM 保证不会看到"未初始化"的值</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        对于 final 引用类型字段：不仅引用本身不可变，<strong>JMM 保证在构造函数中通过该引用写入的其他对象字段</strong>，也能在 final 字段被读取时一并可见。
+                        这就是所谓的 "final 字段的传递性保证"。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. this 逸出 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">2</span>
+            this 引用逸出：final 保证失效
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                <pre class="text-xs text-slate-300"><code>// ❌ 危险代码：this 在构造函数中逸出
+public class DangerousObj {
+    final int x;
+    
+    public DangerousObj(Registry registry) {
+        registry.register(this);  // ← this 逸出！在构造函数完成之前
+        // 此时 x 还没有被"freeze"
+        this.x = 42;
+    }
+    // 构造函数结束时 freeze 操作才执行
+}
+
+// 另一个线程通过 registry 拿到 DangerousObj 引用：
+// DangerousObj obj = registry.get();
+// int val = obj.x;  // 可能看到 0！！！final 保证失效了！
+// 因为 freeze 操作还没有发生</code></pre>
+            </div>
+
+            <div class="danger-box p-4 rounded-lg mb-3">
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    <strong>🔥 this 逸出的根本原因：</strong>final 字段的 freeze 操作发生在<strong>构造函数正常结束</strong>时。
+                    如果 this 在构造函数结束前被其他线程获得，那个线程就能在 freeze 之前访问 final 字段——看到零值。
+                    <br><br>
+                    <strong>常见的 this 逸出场景：</strong>
+                    ① 构造函数中启动新线程（新线程可以访问 this）
+                    ② 构造函数中注册回调/监听器
+                    ③ 构造函数中把 this 放入静态集合
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. String 不可变性 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">3</span>
+            String 不可变性与 final 的内存语义
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">String 不可变的三层保证</h3>
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">① final 字段 + 无 setter</h4>
+                    <div class="code-dark rounded-lg p-3 mt-2 overflow-x-auto">
+                        <pre class="text-xs text-slate-300"><code>public final class String {
+    private final char value[];  // JDK 8 及之前
+    // 或
+    private final byte[] value;  // JDK 9+ (Compact String)
+    private final int hash;      // 懒计算，但缓存后不可变
+    // ...
+}</code></pre>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+                        value 和 hash 都是 final 的——JMM 保证任何线程看到的 String 对象，其 value 数组引用不会变。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">② 类本身是 final 的</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        String 类不能被继承——不能通过子类覆盖方法来破坏不可变性。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">③ 所有方法返回新对象，不修改自身</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        <code class="text-purple-400 bg-slate-800 px-1 rounded">substring()</code>、<code class="text-purple-400 bg-slate-800 px-1 rounded">concat()</code>、<code class="text-purple-400 bg-slate-800 px-1 rounded">replace()</code> 等都返回新的 String。
+                        JDK 7 之后 substring 也复制数组（而不是 JDK 6 的"共享数组"），彻底杜绝了通过 substring 修改原 String 的可能性。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="highlight-box p-4 rounded-lg mb-5">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>💡 String 的不可变性和 final 内存语义的关系：</strong>
+                假设 String 的 value 不是 final 的——那么在多线程环境下，一个线程创建了一个 String，另一个线程可能看到 value 还是 null。
+                final 的 freeze 语义保证了 String 对象一旦被安全发布（safe publication），所有线程看到的 value 都是完整的。
+                这是 String 可以用来做 HashMap 的 key 而不担心并发问题的底层原因——<strong>hashCode 一旦计算就可以安全缓存</strong>，
+                因为 value 数组不会变化，hash 值也就不会变化。
+            </p>
+        </div>
+
+        <div class="warn-box p-4 rounded-lg">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>⚠️ String 的"不可变"能被反射打破：</strong>通过反射拿到 <code class="text-purple-400 bg-slate-800 px-1 rounded">value</code> 字段并把 <code class="text-purple-400 bg-slate-800 px-1 rounded">final</code> 修饰符去掉，可以修改 String 的内容。
+                这种"魔法"在一些框架中被用于性能优化（如修改从外部接收的密码字符串为全 0，防止内存 dump 泄漏）。
+                但 JDK 12+ 对此做了限制，反射修改 final 字段的行为已被禁止。
+            </p>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试要点
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ final 的 JMM 语义</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> freeze 操作在构造函数结束时执行</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> freeze = StoreStore 屏障，保证 final 字段写入可见</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> this 逸出导致 freeze 未执行，final 保证失效</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> final 引用类型的传递性保证</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> String 不可变 = final class + final fields + 防御性复制</li>
+                </ul>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">⚠️ 常见 this 逸出场景</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 构造函数中 start() 线程</li>
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 构造函数中注册监听器</li>
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 构造函数中发布到静态集合</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> 用工厂方法 + 私有构造函数避免逸出</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="10-volatile-happens-before.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="index.html" class="px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-500/20 transition-colors flex items-center gap-2">返回索引</a>
+    </div>
+</footer>
+
+</body>
+</html>

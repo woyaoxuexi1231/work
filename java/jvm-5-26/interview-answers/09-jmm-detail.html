@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 9 问 · JMM 主内存/工作内存与 8 个原子操作 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(168,85,247,0.02)); border-left: 3px solid #a855f7; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="08-hot-deploy.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded">JMM · 第 9 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="10-volatile-happens-before.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            JMM 主内存/工作内存与<span class="text-purple-400">8 个原子操作</span>
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            "屏蔽硬件差异"太虚了。JMM 的主内存对应物理上的主存（RAM），工作内存对应 CPU 寄存器和 Cache Line。那 8 个原子操作——lock/unlock/read/load/use/assign/store/write——才是 JMM 的底层"机器码"。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. 物理映射 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">1</span>
+            物理映射：主内存 ≠ JVM 堆
+        </h2>
+
+        <div class="overflow-x-auto mb-5">
+            <table class="w-full text-sm text-left">
+                <thead><tr class="bg-slate-800"><th class="px-4 py-3 text-slate-300">JMM 概念</th><th class="px-4 py-3 text-slate-300">物理对应</th><th class="px-4 py-3 text-slate-300">是 JVM 的哪块区域？</th></tr></thead>
+                <tbody class="text-slate-400">
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-semibold text-purple-400">主内存 (Main Memory)</td>
+                        <td class="px-4 py-3">物理主存（RAM / DRAM）</td>
+                        <td class="px-4 py-3"><strong class="text-purple-400">堆 (Heap)</strong> + 元空间（类元数据）</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-semibold text-purple-400">工作内存 (Working Memory)</td>
+                        <td class="px-4 py-3">CPU 寄存器 + L1/L2/L3 缓存</td>
+                        <td class="px-4 py-3"><strong class="text-purple-400">线程栈 (Stack)</strong> 中的局部变量表</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-semibold text-purple-400">8 个原子操作</td>
+                        <td class="px-4 py-3">JVM 的抽象，映射到具体的 CPU 指令</td>
+                        <td class="px-4 py-3">由 JIT 编译器生成对应的机器码</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">工作内存的精确对应</h3>
+            <div class="space-y-2">
+                <div class="flex gap-2">
+                    <span class="text-purple-400 text-xs font-mono mt-0.5 shrink-0">CPU 寄存器</span>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        线程对变量的操作（use/assign）直接在寄存器中完成——这是最快的一级"工作内存"。
+                        比如执行 <code class="text-purple-400 bg-slate-800 px-1 rounded">a = a + 1</code>，CPU 把 a 从 L1 缓存加载到寄存器 → 在寄存器中加 1 → 写回 L1 缓存。
+                    </p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-purple-400 text-xs font-mono mt-0.5 shrink-0">CPU Cache</span>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        L1/L2 是每个核心私有的，L3 是多核心共享的。现代 x86 CPU 的缓存一致性协议（MESI/MESIF）保证了多核心看到的缓存数据最终一致——但"最终"意味着有延迟。
+                        这就是 volatile 需要插入内存屏障的原因——强制刷新缓存行。
+                    </p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-purple-400 text-xs font-mono mt-0.5 shrink-0">Store Buffer</span>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        CPU 内部还有一个 Store Buffer——写入不会立即到 L1，而是先到这个 buffer，异步刷新到缓存。
+                        这是指令重排序的硬件来源之一。volatile 的 StoreLoad 屏障会强制刷新 Store Buffer。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. 8 个原子操作 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">2</span>
+            8 个原子操作详解
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 mb-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>┌────────────────────────────────────────────────────────────────┐
+│          主内存 (Main Memory)                                    │
+│          变量 a = 0                                              │
+│    lock ◄────────────► unlock                                   │
+│    read ◄────────────► write                                    │
+└──────────┬──────────────────────────────────┬───────────────────┘
+           │ 总线                              │
+           ▼                                    ▼
+┌──────────────────────┐          ┌──────────────────────┐
+│   工作内存 (Thread-1) │          │   工作内存 (Thread-2) │
+│                      │          │                      │
+│    load    store     │          │    load    store     │
+│    use     assign    │          │    use     assign    │
+└──────────────────────┘          └──────────────────────┘
+
+8 个原子操作分为两组：
+
+■ 主内存操作（线程间交互）：
+  lock   — 标识变量为"线程独占"状态
+  unlock — 释放独占状态
+  read   — 从主内存读取变量的值，传输到工作内存
+  write  — 把工作内存中的值写回主内存
+
+■ 工作内存操作（线程内）：
+  load   — 把 read 传输过来的值放入工作内存的变量副本
+  use    — 把工作内存的变量值传给执行引擎（用于运算）
+  assign — 把执行引擎的结果赋给工作内存的变量
+  store  — 把工作内存的变量值传送到主内存（准备 write）</code></pre>
+        </div>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">原子操作之间的规则限制</h3>
+            <div class="space-y-2">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">规则 1：read 和 load、store 和 write 必须成对出现</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        不允许单独 read 不 load，或单独 store 不 write。但不必连续——中间可以插入其他操作。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">规则 2：use 和 store 之前必须有 load 和 assign</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        线程使用变量前必须先从主内存加载；线程将变量值存回主内存前必须先在工作内存中赋值。
+                        这条规则保证了"变量值不会凭空出现"。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-1">规则 3：不允许线程丢弃最近的 assign</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        线程在工作内存中修改了变量后，必须最终同步回主内存。但"最终"是多长时间？——普通变量没有时间限制，volatile 强制立即同步。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. volatile 读写顺序图 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">3</span>
+            volatile 变量的读写操作串行图
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>Thread-1 (volatile 写)          Thread-2 (volatile 读)
+
+lock (锁定主内存变量)                
+read (从主内存读取到工作内存)          
+load (装入工作内存副本)              
+use  (传给执行引擎)                  
+   ...执行逻辑...                    
+assign (写回工作内存)                
+store (从工作内存传到主内存)          
+  【插入 StoreStore 屏障】           
+  【插入 StoreLoad 屏障】  ← volatile 写的关键屏障
+write (写回主内存)                   
+unlock (释放锁)                      
+                                    read (从主内存读取)
+                                      【插入 LoadLoad 屏障】
+                                      【插入 LoadStore 屏障】
+                                    load (装入工作内存)
+                                    use  (使用这个值)
+
+★ StoreLoad 屏障确保：
+  Thread-1 的所有写入在 Thread-2 读取之前对所有 CPU 可见
+  
+★ 实现方式（x86）：
+  StoreLoad 屏障 = lock addl $0,0(%rsp) 或 mfence 指令
+  — 强制刷新 Store Buffer 到缓存，并让其他 CPU 的缓存行失效</code></pre>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试要点
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 核心概念</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> 主内存 = 物理 RAM + JVM 堆</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> 工作内存 = CPU 寄存器 + L1/L2 Cache + Store Buffer</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> read/load 成对，store/write 成对</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> volatile 写后必须 store+write，读前必须 read+load</li>
+                    <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">▸</span> StoreLoad 屏障在 x86 上映射为 lock 前缀或 mfence</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="08-hot-deploy.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="10-volatile-happens-before.html" class="px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-500/20 transition-colors flex items-center gap-2">下一问：volatile 内存屏障 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>

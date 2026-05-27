@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bean 作用域 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:all .2s}.toc a:hover{color:#cba6f7}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring Boot</span>
+<span class="bg-[#fab387]/20 text-[#fab387] px-2 py-0.5 rounded">恒生多数据源</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">Spring Framework 核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">📦 Bean 作用域</h1>
+<p class="text-[#a6adc8] mt-2">singleton、prototype、request、session — 不只是"几种存活范围"那么简单</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#part1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#part2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#part3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="part1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">四种常用作用域速查</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">作用域</th><th class="text-left py-3 px-3 text-white">存活范围</th><th class="text-left py-3 px-3 text-white">创建时机</th><th class="text-left py-3 px-3 text-white">销毁</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-3 px-3 font-bold text-[#a6e3a1]">singleton</td><td class="py-3 px-3">整个容器</td><td class="py-3 px-3">容器启动时（默认）</td><td class="py-3 px-3">容器关闭</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-3 px-3 font-bold text-[#fab387]">prototype</td><td class="py-3 px-3">每次获取</td><td class="py-3 px-3">每次 getBean() / 注入时</td><td class="py-3 px-3 text-[#f38ba8]">不自动销毁！</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-3 px-3 font-bold text-[#89b4fa]">request</td><td class="py-3 px-3">一次 HTTP 请求</td><td class="py-3 px-3">请求到达时</td><td class="py-3 px-3">请求结束时</td></tr>
+<tr><td class="py-3 px-3 font-bold text-[#cba6f7]">session</td><td class="py-3 px-3">一次 HTTP 会话</td><td class="py-3 px-3">会话创建时</td><td class="py-3 px-3">会话过期/销毁</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<h3 class="text-lg font-bold text-white mb-3">基本用法</h3>
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// singleton — 默认，可以不写
+@Service
+public class UserService { }
+
+// prototype — 每次获取都 new
+@Service @Scope("prototype")
+public class ReportGenerator { }
+
+// request — 每个 HTTP 请求一个实例（Web 环境才可用）
+@Component @Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class RequestContext { }
+
+// session — 每个用户会话一个实例
+@Component @Scope(value = "session", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class ShoppingCart { }
+
+// 常量写法（推荐）
+@Service @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+public class ReportGenerator { }</code></pre>
+</div>
+</section>
+
+<section id="part2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂的设计原理</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<h3 class="text-lg font-bold text-white">🤔 如果只有 singleton，会发生什么？</h3>
+<div class="mt-3 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">痛点 1：有状态的 Bean 互相污染。</strong>一个报表生成器被多个用户并发使用，如果共享同一个实例，用户 A 设置的参数会覆盖用户 B 的。</p>
+<p><strong class="text-white">痛点 2：高并发下 singleton 的锁竞争。</strong>如果 singleton Bean 内部的某个方法加了 synchronized，所有线程都在等一把锁。</p>
+<p>所以 prototype 存在的意义是：<strong class="text-white">"我需要一个 Bean 的"款式"，但每次都要一件新的"</strong>。</p>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<h3 class="text-lg font-bold text-white">💡 设计巧思：prototype 的"孤儿"困境 — Spring 只生不养</h3>
+<div class="mt-3 space-y-3 text-sm text-[#a6adc8]">
+<p>这是 Spring 文档里最容易被忽略的一句话：<strong class="text-white">"Spring does not manage the complete lifecycle of a prototype bean."</strong></p>
+<p><strong class="text-white">什么意思？</strong>Spring 创建 prototype Bean 后就"放手"了——不再管理它的销毁。@PreDestroy 标注的方法<strong class="text-white">不会被调用</strong>，因为 Spring 没有"持有"这个 Bean。</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>@Component @Scope("prototype")
+public class HeavyProcessor implements Closeable {
+    @PostConstruct public void init()  { /* 会执行 ✅ */ }
+    @PreDestroy    public void clean() { /* 不会执行 ❌ */ }
+    
+    // 如果持有连接池等资源……内存泄漏！
+}</code></pre>
+<p><strong class="text-white">设计者的考量：</strong>prototype 可能被创建成百上千次——如果 Spring 要追踪每一个 prototype 的生命周期，内存开销巨大。所以设计者做了一个权衡：<strong class="text-white">交给你自己管</strong>。你需要手动调用 Bean 的清理方法，或者注册 destruction callback（这需要你自己持有 Bean 引用）。</p>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<h3 class="text-lg font-bold text-white">💡 设计巧思：Scoped Proxy — 长作用域注入短作用域的秘密</h3>
+<div class="mt-3 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">场景：</strong>singleton 的 Controller 要注入 request 作用域的 RequestContext。但 singleton 在启动时就创建了，当时根本没有 request！</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 如果不加 proxyMode → 启动时就报错！
+@RestController
+public class UserController {
+    @Autowired
+    private RequestContext ctx; // singleton 注入 request → 💥
+}
+
+// 解法：proxyMode = ScopedProxyMode.TARGET_CLASS
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class RequestContext { }
+
+// 现在 UserController 注入的不是 RequestContext 本身
+// 而是 CGLIB 生成的代理
+// 代理在每次调用 ctx.getXxx() 时才去当前线程的 RequestAttributes 里找真正的实例</code></pre>
+<p><strong class="text-white">巧思：</strong>代理对象是 singleton 的，但它"假装"自己每次都能拿到 request 作用域的实例。实际上它是通过 RequestContextHolder（ThreadLocal）在运行时获取的。</p>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<h3 class="text-lg font-bold text-white">⚠️ 边界与陷阱</h3>
+<div class="mt-3 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">单例 Bean 持有 prototype Bean → prototype 退化为 singleton</p>
+<p>因为单例只会被创建一次，它的所有依赖在那一刻就被注入——prototype Bean 只创建了一次，之后再也不会重新创建。</p></div>
+<div><p class="text-white font-bold">request / session 作用域在非 Web 环境下不可用</p>
+<p>在纯 @SpringBootTest 中（不带 webEnvironment），request 作用域会抛异常。需要 @SpringBootTest(webEnvironment = RANDOM_PORT)。</p></div>
+<div><p class="text-white font-bold">prototype 不会触发 @PreDestroy</p>
+<p>这可能导致数据库连接、文件句柄等资源泄漏。</p></div>
+</div>
+</div>
+</section>
+
+<section id="part3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">singleton 和 prototype，日常开发中用哪个多？</p></div></div>
+<div class="flex items-start gap-3 mb-4 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">singleton 占了 95% 以上。因为绝大部分 Bean 是无状态的——Service、Repository、Controller 都只是一个"方法容器"，不持有会话级数据。prototype 只在需要每次不同实例时用。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic">💬 考核意图：看你是不是"为了 prototype 而 prototype"。很多人以为 prototype 更安全就用它，这是浪费内存。</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">singleton Bean 里注入 prototype Bean，prototype 还有效吗？</p></div></div>
+<div class="flex items-start gap-3 mb-4 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">失效了。因为 singleton 只创建一次，它的依赖在那一刻就被注入了——prototype 也就变成了"事实上的 singleton"。解法：不要注入 prototype Bean 本身，而是注入 <strong class="text-white">ObjectProvider</strong> 或 <strong class="text-white">ApplicationContext</strong>，每次使用时手动获取新实例。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">request 作用域的 Bean 在 @Async 方法里会怎样？</p></div></div>
+<div class="flex items-start gap-3 mb-4 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">直接炸。request 作用域依赖当前线程的 RequestAttributes，@Async 换到了线程池线程 → ThreadLocal 里没有请求上下文 → 抛 ScopeNotActiveException。解法：要么把需要的数据在主线程提取出来传过去，要么用自定义 TaskDecorator 传递 RequestContextHolder。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic">💬 深挖意图：考察是否理解 ThreadLocal 与作用域的关系。</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">多数据源场景——切换数据源的 lookup key 是存在 ThreadLocal 里的。这个 ThreadLocal 变量应该放在 singleton Bean 里，还是 prototype Bean 里？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">放在 singleton Bean 里。ThreadLocal 的作用域是线程级别，不是 Bean 级别。singleton Bean 内部的 ThreadLocal 字段——每个线程看到的是不同的值，不存在并发冲突。如果放在 prototype 里反而多余：每次新建 Bean，ThreadLocal 也是新的，之前线程的 ThreadLocal 里的值就丢了。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+</section>
+
+</main>
+
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · Bean 作用域 · singleton / prototype / request / session</footer>
+</body>
+</html>

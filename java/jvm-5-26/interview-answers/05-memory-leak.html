@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 5 问 · 内存泄漏排查与 Heap Dump 分析 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.02)); border-left: 3px solid #22c55e; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .danger-box { background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02)); border-left: 3px solid #ef4444; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="04-survivor-overflow.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">GC · 第 5 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="06-class-loading.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            内存泄漏排查与<span class="text-emerald-400">Heap Dump 分析</span>
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            老年代满 → Full GC → 还是满 → OOM。Heap dump 拉下来 8GB。MAT 的直方图和支配树视图各解决什么问题？如何从 GC Root 路径定位 ThreadLocal 泄漏的精确位置？这不是工具操作手册，这是取证分析的方法论。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. 工具选择 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">1</span>
+            工具选型：8GB Heap Dump 用什么分析？
+        </h2>
+
+        <div class="overflow-x-auto mb-5">
+            <table class="w-full text-sm text-left">
+                <thead><tr class="bg-slate-800"><th class="px-4 py-3 text-slate-300">工具</th><th class="px-4 py-3 text-slate-300">适用场景</th><th class="px-4 py-3 text-slate-300">8GB Dump 表现</th><th class="px-4 py-3 text-slate-300">推荐度</th></tr></thead>
+                <tbody class="text-slate-400">
+                    <tr class="border-b border-slate-800"><td class="px-4 py-3 font-semibold text-slate-300">Eclipse MAT</td><td class="px-4 py-3">深度分析、泄漏定位</td><td class="px-4 py-3"><span class="text-emerald-400">需要 12-16GB 内存</span>打开</td><td class="px-4 py-3">⭐⭐⭐⭐⭐</td></tr>
+                    <tr class="border-b border-slate-800"><td class="px-4 py-3 font-semibold text-slate-300">jhat (过时)</td><td class="px-4 py-3">简单浏览</td><td class="px-4 py-3">8GB 直接 OOM，不推荐</td><td class="px-4 py-3">⭐</td></tr>
+                    <tr class="border-b border-slate-800"><td class="px-4 py-3 font-semibold text-slate-300">JProfiler</td><td class="px-4 py-3">实时监控 + Dump 分析</td><td class="px-4 py-3">需商业许可，表现良好</td><td class="px-4 py-3">⭐⭐⭐⭐</td></tr>
+                    <tr class="border-b border-slate-800"><td class="px-4 py-3 font-semibold text-slate-300">arthas + heapdump</td><td class="px-4 py-3">线上快速诊断</td><td class="px-4 py-3">不直接分析，配合 MAT</td><td class="px-4 py-3">⭐⭐⭐</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="highlight-box p-4 rounded-lg">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>💡 大 dump 处理技巧：</strong>MAT 打开 8GB dump 需要 <code class="text-emerald-400 bg-slate-800 px-1 rounded">-Xmx16g</code>。
+                如果本机内存不够，先用 <code class="text-emerald-400 bg-slate-800 px-1 rounded">jcmd &lt;pid&gt; GC.heap_dump -all=false dump.hprof</code> 只 dump 存活对象，
+                减少约 30-50% 体积。也可以在 dump 前先触发一次 Full GC（<code class="text-emerald-400 bg-slate-800 px-1 rounded">jcmd &lt;pid&gt; GC.run</code>），这样垃圾对象不会进入 dump。
+            </p>
+        </div>
+    </section>
+
+    <!-- 2. 直方图 vs 支配树 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">2</span>
+            直方图 vs 支配树：两个视图，两种思路
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-5">
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-blue-400 mb-3">直方图（Histogram）</h3>
+                <p class="text-sm text-slate-400 leading-relaxed mb-2">
+                    <strong>功能：</strong>按<strong>类</strong>统计实例数量和总占用内存（Shallow Heap + Retained Heap）。
+                </p>
+                <p class="text-sm text-slate-400 leading-relaxed mb-2">
+                    <strong>解决的问题：</strong>"哪个类占的内存最多？" — 快速定位"吃内存大户"。
+                    比如发现 <code class="text-blue-400 bg-slate-800 px-1 rounded">byte[]</code> 占了 6GB，然后是 <code class="text-blue-400 bg-slate-800 px-1 rounded">HashMap$Node</code> 占了 1GB。
+                </p>
+                <p class="text-xs text-slate-500 leading-relaxed">
+                    <strong>Shallow Heap：</strong>对象自身占用的内存（不含引用对象）。
+                    <strong>Retained Heap：</strong>这个对象及其"独占"引用的所有对象的总和——如果这个对象被回收，能释放的内存。这才是泄漏分析的核心指标。
+                </p>
+            </div>
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-purple-400 mb-3">支配树（Dominator Tree）</h3>
+                <p class="text-sm text-slate-400 leading-relaxed mb-2">
+                    <strong>功能：</strong>按<strong>对象引用关系</strong>构建树状结构，展示"谁支配（持有）谁"。
+                </p>
+                <p class="text-sm text-slate-400 leading-relaxed mb-2">
+                    <strong>解决的问题：</strong>"是谁持有了这些大对象，让它们无法被回收？"
+                    从树的根节点向下展开，可以看到内存大户的<strong>持有链</strong>。
+                </p>
+                <div class="code-dark rounded-lg p-3 mt-2 overflow-x-auto">
+                    <pre class="text-xs text-slate-400"><code>支配树示例：
+class MyCache (Retained: 3.2GB)
+  └─ HashMap$Node[] (Retained: 3.2GB)
+       └─ HashMap$Node (Retained: 1.6GB)
+            └─ byte[] (Retained: 1.6GB)
+       └─ HashMap$Node (Retained: 1.6GB)
+            └─ byte[] (Retained: 1.6GB)
+// 两个 byte[] 之所以占了 3.2GB 且无法回收，
+// 是因为 MyCache 的 HashMap 持有它们</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="warn-box p-4 rounded-lg mt-5">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>💡 核心区别：</strong>直方图告诉你"嫌疑人是谁"（哪个类占了最多内存），支配树告诉你"犯罪动机"（是什么引用链导致它无法被回收）。
+                排查顺序永远是：<strong>先看直方图找到内存大户 → 再看支配树追溯到持有者 → 沿着 GC Root 路径确认泄漏根因</strong>。
+            </p>
+        </div>
+    </section>
+
+    <!-- 3. 如何证明引用链就是泄漏根因 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">3</span>
+            如何从支配树证明"这条引用链就是泄漏根因"？
+        </h2>
+
+        <div class="space-y-4">
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-white mb-3">证明四步法</h3>
+                <div class="space-y-3">
+                    <div class="p-3 bg-slate-800/50 rounded-lg">
+                        <h4 class="text-sm font-semibold text-emerald-400 mb-1">Step 1：在支配树中找到存活对象的持有者</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            比如支配树中，一个巨大的 <code class="text-emerald-400 bg-slate-800 px-1 rounded">HashMap$Node</code> 被 <code class="text-emerald-400 bg-slate-800 px-1 rounded">StaticCacheManager</code> 的静态字段 <code class="text-emerald-400 bg-slate-800 px-1 rounded">cacheMap</code> 持有。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-slate-800/50 rounded-lg">
+                        <h4 class="text-sm font-semibold text-emerald-400 mb-1">Step 2：追溯 GC Root</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            在 MAT 中选中对象 → Path to GC Roots → exclude weak/soft/phantom references（排除虚引用干扰）。
+                            如果引用路径从 <code class="text-emerald-400 bg-slate-800 px-1 rounded">&lt;system class&gt;</code> 出发，经过静态字段到集合，再到目标对象——这就是一条<strong>永不断开的强引用链</strong>。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-slate-800/50 rounded-lg">
+                        <h4 class="text-sm font-semibold text-emerald-400 mb-1">Step 3：验证"应该被回收但没被回收"</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            结合业务逻辑：这个 <code class="text-emerald-400 bg-slate-800 px-1 rounded">cacheMap</code> 里存的是"用户登录会话"对象——用户已经登出/会话过期了，但这些对象仍然在 Map 里。
+                            没有过期清理机制 + 静态持有 = 确认泄漏。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-slate-800/50 rounded-lg">
+                        <h4 class="text-sm font-semibold text-emerald-400 mb-1">Step 4：用 retain size 量化泄漏规模</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            如果 <code class="text-emerald-400 bg-slate-800 px-1 rounded">cacheMap</code> 的 retained heap 是 5.6GB，且这些对象在业务上已经过期——那么 5.6GB 就是泄漏的量化规模。
+                            对比 Full GC 后老年代仍占用的内存（如 6GB），确认吻合。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. ThreadLocal 泄漏 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">4</span>
+            ThreadLocal 泄漏：从 GC Root 到具体 Entry
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">ThreadLocal 的引用链结构</h3>
+            <div class="code-dark rounded-lg p-4 mb-4 overflow-x-auto">
+                <pre class="text-xs text-slate-300 leading-relaxed"><code>ThreadLocal 内存结构（关键：理解引用类型）：
+                   
+Thread (GC Root)
+  └─ threadLocals: ThreadLocal.ThreadLocalMap
+       └─ table: Entry[]  ← Entry 继承 WeakReference&lt;ThreadLocal&gt;
+            └─ Entry[0]
+                 ├─ referent: WeakReference → ThreadLocal 对象（弱引用）
+                 └─ value: Object  ← 这就是你 set 进去的值（强引用！）
+            └─ Entry[1]
+                 ├─ referent: WeakReference → ThreadLocal 对象
+                 └─ value: Object
+
+泄漏条件：
+  ThreadLocal 对象在外部被置为 null（或 ThreadLocal 变量出了作用域）
+  → Entry 的 referent（弱引用）被 GC 回收 → key 变成 null
+  → 但 Entry 本身和 value 仍在 table 中（强引用）
+  → 只要 Thread 还活着，value 永远无法被回收
+  
+★ 这就是为什么线程池中使用 ThreadLocal 必须 remove()！</code></pre>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-3">MAT 中的定位步骤</h3>
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">① Histogram 视图 → 找到内存大户</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        搜索 <code class="text-emerald-400 bg-slate-800 px-1 rounded">java.lang.ThreadLocal$ThreadLocalMap$Entry</code>，如果 Entry 实例数异常多，且 retain size 很大 → ThreadLocal 泄漏嫌疑。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">② Merge Shortest Paths to GC Roots</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        找到具体的 Entry 对象 → Merge Shortest Paths to GC Roots（选 exclude weak references）。
+                        这条路径会显示：<code class="text-emerald-400 bg-slate-800 px-1 rounded">Thread → threadLocals → table → Entry → value</code>。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">③ 定位具体线程</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        在 GC Root 路径中可以看到是<strong>哪个 Thread 对象</strong>持有了这个 Entry。
+                        MAT 会显示线程名称（如 <code class="text-emerald-400 bg-slate-800 px-1 rounded">http-nio-8080-exec-25</code>），这就定位到了具体线程。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">④ 查看 Entry 的 key 和 value</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        在 Object Query Language (OQL) 中：
+                        <code class="text-emerald-400 bg-slate-800 px-1 rounded">SELECT e.referent, e.value FROM ThreadLocal$ThreadLocalMap$Entry e WHERE e.referent = null</code>
+                        这会列出所有 key 为 null 的 Entry——即所有泄漏的 value。查看 value 的类型和内容确认泄漏的业务数据。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- OQL 查询 -->
+        <div class="code-dark rounded-lg p-5 mb-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>// MAT OQL — ThreadLocal 泄漏定位神器
+
+// 1. 找出所有 key 为 null 的 ThreadLocal Entry（确认泄漏）
+SELECT e.value.toString() FROM 
+  java.lang.ThreadLocal$ThreadLocalMap$Entry e 
+  WHERE e.referent = null
+
+// 2. 按线程分组，看哪个线程泄漏最多
+SELECT t.name, COUNT(e) FROM 
+  java.lang.Thread t, 
+  java.lang.ThreadLocal$ThreadLocalMap$Entry e 
+  WHERE (t.threadLocals.table = e.@objectAddress) 
+  AND (e.referent = null)
+  GROUP BY t.name
+
+// 3. 找出占用内存最大的泄漏 value
+SELECT OBJECTS dominators(e.value) FROM 
+  java.lang.ThreadLocal$ThreadLocalMap$Entry e 
+  WHERE e.referent = null</code></pre>
+        </div>
+
+        <div class="danger-box p-4 rounded-lg">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>🔥 ThreadLocal 泄漏的经典场景：</strong>线程池中的线程被复用，ThreadLocal 变量在任务结束后没有调 <code class="text-red-400 bg-slate-800 px-1 rounded">remove()</code>。
+                多个任务复用同一线程，value 不断被新值覆盖，旧的 value 变成 key=null 的 Entry，永久滞留在 ThreadLocalMap 中。
+                修复方案：<strong>在 finally 块中调用 <code class="text-emerald-400 bg-slate-800 px-1 rounded">ThreadLocal.remove()</code></strong>。
+            </p>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试回答框架
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 内存泄漏排查五步法</h3>
+                <ol class="space-y-1 text-xs text-slate-400 list-decimal pl-4">
+                    <li>确认泄漏：Full GC 后老年代仍然满 → 真泄漏</li>
+                    <li>Histogram 定位可疑类（按 Retained Heap 排序）</li>
+                    <li>Dominator Tree 追溯持有者引用链</li>
+                    <li>Path to GC Roots 确认泄漏链路（排除虚引用）</li>
+                    <li>OQL 量化泄漏规模并定位业务代码</li>
+                </ol>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">🛠️ 关键 JVM 参数</h3>
+                <ul class="space-y-1 text-xs text-slate-400">
+                    <li class="font-mono text-emerald-400">-XX:+HeapDumpOnOutOfMemoryError</li>
+                    <li class="font-mono text-emerald-400">-XX:HeapDumpPath=/dump/</li>
+                    <li class="font-mono text-emerald-400">-XX:+ExitOnOutOfMemoryError</li>
+                    <li class="font-mono text-emerald-400">jcmd &lt;pid&gt; GC.heap_dump dump.hprof</li>
+                    <li class="font-mono text-emerald-400">jmap -dump:live,format=b,file=dump.hprof</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="04-survivor-overflow.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="06-class-loading.html" class="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors flex items-center gap-2">下一问：类加载三阶段 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>

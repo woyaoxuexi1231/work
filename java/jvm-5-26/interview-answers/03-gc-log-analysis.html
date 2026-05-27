@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 3 问 · GC 日志分析与 Full GC 诊断 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.02)); border-left: 3px solid #22c55e; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .danger-box { background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02)); border-left: 3px solid #ef4444; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+        .log-line { font-family: 'JetBrains Mono','Fira Code',monospace; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="02-zgc-shenandoah.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">GC · 第 3 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="04-survivor-overflow.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="px-3 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">GC 回收机制</span>
+            <span class="text-xs text-slate-500">第三问</span>
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            GC 日志分析与<span class="text-emerald-400">Full GC 诊断</span>
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            GC 日志是 JVM 的"心电图"。Full GC 不是病因，是症状。能读懂 GC 日志的每一行、每一个括号里的触发原因，才能从症状反推根因。Allocation Failure、Ergonomics、Concurrent Mode Failure——每个关键词背后都是一条独特的排查路径。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. GC 日志格式解析 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">1</span>
+            GC 日志格式完全拆解
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 mb-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>// JDK 9+ 统一 GC 日志格式 (启用: -Xlog:gc*:file=gc.log:time,uptime,level,tags)
+[2024-01-15T10:23:45.123+0800][info][gc,start     ] GC(1234) Pause Young (Allocation Failure)
+[2024-01-15T10:23:45.125+0800][info][gc,heap      ] GC(1234) Eden: 1638400K-&gt;0K(1638400K) Survivor: 204800K-&gt;102400K(204800K)
+[2024-01-15T10:23:45.127+0800][info][gc,heap      ] GC(1234) Old: 512000K-&gt;524288K(1048576K)
+[2024-01-15T10:23:45.127+0800][info][gc,metaspace ] GC(1234) Metaspace: 65536K-&gt;65536K(131072K)
+[2024-01-15T10:23:45.128+0800][info][gc           ] GC(1234) Pause Young (Allocation Failure) 1500M-&gt;600M(4000M) 5.123ms
+[2024-01-15T10:23:45.128+0800][info][gc,cpu       ] GC(1234) User=0.02s Sys=0.01s Real=0.01s
+
+// 关键指标解读：
+// GC(1234)       — 第 1234 次 GC
+// Pause Young    — Young GC (STW 暂停)
+// Allocation Failure — 触发原因：Eden 区满，无法分配新对象
+// 1500M-&gt;600M   — GC 前堆占用 → GC 后堆占用
+// (4000M)        — 堆总大小
+// 5.123ms        — STW 停顿时间 ★ 最重要指标</code></pre>
+        </div>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">三个必看指标</h3>
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">① STW 停顿时间（Pause Time）</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        这是<strong>直接面向用户的指标</strong>。如果 Young GC 停顿超过 50ms（G1）或 100ms（Parallel），说明新生代太大或存活对象太多。
+                        如果 Full GC 停顿超过 2 秒，这就是生产事故级别的信号。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">② GC 前后的堆占用变化</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        如果 Young GC 后 Eden 不是 0，或者 Survivor 几乎没有释放——说明大量对象"活过了"Young GC，可能存在<strong>过早晋升</strong>问题。
+                        如果 Full GC 后老年代依然接近满（如 95% → 93%），说明这些对象<strong>真的都是存活的</strong>——这不是 GC 参数的问题，是内存泄漏。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">③ GC 触发原因（Cause）</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        这是整个日志中<strong>最有诊断价值的信息</strong>。同一个 Full GC 停顿，原因不同，排查方向完全不同。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. Full GC 触发原因对比 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">2</span>
+            Full GC 的两种触发原因：完全不同的排查方向
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-5">
+            <!-- Allocation Failure -->
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-red-400 mb-3">[Full GC (Allocation Failure)]</h3>
+                <div class="space-y-3">
+                    <div class="p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-1">含义</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            尝试分配对象到老年代时，老年代<strong>确实没有连续空间</strong>了。JVM 必须先做一次 Full GC 来回收空间，才能完成分配。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-1">根因方向</h4>
+                        <ul class="text-xs text-slate-400 space-y-1">
+                            <li>▸ <strong>大规模晋升：</strong>Young GC 后大量对象要晋升，老年代装不下</li>
+                            <li>▸ <strong>大对象直接分配：</strong>超过了 -XX:PretenureSizeThreshold 的大对象直接进老年代</li>
+                            <li>▸ <strong>老年代碎片化：</strong>CMS 回收后碎片太多，找不到连续空间</li>
+                        </ul>
+                    </div>
+                    <div class="p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-1">排查步骤</h4>
+                        <ol class="text-xs text-slate-400 space-y-1 list-decimal pl-4">
+                            <li>查看 Full GC 前的 Young GC 日志：每次晋升了多少对象？</li>
+                            <li>查看老年代占用趋势：是缓慢增长（内存泄漏）还是突然暴涨（大对象）？</li>
+                            <li>查看 Humongous Allocation（G1）或大对象直接分配（Parallel/CMS）的日志</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ergonomics -->
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-amber-400 mb-3">[Full GC (Ergonomics)]</h3>
+                <div class="space-y-3">
+                    <div class="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-1">含义</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            JVM 的<strong>自适应策略</strong>（Ergonomics）判定"现在做一次 Full GC 对整体性能有利"，主动触发。
+                            <strong>不是空间真的不够了</strong>，而是 JVM 预测需要整理碎片或扩大某个区域。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-1">常见触发场景</h4>
+                        <ul class="text-xs text-slate-400 space-y-1">
+                            <li>▸ G1 的 Mixed GC 跟不上分配速度，回退到 Full GC</li>
+                            <li>▸ CMS 碎片化严重，JVM 决定做一次压缩</li>
+                            <li>▸ AdaptiveSizePolicy 认为需要调整各代大小</li>
+                        </ul>
+                    </div>
+                    <div class="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-1">应对策略</h4>
+                        <ol class="text-xs text-slate-400 space-y-1 list-decimal pl-4">
+                            <li>如果是 G1 的退化 Full GC：增大 -XX:G1ReservePercent（默认 10%）</li>
+                            <li>如果是 AdaptiveSizePolicy：关闭自适应策略 -XX:-UseAdaptiveSizePolicy</li>
+                            <li>增加 -XX:G1HeapWastePercent 让 G1 更"容忍"垃圾</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. CMS Concurrent Mode Failure vs Promotion Failed -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">3</span>
+            CMS 的两大经典故障
+        </h2>
+
+        <div class="space-y-5">
+            <!-- Concurrent Mode Failure -->
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-red-400 mb-3">Concurrent Mode Failure（并发模式失败）</h3>
+                <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                    发生在 CMS 的<strong>并发标记和并发清除期间</strong>。CMS 在回收老年代时是和业务线程<strong>并发</strong>进行的，
+                    但如果在 CMS 还没回收完之前，老年代就被新晋升的对象填满了——CMS 只能放弃，回退到 Serial Old 做一次<strong>单线程 STW Full GC</strong>。
+                </p>
+                <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>// CMS GC 日志中的典型表现：
+[GC (CMS Initial Mark) ...]
+[GC (CMS Concurrent Mark) ...]
+[GC (CMS Concurrent Preclean) ...]
+[GC (CMS Concurrent Abortable Preclean) ...]  ← CMS 还在并发工作
+// ↑ 业务线程同时也在疯狂分配对象并晋升到老年代 ↑
+[Full GC (Concurrent Mode Failure) ...]       ← 老年代不够用了！
+    CMS: 放弃并发回收，回退到 Serial Old
+    停顿时间：可能 5-30 秒（单线程！）</code></pre>
+                </div>
+                <div class="danger-box p-4 rounded-lg mb-3">
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                        <strong>🔥 发生瞬间的物理过程：</strong>CMS 的并发标记阶段需要遍历整个老年代的对象图。
+                        但这个过程中，业务线程还在创建新对象（Eden 满 → Young GC → 对象晋升到老年代）。
+                        如果晋升速度 > CMS 回收速度，老年代就会在 CMS 完成前被填满。此时 CMS 还没标记完——它甚至不知道哪些对象是垃圾——所以只能 STW。
+                    </p>
+                </div>
+                <div class="highlight-box p-4 rounded-lg">
+                    <h4 class="text-sm font-semibold text-white mb-1">排查方向</h4>
+                    <ul class="text-xs text-slate-400 space-y-1">
+                        <li>▸ 增大老年代大小，给 CMS 更多缓冲空间</li>
+                        <li>▸ 降低 CMS 触发阈值：<code class="text-emerald-400 bg-slate-800 px-1 rounded">-XX:CMSInitiatingOccupancyFraction=65</code>（更早开始并发回收）</li>
+                        <li>▸ 检查 Young GC 频率：如果 Young GC 太快，对象晋升太快，CMS 追不上</li>
+                        <li>▸ 根本解决：迁移到 G1 或 ZGC</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Promotion Failed -->
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-red-400 mb-3">Promotion Failed（晋升失败）</h3>
+                <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                    发生在<strong>Young GC 期间</strong>。Young GC 要把 Survivor 中活下来的对象晋升到老年代，但老年代<strong>没有足够的连续空间</strong>（是碎片问题，不一定是满的！）。
+                </p>
+                <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>// GC 日志中典型表现：
+[GC (Allocation Failure) ... 
+    [ParNew (promotion failed): 204800K-&gt;204800K(204800K)]  ← 晋升失败！
+    204800K-&gt;204800K(204800K), 0.1234567 secs]
+[Full GC (Allocation Failure) ...]  ← 紧接着触发 Full GC 来整理碎片
+
+// promotion failed 的核心：老年代总空闲可能还很多，
+// 但全都是碎片，找不到一块连续的足够大的空间！</code></pre>
+                </div>
+                <div class="warn-box p-4 rounded-lg mb-3">
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                        <strong>💡 如何从日志区分 CMF vs PF：</strong>
+                        Concurrent Mode Failure 的 Full GC <strong>之前</strong>一定有一串 CMS 并发阶段日志（CMS Initial Mark → Concurrent Mark → ...）。
+                        Promotion Failed 的 Full GC <strong>之前</strong>是 ParNew 的 Young GC，且带有 "(promotion failed)" 标记。
+                        看时序就能定位。
+                    </p>
+                </div>
+                <div class="highlight-box p-4 rounded-lg">
+                    <h4 class="text-sm font-semibold text-white mb-1">排查方向</h4>
+                    <ul class="text-xs text-slate-400 space-y-1">
+                        <li>▸ 老年代碎片化严重 → 增大 CMS 触发频率或迁移到 G1</li>
+                        <li>▸ Survivor 太小 → 对象过早晋升 → 增大 SurvivorRatio</li>
+                        <li>▸ 单个对象太大 → 使用 <code class="text-emerald-400 bg-slate-800 px-1 rounded">-XX:PretenureSizeThreshold</code> 直接进老年代</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. 完整排查框架 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">4</span>
+            Full GC 排查的完整框架
+        </h2>
+        <div class="code-dark rounded-lg p-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>Step 1 — 看触发原因（Cause）
+  [Full GC (Allocation Failure)]  → 空间真的不够
+  [Full GC (Ergonomics)]          → JVM 自适应策略触发
+  [Full GC (System.gc())]         → 代码里显式调了 System.gc()
+  [Full GC (Metadata GC Threshold)] → 元空间满了触发的 Full GC
+  [Full GC (G1 Evacuation Pause)] → G1 退化 Full GC
+
+Step 2 — 看堆占用变化
+  Full GC 后老年代: 90% → 90%  → 内存泄漏（这些对象真活着）
+  Full GC 后老年代: 90% → 30%  → 晋升太快，非泄漏
+  Full GC 后老年代: 90% → 88%  → 泄漏 + 碎片掺杂
+
+Step 3 — 看时间序列
+  Full GC 每 5 分钟一次 → 晋升太猛了
+  Full GC 每 30 秒一次 → 内存泄漏逼近 OOM，赶紧 dump
+  Full GC 前有 CMS 阶段 → Concurrent Mode Failure
+  Full GC 前有 ParNew(promotion failed) → 晋升失败/碎片
+
+Step 4 — 关联业务指标
+  Full GC 时间段的 QPS 是否突增？
+  Full GC 时间段的 TPS 下降了多少？
+  是否有大对象分配的对应业务操作？</code></pre>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试回答框架
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ GC 日志诊断要点</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> 三个必看指标：停顿时间、堆变化、触发原因</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> Allocation Failure vs Ergonomics 的不同排查方向</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> Concurrent Mode Failure：CMS 回收速度跟不上晋升速度</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> Promotion Failed：老年代碎片，不是空间满</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> 四步排查框架：原因 → 占用 → 时序 → 业务关联</li>
+                </ul>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">🛠️ 常用 GC 参数</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="font-mono text-emerald-400">-Xlog:gc*:file=gc.log:time,level,tags</li>
+                    <li class="font-mono text-emerald-400">-XX:+PrintGCDetails</li>
+                    <li class="font-mono text-emerald-400">-XX:+PrintGCDateStamps</li>
+                    <li class="font-mono text-emerald-400">-XX:+PrintGCApplicationStoppedTime</li>
+                    <li class="font-mono text-emerald-400">-XX:+PrintPromotionFailure</li>
+                    <li class="font-mono text-emerald-400">-XX:+UseGCLogFileRotation</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="02-zgc-shenandoah.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="04-survivor-overflow.html" class="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors flex items-center gap-2">下一问：Survivor 溢出实战 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>

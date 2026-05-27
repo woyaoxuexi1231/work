@@ -29,7 +29,6 @@
     .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
     .fade-up.visible { opacity: 1; transform: translateY(0); }
 
-    /* Node visualization */
     .aqs-node {
       display: flex; align-items: center; gap: 8px; padding: 8px 12px;
       border: 1px solid #334155; border-radius: 8px; font-size: 11px;
@@ -40,7 +39,6 @@
     .node-cancelled { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); opacity: 0.6; }
     .node-active { ring: 2px; box-shadow: 0 0 0 2px rgba(251,191,36,0.5); }
 
-    /* Arrow connector */
     .arrow-down {
       width: 2px; height: 20px; background: #334155; margin: 0 auto;
       position: relative;
@@ -51,7 +49,6 @@
       border-top: 5px solid #334155;
     }
 
-    /* Token colors */
     .tk-kw { color: #c678dd; }
     .tk-num { color: #d19a66; }
     .tk-cmt { color: #5c6370; font-style: italic; }
@@ -59,11 +56,15 @@
     .tk-fn { color: #61afef; }
     .tk-var { color: #e06c75; }
     .tk-ann { color: #e5c07b; }
+
+    .warn-box {
+      background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25);
+      border-radius: 12px; padding: 16px;
+    }
   </style>
 </head>
 <body class="antialiased selection:bg-indigo-500/30">
 
-<!-- Header -->
 <header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
   <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
     <div class="flex items-center gap-3">
@@ -88,6 +89,10 @@
       重点拆解共享模式下 <code class="mono text-emerald-300">doReleaseShared</code> 如何像多米诺骨牌一样唤醒一整串节点，
       最后用线上事故讲透 CDL 和 Semaphore 的工程陷阱。
     </p>
+    <div class="mt-4 warn-box text-xs text-amber-200/80 leading-relaxed inline-block">
+      ⚡ <strong>JDK17 确认：</strong>本文所有 AQS 共享传播机制（doReleaseShared、setHeadAndPropagate、PROPAGATE(-3)）
+      在 JDK17 中<strong class="text-amber-200">完整保留</strong>。流传的"JDK17 移除了传播机制"是误解——传播唤醒从未被移除。
+    </div>
   </section>
 
   <!-- ═══════════════ SECTION 1: CLH ENQUEUE & WAKEUP ═══════════════ -->
@@ -102,7 +107,6 @@
       以下是 ReentrantLock.lock() 失败后的完整入队 + park/unpark 流程：
     </p>
 
-    <!-- Enqueue Flow -->
     <div class="grid lg:grid-cols-2 gap-6 mb-6">
       <div class="bg-slate-900 border border-indigo-500/20 rounded-2xl p-6">
         <h4 class="text-indigo-400 font-bold text-sm mb-4">📥 入队流程 (addWaiter + enq)</h4>
@@ -134,38 +138,30 @@
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
         <h4 class="text-slate-400 font-bold text-sm mb-4">🔗 CLH 队列快照（3个线程等待）</h4>
         <div class="space-y-0">
-          <!-- Head -->
           <div class="aqs-node node-exclusive" style="border-style:dashed; opacity:0.7;">
             <span class="text-[10px] text-slate-500 font-bold w-12">HEAD</span>
             <span class="mono text-[10px] text-slate-500">thread=null</span>
             <span class="ml-auto text-[9px] text-slate-600">已获锁/哨兵</span>
           </div>
           <div class="arrow-down"></div>
-
-          <!-- Node 1 -->
           <div class="aqs-node node-exclusive node-active">
             <span class="text-[10px] text-amber-400 font-bold w-12">Node₁</span>
             <span class="mono text-[10px] text-slate-300">T-A (EXCLUSIVE)</span>
             <span class="ml-auto text-[9px] text-amber-400">← pred=head ✓</span>
           </div>
           <div class="arrow-down"></div>
-
-          <!-- Node 2 -->
           <div class="aqs-node node-exclusive">
             <span class="text-[10px] text-slate-400 font-bold w-12">Node₂</span>
             <span class="mono text-[10px] text-slate-400">T-B (EXCLUSIVE)</span>
             <span class="ml-auto text-[9px] text-slate-600">waitStatus=SIGNAL</span>
           </div>
           <div class="arrow-down"></div>
-
-          <!-- Tail -->
           <div class="aqs-node node-exclusive">
             <span class="text-[10px] text-slate-400 font-bold w-12">TAIL</span>
             <span class="mono text-[10px] text-slate-400">T-C (EXCLUSIVE)</span>
             <span class="ml-auto text-[9px] text-slate-600">刚入队</span>
           </div>
         </div>
-
         <div class="mt-4 text-[10px] text-slate-500 leading-relaxed">
           💡 <strong class="text-slate-400">关键设计：</strong>head 是哨兵节点，不关联线程。
           只有 head 的后继才有资格 tryAcquire。
@@ -187,7 +183,7 @@
           <div class="flex gap-3 items-start">
             <span class="text-amber-400 font-bold mono w-5 flex-shrink-0">②</span>
             <div><strong class="text-slate-300">unparkSuccessor(head)：</strong><br>
-              • 将 head.waitStatus 置 0（CANCELLED 或 0）<br>
+              • 将 head.waitStatus 置 0<br>
               • 从 tail 向前找第一个非 CANCELLED 节点 s<br>
               • <code class="mono text-[10px]">LockSupport.unpark(s.thread)</code></div>
           </div>
@@ -197,7 +193,7 @@
           </div>
         </div>
         <div class="bg-slate-950 rounded-lg p-4">
-                    <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-kw">private void</span> <span class="tk-fn">unparkSuccessor</span>(Node node) {
+          <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-kw">private void</span> <span class="tk-fn">unparkSuccessor</span>(Node node) {
   <span class="tk-cmt">// 清除 signal 状态</span>
   <span class="tk-kw">int</span> ws = node.waitStatus;
   <span class="tk-kw">if</span> (ws &lt; <span class="tk-num">0</span>)
@@ -221,70 +217,190 @@
     </div>
   </section>
 
-  <!-- ═══════════════ SECTION 2: SHARED PROPAGATION ═══════════════ -->
+  <!-- ═══════════════ SECTION 2: SHARED PROPAGATION DEEP DIVE ═══════════════ -->
   <section class="fade-up">
     <div class="flex items-center gap-3 mb-6">
       <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm">2</span>
-      <h3 class="text-xl font-bold text-white">共享模式的"传播唤醒"：doReleaseShared 多米诺效应</h3>
+      <h3 class="text-xl font-bold text-white">共享模式的"传播唤醒"：为什么需要、JDK17 是否还在</h3>
+    </div>
+
+    <!-- JDK17 confirmation banner -->
+    <div class="warn-box mb-6 text-xs text-amber-200/80 leading-relaxed">
+      <strong class="text-amber-200">🔬 关于 JDK17 的事实：</strong><br>
+      <p>流传"JDK17 移除了传播唤醒"的说法是<strong class="text-amber-200">错误的</strong>。以下是 JDK17 AQS 中仍然存在的完整传播机制要素：</p>
+      <ul class="list-disc pl-4 mt-2 space-y-1">
+        <li><code class="mono text-amber-300">Node.PROPAGATE = -3</code> — 仍然在 Node 类中定义</li>
+        <li><code class="mono text-amber-300">doReleaseShared()</code> — 仍然在 AQS 中，CAS 0→PROPAGATE 分支健在</li>
+        <li><code class="mono text-amber-300">setHeadAndPropagate(node, r)</code> — 仍然检查 <code class="mono">h.waitStatus &lt; 0</code> 来捕获 PROPAGATE</li>
+      </ul>
+      <p class="mt-2">真正发生过的是：JDK6 早期版本中<strong class="text-amber-200">确实没有</strong> PROPAGATE，这曾是 JDK-6801020 已知 bug。
+      JDK 6u18 及以上版本（包括 JDK8/11/17/21）都包含这个修复。不是"移除"，而是<strong class="text-amber-200">一直存在至今</strong>。</p>
     </div>
 
     <p class="text-sm text-slate-400 leading-relaxed mb-5">
       独占模式下，release 只唤醒一个后继。但在共享模式（Semaphore/CDL/ReadWriteLock.read）下，
       一个 release 可能需要唤醒<strong class="text-slate-200">一连串连续的共享节点</strong>。这就是"传播"机制。
+      但传播的具体作用比直觉更微妙——<strong class="text-slate-200">它不是为了"多个节点同时获取许可"</strong>（那是 Semaphore 本身的语义），
+      而是为了解决<strong class="text-slate-200">时序竞争导致唤醒丢失</strong>的问题。
     </p>
 
-    <!-- Two key methods -->
-    <div class="grid lg:grid-cols-2 gap-6 mb-6">
-      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
-        <h4 class="text-emerald-400 font-bold text-sm mb-3">tryAcquireShared 中的传播</h4>
-        <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto mb-3"><code><span class="tk-kw">final boolean</span> <span class="tk-fn">tryAcquireShared_nanos</span>(...) {
-  <span class="tk-kw">for</span> (;;) {
-    Node p = node.predecessor();
-    <span class="tk-kw">if</span> (p == head) {
-      <span class="tk-kw">int</span> r = <span class="tk-fn">tryAcquireShared</span>(arg);
-      <span class="tk-kw">if</span> (r >= <span class="tk-num">0</span>) {
-        <span class="tk-cmt">// ✅ 获取成功 → setHeadAndPropagate</span>
-        <span class="tk-fn">setHeadAndPropagate</span>(node, r);
-        <span class="tk-kw">return true</span>;
-      }
-    }
-    <span class="tk-cmt">// 失败则 park...</span>
+    <!-- The Lost Wakeup Problem -->
+    <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-6 mb-6">
+      <h4 class="text-rose-400 font-bold text-sm mb-4">💀 没有 PROPAGATE 时的经典 Bug：唤醒丢失</h4>
+      
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+          <p class="text-slate-300 font-bold">场景：Semaphore(1)，队列 [S₁(SIGNAL) → S₂(SIGNAL)]，state=0</p>
+          <div class="flex gap-2 items-start">
+            <span class="text-rose-400 mono font-bold">T1</span>
+            <div><strong class="text-slate-300">release(1)</strong> → state=1 → doReleaseShared → CAS head ws=SIGNAL→0 → unpark S₁</div>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-emerald-400 mono font-bold">S₁</span>
+            <div><strong class="text-slate-300">被唤醒</strong> → tryAcquireShared(1) → remaining=0 → setHeadAndPropagate(node, <span class="text-rose-400">r=0</span>)</div>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-amber-400 mono font-bold">T2</span>
+            <div><strong class="text-slate-300">同时 release(1)</strong> → state=1 → doReleaseShared</div>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-slate-500 mono font-bold">→</span>
+            <div>T2 的 doReleaseShared 读 head — 此时 head 已被 S₁ 设为新节点（S₁ 的旧节点），<br>
+            新 head.waitStatus = 0（S₁ 还没设置 SIGNAL），<br>
+            T2 发现 ws == 0，早期 JDK 直接 break 了！→ <strong class="text-rose-400">唤醒信号丢失！</strong></div>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-slate-500 mono font-bold">→</span>
+            <div>同时 S₁ 的 setHeadAndPropagate 检查 propagate=0 → <strong class="text-rose-400">也不传播</strong>。</div>
+          </div>
+          <div class="p-3 bg-rose-500/10 rounded-lg text-[10px] text-rose-300">
+            ❌ <strong>结果：</strong>S₂ 永远 park，即使有可用许可也没人唤醒它！
+          </div>
+        </div>
+
+        <div class="bg-slate-950 rounded-lg p-4">
+          <p class="text-xs text-slate-400 mb-2">🔧 <strong class="text-slate-300">修复前</strong>的 setHeadAndPropagate（JDK6 早期）</p>
+          <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-cmt">// ❌ 只有 propagate > 0 才传播</span>
+<span class="tk-kw">private void</span> <span class="tk-fn">setHeadAndPropagate</span>(Node node, <span class="tk-kw">int</span> propagate) {
+  setHead(node);
+  <span class="tk-kw">if</span> (<span class="text-rose-400">propagate > 0</span>) {
+    Node s = node.next;
+    <span class="tk-kw">if</span> (s == <span class="tk-kw">null</span> || s.isShared())
+      doReleaseShared();
+  }
+}
+
+<span class="tk-cmt">// 当最后一个许可被消费（propagate=0），</span>
+<span class="tk-cmt">// 并发 release 的信号就在这里丢失。</span></code></pre>
+          <p class="text-xs text-emerald-300 mt-3">🔧 <strong class="text-slate-300">修复后</strong>（JDK6u18+ ~ JDK17）</p>
+          <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-kw">private void</span> <span class="tk-fn">setHeadAndPropagate</span>(Node node, <span class="tk-kw">int</span> propagate) {
+  Node h = head;  <span class="tk-cmt">// 记录旧 head</span>
+  setHead(node);
+  <span class="tk-kw">if</span> (propagate > <span class="tk-num">0</span> || h == <span class="tk-kw">null</span> || h.waitStatus &lt; <span class="tk-num">0</span>
+      || (h = head) == <span class="tk-kw">null</span> || h.waitStatus &lt; <span class="tk-num">0</span>) {
+    Node s = node.next;
+    <span class="tk-kw">if</span> (s == <span class="tk-kw">null</span> || s.isShared())
+      doReleaseShared();
   }
 }</code></pre>
-        <p class="text-[10px] text-slate-500 leading-relaxed">
-          <code class="mono text-emerald-300">setHeadAndPropagate</code> 不仅将自己设为 head，
-          还会检查：<strong class="text-slate-300">如果剩余许可 > 0 或后继也是共享节点</strong>，
-          就继续调用 doReleaseShared 唤醒下一个。
-        </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two key methods annotated -->
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
+        <h4 class="text-emerald-400 font-bold text-sm mb-3">setHeadAndPropagate — JDK17 源码逐行分析</h4>
+        <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto mb-3"><code><span class="tk-kw">private void</span> <span class="tk-fn">setHeadAndPropagate</span>(
+    Node node, <span class="tk-kw">int</span> propagate) {
+  <span class="tk-cmt">// 🅐 记录旧 head，用于后续检查</span>
+  Node h = head;
+  <span class="tk-cmt">// 🅑 将当前节点设为新 head（清除 thread）</span>
+  setHead(node);
+
+  <span class="tk-cmt">// 🅒 以下任一条件满足时继续传播：</span>
+  <span class="tk-kw">if</span> (<span class="text-emerald-300">propagate > 0</span>        <span class="tk-cmt">// 1) 还有剩余许可</span>
+      || h == <span class="tk-kw">null</span>
+      || <span class="text-amber-300">h.waitStatus &lt; 0</span>   <span class="tk-cmt">// 2) 旧 head 被标记了 SIGNAL/PROPAGATE</span>
+      || (h = head) == <span class="tk-kw">null</span>
+      || <span class="text-amber-300">h.waitStatus &lt; 0</span>) { <span class="tk-cmt">// 3) 新 head 也被标记了</span>
+    Node s = node.next;
+    <span class="tk-kw">if</span> (s == <span class="tk-kw">null</span> || s.isShared())
+      <span class="tk-fn">doReleaseShared</span>();
+  }
+}</code></pre>
+        <div class="text-[10px] text-slate-500 leading-relaxed space-y-2">
+          <p><strong class="text-emerald-300">条件 ① propagate > 0</strong>：tryAcquireShared 返回正数——还有剩余许可。这是最直接的"有资源可分配"信号。</p>
+          <p><strong class="text-amber-300">条件 ② 旧 head.waitStatus &lt; 0</strong>：旧 head 被标记为 SIGNAL 或 PROPAGATE，说明有并发 release 已经发生或正在发生，需要继续传播。</p>
+          <p><strong class="text-amber-300">条件 ③ 新 head.waitStatus &lt; 0</strong>：在 setHead 到检查之间，又有新的 release 发生了，另一个线程 CAS 了新 head 的状态。</p>
+          <p class="text-slate-600">这些条件共同保证了"只要有任何可能还有未处理的 release 信号，就继续传播"。</p>
+        </div>
       </div>
 
       <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
-        <h4 class="text-emerald-400 font-bold text-sm mb-3">doReleaseShared 核心逻辑</h4>
+        <h4 class="text-emerald-400 font-bold text-sm mb-3">doReleaseShared — JDK17 源码逐行分析</h4>
         <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto mb-3"><code><span class="tk-kw">private void</span> <span class="tk-fn">doReleaseShared</span>() {
   <span class="tk-kw">for</span> (;;) {
     Node h = head;
     <span class="tk-kw">if</span> (h != <span class="tk-kw">null</span> && h != tail) {
       <span class="tk-kw">int</span> ws = h.waitStatus;
       <span class="tk-kw">if</span> (ws == SIGNAL) {
-        <span class="tk-cmt">// CAS 将 SIGNAL → 0</span>
-        <span class="tk-kw">if</span> (!<span class="tk-fn">compareAndSetWaitStatus</span>(h, SIGNAL, <span class="tk-num">0</span>))
-          <span class="tk-kw">continue</span>; <span class="tk-cmt">// 重试</span>
+        <span class="tk-cmt">// 🅐 有后继在等 → 清除 SIGNAL 并唤醒</span>
+        <span class="tk-kw">if</span> (!<span class="tk-fn">compareAndSetWaitStatus</span>(
+            h, SIGNAL, <span class="tk-num">0</span>))
+          <span class="tk-kw">continue</span>;
         <span class="tk-fn">unparkSuccessor</span>(h);
       }
       <span class="tk-kw">else if</span> (ws == <span class="tk-num">0</span> &&
-        !<span class="tk-fn">compareAndSetWaitStatus</span>(h, <span class="tk-num">0</span>, PROPAGATE))
-        <span class="tk-kw">continue</span>; <span class="tk-cmt">// 标记传播</span>
+        !<span class="tk-fn">compareAndSetWaitStatus</span>(
+            h, <span class="tk-num">0</span>, PROPAGATE))
+        <span class="tk-cmt">// 🅑 无后继在等，但标记 PROPAGATE</span>
+        <span class="tk-cmt">// 告诉将来被唤醒的节点："继续传播"</span>
+        <span class="tk-kw">continue</span>;
     }
     <span class="tk-kw">if</span> (h == head) <span class="tk-kw">break</span>;
-    <span class="tk-cmt">// head 变了说明有新节点被唤醒并设头</span>
+    <span class="tk-cmt">// 🅒 head 变了 → 有节点被唤醒并设头</span>
     <span class="tk-cmt">// → 继续循环传播！</span>
   }
 }</code></pre>
-        <p class="text-[10px] text-slate-500 leading-relaxed">
-          <code class="mono text-emerald-300">PROPAGATE(-3)</code> 状态是关键：
-          它告诉后续被唤醒的共享节点"即使你获取时发现 r==0，也要继续传播"，
-          防止因时序问题导致的唤醒丢失。
-        </p>
+        <div class="text-[10px] text-slate-500 leading-relaxed space-y-2">
+          <p><strong class="text-amber-300">🅐 SIGNAL 分支</strong>：最常见的路径。CAS 将 SIGNAL 清 0，然后 unparkSuccessor 唤醒后继。这是实际的唤醒动作。</p>
+          <p><strong class="text-amber-300">🅑 PROPAGATE 分支</strong>：核心修复。如果 head 已经是 0（刚被清过 SIGNAL），CAS 设为 PROPAGATE(-3)。这个标记会被 setHeadAndPropagate 捕捉到，作为"必须继续传播"的信号。</p>
+          <p><strong class="text-amber-300">🅒 循环检查</strong>：如果 head 变了（被唤醒的线程设为新 head），继续 loop 传播。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Why Semaphore specifically needs propagation -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+      <h4 class="text-purple-400 font-bold text-sm mb-3">🎯 为什么 Semaphore 特别需要传播？——从 JDK17 源码角度</h4>
+      
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-slate-950 rounded-lg p-4">
+          <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-cmt">// JDK17 Semaphore.Sync.tryReleaseShared</span>
+<span class="tk-cmt">// ⚠️ 注意：永远返回 true！</span>
+<span class="tk-kw">protected final boolean</span> <span class="tk-fn">tryReleaseShared</span>(<span class="tk-kw">int</span> releases) {
+  <span class="tk-kw">for</span> (;;) {
+    <span class="tk-kw">int</span> current = getState();
+    <span class="tk-kw">int</span> next = current + releases;
+    <span class="tk-kw">if</span> (next &lt; current)
+      <span class="tk-kw">throw new</span> Error(<span class="tk-cmt">"Maximum permit count exceeded"</span>);
+    <span class="tk-kw">if</span> (compareAndSetState(current, next))
+      <span class="tk-kw">return true</span>;  <span class="tk-cmt">// ← 无条件 true！</span>
+  }
+}</code></pre>
+        </div>
+        <div class="text-xs text-slate-400 leading-relaxed space-y-2">
+          <p><strong class="text-slate-200">对比 CountDownLatch：</strong></p>
+          <p>CountDownLatch 的 tryReleaseShared 只在 state 到 0 时返回 true，只触发一次 doReleaseShared。
+          那次 doReleaseShared 需要<strong class="text-slate-200">唤醒所有等待者</strong>——所以必须传播。</p>
+          <p><strong class="text-slate-200 mt-2">Semaphore 有所不同：</strong></p>
+          <p>每次 release() 都返回 true，每次都调用 doReleaseShared。
+          所以每个 release 都会<strong class="text-slate-200">至少唤醒一个等待者</strong>。</p>
+          <p>传播的需求在这里更微妙——是因为<strong class="text-slate-200">并发 release 的时序交错</strong>：
+          线程 A release(1) 唤醒 S₁，S₁ 醒来取走最后一个许可。
+          线程 B 同时 release(2)——它的信号必须通过 PROPAGATE 接力给 S₂、S₃。</p>
+        </div>
       </div>
     </div>
 
@@ -322,31 +438,32 @@
         <!-- Step by step -->
         <div class="space-y-2 pl-4 border-l-2 border-emerald-500/30">
           <div class="text-[10px] text-emerald-300">
-            ① release(1) → state=1 → doReleaseShared → unpark S₁
+            ① <strong class="text-slate-200">release(1)</strong> → state=1 → doReleaseShared → CAS head(SIGNAL→0) → unpark S₁
           </div>
           <div class="text-[10px] text-emerald-300">
-            ② S₁ 唤醒 → tryAcquireShared(1) 返回 0 (state=0) → setHeadAndPropagate
-          </div>
-          <div class="text-[10px] text-emerald-300">
-            ③ propagate=true (因为后继 S₂ 是共享) → 再次 doReleaseShared → unpark S₂
-          </div>
-          <div class="text-[10px] text-emerald-300">
-            ④ S₂ 唤醒 → tryAcquireShared(1) 返回 -1 (state=0, 无剩余) → park
+            ② <strong class="text-slate-200">S₁ 唤醒</strong> → tryAcquireShared(1) 返回 0 (state=0) → setHeadAndPropagate(node, r=<span class="text-amber-300">0</span>)
           </div>
           <div class="text-[10px] text-amber-300">
-            ⚠️ 但 S₂ 被唤醒时 head 已变 → setHeadAndPropagate 中检查到 PROPAGATE 标记 → 继续传播 → unpark S₃
+            ③ propagate=0，但检查旧 head.waitStatus → <strong>为 0（已被清除）→ 无 PROPAGATE</strong><br>
+            检查新 head.waitStatus → S₁ 的后继 S₂ 的 waitStatus=SIGNAL → s.isShared()=true → <strong>doReleaseShared</strong>
+          </div>
+          <div class="text-[10px] text-emerald-300">
+            ④ doReleaseShared → 读 head(S₁) ws=SIGNAL → CAS 0 → unpark S₂
+          </div>
+          <div class="text-[10px] text-rose-300">
+            ⑤ <strong class="text-slate-200">S₂ 唤醒</strong> → tryAcquireShared(1) 返回 -1 → <strong>不调用 setHeadAndPropagate</strong> → park
           </div>
           <div class="text-[10px] text-slate-500">
-            ⑤ S₃ 唤醒 → tryAcquireShared 返回 -1 → 无 PROPAGATE → 停止传播
+            ⑥ 传播链停止（S₂ 没拿到许可，也没有更多 release 信号）。S₃ 和 E₄ 继续等待。
           </div>
           <div class="text-[10px] text-indigo-300">
-            ⑥ E₄ 不会被唤醒（独占节点阻断传播链）
+            ⑦ <strong>E₄ 是独占节点</strong> → 即使传播到它之前，isShared()=false → 传播自动停止
           </div>
         </div>
 
         <!-- After -->
         <div>
-          <div class="text-[10px] text-slate-500 mono font-bold mb-2">AFTER: S₁ 获锁成为新 head，S₂/S₃ 经历了一次无效唤醒后重新 park</div>
+          <div class="text-[10px] text-slate-500 mono font-bold mb-2">AFTER: S₁ 持锁成为新 head，S₂ park 回去</div>
           <div class="flex flex-wrap gap-2 items-center">
             <div class="aqs-node node-shared" style="border-style:dashed;opacity:0.6;padding:4px 8px;">
               <span class="text-[9px] text-slate-500">HEAD(S₁)</span>
@@ -369,11 +486,72 @@
 
       <div class="mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
         <p class="text-[10px] text-emerald-200/80 leading-relaxed">
-          <strong>为什么要传播而不是只唤醒一个？</strong>
-          因为共享模式下多个线程可以同时持有许可。如果只唤醒 S₁，
-          而 S₁ 获取后发现还有剩余许可却不唤醒 S₂，S₂ 就会永远沉睡直到下一次 release。
-          传播机制确保了"只要有许可可用，所有连续共享节点都有机会竞争"。
+          <strong>关键观察：</strong>当 S₂ 醒来但拿不到许可时，它<strong class="text-amber-200">不会</strong>调用 setHeadAndPropagate——所以
+          传播在<strong class="text-amber-200">第一次 tryAcquireShared 返回负值时立即停止</strong>。这意味着
+          HTML 旧版本中"S₂ 虽然拿不到许可但仍传播给 S₃"的场景<strong class="text-amber-200">在有 JDK6u18+ 修复后不会发生</strong>。
+          真正的传播只发生在<strong class="text-slate-200">获取成功的线程</strong>的 setHeadAndPropagate 中，
+          或者<strong class="text-slate-200">新 release 触发</strong>的 doReleaseShared 中。
         </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ SECTION 3: PROPAGATION MYTH-BUSTING ═══════════════ -->
+  <section class="fade-up">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 font-bold text-sm">⚡</span>
+      <h3 class="text-xl font-bold text-white">传播唤醒：辟谣与本质</h3>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4 mb-6">
+      <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
+        <h4 class="text-emerald-400 font-bold text-sm mb-2">✅ 传播的真实作用</h4>
+        <ul class="text-xs text-slate-400 space-y-2 leading-relaxed">
+          <li><strong class="text-slate-200">防止唤醒丢失：</strong>并发 release 时，一个释放信号可能被另一个线程的 setHead 掩盖。PROPAGATE 标记确保信号不被丢弃。</li>
+          <li><strong class="text-slate-200">多许可级联：</strong>release(5) 的 5 个许可需要唤醒多个等待线程。在 doReleaseShared 的循环中逐个唤醒。</li>
+          <li><strong class="text-slate-200">独占节点阻断：</strong>传播遇到独占节点 (isShared()=false) 自动停止——这是 ReadWriteLock 的重要设计。</li>
+        </ul>
+      </div>
+      <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5">
+        <h4 class="text-rose-400 font-bold text-sm mb-2">❌ 常见的误解</h4>
+        <ul class="text-xs text-slate-400 space-y-2 leading-relaxed">
+          <li><strong class="text-rose-300">误解："传播让所有共享节点都拿到许可"</strong> — 错。每个节点拿到许可后必须通过 setHeadAndPropagate 主动触发下一轮传播。拿不到的节点直接 park 回去。</li>
+          <li><strong class="text-rose-300">误解："JDK17 移除了传播"</strong> — 错。PROPAGATE(-3)、doReleaseShared、setHeadAndPropagate 在 JDK17 中全部存在。</li>
+          <li><strong class="text-rose-300">误解："Semaphore 不需要传播"</strong> — 错。Semaphore 的 tryReleaseShared 永远返回 true，每次 release 都触发 doReleaseShared，正是传播的核心使用者。</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Flow comparison: With vs Without -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <h4 class="text-sm font-bold text-slate-400 mb-4">🔄 传播唤醒的完整调用链（JDK17）</h4>
+      <div class="text-xs text-slate-400 font-mono leading-relaxed bg-slate-950 rounded-lg p-4 overflow-x-auto">
+        <div class="text-emerald-400">// === release 路径 ===</div>
+        <div>Semaphore.release(1)</div>
+        <div>  → Sync.releaseShared(1)</div>
+        <div>    → tryReleaseShared(1)  ← 永远 true</div>
+        <div>    → <strong class="text-amber-300">doReleaseShared()</strong></div>
+        <div>      → head.waitStatus == SIGNAL?</div>
+        <div>        → CAS SIGNAL→0, unparkSuccessor(head)</div>
+        <div>        → 被唤醒的线程运行后 head 可能变</div>
+        <div>        → 如果 head 变了，继续 loop 传播</div>
+        <div>      → head.waitStatus == 0?</div>
+        <div>        → CAS 0→PROPAGATE (标记等待传播)</div>
+        <div>        → 如果 head 没变，break</div>
+        <div class="mt-2 text-emerald-400">// === acquire 路径（被唤醒后）===</div>
+        <div>doAcquireSharedInterruptibly 中</div>
+        <div>  → pred == head?</div>
+        <div>    → tryAcquireShared(1)</div>
+        <div>    → r ≥ 0? (有许可)</div>
+        <div>      → <strong class="text-amber-300">setHeadAndPropagate(node, r)</strong></div>
+        <div>        → 记录旧 head → setHead(node)</div>
+        <div>        → 检查条件:</div>
+        <div>          • r &gt; 0  (还有剩余许可？)</div>
+        <div>          • 旧 head.waitStatus &lt; 0 (有 PROPAGATE？)</div>
+        <div>          • 新 head.waitStatus &lt; 0 (新信号？)</div>
+        <div>        → 任一满足且后继是共享 → doReleaseShared()</div>
+        <div>    → r &lt; 0? (没许可)</div>
+        <div>      → <strong class="text-slate-500">park 回去，不传播</strong></div>
       </div>
     </div>
   </section>
@@ -398,12 +576,11 @@
           没有 reset() 方法。
         </p>
         <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mb-3">
-                    <pre class="text-[10px] mono text-rose-200/70 leading-relaxed"><code><span class="tk-cmt">// ❌ 错误：复用 CDL 做循环屏障</span>
+          <pre class="text-[10px] mono text-rose-200/70 leading-relaxed"><code><span class="tk-cmt">// ❌ 错误：复用 CDL 做循环屏障</span>
 CountDownLatch cdl = <span class="tk-kw">new</span> CountDownLatch(<span class="tk-num">3</span>);
 <span class="tk-kw">for</span> (<span class="tk-kw">int</span> round = <span class="tk-num">0</span>; round &lt; <span class="tk-num">10</span>; round++) {
     submitTasks(cdl);  <span class="tk-cmt">// 第2轮起 await 秒过</span>
     cdl.await();       <span class="tk-cmt">// ⚠️ 不再阻塞！</span>
-    <span class="tk-cmt">// cdl.countDown() 无效</span>
 }</code></pre>
         </div>
         <p class="text-[10px] text-emerald-300 leading-relaxed">
@@ -424,13 +601,7 @@ CountDownLatch cdl = <span class="tk-kw">new</span> CountDownLatch(<span class="
           CDL 不感知任务成功/失败，只计数。
         </p>
         <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mb-3">
-                    <pre class="text-[10px] mono text-rose-200/70 leading-relaxed"><code><span class="tk-cmt">// ❌ 危险：异常路径遗漏 countDown</span>
-executor.submit(() -> {
-    process(data);     <span class="tk-cmt">// 可能抛异常</span>
-    cdl.countDown();   <span class="tk-cmt">// 异常时跳过!</span>
-});
-
-<span class="tk-cmt">// ✅ 安全写法</span>
+          <pre class="text-[10px] mono text-rose-200/70 leading-relaxed"><code><span class="tk-cmt">// ✅ 安全写法：始终在 finally 中 countDown</span>
 executor.submit(() -> {
     <span class="tk-kw">try</span> { process(data); }
     <span class="tk-kw">finally</span> { cdl.countDown(); }
@@ -443,7 +614,6 @@ executor.submit(() -> {
       </div>
     </div>
 
-    <!-- Trap 3 -->
     <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
       <div class="flex items-center gap-2 mb-3">
         <span class="text-amber-400 text-lg">⚠️</span>
@@ -465,6 +635,41 @@ executor.submit(() -> {
     <div class="flex items-center gap-3 mb-6">
       <span class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 font-bold text-sm">4</span>
       <h3 class="text-xl font-bold text-white">Semaphore 陷阱：为什么不能替代 CyclicBarrier？</h3>
+    </div>
+
+    <!-- JDK17 Semaphore code analysis -->
+    <div class="bg-slate-900 border border-purple-500/20 rounded-2xl p-6 mb-6">
+      <h4 class="text-purple-400 font-bold text-sm mb-4">🧬 JDK17 Semaphore 源码分析：为什么 tryReleaseShared 永远返回 true？</h4>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div>
+          <pre class="text-[10px] mono text-slate-400 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-cmt">// Semaphore.Sync (JDK17)</span>
+<span class="tk-kw">protected final boolean</span> <span class="tk-fn">tryReleaseShared</span>(<span class="tk-kw">int</span> releases) {
+  <span class="tk-kw">for</span> (;;) {
+    <span class="tk-kw">int</span> current = getState();
+    <span class="tk-kw">int</span> next = current + releases;
+    <span class="tk-kw">if</span> (next &lt; current) <span class="tk-cmt">// 溢出检查</span>
+      <span class="tk-kw">throw new</span> Error(<span class="tk-cmt">"Maximum..."</span>);
+    <span class="tk-kw">if</span> (compareAndSetState(current, next))
+      <span class="tk-kw">return true</span>; <span class="tk-cmt">// ← 区别于 CDL！</span>
+  }
+}
+
+<span class="tk-cmt">// 为什么要永远返回 true？</span>
+<span class="tk-cmt">// 因为 Semaphore 的 release 语义是"归还许可"</span>
+<span class="tk-cmt">// 不论有没有线程在等，release 都应该增加许可计数</span>
+<span class="tk-cmt">// 而不像 CDL 只有最后一次 countDown 才有意义</span></code></pre>
+        </div>
+        <div class="text-xs text-slate-400 leading-relaxed space-y-3">
+          <p><strong class="text-slate-200">这对传播链的影响：</strong></p>
+          <p>每次 release 都走 <code class="mono text-[10px]">releaseShared → doReleaseShared</code> 全路径。
+          所以 Semaphore 的传播链被<strong class="text-slate-200">每一个 release 调用触发</strong>，而不是只在最后一次。</p>
+          <div class="bg-purple-500/10 rounded-lg p-3 text-[10px]">
+            <p class="text-purple-300"><strong>对比 CountDownLatch：</strong></p>
+            <p class="text-slate-400">CDL 的 tryReleaseShared 只在 state→0 时返回 true，<strong class="text-slate-200">一次</strong> doReleaseShared 需要把队列里<strong class="text-slate-200">所有</strong>等待者都唤醒。</p>
+            <p class="text-slate-400 mt-1">Semaphore 的 tryReleaseShared 每次返回 true，<strong class="text-slate-200">每次</strong> release 都触发 doReleaseShared，逐个唤醒。</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="bg-slate-900 border border-purple-500/20 rounded-2xl p-6 mb-6">
@@ -492,12 +697,11 @@ executor.submit(() -> {
       </div>
     </div>
 
-    <!-- Why Semaphore fails as Barrier -->
     <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5 mb-6">
       <h4 class="text-rose-400 font-bold text-sm mb-3">💥 用 Semaphore 模拟 Barrier 的经典翻车</h4>
       <div class="grid lg:grid-cols-2 gap-4">
         <div>
-                    <pre class="text-[10px] mono text-rose-200/70 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-cmt">// ❌ 试图用 Semaphore 做 3 线程屏障</span>
+          <pre class="text-[10px] mono text-rose-200/70 leading-relaxed bg-slate-950 rounded p-3 overflow-x-auto"><code><span class="tk-cmt">// ❌ 试图用 Semaphore 做 3 线程屏障</span>
 Semaphore sem = <span class="tk-kw">new</span> Semaphore(<span class="tk-num">0</span>);
 
 <span class="tk-cmt">// 每个 worker:</span>
@@ -509,29 +713,17 @@ doNextPhase();</code></pre>
         </div>
         <div class="space-y-2 text-xs text-slate-400 leading-relaxed">
           <p><strong class="text-rose-300">问题 1：竞态条件</strong></p>
-          <p class="text-[10px]">
-            T1 release → permits=1<br>
-            T2 release → permits=2<br>
-            T3 release → permits=3<br>
-            T1 acquire(3) 成功 → permits=0 ← <strong class="text-rose-300">T1 独自通过！</strong><br>
-            T2 acquire(3) 阻塞 ← T2/T3 永远等不到
-          </p>
+          <p class="text-[10px]">T1 release → permits=1<br>
+          T2 release → permits=2<br>
+          T3 release → permits=3<br>
+          T1 acquire(3) 成功 → T1 独自通过！T2/T3 永远阻塞</p>
           <p class="mt-2"><strong class="text-rose-300">问题 2：第二轮污染</strong></p>
-          <p class="text-[10px]">
-            即使第一轮侥幸正确，release(3) 后 permits=3。
-            第二轮如果有线程提前 release，permits 可能累积到 6，
-            导致 acquire(3) 不需要等齐就能通过。<strong class="text-rose-300">屏障语义彻底崩塌。</strong>
-          </p>
-          <p class="mt-2 text-emerald-300 text-[10px]">
-            ✅ <strong>正确做法：</strong>直接用 CyclicBarrier(3)。
-            它的 await() 内部用 ReentrantLock + Condition 保证原子性，
-            用 generation 隔离轮次，不可能出现上述问题。
-          </p>
+          <p class="text-[10px]">release(3) 后 permits=3。第二轮线程提前 release 导致 permits 累积到 6→acquire(3) 不等齐就通过。</p>
+          <p class="mt-2 text-emerald-300 text-[10px]">✅ <strong>正确做法：</strong>直接用 CyclicBarrier(3)。</p>
         </div>
       </div>
     </div>
 
-    <!-- Other Semaphore traps -->
     <div class="grid md:grid-cols-2 gap-4">
       <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
         <h4 class="text-amber-400 font-bold text-sm mb-2">⚠️ 泄漏陷阱</h4>
@@ -583,10 +775,22 @@ doNextPhase();</code></pre>
           <td class="text-center px-4 py-3 text-emerald-400 font-bold">✅ 循环重用</td>
         </tr>
         <tr class="hover:bg-slate-800/30 transition">
-          <td class="px-4 py-3 font-medium text-slate-300">参与方</td>
-          <td class="text-center px-4 py-3">1 等多 / 多等 1</td>
-          <td class="text-center px-4 py-3">任意数量</td>
-          <td class="text-center px-4 py-3">N 等 N（对称）</td>
+          <td class="px-4 py-3 font-medium text-slate-300">tryReleaseShared 返回</td>
+          <td class="text-center px-4 py-3 mono">仅 state→0 时 true</td>
+          <td class="text-center px-4 py-3 mono text-amber-300">永远 true</td>
+          <td class="text-center px-4 py-3 text-slate-600">N/A（非 AQS）</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">doReleaseShared 触发</td>
+          <td class="text-center px-4 py-3">1 次（最后一次 countDown）</td>
+          <td class="text-center px-4 py-3">每次 release</td>
+          <td class="text-center px-4 py-3">N/A</td>
+        </tr>
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="px-4 py-3 font-medium text-slate-300">传播必要性</td>
+          <td class="text-center px-4 py-3">必须：一次唤醒所有等待者</td>
+          <td class="text-center px-4 py-3">必须：防止并发 release 唤醒丢失</td>
+          <td class="text-center px-4 py-3">N/A</td>
         </tr>
         <tr class="hover:bg-slate-800/30 transition">
           <td class="px-4 py-3 font-medium text-slate-300">AQS 模式</td>
@@ -633,6 +837,11 @@ doNextPhase();</code></pre>
           解决了"唤醒丢失"这个困扰早期并发库的经典难题。代价是偶尔的无效唤醒（spurious wakeup），
           但正确性优先于性能——这是 Doug Lea 一贯的设计哲学。
         </p>
+        <p class="text-amber-300/80 text-xs border-l-2 border-amber-400/40 pl-3">
+          <strong>关于 JDK17 的澄清：</strong>传播机制（PROPAGATE(-3)、doReleaseShared、setHeadAndPropagate）<strong class="text-amber-200">在 JDK17 中完整保留</strong>。
+          该机制最初在 JDK6u18 中引入以修复 JDK-6801020（共享模式唤醒丢失 bug），后续所有版本包括 JDK17 和 JDK21 均继承此修复。
+          所谓"JDK17 移除传播"是一个流传的误解。
+        </p>
         <p>
           <strong class="text-rose-400">CountDownLatch</strong> 是一次性的倒计时器，不是屏障。
           <strong class="text-purple-400">Semaphore</strong> 是许可计数器，不是同步点。
@@ -650,16 +859,14 @@ doNextPhase();</code></pre>
 
 </main>
 
-<!-- Footer -->
 <footer class="border-t border-slate-800/60 py-8 mt-8">
   <div class="max-w-5xl mx-auto px-6 text-center">
     <p class="text-slate-600 text-[11px]">
-      AQS CLH Queue · Shared Propagation · doReleaseShared · CountDownLatch · Semaphore · CyclicBarrier · Concurrency Pitfalls
+      AQS CLH Queue · Shared Propagation · doReleaseShared · Propagate(-3) · JDK17 · Semaphore · CountDownLatch · CyclicBarrier · Concurrency Pitfalls
     </p>
   </div>
 </footer>
 
-<!-- Scroll Observer -->
 <script>
   const obs = new IntersectionObserver(entries => {
     entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
