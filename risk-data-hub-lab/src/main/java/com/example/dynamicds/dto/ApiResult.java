@@ -12,7 +12,7 @@ import lombok.Data;
  * status 字段提供详细的状态描述。
  * <p>
  * <b>静态工厂方法 vs new ApiResult()</b><br>
- * {@code ApiResult.ok(data)} 和 {@code ApiResult.fail(code, msg)} 是静态工厂方法，
+ * {@code ApiResult.ok(data)} 和 {@code ApiResult.getFail(code, msg)} 是静态工厂方法，
  * 比构造器更语义化：看到 {@code ok()} 就知道是成功，看到 {@code fail()} 就知道是失败。
  * 这也是 Effective Java 推荐的"用静态工厂方法替代构造器"原则。
  * <p>

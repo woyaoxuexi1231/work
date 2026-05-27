@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL 进阶：覆盖索引与索引下推</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              mysql: { blue: '#00758f', orange: '#f29111' },
+              idx: { leaf: '#10b981', data: '#3b82f6', filter: '#f59e0b' }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        code { font-family: 'JetBrains Mono', monospace; }
+
+        /* 简单的流程动画 */
+        .flow-arrow {
+            animation: bounce-down 2s infinite;
+        }
+        @keyframes bounce-down {
+            0%, 100% { transform: translateY(0); opacity: 0.5; }
+            50% { transform: translateY(5px); opacity: 1; }
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-mysql-orange selection:text-white">
+
+<!-- 导航栏 -->
+<nav class="sticky top-0 z-50 glass-panel border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl">🚀</span>
+            <h1 class="font-bold text-lg tracking-tight">MySQL 性能优化双雄</h1>
+        </div>
+        <a href="#" class="text-sm text-mysql-blue hover:underline font-medium">← 返回 EXPLAIN 主页</a>
+    </div>
+</nav>
+
+<main class="max-w-6xl mx-auto px-4 py-12 space-y-20">
+
+    <!-- ================= 第一部分：覆盖索引 ================= -->
+    <section id="covering-index">
+        <div class="flex items-center gap-4 mb-8">
+            <div class="w-12 h-12 rounded-xl bg-green-100 text-green-600 flex items-center justify-center text-2xl shadow-sm">🛡️</div>
+            <div>
+                <h2 class="text-3xl font-bold text-slate-900">覆盖索引 (Covering Index)</h2>
+                <p class="text-slate-500 mt-1">EXPLAIN 中的 <code class="bg-green-100 text-green-800 px-1 rounded text-xs">Using index</code></p>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-10 items-start">
+            <!-- 左侧：概念解析 -->
+            <div class="space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 class="font-bold text-lg mb-3 text-slate-800">什么是覆盖索引？</h3>
+                    <p class="text-slate-600 leading-relaxed mb-4">
+                        当查询所需的所有列（SELECT、WHERE、ORDER BY 等）都包含在某个索引中时，MySQL 可以直接从索引树中获取数据，而<strong>不需要回表 (Table Lookup)</strong> 去读取聚簇索引（主键数据行）。
+                    </p>
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
+                        💡 <strong>核心优势：</strong> 避免了随机 I/O，将“回表”操作转化为纯粹的索引扫描，性能提升通常在 10 倍以上。
+                    </div>
+                </div>
+
+                <!-- 代码示例 -->
+                <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg text-sm">
+                    <div class="bg-slate-800 px-4 py-2 text-slate-400 text-xs flex justify-between">
+                        <span>SQL Example</span>
+                        <span class="text-green-400">● Optimized</span>
+                    </div>
+                    <div class="p-5 text-slate-300 font-mono space-y-4">
+                        <div>
+                            <span class="text-slate-500">-- 假设表 user(id, name, age, email)</span><br>
+                            <span class="text-slate-500">-- 建立联合索引: idx_name_age(name, age)</span>
+                        </div>
+                        <div>
+                            <span class="text-purple-400">SELECT</span> name, age <span class="text-purple-400">FROM</span> user<br>
+                            <span class="text-purple-400">WHERE</span> name = <span class="text-green-300">'Alice'</span>;
+                        </div>
+                        <div class="pt-2 border-t border-slate-700 text-slate-400 text-xs">
+                            ✅ SELECT 的列 (name, age) 都在索引 idx_name_age 中。<br>
+                            ✅ WHERE 条件也在索引中。<br>
+                            ➡️ <strong>触发覆盖索引，无需回表。</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：可视化图解 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 flex flex-col items-center justify-center min-h-[400px] relative overflow-hidden">
+                <div class="absolute top-4 right-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Visual Flow</div>
+
+                <!-- 索引树示意 -->
+                <div class="w-full max-w-xs space-y-4">
+                    <div class="text-center text-xs font-bold text-slate-400 mb-2">B+ Tree (idx_name_age)</div>
+
+                    <!-- Root Node -->
+                    <div class="bg-slate-200 h-8 rounded flex items-center justify-center text-xs text-slate-600 font-mono">[ ... | Alice | ... ]</div>
+                    <div class="flex justify-center text-slate-300">↓</div>
+
+                    <!-- Leaf Nodes -->
+                    <div class="bg-green-100 border-2 border-green-400 h-12 rounded-lg flex items-center justify-center text-xs font-mono text-green-800 relative group cursor-help">
+                        [Name: Alice, Age: 25, PK: 101]
+                        <div class="absolute -right-32 top-0 w-28 bg-slate-800 text-white text-xs p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                            索引叶子节点已包含 Age，直接返回！
+                        </div>
+                    </div>
+
+                    <div class="flex justify-center my-2">
+                        <div class="flex flex-col items-center">
+                            <span class="text-green-600 font-bold text-sm animate-pulse">✅ 直接返回结果</span>
+                            <span class="text-xs text-slate-400 mt-1">(No Table Lookup)</span>
+                        </div>
+                    </div>
+
+                    <!-- 被划掉的回表路径 -->
+                    <div class="relative opacity-30 grayscale">
+                        <div class="absolute inset-0 flex items-center justify-center z-10">
+                            <div class="bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold rotate-[-5deg]">X 不需要回表</div>
+                        </div>
+                        <div class="border-2 border-dashed border-slate-300 h-12 rounded-lg flex items-center justify-center text-xs font-mono text-slate-400">
+                            Clustered Index (Data Row)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= 第二部分：索引下推 ================= -->
+    <section id="icp" class="scroll-mt-24">
+        <div class="flex items-center gap-4 mb-8">
+            <div class="w-12 h-12 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center text-2xl shadow-sm">⚙️</div>
+            <div>
+                <h2 class="text-3xl font-bold text-slate-900">索引下推 (ICP)</h2>
+                <p class="text-slate-500 mt-1">EXPLAIN 中的 <code class="bg-orange-100 text-orange-800 px-1 rounded text-xs">Using index condition</code> · MySQL 5.6+</p>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-10 items-start">
+            <!-- 左侧：可视化对比 (核心) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 lg:p-8">
+                <h3 class="font-bold text-slate-800 mb-6 text-center">工作原理对比</h3>
+
+                <div class="grid grid-cols-2 gap-4 text-center text-xs">
+                    <!-- Before ICP -->
+                    <div class="space-y-3">
+                        <div class="font-bold text-red-500 bg-red-50 py-1 rounded">❌ 未开启 ICP (旧版)</div>
+
+                        <div class="bg-slate-100 p-2 rounded font-mono text-[10px]">Index Scan<br>(name='Alice')</div>
+                        <div class="text-slate-400 flow-arrow">↓</div>
+                        <div class="bg-blue-50 border border-blue-200 p-2 rounded font-mono text-[10px]">回表取整行数据</div>
+                        <div class="text-slate-400 flow-arrow">↓</div>
+                        <div class="bg-red-50 border border-red-200 p-2 rounded font-mono text-[10px]">Server层过滤<br>age > 20</div>
+                        <div class="text-[10px] text-red-400 mt-2">每次匹配name都要回表</div>
+                    </div>
+
+                    <!-- After ICP -->
+                    <div class="space-y-3">
+                        <div class="font-bold text-green-600 bg-green-50 py-1 rounded">✅ 开启 ICP (5.6+)</div>
+
+                        <div class="bg-orange-50 border-2 border-orange-300 p-2 rounded font-mono text-[10px] relative">
+                            Index Scan<br>(name='Alice')<br>
+                            <span class="block mt-1 text-orange-700 font-bold">+ 存储引擎层过滤 age>20</span>
+                        </div>
+                        <div class="text-slate-400 flow-arrow">↓</div>
+                        <div class="bg-blue-50 border border-blue-200 p-2 rounded font-mono text-[10px]">仅对满足条件的行回表</div>
+                        <div class="text-slate-400 flow-arrow">↓</div>
+                        <div class="bg-slate-50 border border-slate-200 p-2 rounded font-mono text-[10px] opacity-50">Server层 (几乎无过滤工作)</div>
+                        <div class="text-[10px] text-green-600 mt-2 font-bold">大幅减少回表次数!</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：概念与场景 -->
+            <div class="space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 class="font-bold text-lg mb-3 text-slate-800">为什么需要 ICP？</h3>
+                    <p class="text-slate-600 leading-relaxed mb-4">
+                        在联合索引 <code>(name, age)</code> 中，如果查询是 <code>WHERE name LIKE 'A%' AND age > 20</code>：
+                    </p>
+                    <ul class="space-y-3 text-sm text-slate-600">
+                        <li class="flex gap-3">
+                            <span class="text-red-500 mt-0.5">✕</span>
+                            <span><strong>没有 ICP：</strong> 索引只能用到 <code>name LIKE 'A%'</code>。所有名字以 A 开头的人，无论年龄大小，都要逐个回表检查。</span>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-green-500 mt-0.5">✓</span>
+                            <span><strong>有了 ICP：</strong> 虽然 <code>age</code> 不能用于索引查找（因为前面是范围查询），但索引里<strong>存有 age 的值</strong>。存储引擎在遍历索引时，直接在索引层面判断 <code>age > 20</code>，不满足的直接跳过，只有满足的才回表。</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg text-sm">
+                    <div class="bg-slate-800 px-4 py-2 text-slate-400 text-xs">Trigger Condition</div>
+                    <div class="p-5 text-slate-300 font-mono space-y-3">
+                        <div>
+                            <span class="text-purple-400">SELECT</span> * <span class="text-purple-400">FROM</span> user<br>
+                            <span class="text-purple-400">WHERE</span> name <span class="text-yellow-300">LIKE</span> <span class="text-green-300">'A%'</span> <br>
+                            &nbsp;&nbsp;<span class="text-purple-400">AND</span> age > <span class="text-blue-300">20</span>;
+                        </div>
+                        <div class="pt-3 border-t border-slate-700 text-xs text-slate-400">
+                            🔑 关键点：<br>
+                            1. 使用了联合索引<br>
+                            2. 索引中有无法用于搜索但可用于过滤的列 (age)<br>
+                            3. 不是覆盖索引 (SELECT *)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm text-orange-800 flex gap-3">
+                    <span class="text-xl">⚠️</span>
+                    <p>
+                        <strong>注意：</strong> ICP 仅适用于 InnoDB 和 MyISAM 引擎。对于 InnoDB，ICP 仅适用于二级索引（非聚簇索引），因为主键索引的叶子节点就是完整数据行，不存在“减少回表”的概念。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 总结对比表 -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 bg-slate-50 border-b border-slate-200">
+            <h3 class="font-bold text-slate-800">快速辨析</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 text-slate-500 font-medium">
+                <tr>
+                    <th class="px-6 py-3">特性</th>
+                    <th class="px-6 py-3">覆盖索引 (Covering Index)</th>
+                    <th class="px-6 py-3">索引下推 (ICP)</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-slate-600">
+                <tr>
+                    <td class="px-6 py-4 font-medium text-slate-900">EXPLAIN Extra</td>
+                    <td class="px-6 py-4"><code class="text-green-600 bg-green-50 px-1 rounded">Using index</code></td>
+                    <td class="px-6 py-4"><code class="text-orange-600 bg-orange-50 px-1 rounded">Using index condition</code></td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-medium text-slate-900">是否回表</td>
+                    <td class="px-6 py-4 text-green-600 font-bold">完全不需要</td>
+                    <td class="px-6 py-4 text-blue-600 font-bold">减少了回表次数</td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-medium text-slate-900">适用场景</td>
+                    <td class="px-6 py-4">SELECT 的列全在索引中</td>
+                    <td class="px-6 py-4">索引部分匹配 + 剩余列在索引中可过滤</td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-medium text-slate-900">优化本质</td>
+                    <td class="px-6 py-4">消除 I/O</td>
+                    <td class="px-6 py-4">将过滤逻辑下推到存储引擎层</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+<footer class="max-w-6xl mx-auto px-4 py-10 text-center text-slate-400 text-sm">
+    <p>MySQL Optimization Series · Covering Index & ICP</p>
+</footer>
+
+</body>
+</html>

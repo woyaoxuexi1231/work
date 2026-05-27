@@ -34,7 +34,18 @@ public class CryptoService {
         return new EncryptResponse(Base64.getEncoder().encodeToString(encrypted), null);
     }
 
-    public record DecryptResult(byte[] aesKey, String plaintext) {}
+    public static class DecryptResult {
+        private final byte[] aesKey;
+        private final String plaintext;
+
+        public DecryptResult(byte[] aesKey, String plaintext) {
+            this.aesKey = aesKey;
+            this.plaintext = plaintext;
+        }
+
+        public byte[] getAesKey() { return aesKey; }
+        public String getPlaintext() { return plaintext; }
+    }
 
     private static byte[] rsaDecryptPkcs1(String encryptedKeyB64, PrivateKey privateKey) throws Exception {
         Cipher rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding");

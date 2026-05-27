@@ -29,7 +29,7 @@ public class DataSourceController {
     public ApiResult<DataSourceVO> get(@PathVariable String key) {
         DataSourceVO vo = manager.get(key);
         if (vo == null) {
-            return ApiResult.fail(404, "数据源不存在: " + key);
+            return ApiResult.getFail(404, "数据源不存在: " + key);
         }
         return ApiResult.ok(vo);
     }
@@ -38,19 +38,19 @@ public class DataSourceController {
     @PostMapping
     public ApiResult<Void> register(@RequestBody DataSourceConfigDTO config) {
         if (config.getKey() == null || config.getKey().isBlank()) {
-            return ApiResult.fail(400, "key 不能为空");
+            return ApiResult.getFail(400, "key 不能为空");
         }
         if (config.getUrl() == null || config.getUrl().isBlank()) {
-            return ApiResult.fail(400, "url 不能为空");
+            return ApiResult.getFail(400, "url 不能为空");
         }
         if (manager.exists(config.getKey())) {
-            return ApiResult.fail(409, "数据源 '" + config.getKey() + "' 已存在");
+            return ApiResult.getFail(409, "数据源 '" + config.getKey() + "' 已存在");
         }
         try {
             manager.register(config);
             return ApiResult.ok();
         } catch (Exception e) {
-            return ApiResult.fail(500, e.getMessage());
+            return ApiResult.getFail(500, e.getMessage());
         }
     }
 
@@ -58,13 +58,13 @@ public class DataSourceController {
     @DeleteMapping("/{key}")
     public ApiResult<Void> remove(@PathVariable String key) {
         if (!manager.exists(key)) {
-            return ApiResult.fail(404, "数据源不存在: " + key);
+            return ApiResult.getFail(404, "数据源不存在: " + key);
         }
         try {
             manager.remove(key);
             return ApiResult.ok();
         } catch (Exception e) {
-            return ApiResult.fail(500, e.getMessage());
+            return ApiResult.getFail(500, e.getMessage());
         }
     }
 }

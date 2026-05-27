@@ -44,12 +44,11 @@ public class AutoboxingPerformanceTest {
         }
         long primitiveTime = System.nanoTime() - start;
 
-        System.out.printf("""
-                ===== 性能对比（%d 次求和） =====
-                Integer 求和耗时: %,d ns（含自动拆箱开销）
-                int 求和耗时:    %,d ns
-                性能差距:        %.1f 倍
-                """, SIZE, boxedTime, primitiveTime, (double) boxedTime / primitiveTime);
+        System.out.printf(
+                "===== 性能对比（%d 次求和） =====%n" +
+                "Integer 求和耗时: %,d ns（含自动拆箱开销）%n" +
+                "int 求和耗时:    %,d ns%n" +
+                "性能差距:        %.1f 倍%n", SIZE, boxedTime, primitiveTime, (double) boxedTime / primitiveTime);
     }
 
     // █████████ Part 2：缓存范围验证 █████████

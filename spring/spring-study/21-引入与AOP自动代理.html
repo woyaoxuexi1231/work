@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>引入与 AOP 自动代理 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🧩 引入 & AOP 自动代理</h1>
+<p class="text-[#a6adc8] mt-2">@DeclareParents — 让一个 Bean 凭空多出一个接口能力<br>@EnableAspectJAutoProxy — 自动代理的"总开关"</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">引入（Introduction）— 给 Bean "加接口"</h3>
+<p class="text-sm text-[#a6adc8] mb-4">普通的 AOP 是在方法前后加逻辑。引入更进一步：<strong class="text-white">让一个 Bean 凭空多实现一个接口</strong>。不需要修改原类的代码。</p>
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// 1. 定义一个新接口和默认实现
+public interface Auditable { void audit(); }
+public class DefaultAuditable implements Auditable {
+    @Override public void audit() { log.info("审计记录"); }
+}
+
+// 2. 用 @DeclareParents 把 Auditable 引入到所有 Service
+@Aspect @Component
+public class AuditableIntroduction {
+    @DeclareParents(
+        value = "com.example.service.*+",  // 目标：所有 Service
+        defaultImpl = DefaultAuditable.class
+    )
+    private Auditable auditable;  // 这个字段只是占位，Spring 会替换为代理
+}
+
+// 3. 使用 — 任何 Service 都能强转为 Auditable
+@Autowired private UserService userService;
+((Auditable) userService).audit();  // ✅ UserService 没实现 Auditable，但能调 audit()！</code></pre>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<h3 class="text-lg font-bold text-white mb-3">@EnableAspectJAutoProxy — 自动代理开关</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">属性</th><th class="text-left py-3 px-3 text-white">作用</th><th class="text-left py-3 px-3 text-white">Spring Boot 默认</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3"><code>proxyTargetClass</code></td><td class="py-2 px-3">true=强制CGLIB / false=有接口用JDK</td><td class="py-2 px-3">true（Spring Boot 2.x）</td></tr>
+<tr><td class="py-2 px-3"><code>exposeProxy</code></td><td class="py-2 px-3">true=暴露代理给 AopContext.currentProxy()</td><td class="py-2 px-3">false</td></tr>
+</tbody></table></div>
+</div>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果不用引入，想让 50 个 Service 都有审计能力怎么做？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>方案 A：让 50 个 Service 都实现 Auditable 接口 → 改 50 个类。方案 B：写一个抽象父类 → 50 个 Service 都要改继承。方案 C：用组合模式 → 每个 Service 里加一个 Auditable 字段。无论哪种，都至少要碰代码。</p>
+<p>引入让你<strong class="text-white">完全不碰 Service 代码</strong>，像一个外挂接口一样贴上去。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：exposeProxy 解决自调用</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>exposeProxy=true 把当前代理对象放到 ThreadLocal 中。同一个 Service 内部通过 AopContext.currentProxy() 就能拿到代理：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 自调用失效的解法之一
+((UserService) AopContext.currentProxy()).transactionalMethod();</code></pre>
+<p><strong class="text-white">代价：</strong>每个请求都要往 ThreadLocal 里写一次代理引用，有小额性能开销。而且引入了对 Spring API 的依赖（不纯粹）。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">🔬 AbstractAutoProxyCreator 在生命周期中的位置</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>在 Bean 生命周期的 <strong class="text-white">postProcessAfterInitialization</strong> 阶段执行。此时 Bean 已经初始化完成（@PostConstruct 已执行）。AbstractAutoProxyCreator 检查这个 Bean 是否需要代理（匹配切点）→ 需要就创建代理 → 返回代理替代原始 Bean。</p>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@DeclareParents 是做什么的？和普通 @Before 有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Before 是在方法执行前后加逻辑——<strong class="text-white">增强行为</strong>。@DeclareParents 是让目标类<strong class="text-white">多实现一个接口</strong>——改变类型。前者是"让方法多做一件事"，后者是"让 Bean 多一种身份"。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">exposeProxy=true 有什么代价？什么时候必须开？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">代价：每个代理对象被请求时都要往 ThreadLocal 写一次引用，有小量性能开销；代码里出现 AopContext.currentProxy() 是 Spring 框架耦合。必须开的场景：自调用需要触发 AOP（this.method 不经过代理）。但最佳实践是<strong class="text-white">拆类</strong>，不依赖 exposeProxy。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@EnableAspectJAutoProxy 在 Spring Boot 中需要手动加吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不需要。Spring Boot 的 AopAutoConfiguration 自动配置了它。proxyTargetClass 默认为 true。只有在非 Boot 的纯 Spring 项目中才需要手动加。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：项目中有 30 个 Service，你需要在每个 Service 上加一个 healthCheck() 方法给监控系统调用。不能让 30 个 Service 都去改代码。怎么做？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 @DeclareParents。定义 HealthCheckable 接口和 DefaultHealthCheckable 实现（查数据库连接池状态、Redis 连通性等）。然后一个切面引入到所有 Service。监控系统调用 ((HealthCheckable) service).healthCheck()。30 个 Service 零改动。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：AOP 代理和循环依赖在一起时，Spring 怎么保证代理一致性？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三级缓存的 getEarlyBeanReference() 在这里起了关键作用。当 B 在填充属性时通过三级缓存获取 A 的早期引用 → getEarlyBeanReference() 被调用 → 如果 A 需要 AOP 代理 → 返回代理对象而不是原始对象。这就保证了 B 拿到的 A 是代理过的。等 A 初始化完成（postProcessAfterInitialization），Spring 发现 A 的早期引用已经是代理了 → 不会再创建新代理 → B 和 其他调用者拿到的 A 是同一个代理。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring AOP 和 AspectJ 的区别？为什么 Spring 不直接用 AspectJ？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">AspectJ 是编译期/类加载期织入（需要 ajc 编译器或 LTW），不依赖代理 → 可以增强 final 类、private 方法、自调用也生效。Spring AOP 是运行时代理织入 → 简单、不需要额外编译步骤，但有代理的局限性。Spring 选择代理方案是<strong class="text-white">"牺牲部分能力，换零配置"</strong>的权衡。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结 · AOP 章节完结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. @DeclareParents</strong> — 给 Bean 加接口，不改源码的"外挂"能力</p>
+<p><strong class="text-white">2. exposeProxy</strong> — 解决自调用的最后一招，但有框架耦合代价</p>
+<p><strong class="text-white">3. 代理与循环依赖</strong> — getEarlyBeanReference 保证代理一致性</p>
+<p><strong class="text-white">4. Spring AOP vs AspectJ</strong> — 运行时代理 vs 编译期织入，能力与简单性的权衡</p>
+<p><strong class="text-white">⚠️ AOP 章节总结：</strong>五种通知 → 六种切点指示符 → JDK/CGLIB 代理选择 → @DeclareParents 引入 → expireProxy 自调用 → 循环依赖中的代理一致性</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · AOP 第二部分 · 引入与自动代理</footer>
+</body>
+</html>

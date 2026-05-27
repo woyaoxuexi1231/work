@@ -25,7 +25,7 @@ public class RsaController {
 
     @GetMapping("/key")
     public ResponseEntity<KeyResponse> key() throws Exception {
-        var kv = keyManager.getLatestKey();
+        KeyVersion kv = keyManager.getLatestKey();
         long expireAtMs = System.currentTimeMillis() + 10 * 60 * 1000L;
         String token = tokenService.issueToken(kv.getVersion(), kv.getFingerprint(), expireAtMs);
         log.info("[API] (v5) 获取公钥 keyVersion={} status={} expireAtMs={}", kv.getVersion(), kv.getStatus(), expireAtMs);
@@ -44,7 +44,7 @@ public class RsaController {
             if (request.getKeyVersion() == null || request.getKeyVersion().isBlank()) {
                 return ResponseEntity.badRequest().body("Request failed: missing keyVersion");
             }
-            var kv = keyManager.getKey(request.getKeyVersion());
+            KeyVersion kv = keyManager.getKey(request.getKeyVersion());
             if (kv == null) {
                 return ResponseEntity.badRequest().body("Request failed: invalid keyVersion");
             }
@@ -72,8 +72,8 @@ public class RsaController {
             log.info("[API] (v5) /secure/echo keyVersion={} status={} timestamp={} nonce={}",
                     kv.getVersion(), kv.getStatus(), request.getTimestamp(), request.getNonce());
             CryptoService.DecryptResult decrypted = cryptoService.decryptPayload(request, aesKey);
-            String responsePlaintext = "服务端收到你的明文: " + decrypted.plaintext();
-            EncryptResponse response = cryptoService.encryptResponse(responsePlaintext, decrypted.aesKey());
+            String responsePlaintext = "服务端收到你的明文: " + decrypted.getPlaintext();
+            EncryptResponse response = cryptoService.encryptResponse(responsePlaintext, decrypted.getAesKey());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[API] (v5) 处理失败", e);

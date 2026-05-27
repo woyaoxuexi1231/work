@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL EXPLAIN 详解指南</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              mysql: {
+                blue: '#00758f',
+                orange: '#f29111',
+                dark: '#1e293b',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased selection:bg-mysql-orange selection:text-white">
+
+<!-- 顶部导航/Hero区域 -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50 glass-card">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-mysql-blue rounded-lg flex items-center justify-center text-white font-bold text-xl">M</div>
+            <h1 class="text-xl font-bold text-slate-900 tracking-tight">MySQL EXPLAIN <span class="text-mysql-blue font-normal">参数详解</span></h1>
+        </div>
+        <div class="text-sm text-slate-500 hidden sm:block">
+            SQL 性能优化必备手册
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+
+    <!-- 简介部分 -->
+    <section class="mb-12 text-center max-w-3xl mx-auto">
+        <h2 class="text-3xl font-bold text-slate-900 mb-4">读懂执行计划，让查询飞起来</h2>
+        <p class="text-slate-600 text-lg leading-relaxed">
+            <code class="bg-slate-200 px-2 py-1 rounded text-sm font-mono text-mysql-blue">EXPLAIN</code> 是 MySQL 提供的用于分析查询语句执行计划的工具。
+            通过它，我们可以了解 MySQL 如何使用索引、如何处理连接以及扫描的行数，从而精准定位性能瓶颈。
+        </p>
+    </section>
+
+    <!-- 核心参数网格 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+        <!-- 1. ID -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">id</h3>
+                <span class="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">执行顺序</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                查询序列号。表示查询中执行 SELECT 子句或操作表的顺序。
+            </p>
+            <ul class="text-sm text-slate-500 space-y-2 list-disc list-inside marker:text-mysql-orange">
+                <li><strong>相同：</strong> 从上往下执行</li>
+                <li><strong>不同：</strong> 值越大优先级越高</li>
+                <li><strong>NULL：</strong> 最后执行 (通常是 UNION 结果集)</li>
+            </ul>
+        </div>
+
+        <!-- 2. Select Type -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">select_type</h3>
+                <span class="text-xs font-semibold bg-purple-100 text-purple-700 px-2 py-1 rounded-full">查询类型</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4">
+                主要用于区别普通查询、联合查询、子查询等的复杂查询。
+            </p>
+            <div class="space-y-2 text-xs font-mono">
+                <div class="flex justify-between border-b border-slate-100 pb-1"><span>SIMPLE</span> <span class="text-slate-500">简单查询 (无子查询/UNION)</span></div>
+                <div class="flex justify-between border-b border-slate-100 pb-1"><span>PRIMARY</span> <span class="text-slate-500">最外层查询</span></div>
+                <div class="flex justify-between border-b border-slate-100 pb-1"><span>SUBQUERY</span> <span class="text-slate-500">SELECT/WHERE 中的子查询</span></div>
+                <div class="flex justify-between border-b border-slate-100 pb-1"><span>DERIVED</span> <span class="text-slate-500">FROM 列表的子查询 (衍生表)</span></div>
+                <div class="flex justify-between"><span>UNION</span> <span class="text-slate-500">UNION 后的第二个 SELECT</span></div>
+            </div>
+        </div>
+
+        <!-- 3. Table -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">table</h3>
+                <span class="text-xs font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-full">数据来源</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                显示这一行的数据是关于哪张表的。
+            </p>
+            <div class="bg-slate-50 rounded p-3 text-xs font-mono text-slate-600">
+                有时不是真实的表名，而是别名或衍生表标记 (如 &lt;derived2&gt;)。
+            </div>
+        </div>
+
+        <!-- 4. Type (重点) -->
+        <div class="bg-white rounded-xl shadow-sm border-l-4 border-l-mysql-orange border-y border-r border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col md:col-span-2 lg:col-span-2">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-slate-900 font-mono">type</h3>
+                <span class="text-xs font-bold bg-red-100 text-red-700 px-2 py-1 rounded-full animate-pulse">核心性能指标</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-6">
+                显示查询使用了何种访问类型。<strong>这是判断查询性能好坏的关键指标。</strong>
+                从最优到最差排序如下：
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- 优 -->
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="font-bold text-slate-800 font-mono">system</span>
+                        <span class="text-xs text-slate-500">表只有一行记录 (系统表)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        <span class="font-bold text-slate-800 font-mono">const</span>
+                        <span class="text-xs text-slate-500">主键/唯一索引匹配，最多一行</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                        <span class="font-bold text-slate-800 font-mono">eq_ref</span>
+                        <span class="text-xs text-slate-500">多表 JOIN 时，被驱动表使用主键/唯一索引</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                        <span class="font-bold text-slate-800 font-mono">ref</span>
+                        <span class="text-xs text-slate-500">非唯一性索引扫描，返回匹配某个单独值的所有行</span>
+                    </div>
+                </div>
+                <!-- 差 -->
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        <span class="font-bold text-slate-800 font-mono">range</span>
+                        <span class="text-xs text-slate-500">只检索给定范围的行 (BETWEEN, IN, >)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-orange-500"></span>
+                        <span class="font-bold text-slate-800 font-mono">index</span>
+                        <span class="text-xs text-slate-500">全索引扫描 (比全表快，但依然慢)</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-red-50 p-1 rounded -ml-1">
+                        <span class="w-3 h-3 rounded-full bg-red-600 ml-1"></span>
+                        <span class="font-bold text-red-700 font-mono">ALL</span>
+                        <span class="text-xs text-red-600 font-medium">全表扫描 (Full Table Scan) ❌</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. Possible Keys -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">possible_keys</h3>
+                <span class="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">备选索引</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                显示可能应用在这张表上的索引（一个或多个）。
+            </p>
+            <div class="text-xs text-slate-500 italic">
+                注意：如果为 NULL，则表示没有相关的索引。在这种情况下，可以通过检查 WHERE 子句看是否引用了某些列，从而创建适当的索引来提高性能。
+            </div>
+        </div>
+
+        <!-- 6. Key -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">key</h3>
+                <span class="text-xs font-semibold bg-green-100 text-green-700 px-2 py-1 rounded-full">实际使用</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                实际使用的索引。如果为 NULL，则没有使用索引。
+            </p>
+            <div class="text-xs text-slate-500">
+                在某些情况下，MySQL 可能会选择一个不在 possible_keys 中的索引（例如覆盖索引）。
+            </div>
+        </div>
+
+        <!-- 7. Key Len -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">key_len</h3>
+                <span class="text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-1 rounded-full">索引长度</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                表示索引中使用的字节数。
+            </p>
+            <div class="text-xs text-slate-500">
+                在不损失精确性的情况下，长度越短越好。这有助于判断联合索引中有几个列被用到了。
+            </div>
+        </div>
+
+        <!-- 8. Ref -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">ref</h3>
+                <span class="text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-1 rounded-full">关联字段</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                显示索引的哪一列被使用了，或者是一个常数 (const)。
+            </p>
+            <div class="text-xs text-slate-500">
+                如果是多表连接，这里通常会显示另一个表的列名。
+            </div>
+        </div>
+
+        <!-- 9. Rows -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 font-mono">rows</h3>
+                <span class="text-xs font-semibold bg-orange-100 text-orange-700 px-2 py-1 rounded-full">预估行数</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-4 flex-grow">
+                估算为了找到所需的行而要读取的行数。
+            </p>
+            <div class="bg-slate-50 rounded p-3 text-xs font-mono text-slate-600">
+                这个值越小越好。它是基于统计信息的估算值，不一定完全准确。
+            </div>
+        </div>
+
+        <!-- 10. Extra (重点) -->
+        <div class="bg-white rounded-xl shadow-sm border-l-4 border-l-mysql-blue border-y border-r border-slate-200 p-6 hover:shadow-md transition-shadow duration-300 flex flex-col md:col-span-2 lg:col-span-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-slate-900 font-mono">Extra</h3>
+                <span class="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">额外信息 / 优化提示</span>
+            </div>
+            <p class="text-slate-600 text-sm mb-6">
+                包含不适合在其他列中显示但十分重要的额外信息。
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Good -->
+                <div class="border border-green-200 bg-green-50 rounded-lg p-4">
+                    <h4 class="font-bold text-green-800 mb-2 font-mono text-sm">Using index</h4>
+                    <p class="text-xs text-green-700">
+                        <strong>极好！</strong> 相应的 SELECT 操作中使用了覆盖索引 (Covering Index)，避免了访问表的数据行，效率很高。
+                    </p>
+                </div>
+
+                <div class="border border-green-200 bg-green-50 rounded-lg p-4">
+                    <h4 class="font-bold text-green-800 mb-2 font-mono text-sm">Using index condition</h4>
+                    <p class="text-xs text-green-700">
+                        搜索条件里虽不能完全利用索引，但会先用索引过滤一遍数据，减少回表次数 (ICP优化)。
+                    </p>
+                </div>
+
+                <!-- Neutral -->
+                <div class="border border-blue-200 bg-blue-50 rounded-lg p-4">
+                    <h4 class="font-bold text-blue-800 mb-2 font-mono text-sm">Using where</h4>
+                    <p class="text-xs text-blue-700">
+                        表示存储引擎返回的记录并不是所有的都满足WHERE条件，需要在Server层进行过滤。
+                    </p>
+                </div>
+
+                <div class="border border-blue-200 bg-blue-50 rounded-lg p-4">
+                    <h4 class="font-bold text-blue-800 mb-2 font-mono text-sm">Using temporary</h4>
+                    <p class="text-xs text-blue-700">
+                        表示需要使用临时表来存储结果集，常见于 ORDER BY 和 GROUP BY。
+                    </p>
+                </div>
+
+                <!-- Bad -->
+                <div class="border border-red-200 bg-red-50 rounded-lg p-4">
+                    <h4 class="font-bold text-red-800 mb-2 font-mono text-sm">Using filesort</h4>
+                    <p class="text-xs text-red-700">
+                        <strong>需要优化！</strong> 说明 MySQL 会对数据使用一个外部的索引排序，而不是按照表内的索引顺序进行读取。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 底部提示 -->
+    <footer class="mt-16 border-t border-slate-200 pt-8 text-center text-slate-400 text-sm">
+        <p>&copy; 2026 MySQL Explain Guide. Generated for Educational Purposes.</p>
+        <p class="mt-2">Tip: 在命令行中使用 <code class="bg-slate-800 text-slate-300 px-1 rounded">EXPLAIN FORMAT=JSON SELECT ...</code> 可以获得更详细的 JSON 格式报告。</p>
+    </footer>
+
+</main>
+
+</body>
+</html>

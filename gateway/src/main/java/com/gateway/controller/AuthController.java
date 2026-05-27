@@ -27,7 +27,7 @@ public class AuthController {
                                                  @RequestParam String password) {
         AuthUser user = authService.login(username, password);
         if (user == null) {
-            return ApiResult.fail(401, "用户名或密码错误");
+            return ApiResult.getFail(401, "用户名或密码错误");
         }
 
         String token = jwtUtil.create(Map.of(
@@ -47,16 +47,16 @@ public class AuthController {
     @PostMapping("/api/auth/me")
     public ApiResult<Map<String, Object>> me(@RequestHeader("Authorization") String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ApiResult.fail(401, "未登录");
+            return ApiResult.getFail(401, "未登录");
         }
         Map<String, Object> claims = jwtUtil.verify(authHeader.substring(7));
         if (claims == null) {
-            return ApiResult.fail(401, "令牌无效或已过期");
+            return ApiResult.getFail(401, "令牌无效或已过期");
         }
         Long userId = Long.parseLong((String) claims.get("sub"));
         AuthUser user = authService.getById(userId);
         if (user == null) {
-            return ApiResult.fail(401, "用户不存在");
+            return ApiResult.getFail(401, "用户不存在");
         }
         return ApiResult.ok(Map.of(
             "id", user.getId(),

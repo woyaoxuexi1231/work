@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>环境抽象 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🌍 环境抽象：Environment、Profile、PropertySource</h1>
+<p class="text-[#a6adc8] mt-2">从「dev 和 prod 用不同配置」到「配置的优先级链」——Spring 环境抽象的完整设计</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">Environment 三层能力</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">能力</th><th class="text-left py-3 px-3 text-white">接口</th><th class="text-left py-3 px-3 text-white">示例</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">配置访问</td><td class="py-2 px-3">getProperty("db.url")</td><td class="py-2 px-3">读 application.yml</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">Profile 管理</td><td class="py-2 px-3">acceptsProfiles("dev")</td><td class="py-2 px-3">判断当前激活的 Profile</td></tr>
+<tr><td class="py-2 px-3">PropertySource 链</td><td class="py-2 px-3">getPropertySources()</td><td class="py-2 px-3">遍历所有配置源</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">PropertySource 优先级链（从高到低）</h3>
+<div class="space-y-1 text-sm text-[#a6adc8]">
+<div class="bg-[#11111b] rounded-lg p-2 px-3 border-l-4 border-[#f38ba8]"><span class="text-white">1. 命令行参数</span> — --server.port=9090</div>
+<div class="bg-[#11111b] rounded-lg p-2 px-3 border-l-4 border-[#fab387]"><span class="text-white">2. 系统环境变量</span> — SERVER_PORT=9090</div>
+<div class="bg-[#11111b] rounded-lg p-2 px-3 border-l-4 border-[#fab387]"><span class="text-white">3. application-{profile}.yml</span>（jar 外部）</div>
+<div class="bg-[#11111b] rounded-lg p-2 px-3 border-l-4 border-[#89b4fa]"><span class="text-white">4. application.yml</span>（jar 内部）</div>
+<div class="bg-[#11111b] rounded-lg p-2 px-3 border-l-4 border-[#89b4fa]"><span class="text-white">5. @PropertySource</span> 导入的文件</div>
+<div class="bg-[#11111b] rounded-lg p-2 px-3 border-l-4 border-[#a6adc8]"><span class="text-white">6. 默认值</span> — @Value("${key:default}")</div>
+</div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// Profile 基础用法
+@Configuration
+@Profile("dev")
+public class DevConfig { ... }
+
+@Component @Profile("!prod")  // 非 prod 环境启用
+public class MockService { ... }
+
+// application.yml 中激活
+spring.profiles.active: dev
+// 启动参数激活
+java -jar app.jar --spring.profiles.active=prod</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂的设计原理</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 假如没有 Environment 抽象，怎么做多环境切换？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">真实噩梦：</strong>五套环境（dev/test/staging/prod/canary），每套的数据库、Redis、MQ、外部服务 URL 都不同。没有统一抽象时只能靠 Maven Profile + 资源过滤在<strong class="text-white">构建时</strong>替换占位符——同一个 jar 包不能在所有环境运行，每个环境都要重新打一个包。</p>
+<p>Spring Environment + Profile 把这套机制搬到了<strong class="text-white">运行时</strong>：一个 jar，通过启动参数切换环境。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：MutablePropertySources — 一个有序列表决定配置优先级</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>PropertySources 不是一个 Map（Map 无序）——它是一个 <strong class="text-white">CopyOnWriteArrayList</strong>，且<strong class="text-white">列表顺序 = 优先级</strong>。排在前面（index 小）的 PropertySource 优先被查找。</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// Environment 查找配置的流程（伪代码）
+public String getProperty(String key) {
+    for (PropertySource source : propertySources) {  // 按优先级遍历
+        if (source.containsProperty(key)) {
+            return source.getProperty(key);  // 找到即返回
+        }
+    }
+    return null;  // 都找不到
+}</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>这个设计极其简单——没有复杂的优先级算法，没有加权评分。就是一个 for 循环，谁排前面谁优先。<strong class="text-white">配置的来源可以无限扩展</strong>（数据库、Consul、Vault），只要 new 一个 PropertySource 插到列表里就行。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 Profile 的巧思：不是"分支"，是"条件过滤"</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>很多人把 Profile 理解为 if-else。但它的真正巧思在于：<strong class="text-white">它不是让代码判断环境，而是让容器决定要不要注册这个 Bean。</strong></p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// Profile 在底层是 @Conditional(ProfileCondition.class)
+// ProfileCondition.matches() 检查 Environment.acceptsProfiles()
+
+// 所以 @Profile("dev") 本质就是：
+// 如果 activatesProfiles 包含 "dev" → 注册 Bean，否则跳过</code></pre>
+<p>这意味着 <strong class="text-white">条件不满足的 Bean 根本不存在于容器中</strong>——不是"存在但不执行"，是"不存在"。这避免了 if-else 在业务代码中到处散布。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：jar 外部配置的优先级</p><p>jar 同目录下的 config/ 文件夹优先级最高——很多人用容器部署时不小心在里面放了一个旧配置文件，覆盖了 jar 内的新配置。</p></div>
+<div><p class="text-white font-bold">陷阱2：@Profile 和 @ConditionalOnProperty 冲突</p><p>两者独立判断，同时标注时"与"关系。两个条件都满足才注册。</p></div>
+<div><p class="text-white font-bold">陷阱3：EnvironmentPostProcessor 的执行顺序</p><p>自定义的 PropertySource 在这个阶段插入，但如果依赖了其他 PropertySource（比如配置中心），要注意 Spring Boot 提供的 DeferredLog。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Profile 激活了多个 profile 时，同一属性在 dev.yml 和 test.yml 都有定义，哪个生效？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">活跃 Profile 列表中<strong class="text-white">最后一个</strong>的配置生效。因为 PropertySource 链表是按 Profile 列表顺序添加的——后面的覆盖前面的。如果 <code>spring.profiles.active: dev,test</code>，test.yml 会覆盖 dev.yml 的同名配置。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@PropertySource 和 application.yml 的加载顺序？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">application.yml 在 configurationProperties 阶段加载，排在 PropertySource 链前面；@PropertySource 在 ConfigurationClassPostProcessor 阶段加载，排在后面。所以 application.yml 优先级高于 @PropertySource。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Profile 和 @ConditionalOnProperty 有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Profile 只看"哪个环境被激活"，适用于粗粒度的环境区分（dev/test/prod 整包切换）。@ConditionalOnProperty 看"某个配置的具体值"，适用于细粒度的特性开关（feature.toggle=true 单独控制某个功能）。@Profile 的本质是 @Conditional(ProfileCondition.class)，它只是 @Conditional 的一个特化。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：生产上通过环境变量注入数据库密码。运维不小心在 application.yml 里也写了一个数据库密码（但值是错的）。为什么线上还是连上了正确的数据库？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">因为环境变量在 Spring 的 PropertySource 链中排在更前面——优先级高于 application.yml。Spring 先找到环境变量中的正确密码就用它了，application.yml 中错误的密码被跳过了。但这是运气好——如果环境变量和配置文件都有同名字段，配置文件的错误被掩盖，排查起来极其困难。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上排查发现一个 Bean 在 prod 环境没有注册（@Profile("dev")），但灰度环境（@Profile("canary")）也没有——新环境需要加支持。怎么让旧代码支持新环境而不改代码？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">旧代码 @Profile("dev") 是硬编码。如果不想改旧代码（可能很多处），在启动参数中让 canary 伪装成 dev 环境：spring.profiles.active=canary,dev。这样 @Profile("dev") 的 Bean 在 canary 环境中也会被注册。更好的方案是：以后不要在生产代码中直接写 @Profile("dev")，改用 @Profile("!prod") 或自定义 @Conditional——表达"非生产环境"，而不是"dev 环境"。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">自定义 PropertySource 怎么做？你实现过吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">实现 EnvironmentPostProcessor 接口，在 postProcessEnvironment() 中往 environment.getPropertySources() 里 addFirst()（最高优先级）或 addLast()（最低优先级）插入自定义的 PropertySource。JSON 配置、数据库配置、Vault 密钥都是这样接入的。注意要在 META-INF/spring.factories 中注册这个 Processor。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Environment 和 @Value 的关系？是先有 Environment 还是先有 @Value？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">先有 Environment。refresh() 步骤 1-5 中已经准备好了 Environment，步骤 5 的 BFPP 阶段中 PropertySourcesPlaceholderConfigurer 从 Environment 取值并替换 ${} 占位符，然后步骤 11 才创建 Bean。所以 @Value("${xxx}") 的值在 Bean 创建前就从 Environment 中取到了。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. PropertySource 优先级链</strong> — 列表顺序 = 优先级，不是 Map</p>
+<p><strong class="text-white">2. Profile 的本质</strong> — @Conditional(ProfileCondition.class)，不是 if-else</p>
+<p><strong class="text-white">3. 多 Profile 激活时的覆盖规则</strong> — 最后一个覆盖前面</p>
+<p><strong class="text-white">4. jar 外部配置 vs jar 内部配置</strong> — 运维可能放了旧文件覆盖新配置</p>
+<p><strong class="text-white">5. EnvironmentPostProcessor</strong> — 扩展 PropertySource 的标准入口</p>
+<p><strong class="text-white">⚠️ 大厂高频陷阱：</strong>@Profile 硬编码环境名导致新环境不兼容；环境变量和配置文件同名时的"静默覆盖"</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 环境抽象</footer>
+</body>
+</html>

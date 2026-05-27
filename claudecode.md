@@ -25,3 +25,16 @@ ali
 }
 ```
 
+xiaomi
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.xiaomimimo.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-c7rq5vcy0si6pgtgkyb9w7drr6899nahr03rx5xzq8n39vhq",
+    "ANTHROPIC_MODEL": "mimo-v2.5-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "mimo-v2.5-pro",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "mimo-v2.5-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "mimo-v2.5-pro"
+  }
+}
+```

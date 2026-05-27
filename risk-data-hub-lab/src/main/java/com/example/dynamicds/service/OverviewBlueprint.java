@@ -36,7 +36,7 @@ public class OverviewBlueprint {
                 .currentStart(longValue(leafStateMap.get("currentStart")))
                 .currentNext(longValue(leafStateMap.get("currentNext")))
                 .step(stringValue(leafStateMap.get("step")))
-                .mode(stringValue(leafStateMap.get("mode")))
+                .getMode(stringValue(leafStateMap.get("mode")))
                 .description(stringValue(leafStateMap.get("description")))
                 .build();
     }

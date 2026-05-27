@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>编程式事务与 TransactionSynchronizationManager — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">事务管理</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🔧 编程式事务 & TransactionSynchronizationManager</h1>
+<p class="text-[#a6adc8] mt-2">TransactionTemplate 的模板方法模式 + ThreadLocal 如何成为事务隔离的物理基础</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">声明式 vs 编程式事务</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">维度</th><th class="text-left py-2 px-3 text-[#89b4fa]">声明式 @Transactional</th><th class="text-left py-2 px-3 text-[#a6e3a1]">编程式 TransactionTemplate</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">写法</td><td class="py-2 px-3">注解</td><td class="py-2 px-3">代码块</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">事务边界</td><td class="py-2 px-3">方法级别</td><td class="py-2 px-3">精确到代码块</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">适用场景</td><td class="py-2 px-3">95% 的场景</td><td class="py-2 px-3">需要精细控制事务边界</td></tr>
+<tr><td class="py-2 px-3">底层</td><td class="py-2 px-3">AOP @Around</td><td class="py-2 px-3">模板方法模式</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// TransactionTemplate — 编程式事务
+@Autowired private TransactionTemplate txTemplate;
+
+public void batchProcess(List&lt;Order&gt; orders) {
+    txTemplate.execute(status -> {
+        for (Order o : orders) {
+            orderMapper.insert(o);
+            if (o.getAmount() > 10000) {
+                status.setRollbackOnly();  // 手动标记回滚
+                return null;
+            }
+        }
+        return null;
+    });
+}
+
+// TransactionSynchronizationManager — 注册事务回调
+TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+    @Override public void afterCommit() {
+        mqTemplate.send(orderMessage);  // 事务提交后才发 MQ
+    }
+});</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 什么时候必须用编程式事务？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>三个场景声明式不够用：</p>
+<p>① <strong class="text-white">事务边界小于方法：</strong>方法前 50 行不需要事务，后 10 行需要——@Transactional 只能包整个方法。</p>
+<p>② <strong class="text-white">批量处理中部分失败继续：</strong>100 条记录，每条独立事务，失败 3 条不影响其余 97 条。</p>
+<p>③ <strong class="text-white">运行时动态决定传播行为：</strong>根据配置或请求参数决定用 REQUIRED 还是 REQUIRES_NEW。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：TransactionSynchronizationManager — ThreadLocal 的"事务黑板"</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>它像一个挂在线程上的<strong class="text-white">"事务状态公告板"</strong>：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// TransactionSynchronizationManager 的核心 ThreadLocal 变量
+ThreadLocal&lt;Map&lt;Object, Object&gt;&gt; resources;       // DataSource → ConnectionHolder
+ThreadLocal&lt;Set&lt;Synchronization&gt;&gt; synchronizations; // 事务提交/回滚后的回调
+ThreadLocal&lt;String&gt; currentTransactionName;          // 当前事务名
+ThreadLocal&lt;Boolean&gt; readOnly;                       // 是否只读
+ThreadLocal&lt;Integer&gt; isolationLevel;                 // 隔离级别
+ThreadLocal&lt;Boolean&gt; actualTransactionActive;        // 是否有活跃事务</code></pre>
+<p><strong class="text-white">这就是为什么：</strong>① 同一线程共享事务（所有变量都是 ThreadLocal）。② @Async 拿不到事务（换了线程）。③ 你可以在任何地方通过静态方法判断"当前是否有事务"。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：TransactionSynchronization — 事务生命周期钩子</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>@TransactionalEventListener 的底层就是靠它：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 注册一个回调：事务提交后执行
+TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+    void afterCommit()  { /* 发 MQ */ }
+    void afterCompletion(int status) { /* 清理资源 */ }
+    void beforeCommit(boolean readOnly) { /* 提交前 */ }
+    void beforeCompletion() { /* 完成前 */ }
+});</code></pre>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">没有事务时 registerSynchronization 抛异常</p><p>必须在活跃事务中注册。</p></div>
+<div><p class="text-white font-bold">afterCommit 中抛异常不影响主事务</p><p>事务已提交，回调异常只会打日志。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">TransactionTemplate 和 @Transactional 底层是不是同一个东西？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">是。两者最终都调用 PlatformTransactionManager.getTransaction() / commit() / rollback()。TransactionTemplate 是编程式入口，@Transactional 通过 TransactionInterceptor（AOP）调用同样的 API。一个代码里写，一个注解里写。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">TransactionSynchronizationManager 为什么用 ThreadLocal？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">因为事务是<strong class="text-white">线程绑定的</strong>——一个 HTTP 请求在一个线程中执行，所有 Service 调用共享同一线程。ThreadLocal 是最自然的绑定方式：不需要传参、不需要全局 Map 加锁、不需要上下文对象。这是把 JVM 的线程模型和数据库的事务模型对齐的经典设计。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：批量导入 1 万条数据，要求每条数据独立事务（一条失败不影响其他）。怎么写？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 TransactionTemplate，在循环内 execute()——每条记录独立事务。不能用 @Transactional 包整个方法（那就是一个事务包 1 万条）。注意：① 不要在循环内注入 TransactionTemplate 依赖——已经是 Bean。② 失败的记录记录到 error list 并 continue。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：订单创建后要发 MQ 通知下游系统。但如果 MQ 发送在事务提交之前——下游系统可能收到消息但订单还没提交。怎么保证一致性？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 TransactionSynchronizationManager.registerSynchronization() 注册 afterCommit 回调。事务提交后才执行——此时订单一定在数据库中。如果 MQ 必达性要求高 → 配合本地消息表（在事务内插入一条"待发送"消息记录 + afterCommit 触发实际发送 + 定时任务补偿未发送的）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">status.setRollbackOnly() 和抛异常回滚有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">setRollbackOnly() 不抛异常——方法继续执行，方法结束后事务回滚。适合"我知道这个操作失败但不希望中断调用链"的场景。抛异常会中断方法执行。性能上没区别。setRollbackOnly 的优势是语义更明确——"这个事务应该回滚"vs "这里出错了"。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">afterCommit 回调里抛了异常会怎样？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">事务已经提交了——回调异常不影响数据。但后续注册的回调可能不会执行。Spring 会 catch 异常并打日志，不会抛给调用方。如果你的 afterCommit 逻辑需要可靠性（如发 MQ），自己在回调里 try-catch + 重试。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">TransactionSynchronizationManager 有 MODE_INHERITABLETHREADLOCAL 吗？和 InheritableThreadLocal 什么关系？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">没有 MODE_INHERITABLETHREADLOCAL——那是 SecurityContextHolder 的。TransactionSynchronizationManager 用的是普通 ThreadLocal，子线程天然继承不到。InheritableThreadLocal 可以让子线程继承父线程的值，但 Spring 没用它——因为 ① 事务通常不应该跨线程传播 ② 线程池的线程是复用的，InheritableThreadLocal 只在创建时继承一次。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结 · 数据访问与事务章节完结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. TransactionTemplate</strong> — 精确控制事务边界，批量独立事务的利器</p>
+<p><strong class="text-white">2. TransactionSynchronizationManager</strong> — ThreadLocal 是事务隔离的物理基础</p>
+<p><strong class="text-white">3. TransactionSynchronization</strong> — 事务生命周期钩子，@TransactionalEventListener 的底层</p>
+<p><strong class="text-white">4. afterCommit 发 MQ</strong> — 事务提交后才通知下游，配合本地消息表保证可靠性</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>非事务线程 registerSynchronization 抛异常；afterCommit 异常被吞</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 编程式事务 · 数据访问与事务章节完结</footer>
+</body>
+</html>

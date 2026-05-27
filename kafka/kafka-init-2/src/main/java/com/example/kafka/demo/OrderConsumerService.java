@@ -18,7 +18,7 @@ public class OrderConsumerService {
     @KafkaListener(topics = "orders", groupId = "order-group", containerFactory = "manualAckContainerFactory")
     public void consumeOrder(ConsumerRecord<String, Map<String, Object>> record, Acknowledgment ack) {
         System.out.printf("收到消息: key=%s, partition=%d, offset=%d, value=%s%n",
-                record.key(), record.partition(), record.offset(), record.value());
+                record.getKey(), record.partition(), record.offset(), record.value());
 
         // 模拟业务处理
         // ... 

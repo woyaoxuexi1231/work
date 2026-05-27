@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据访问异常体系与 JdbcTemplate — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">数据访问</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🗄️ 数据访问异常体系 & JdbcTemplate</h1>
+<p class="text-[#a6adc8] mt-2">从 SQLException 的地狱到 DataAccessException 的天堂 — Spring 如何让数据访问异常"有意义"</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">DataAccessException 异常层次</h3>
+<pre class="bg-[#11111b] rounded-lg p-3 text-sm overflow-x-auto border border-[#45475a] mb-3"><code>DataAccessException (RuntimeException, 非受检)
+├── DataAccessResourceFailureException  // 连接失败
+├── DataIntegrityViolationException     // 唯一约束冲突
+├── DeadlockLoserDataAccessException     // 死锁
+├── IncorrectResultSizeDataAccessException  // 结果数不对
+├── EmptyResultDataAccessException       // 期望1条结果但0条
+├── OptimisticLockingFailureException    // 乐观锁冲突
+└── ... (共 20+ 子类)</code></pre>
+<p class="text-sm text-[#a6adc8]">每个子类对应一种<strong class="text-white">具体的数据库异常场景</strong>——不再需要 catch(Exception e) 然后看 errorCode 猜发生了什么。</p>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">JdbcTemplate vs 原始 JDBC</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">操作</th><th class="text-left py-2 px-3 text-[#f38ba8]">原始 JDBC</th><th class="text-left py-2 px-3 text-[#a6e3a1]">JdbcTemplate</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">获取连接</td><td class="py-2 px-3">DriverManager.getConnection()</td><td class="py-2 px-3">自动从 DataSource 获取</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">创建 Statement</td><td class="py-2 px-3">手写</td><td class="py-2 px-3">自动创建 PreparedStatement</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">异常处理</td><td class="py-2 px-3">SQLException (受检) + 手写 try-finally</td><td class="py-2 px-3">自动翻译为 DataAccessException (非受检)</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">资源释放</td><td class="py-2 px-3">手动 close (6 行模板代码)</td><td class="py-2 px-3">自动释放</td></tr>
+<tr><td class="py-2 px-3">代码量</td><td class="py-2 px-3">~15 行/查询</td><td class="py-2 px-3">~3 行/查询</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// JdbcTemplate — 基本查询
+@Autowired private JdbcTemplate jdbcTemplate;
+
+// 查单条
+User user = jdbcTemplate.queryForObject(
+    "SELECT * FROM users WHERE id = ?", new BeanPropertyRowMapper<>(User.class), 1L);
+
+// 查列表
+List&lt;User&gt; users = jdbcTemplate.query("SELECT * FROM users WHERE age > ?", rowMapper, 18);
+
+// 更新
+int rows = jdbcTemplate.update("UPDATE users SET name = ? WHERE id = ?", "张三", 1L);
+
+// NamedParameterJdbcTemplate — 具名参数（更可读）
+@Autowired private NamedParameterJdbcTemplate namedJdbc;
+Map&lt;String, Object&gt; params = Map.of("id", 1L, "name", "张三");
+namedJdbc.update("UPDATE users SET name = :name WHERE id = :id", params);</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果不用 Spring 的异常翻译，数据库异常有多难处理？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>JDBC 只抛出 <strong class="text-white">SQLException</strong>——不管是连接断了、死锁了、唯一约束冲突了，全都是同一个异常类型。你要靠 getErrorCode() 或 getSQLState() 来区分，而这些代码<strong class="text-white">每个数据库都不一样</strong>（MySQL 的 1062 是唯一约束冲突，Oracle 是 1）。写一次代码只能跑在一个数据库上。</p>
+<p>Spring 的 SQLErrorCodeSQLExceptionTranslator 维护了<strong class="text-white">每种数据库的错误码映射表</strong>，自动把 SQLException 翻译为具体的 DataAccessException 子类。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：模板方法模式 — JdbcTemplate 的灵魂</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>JdbcTemplate 的核心是<strong class="text-white">模板方法模式</strong>——它定义了不变的流程骨架，把"变化的部分"（SQL 和结果映射）留给回调：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// JdbcTemplate.query() 的核心骨架（伪代码）
+public &lt;T&gt; T query(String sql, RowMapper&lt;T&gt; rm, Object... args) {
+    Connection conn = null; PreparedStatement ps = null; ResultSet rs = null;
+    try {
+        conn = dataSource.getConnection();           // 1. 获取连接
+        ps = conn.prepareStatement(sql);             // 2. 创建 Statement
+        for (int i = 0; i < args.length; i++)        // 3. 设置参数
+            ps.setObject(i + 1, args[i]);
+        rs = ps.executeQuery();                      // 4. 执行
+        return rm.mapRow(rs, 1);                     // 5. 映射结果 ← 只有这步是"你的代码"
+    } catch (SQLException e) {
+        throw translateException(e);                 // 6. 异常翻译
+    } finally {
+        JdbcUtils.closeResultSet(rs);                // 7. 释放资源
+        JdbcUtils.closeStatement(ps);
+        JdbcUtils.closeConnection(conn);
+    }
+}</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>15 行样板代码被压缩到框架内部。开发者写一个 lambda 就是一次查询。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：queryForObject 期望恰好1条结果</p><p>0条→EmptyResultDataAccessException；>1条→IncorrectResultSizeDataAccessException。用 query() + Optional 更安全。</p></div>
+<div><p class="text-white font-bold">陷阱2：JdbcTemplate 不是连接池</p><p>它每次操作都从 DataSource 获取新连接。连接池是 HikariCP/DBCP 的事。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">为什么 Spring 要把 SQLException 翻译成 DataAccessException？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三个原因：① SQLException 是受检异常，强制 try-catch——Spring 认为数据库异常通常是不可恢复的，应该是非受检。② 一个 SQLException 涵盖所有错误——通过 errorCode 映射为 20+ 种具体异常子类。③ 跨数据库一致性——MySQL 的 1062 和 Oracle 的 1 → 都翻译为 DataIntegrityViolationException。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JdbcTemplate 用了什么设计模式？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">模板方法模式。JdbcTemplate 固定了"获取连接→创建Statement→设置参数→执行→映射结果→异常翻译→释放资源"的骨架，只把"映射结果"这步通过 RowMapper 回调留给开发者。RestTemplate、TransactionTemplate 都是同样的模式。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">queryForObject 和 query 的区别？什么时候用哪个？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">queryForObject 期望恰好 1 条结果——0 条抛 EmptyResultDataAccessException，多条抛 IncorrectResultSize。query 返回 List，由你判断 size。推荐用 query + Optional：更安全、不抛异常。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">NamedParameterJdbcTemplate 比 JdbcTemplate 好在哪？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">? 占位符是按位置绑定——参数顺序错了不报错但数据错乱。:name 是按名称绑定——顺序无关、更可读、重构友好。NamedParameterJdbcTemplate 底层还是 JdbcTemplate，只是多了一层参数名→位置的翻译。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上 MySQL 数据库主从切换后，从库连接开始抛 SQLException。你需要在 catch 中区分"连接断开"和"SQL 语法错误"，但 SQLException.getErrorCode() 在不同 MySQL 版本中不一样。怎么设计一个健壮的异常处理？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不要自己 parse errorCode。用 Spring 的 SQLErrorCodeSQLExceptionTranslator——它已经维护了各数据库版本的错误码映射。自己写的翻译逻辑永远不如 Spring 的全。如果 Spring 的翻译不准，可以继承 SQLErrorCodeSQLExceptionTranslator 并覆盖 customTranslate() 补充自定义规则。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：一个查询返回了 50 万条数据，用 JdbcTemplate.query() 全部加载到 List 里导致 OOM。怎么优化？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三种方案：① 改用 RowCallbackHandler——每条记录处理完就丢弃，不攒 List。② 分页查询（LIMIT/OFFSET）。③ 使用流式查询（需设置 fetchSize 和 ResultSet.TYPE_FORWARD_ONLY + CONCUR_READ_ONLY）。JdbcTemplate 默认一次性加载所有结果——大数据量时这是灾难。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">DataSourceUtils.getConnection() 和 dataSource.getConnection() 有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">DataSourceUtils.getConnection() 会先检查当前线程是否已经绑定了连接（通过 TransactionSynchronizationManager）——如果有就返回同一个连接（保证事务内共享连接）。dataSource.getConnection() 每次都返回新连接。在 @Transactional 方法内一定要用 DataSourceUtils。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. DataAccessException 体系</strong> — 非受检 + 20+子类 + 跨数据库错误码翻译</p>
+<p><strong class="text-white">2. JdbcTemplate 模板方法模式</strong> — 固定骨架 + 回调，消灭样板代码</p>
+<p><strong class="text-white">3. NamedParameterJdbcTemplate</strong> — 具名参数 > 位置参数，重构友好</p>
+<p><strong class="text-white">4. DataSourceUtils vs DataSource</strong> — 事务感知 vs 每次新连接</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>queryForObject 0 条/多条都抛异常；大数据量用 RowCallbackHandler 而非 query()</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 数据访问异常与 JdbcTemplate</footer>
+</body>
+</html>

@@ -24,7 +24,33 @@ public class RedisDbStockService {
     private final ProductStockRepository productStockRepository;
     private final OrderEventRepository orderEventRepository;
 
-    public record BuyResult(boolean success, String message, Long orderId) {}
+    public static class BuyResult {
+
+        private final boolean success;
+
+        private final String message;
+
+        private final Long orderId;
+
+
+        public BuyResult(boolean success, String message, Long orderId) {
+
+            this.success = success;
+
+            this.message = message;
+
+            this.orderId = orderId;
+
+        }
+
+
+        public boolean isSuccess() { return success; }
+
+        public String getMessage() { return message; }
+
+        public Long getOrderId() { return orderId; }
+
+    }
 
     @Transactional
     public void initSku(String sku, long total, long prefetchToRedis) {

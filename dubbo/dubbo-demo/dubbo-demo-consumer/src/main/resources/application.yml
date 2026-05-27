@@ -1,0 +1,42 @@
+# ============================================================
+# Dubbo Consumer 配置 — application.yml
+# ============================================================
+# YAML 格式，中文注释无需转义。
+
+# ==================== Spring Boot 基础 ====================
+spring:
+  application:
+    name: dubbo-demo-consumer
+
+# Consumer 使用 8090 端口（避免与 Provider 的 8080 冲突）
+server:
+  port: 8090
+
+# ==================== Dubbo 完整配置 ====================
+dubbo:
+  # ---------- 应用配置 ----------
+  application:
+    name: dubbo-demo-consumer
+    owner: demo-team
+
+  # ---------- 注册中心配置 ----------
+  registry:
+    # Nacos 注册中心地址 + 认证信息
+    address: nacos://192.168.3.100:8848?username=nacos&password=nacos
+    timeout: 10000
+    # 启动时不检查注册中心是否可用
+    check: false
+
+  # ---------- Consumer 默认配置（ConsumerConfig） ----------
+  consumer:
+    # 默认超时（毫秒）
+    timeout: 5000
+    # 默认重试次数
+    retries: 1
+    # 启动时不检查 Provider 是否已注册
+    # false = 允许 Consumer 先启动，Provider 后启动
+    # 生产环境建议设为 true
+    check: false
+    # 全局默认负载均衡策略：random / roundrobin / leastactive / consistenthash
+    # 可在 @DubboReference 注解上按服务覆盖
+    loadbalance: random

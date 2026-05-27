@@ -10,10 +10,10 @@ public class QuickCheckConsumer {
     @KafkaListener(topics = "orders", groupId = "check-group")
     public void listen(ConsumerRecord<String, Object> record) {
         System.out.printf("[Consumer] topic=%s, partition=%d, offset=%d, key=%s, value=%s%n",
-                record.topic(), record.partition(), record.offset(), record.key(), record.value());
+                record.topic(), record.partition(), record.offset(), record.getKey(), record.value());
         // 打印我们添加的拦截器 header
         record.headers().forEach(header -> {
-            if (header.key().equals("send-timestamp")) {
+            if (header.getKey().equals("send-timestamp")) {
                 String timestamp = new String(header.value());
                 System.out.println("Header send-timestamp: " + timestamp);
             }

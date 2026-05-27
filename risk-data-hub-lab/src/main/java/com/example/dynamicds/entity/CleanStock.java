@@ -39,10 +39,10 @@ public class CleanStock {
                                     Long volumeQty,
                                     BigDecimal turnoverAmount) {
         CleanStock stock = new CleanStock();
-        stock.setGlobalId(context.globalId());
-        stock.setSourceSystem(context.sourceSystem());
-        stock.setSourceType(context.sourceType());
-        stock.setSourceRowId(context.sourceRowId());
+        stock.setGlobalId(context.getGlobalId());
+        stock.setSourceSystem(context.getSourceSystem());
+        stock.setSourceType(context.getSourceType());
+        stock.setSourceRowId(context.getSourceRowId());
         stock.setStockCode(stockCode);
         stock.setExchangeCode(exchangeCode);
         stock.setMarketDay(marketDay);
@@ -52,8 +52,8 @@ public class CleanStock {
         stock.setClosePrice(closePrice);
         stock.setVolumeQty(volumeQty);
         stock.setTurnoverAmount(turnoverAmount);
-        stock.setCleanBatch(context.cleanBatch());
-        stock.setCreatedAt(context.createdAt());
+        stock.setCleanBatch(context.getCleanBatch());
+        stock.setCreatedAt(context.getCreatedAt());
         return stock;
     }
 }

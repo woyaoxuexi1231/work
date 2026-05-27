@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>DataAccessException 异常体系 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:2rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">数据访问</span></div><h1 class="text-3xl font-bold text-white">🗂️ DataAccessException 异常体系</h1><p class="text-[#a6adc8] mt-2">从 SQLException 地狱到 20+ 子类精准异常 — Spring 如何让数据库错误"有意义"</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1"><h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 异常层次结构</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a] mb-4"><code>DataAccessException (RuntimeException, 非受检)
+├── DataAccessResourceFailureException  // 连接失败
+├── DataIntegrityViolationException     // 唯一约束冲突(MySQL 1062)
+├── DeadlockLoserDataAccessException    // 死锁
+├── IncorrectResultSizeDataAccessException // 结果数不对
+├── EmptyResultDataAccessException      // 期望1条但0条
+├── OptimisticLockingFailureException   // 乐观锁冲突
+├── CannotAcquireLockException          // 获取锁失败
+└── ... (共 20+ 子类)</code></pre>
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">异常</th><th class="text-left py-3 px-3 text-white">典型数据库错误码</th><th class="text-left py-3 px-3 text-white">场景</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3">DataIntegrityViolationException</td><td class="py-2 px-3">MySQL 1062 / Oracle 1</td><td class="py-2 px-3">INSERT 重复主键</td></tr>
+<tr class="border-b"><td class="py-2 px-3">DeadlockLoserDataAccessException</td><td class="py-2 px-3">MySQL 1213</td><td class="py-2 px-3">死锁被回滚的一方</td></tr>
+<tr><td class="py-2 px-3">EmptyResultDataAccessException</td><td class="py-2 px-3">—</td><td class="py-2 px-3">queryForObject 0条结果</td></tr></tbody></table></div></div>
+</section>
+
+<section id="p2"><h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🤔 如果没有 DataAccessException，数据库异常怎么处理？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>JDBC 只抛出 <strong class="text-white">SQLException</strong> —— 不管是连接断了、死锁了、唯一约束冲突了，全都是同一个异常类型。你要靠 getErrorCode() 区分，而且<strong class="text-white">每个数据库的错误码不同</strong>（MySQL 1062 ≠ Oracle 1）。代码不可移植。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 设计巧思：SQLErrorCodeSQLExceptionTranslator</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>Spring 维护了<strong class="text-white">每种数据库的错误码映射表</strong>（sql-error-codes.xml），自动把 SQLException 翻译为具体的 DataAccessException 子类。你不再需要 switch(errorCode)。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ 为什么是非受检异常？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>Spring 认为数据库异常通常<strong class="text-white">不可恢复</strong>（连接断了你让用户重试？），应该是非受检的。这让你不用在每个 DAO 方法上写 throws。</p></div></details>
+</section>
+
+<section id="p3"><h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">为什么 DataAccessException 是非受检的？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Spring 认为数据库异常通常是<strong class="text-white">不可恢复</strong>的——连接断了、SQL 写错了、约束冲突了，你 catch 了又能怎样？与其强制 try-catch，不如让它自然上抛到统一异常处理层。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">MySQL 的 1062 和 Oracle 的 1 怎么变成同一个异常类型？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">SQLErrorCodeSQLExceptionTranslator 从 sql-error-codes.xml 读取映射表。MySQL 1062 → DataIntegrityViolationException，Oracle 1 → 同样的异常。每个数据库有独立映射。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上 MySQL 报 1213 死锁，你想在 catch 中识别死锁并自动重试。怎么精确识别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">catch(DeadlockLoserDataAccessException e) { retry(); }。不需要 parse errorCode——Spring 已经翻译好了。这就是 DataAccessException 体系的核心价值。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">EmptyResultDataAccessException 和 IncorrectResultSizeException 的区别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Empty = 0 条（期望 1 条），IncorrectResultSize = >1 条（期望恰好 1 条）。都发生在 queryForObject。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">DataAccessException 和 SQLException 的继承关系？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">没有继承关系。DataAccessException 继承 RuntimeException，SQLException 继承 Exception。它们是完全独立的体系。Spring 通过 SQLErrorCodeSQLExceptionTranslator 做翻译，而不是包装。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">自定义异常翻译怎么做？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">继承 SQLErrorCodeSQLExceptionTranslator，覆盖 customTranslate() 方法。Spring 的默认翻译在找不到映射时会调 customTranslate 给你兜底。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. 非受检设计</strong> — 数据库异常通常不可恢复，不强制 try-catch</p><p><strong class="text-white">2. 跨数据库错误码映射</strong> — sql-error-codes.xml 是翻译字典</p><p><strong class="text-white">3. 20+ 子类精准捕获</strong> — catch(DeadlockLoserDataAccessException) 比 switch(errorCode) 优雅多了</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · DataAccessException</footer>
+</body>
+</html>

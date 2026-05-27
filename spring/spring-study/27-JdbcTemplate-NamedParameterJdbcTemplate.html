@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>JdbcTemplate & NamedParameterJdbcTemplate — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:2rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">数据访问</span></div><h1 class="text-3xl font-bold text-white">📊 JdbcTemplate & NamedParameterJdbcTemplate</h1><p class="text-[#a6adc8] mt-2">模板方法模式的经典应用 — 15 行样板代码变成 1 个 lambda</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1"><h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基本用法</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">对比</th><th class="text-left py-2 px-3 text-[#f38ba8]">原始 JDBC</th><th class="text-left py-2 px-3 text-[#a6e3a1]">JdbcTemplate</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3">获取连接</td><td class="py-2 px-3">DriverManager.getConnection()</td><td class="py-2 px-3">自动从 DataSource</td></tr>
+<tr class="border-b"><td class="py-2 px-3">异常处理</td><td class="py-2 px-3">SQLException(受检)+try-finally</td><td class="py-2 px-3">自动翻译DataAccessException(非受检)</td></tr>
+<tr class="border-b"><td class="py-2 px-3">资源释放</td><td class="py-2 px-3">手动 close(6行)</td><td class="py-2 px-3">自动释放</td></tr>
+<tr><td class="py-2 px-3">代码量</td><td class="py-2 px-3">~15行/查询</td><td class="py-2 px-3">~3行/查询</td></tr></tbody></table></div>
+</div>
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// JdbcTemplate
+@Autowired JdbcTemplate jdbc;
+User u = jdbc.queryForObject("SELECT * FROM users WHERE id=?", new BeanPropertyRowMapper<>(User.class), 1L);
+List&lt;User&gt; list = jdbc.query("SELECT * FROM users WHERE age>?", rowMapper, 18);
+int rows = jdbc.update("UPDATE users SET name=? WHERE id=?", "张三", 1L);
+
+// NamedParameterJdbcTemplate — 具名参数（:name 优于 ?）
+@Autowired NamedParameterJdbcTemplate named;
+Map&lt;String,Object&gt; p = Map.of("id",1L,"name","张三");
+named.update("UPDATE users SET name=:name WHERE id=:id", p);</code></pre>
+</section>
+
+<section id="p2"><h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 模板方法模式 — JdbcTemplate 的灵魂</summary><div class="mt-4 text-sm text-[#a6adc8]"><pre class="bg-[#11111b] rounded-lg p-3 text-xs border border-[#45475a]"><code>// 固定骨架：获取连接→创建Statement→设参→执行→映射→翻译异常→释放
+// 变化部分：SQL + 参数 + RowMapper（回调）
+// 15 行样板 → 框架内部 / 3 行业务代码 → lambda</code></pre><p class="mt-2"><strong class="text-white">"啊哈时刻"：</strong>这就是模板方法模式的威力——不变的流程归框架，变化的细节归你。RestTemplate、TransactionTemplate 都是同样的设计。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ 陷阱</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>queryForObject 期望<strong class="text-white">恰好 1 条</strong>——0 条→EmptyResultDataAccessException，>1 条→IncorrectResultSize。用 query()+Optional 更安全。大数据量不要用 query() 全量加载——用 RowCallbackHandler 流式处理。</p></div></details>
+</section>
+
+<section id="p3"><h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JdbcTemplate 用什么设计模式？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]"><strong class="text-white">模板方法模式</strong>——固定"获取连接→创建Statement→设参→执行→映射→翻译异常→释放"骨架，只把"映射结果"通过 RowMapper 回调留给开发者。RestTemplate、TransactionTemplate 同理。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">NamedParameterJdbcTemplate 比 ? 好在哪里？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">? 按位置绑定——顺序错了不报错但数据错乱。:name 按名称绑定——顺序无关、更可读。底层还是 JdbcTemplate，只是多了一层参数名→位置的翻译。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：一个查询返回 50 万条数据 OOM 了，怎么改？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">① RowCallbackHandler 流式逐条处理 ② 分页查询 ③ ResultSet.TYPE_FORWARD_ONLY+fetchSize 流式读取。JdbcTemplate.query() 默认全量加载到 List——大数据量下是灾难。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JdbcTemplate 是连接池吗？每次操作新建连接吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不是。JdbcTemplate 每次操作从 DataSource 获取连接，用完释放。连接池是 HikariCP/DBCP 的事——它们管理 DataSource 内部的连接复用。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">query() 和 queryForList() 的区别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">queryForList 返回 List&lt;Map&lt;String,Object&gt;&gt;（不需要 RowMapper，自动列名→值映射）。query 需要 RowMapper 手动映射。queryForList 快速但类型不安全，query 类型安全但需要多写 RowMapper。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JdbcTemplate 内部怎么管理 PreparedStatement？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">每次都创建新的 PreparedStatement——不缓存。JDBC 驱动层可能有 statement 缓存（如 MySQL 的 useServerPrepStmts），但那不是 JdbcTemplate 的事。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. 模板方法模式</strong> — 消灭样板代码的核心设计</p><p><strong class="text-white">2. NamedParameterJdbcTemplate</strong> — 具名参数 > 位置参数</p><p><strong class="text-white">3. queryForObject 陷阱</strong> — 0条/多条都抛异常</p><p><strong class="text-white">4. 大数据量用 RowCallbackHandler</strong> — 别用 query() 全量加载</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · JdbcTemplate</footer>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>代理机制 JDK vs CGLIB — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🔀 代理机制：JDK 动态代理 vs CGLIB</h1>
+<p class="text-[#a6adc8] mt-2">ProxyFactoryBean、DefaultAopProxyFactory — Spring 如何选择"用哪种代理"</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">JDK 动态代理 vs CGLIB — 一张表</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">维度</th><th class="text-left py-3 px-3 text-[#89b4fa]">JDK 动态代理</th><th class="text-left py-3 px-3 text-[#a6e3a1]">CGLIB</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">原理</td><td class="py-2 px-3">基于接口：生成实现相同接口的代理类</td><td class="py-2 px-3">基于继承：生成目标类的子类</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">限制</td><td class="py-2 px-3">必须有接口</td><td class="py-2 px-3">不能代理 final 类/方法、private 方法</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">代理对象类型</td><td class="py-2 px-3">$Proxy0（不是原类实例）</td><td class="py-2 px-3">目标类子类（是原类实例）</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">Spring 默认</td><td class="py-2 px-3">4.x 及之前（有接口时）</td><td class="py-2 px-3">Boot 2.x+ 统一强制</td></tr>
+<tr><td class="py-2 px-3">核心类</td><td class="py-2 px-3">JdkDynamicAopProxy</td><td class="py-2 px-3">ObjenesisCglibAopProxy</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// DefaultAopProxyFactory.createAopProxy() — 代理选择逻辑（伪代码）
+public AopProxy createAopProxy(AdvisedSupport config) {
+    if (config.isProxyTargetClass()       // 强制 CGLIB（@EnableAspectJAutoProxy(proxyTargetClass=true)）
+        || !config.isOptimize() &&
+           config.getProxiedInterfaces().length == 0) {  // 没有实现接口
+        return new ObjenesisCglibAopProxy(config);  // → CGLIB
+    }
+    return new JdkDynamicAopProxy(config);           // → JDK 代理
+}</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果 Spring 只用 JDK 动态代理，会出什么问题？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">注入灾难：</strong>UserServiceImpl 实现了 UserService 接口。JDK 代理生成的是 $Proxy0 类型——它不是 UserServiceImpl 的实例。</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// ❌ JDK 代理下这行代码会注入失败
+@Autowired UserServiceImpl userService;  // 代理是 $Proxy0，不是 UserServiceImpl
+
+// ✅ 只能按接口注入
+@Autowired UserService userService;  // 代理实现了 UserService 接口</code></pre>
+<p>在大型项目中，很多人习惯直接注入实现类。JDK 代理让这种写法全部报错。<strong class="text-white">这就是 Spring Boot 2.x 强制 CGLIB 的根本原因——兼容开发者的编写习惯。</strong></p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：Objenesis — 绕过构造器的魔法</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>CGLIB 通过继承创建代理——这意味着父类构造器会被调用。如果构造器里有复杂逻辑（初始化连接池、加载配置），代理创建时也会触发。<strong class="text-white">Objenesis 是一个小工具库，可以创建对象但不调用构造器。</strong>Spring 用 ObjenesisCglibAopProxy 来避免代理创建时执行构造器中的副作用。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 ProxyFactoryBean — 手动创建代理</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>Spring AOP 的自动代理（AbstractAutoProxyCreator）内部就是用的 ProxyFactoryBean 的逻辑。你可以手动使用它：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>ProxyFactoryBean factory = new ProxyFactoryBean();
+factory.setTarget(new UserServiceImpl());
+factory.addAdvice(new LoggingAdvice());
+factory.setProxyTargetClass(true);  // 强制 CGLIB
+UserService proxy = (UserService) factory.getObject();</code></pre>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ CGLIB 的限制：final 的诅咒</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">final 类</p><p>完全不能代理。CGLIB 需要继承，final 禁止继承。</p></div>
+<div><p class="text-white font-bold">final 方法</p><p>增强"静默失效"——不报错，但 AOP 不生效。这是生产中最危险的陷阱之一。</p></div>
+<div><p class="text-white font-bold">private 方法</p><p>子类不可见，不能代理。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JDK 动态代理和 CGLIB 的根本区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">JDK 代理基于<strong class="text-white">接口实现</strong>，生成的是 $Proxy 类，只能代理接口方法。CGLIB 基于<strong class="text-white">继承</strong>，生成的是子类，能代理所有非 final 方法。核心差异在于代理对象的类型：JDK 代理不是原类的实例，CGLIB 是。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring Boot 2.x 为什么强制 CGLIB？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">为了避免 JDK 代理的注入陷阱。很多开发者习惯 @Autowired UserServiceImpl 而不是 @Autowired UserService——JDK 代理下 $Proxy 不是 UserServiceImpl 的子类，注入失败。CGLIB 代理是子类，@Autowired UserServiceImpl 也能注入。统一行为、减少配置、降低上手门槛。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">CGLIB 代理的对象，getClass() 返回什么？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">返回 UserService$$EnhancerBySpringCGLIB$$xxxxx（CGLIB 子类的类名）。不是 UserService 本身。这在某些场景下会出问题——比如通过 getClass().getAnnotation(Xxx.class) 获取类上的注解时，CGLIB 子类没有继承注解（取决于注解的 @Inherited 元注解）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">CGLIB 代理的构造器会被调用两次，这是为什么？Objensis 怎么解决的？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">CGLIB 先创建目标对象实例（第一次调构造器），再创建子类代理对象（第二次调构造器——父类构造器）。如果构造器里有副作用（建立网络连接），就会执行两次。Objenesis 通过 Unsafe 或 MethodHandle 直接分配内存创建对象，绕过构造器调用——代理创建时不会触发业务构造器逻辑。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：你发现一个 Service 上的 @Transactional 没生效，排查发现方法被声明为 final。为什么没生效？怎么发现其他类似问题？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">CGLIB 无法重写 final 方法 → 无法创建代理 → @Transactional 静默失效。排查方法：开启 debug 日志看 AOP 代理是否创建（logging.level.org.springframework.aop=DEBUG）。预防：在代码规范中禁止 Service 方法使用 final，配合 Sonar 规则扫描。IDEA 插件也能检测到。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上有一个类被 final 修饰，但又需要 AOP。不改 final 的情况下怎么解决？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">如果类实现了接口 → 改回 JDK 动态代理（proxy-target-class=false），JDK 代理不需要继承。如果没有接口 → 拆出一个接口，让 final 类实现它。如果都不能改 → 手工包装（写一个非 final 的 Wrapper 类，继承不了但可以组合）。最后的选择：用 AspectJ 的编译期织入（LTW），不依赖代理。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">DefaultAopProxyFactory 的代理选择逻辑是什么？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">① 如果 proxyTargetClass=true（Spring Boot 2.x 默认 true）→ 返回 ObjenesisCglibAopProxy。② 如果目标类没有实现接口 → 返回 CGLIB。③ 否则 → 返回 JdkDynamicAopProxy。简单说：能 CGLIB 就 CGLIB。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. JDK vs CGLIB 的本质</strong> — 接口实现 vs 继承，代理对象类型不同</p>
+<p><strong class="text-white">2. Spring Boot 2.x 的决策</strong> — 牺牲 final 兼容性换注入灵活性和零配置</p>
+<p><strong class="text-white">3. final 的静默失效</strong> — 不报错不警告，最难排查的 AOP 问题</p>
+<p><strong class="text-white">4. Objenesis</strong> — 绕过构造器创建对象，避免副作用执行两次</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>final 方法 AOP 失效无任何提示；CGLIB 代理 getClass() 不是原类名</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 代理机制</footer>
+</body>
+</html>

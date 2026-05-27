@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpEL 表达式语言 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🧮 SpEL — Spring 表达式语言</h1>
+<p class="text-[#a6adc8] mt-2">从 @Value("#{...}") 到动态权限规则引擎 — 运行时表达式的全部能力</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">SpEL 核心能力速览</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">能力</th><th class="text-left py-3 px-3 text-white">示例</th><th class="text-left py-3 px-3 text-white">说明</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">字面量</td><td class="py-2 px-3"><code>#{1 + 2}</code></td><td class="py-2 px-3">算术运算</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">属性访问</td><td class="py-2 px-3"><code>#{systemProperties['user.dir']}</code></td><td class="py-2 px-3">访问系统属性</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">方法调用</td><td class="py-2 px-3"><code>#{T(Math).random()}</code></td><td class="py-2 px-3">调用静态方法</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">Bean 引用</td><td class="py-2 px-3"><code>#{@userService.findById(1L)}</code></td><td class="py-2 px-3">引用容器中的 Bean</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">逻辑判断</td><td class="py-2 px-3"><code>#{user.age > 18 ? 'adult' : 'child'}</code></td><td class="py-2 px-3">三元表达式</td></tr>
+<tr><td class="py-2 px-3">集合操作</td><td class="py-2 px-3"><code>#{users.?[age > 18]}</code></td><td class="py-2 px-3">集合过滤/投影</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">${} 和 #{} 的本质区别</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white"></th><th class="text-left py-3 px-3 text-[#89b4fa]">${} — Property Placeholder</th><th class="text-left py-3 px-3 text-[#f38ba8]">#{} — SpEL 表达式</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">处理器</td><td class="py-2 px-3">PropertySourcesPlaceholderConfigurer (BFPP)</td><td class="py-2 px-3">SpelExpressionParser (运行时)</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">数据来源</td><td class="py-2 px-3">Environment (application.yml 等)</td><td class="py-2 px-3">任意对象、Bean、方法、系统</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">执行时机</td><td class="py-2 px-3">Bean 实例化<strong>之前</strong>（替换占位符）</td><td class="py-2 px-3">运行时<strong>每次求值</strong></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">能做什么</td><td class="py-2 px-3">只能取值，不能计算</td><td class="py-2 px-3">能计算、调方法、访问对象等</td></tr>
+<tr><td class="py-2 px-3">典型用途</td><td class="py-2 px-3">注入配置：@Value("${db.url}")</td><td class="py-2 px-3">动态逻辑：@PreAuthorize("#id > 0")</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// SpEL 在 Spring Security 中的经典用法
+@PreAuthorize("hasRole('ADMIN') or #user.id == authentication.principal.id")
+public void updateUser(User user) { }
+
+// SpEL 在 @Cacheable 中动态 key
+@Cacheable(value = "users", key = "#id + '_' + #tenantId")
+public User findById(Long id, String tenantId) { }
+
+// SpEL 在 @Value 中
+@Value("#{@envConfig.getProperty('app.env')}")  // 调 Bean 方法拿配置
+private String env;</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂的设计原理</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 假如没有 SpEL，@PreAuthorize 怎么写？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>Spring Security 的权限校验需要灵活判断——"当前用户是否是记录的拥有者"、"用户年龄是否大于 18"、"角色是否是 ADMIN 或 SUPER_ADMIN"。没有 SpEL，这些判断必须写成 Java 代码放在 AccessDecisionVoter 或自定义注解里——<strong class="text-white">权限规则和业务代码耦合</strong>。</p>
+<p>SpEL 让权限规则可配置化：一行表达式替换一个类。表达式的字符串可以从数据库动态加载，实现<strong class="text-white">运行时修改权限规则</strong>。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：EvaluationContext — 表达式与环境的桥梁</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>SpEL 的最精妙设计不是语法解析，而是 <strong class="text-white">EvaluationContext</strong>：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// EvaluationContext 就是"变量空间"——你把什么放进 Context，表达式就能访问什么
+StandardEvaluationContext ctx = new StandardEvaluationContext();
+ctx.setVariable("user", user);         // #user 指向这个对象
+ctx.setRootObject(order);              // #root 指向订单
+ctx.setBeanResolver(beanFactory);      // @beanName 可以引用 Spring Bean
+
+// 表达式字符串 + Context = 完整的运行时计算环境
+Expression exp = parser.parseExpression("#user.name + ' bought ' + #root.product");
+String result = exp.getValue(ctx, String.class);</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>SpEL 解析器不关心变量从哪来——它只管解析表达式。你可以在不同的 Context 中使用同一个表达式，得到不同的结果。Spring Security 往 Context 里塞了 authentication、#id 等；Spring Cache 往 Context 里塞了方法参数。同一套解析器，不同场景。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 Spring 内部如何使用 SpEL</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">使用位置</th><th class="text-left py-2 px-3 text-white">表达式示例</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">@Value</td><td class="py-2 px-3"><code>#{systemProperties['user.dir']}</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">@PreAuthorize</td><td class="py-2 px-3"><code>#id == authentication.principal.id</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">@Cacheable key</td><td class="py-2 px-3"><code>#user.id</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">@EventListener condition</td><td class="py-2 px-3"><code>#event.type == 'ORDER'</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">@ConditionalOnExpression</td><td class="py-2 px-3"><code>${feature.flag:false}</code></td></tr>
+<tr><td class="py-2 px-3">XML 配置</td><td class="py-2 px-3"><code>&lt;bean id="..." value="#{@otherBean.method()}" /&gt;</code></td></tr>
+</tbody></table></div>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：性能</p><p>SpEL 每次调用都重新解析表达式（除非缓存）。循环中反复执行同一表达式开销不小。</p></div>
+<div><p class="text-white font-bold">陷阱2：安全问题</p><p>如果允许用户输入的字符串直接当 SpEL 执行 → 注入攻击。T(java.lang.Runtime).exec("rm -rf /") 可以通过 SpEL 执行任意代码。</p></div>
+<div><p class="text-white font-bold">陷阱3：可读性</p><p>SpEL 表达式的调试极其困难——字符串被扔进解析器，没有编译期检查，拼写错误只有运行时才知道。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">${} 和 #{} 的区别？什么时候用哪个？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">${} 从 Environment 取值，由 BFPP 在实例化前替换。#{} 是 SpEL 运行时求值，可以做计算、调方法。简单配置注入用 ${}，需要动态计算或有条件逻辑用 #{}。比如 @Value("${server.port}") 用 ${}，@PreAuthorize("#id > 0") 用 #{}。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@PreAuthorize 里的 #id 是从哪来的？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">SecurityExpressionRoot 的 EvaluationContext 会把方法参数按参数名注入为变量。如果参数是 User user，表达式用 #user；如果是 Long id，表达式用 #id。参数名必须通过编译时 -parameters 标志保留，或者用 @P("id") 显式指定。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">SpEL 能调用任意 Java 方法吗？有什么限制？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">可以，T(全限定类名).静态方法()。但不能调用非静态方法（除非对象已经在 Context 中），不能调用 private 方法。Spring Security 的 EvaluationContext 默认还禁止了部分危险操作——比如不能调 System.exit()。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Cacheable 的 key 里 #user.id 如果 user 为 null 会怎样？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">抛 NullPointerException。SpEL 的 ?. 安全导航操作符可以解决：<code>key = "#user?.id"</code>（user 为 null 时不求值 id）。或者用三元表达式：<code>key = "#user != null ? #user.id : 'null'</code>。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上一个 Controller 根据请求来源动态切换调用逻辑，目前用 if-else 判断 header 值。主管说这样扩展性差，让你用 SpEL 重构。怎么做？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不要硬上 SpEL——这不是它的最佳场景。if-else 分支逻辑应该用策略模式 + Map 注入，SpEL 的优势是动态表达式（权限规则、缓存 key、条件注解），不是替代 if-else。如果非要动态规则，把分支判断规则存入数据库（如 source=app → handler=AppHandler），用 SpEL 做规则匹配——但依然不如策略模式直观。SpEL 适合"一行表达式描述一个布尔条件"，不适合"这是一个分支调度器"。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic mt-2">💡 考核意图：看你是否滥用技术。知道什么时候<strong class="text-white">不用</strong> SpEL 和知道怎么用同样重要。</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：生产上@PreAuthorize 的表达式是硬编码的，运营想动态改。怎么把表达式存到数据库并运行时生效？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">自定义 PermissionEvaluator 或 AccessDecisionVoter。实现一个 DatabaseDrivenPermissionEvaluator：从数据库加载 URL-表达式映射并缓存；在 evaluate() 中拿到当前认证信息、请求参数，构建 EvaluationContext，SpelExpressionParser 解析并执行表达式。缓存策略很重要——每次请求都解析表达式太重，需要预编译并缓存 Expression 对象。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">SpEL 性能怎么样？要不要担心？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">单次执行微秒级，不是瓶颈。但两个场景要当心：① 高并发下频繁解析同一个表达式——用 CacheExpression 或预编译 Expression 对象缓存。② 表达式中调用了耗时的 Bean 方法——比如调了远程 RPC，每次表达式求值都阻塞。这种不要写在表达式里，提前算好放进 Context。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. ${} vs #{} 的本质区别</strong> — 一个是配置替换（编译期），一个是运行时求值</p>
+<p><strong class="text-white">2. EvaluationContext 的变量注入机制</strong> — @PreAuthorize 的 #id 从哪来</p>
+<p><strong class="text-white">3. SpEL 的安全边界</strong> — T() 可以执行任意静态方法，用户输入不要直接拼进 SpEL</p>
+<p><strong class="text-white">4. 适用/不适用场景</strong> — 权限规则、缓存 key、条件注解是天然场景；分支调度不是</p>
+<p><strong class="text-white">⚠️ 大厂高频陷阱：</strong>SpEL 不是 if-else 的替代品；动态 SpEL 必须预编译缓存 Expression 对象</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · SpEL 表达式语言</footer>
+</body>
+</html>

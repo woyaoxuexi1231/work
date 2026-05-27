@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bean 生命周期 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q{position:relative}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a{position:relative}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring Boot</span>
+<span class="bg-[#fab387]/20 text-[#fab387] px-2 py-0.5 rounded">恒生多数据源</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🔄 Bean 生命周期</h1>
+<p class="text-[#a6adc8] mt-2">实例化 → 属性填充 → BeanPostProcessor → 初始化 → 销毁 — 每个阶段背后的设计</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<!-- ===== PART 1 ===== -->
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知 — 14 个关键步骤</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-4">生命周期全景图</h3>
+<div class="space-y-2 text-sm">
+<div class="flex gap-3"><span class="text-[#89b4fa] font-bold w-6">1.</span><span>BeanDefinition 加载 → 解析 XML/注解/Java Config</span></div>
+<div class="flex gap-3"><span class="text-[#89b4fa] font-bold w-6">2.</span><span>BeanFactoryPostProcessor 修改 BeanDefinition</span></div>
+<div class="flex gap-3"><span class="text-[#f38ba8] font-bold w-6">3.</span><span><strong>实例化</strong> — 推断构造器 → Constructor.newInstance()</span></div>
+<div class="flex gap-3"><span class="text-[#f38ba8] font-bold w-6">4.</span><span><strong>属性填充</strong> — @Autowired/@Resource 注入</span></div>
+<div class="flex gap-3"><span class="text-[#f38ba8] font-bold w-6">5.</span><span>Aware 回调 — BeanNameAware → BeanFactoryAware → ApplicationContextAware</span></div>
+<div class="flex gap-3"><span class="text-[#fab387] font-bold w-6">6.</span><span><strong>BeanPostProcessor.before</strong> — postProcessBeforeInitialization()</span></div>
+<div class="flex gap-3"><span class="text-[#fab387] font-bold w-6">7.</span><span>@PostConstruct 方法执行</span></div>
+<div class="flex gap-3"><span class="text-[#fab387] font-bold w-6">8.</span><span>InitializingBean.afterPropertiesSet()</span></div>
+<div class="flex gap-3"><span class="text-[#fab387] font-bold w-6">9.</span><span>自定义 init-method</span></div>
+<div class="flex gap-3"><span class="text-[#fab387] font-bold w-6">10.</span><span><strong>BeanPostProcessor.after</strong> — postProcessAfterInitialization() ← AOP 代理在此创建</span></div>
+<div class="flex gap-3"><span class="text-[#a6e3a1] font-bold w-6">11.</span><span>放入单例池 — singletonObjects.put(beanName, bean)</span></div>
+<div class="flex gap-3"><span class="text-[#a6e3a1] font-bold w-6">12.</span><span>就绪 — 可被 getBean() 获取</span></div>
+<div class="flex gap-3"><span class="text-[#cba6f7] font-bold w-6">13.</span><span>@PreDestroy</span></div>
+<div class="flex gap-3"><span class="text-[#cba6f7] font-bold w-6">14.</span><span>DisposableBean.destroy() → destroy-method</span></div>
+</div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<h3 class="text-lg font-bold text-white mb-3">关键接口速查</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">接口/注解</th><th class="text-left py-3 px-3 text-white">阶段</th><th class="text-left py-3 px-3 text-white">用途</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">BeanFactoryPostProcessor</td><td class="py-2 px-3">实例化前</td><td class="py-2 px-3">修改 BeanDefinition（蓝图阶段）</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">BeanPostProcessor</td><td class="py-2 px-3">初始化前后</td><td class="py-2 px-3">修改/包装 Bean 实例</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">Aware 系列</td><td class="py-2 px-3">初始化前</td><td class="py-2 px-3">让 Bean 感知容器信息</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">@PostConstruct</td><td class="py-2 px-3">初始化中</td><td class="py-2 px-3">自定义初始化逻辑</td></tr>
+<tr><td class="py-2 px-3">@PreDestroy</td><td class="py-2 px-3">销毁前</td><td class="py-2 px-3">释放资源</td></tr>
+</tbody></table></div>
+</div>
+</section>
+
+<!-- ===== PART 2 ===== -->
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂的设计原理</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 假如没有 BeanPostProcessor，会发生什么？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>想象你有 200 个 Service，每个都需要在方法执行时打日志。没有 BPP，每份代码都要加 try-finally：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 每个 Service 都要这样写 → 200 份重复代码
+public void doBiz() {
+    log.info("开始");
+    try { /* 业务 */ } finally { log.info("结束"); }
+}</code></pre>
+<p>有了 BPP + AOP：<strong class="text-white">一个切面搞定 200 个 Service</strong>，零侵入。BPP 在生命周期中提供了一个"插桩点"，让框架能力（事务、日志、安全）可以在<strong class="text-white">完全不修改业务代码</strong>的前提下注入。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：为什么 BPP 分 before 和 after？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">巧思：</strong>before 和 after 不是随便分的——before 让你在 @PostConstruct 之前做预处理（如注入代理不可见的上下文），after 让你在 @PostConstruct 之后做后处理（如<strong class="text-white">创建 AOP 代理</strong>）。</p>
+<p>如果只有 after，那些需要在初始化之前就完成的逻辑（比如给 @Resource 赋值）就没有地方放了。如果只有 before，AOP 代理就永远在 @PostConstruct 之前创建——但代理对象不一定能正确处理 @PostConstruct 的回调（因为目标对象还在原始状态）。</p>
+<div class="bg-[#11111b] rounded-lg p-3 text-xs border border-[#45475a] text-center">
+<p class="text-[#a6e3a1]">before → @PostConstruct → afterPropertiesSet → init-method → after</p>
+<p class="text-[#a6adc8]">↑ 预处理 ↑ 用户初始化逻辑 ↑ 后处理（AOP代理）</p>
+</div>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 底层机制：doCreateBean() 源码骨架</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// AbstractAutowireCapableBeanFactory.doCreateBean()
+protected Object doCreateBean(String beanName, RootBeanDefinition mbd, Object[] args) {
+    // 1. 实例化
+    BeanWrapper instanceWrapper = createBeanInstance(beanName, mbd, args);
+    Object bean = instanceWrapper.getWrappedInstance();
+
+    // 2. 放入三级缓存（循环依赖用）
+    addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
+
+    // 3. 属性填充（依赖注入）
+    populateBean(beanName, mbd, instanceWrapper);
+
+    // 4. 初始化
+    Object exposedObject = initializeBean(beanName, bean, mbd);
+    //   ↓ 内部：
+    //   invokeAwareMethods()        → Aware 回调
+    //   applyBeanPostProcessorsBeforeInitialization() → BPP.before → @PostConstruct
+    //   invokeInitMethods()         → afterPropertiesSet → init-method
+    //   applyBeanPostProcessorsAfterInitialization()  → BPP.after → AOP代理
+
+    return exposedObject;
+}</code></pre>
+<p><strong class="text-white">为什么 @PostConstruct 里拿不到 AOP 代理？</strong>因为 @PostConstruct 在 BPP.before 阶段执行，而 AOP 代理在 BPP.after 阶段创建。代理是"后来者"。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：@PostConstruct 里调 @Async → 不生效</p><p>代理还没创建，this 是原始对象，调的是原始方法。</p></div>
+<div><p class="text-white font-bold">陷阱2：BeanPostProcessor 之间执行顺序</p><p>用 @Order 或实现 PriorityOrdered/Ordered 控制。CommonAnnotationBeanPostProcessor 优先级高于 AbstractAutoProxyCreator，所以 @PostConstruct 一定先于 AOP。</p></div>
+<div><p class="text-white font-bold">陷阱3：BFPP 和 BPP 名称相似但完全不同</p><p>BFPP 操作的是 BeanDefinition（蓝图），BPP 操作的是 Bean 实例（成品）。BFPP 在实例化之前，BPP 在初始化前后。</p></div>
+</div>
+</details>
+</section>
+
+<!-- ===== PART 3 ===== -->
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（8 组）</h2>
+
+<!-- Q1 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">说下 Spring Bean 的完整生命周期。</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">14 步：BeanDefinition 加载 → BFPP 修改定义 → 实例化 → 属性填充 → Aware → BPP.before → @PostConstruct → afterPropertiesSet → init-method → BPP.after(AOP代理) → 单例池 → 就绪 → @PreDestroy → 销毁。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic mt-2">💡 考核意图：80%的人只能说出"实例化→初始化→销毁"三个词。说出 BeanPostProcessor 的 before/after 和 AOP 代理创建时机，才是及格线。</div>
+</div>
+
+<!-- Q2 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@PostConstruct、afterPropertiesSet、init-method，执行顺序是什么？为什么？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">顺序：@PostConstruct → afterPropertiesSet → init-method。源码层面看 initializeBean()：先调 BPP.before（含 @PostConstruct），再调 invokeInitMethods()（含 afterPropertiesSet + init-method）。设计意图：注解优先于接口，接口优先于 XML 配置——越靠近业务代码的越早执行。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<!-- Q3 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">BFPP 和 BPP 有什么区别？为什么需要两个？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">BFPP 改"图纸"（BeanDefinition），BPP 改"成品"（Bean 实例）。设计者的巧思：把配置阶段和运行时阶段严格分离。BFPP 在实例化前执行——因为改图纸要在施工前。BPP 在初始化前后执行。如果混在一起，就会出现"车已经开动了再改路线"的尴尬。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<!-- Q4 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Bean 什么时候从二级缓存移到一级缓存？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Bean 完成初始化（initializeBean）后，从二级缓存 earlySingletonObjects 移除，放入一级缓存 singletonObjects。生命周期步骤 10 之后。此时对象已经完整初始化（包括 AOP 代理）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic mt-2">💡 考核意图：把生命周期和循环依赖两个知识点关联起来，考察整体理解。</div>
+</div>
+
+<!-- Q5 场景题 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：你在恒生做多数据源组件时，需要在每个 DataSource Bean 初始化后验证连接可用性（ping 一下）。你会怎么利用 BeanPostProcessor 实现？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">写一个 DataSourceHealthCheckPostProcessor 实现 BPP，在 postProcessAfterInitialization 里判断 bean 是否是 DataSource 类型——如果是，就 try conn.isValid(3) 验证连接。验证不通过记录日志告警，但不要抛异常（避免阻塞其他 Bean 的初始化）。这样所有 DataSource 初始化后自动验证，无需在每个配置类里写 try-catch。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic mt-2">💡 考核意图：不只要知道 BPP 的概念，还要能在真实场景中"看到可以用 BPP 解决什么问题"。</div>
+</div>
+
+<!-- Q6 场景题 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：你的 RSA+AES 加密 Filter 依赖一个密钥管理器 Bean。线上发现请求进来时密钥管理器还没初始化完成（@PostConstruct 里的密钥加载耗时 5 秒），导致 Filter 拿到的是 null。怎么排查和解决？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">排查：查启动日志，看密钥管理器的 @PostConstruct 耗时。确认 Filter 是在哪个阶段注册的（Servlet Filter 可能在 Bean 初始化完成前就激活了）。解决：① 在 Filter 中加启动等待逻辑（轮询等待密钥管理器就绪）或 ② 把密钥加载从 @PostConstruct 提前到 BFPP 阶段（用 BeanFactoryPostProcessor 同步加载）或 ③ 把 Filter 改为延迟注入密钥管理器（用 Provider / ObjectProvider）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+<div class="ml-12 text-xs text-[#fab387] italic mt-2">💡 考核意图：把生命周期和 Web 容器的启动顺序结合起来考察，这是线上真实故障的高发区。</div>
+</div>
+
+<!-- Q7 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">两个 BeanPostProcessor 之间的执行顺序怎么控制？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">实现 PriorityOrdered 或 Ordered 接口，或加 @Order 注解。数字越小越先执行。比如 CommonAnnotationBeanPostProcessor（@PostConstruct）的 order 是 LOWEST_PRECEDENCE-3，AbstractAutoProxyCreator（AOP代理）是 LOWEST_PRECEDENCE——所以 @PostConstruct 一定在 AOP 之前。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<!-- Q8 -->
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">prototype Bean 的 @PreDestroy 会执行吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不会。Spring 只管 prototype Bean 的创建，不管销毁。文档写得清楚：prototype bean 的生命周期你自行管理。如果 prototype Bean 持有连接等资源，必须手动释放。这和 singleton 不同——singleton 的 @PreDestroy 会在容器关闭时触发。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<!-- 面试官总结 -->
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结：Bean 生命周期高频考点</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. 生命周期的完整阶段</strong> — 不是背 14 个名字，而是理解"为什么需要这个阶段"</p>
+<p><strong class="text-white">2. BeanPostProcessor 的 before/after 和 AOP 的关系</strong> — @PostConstruct 和代理的先后顺序</p>
+<p><strong class="text-white">3. BFPP vs BPP</strong> — 操作对象不同、执行时机不同、经典实现不同</p>
+<p><strong class="text-white">4. 三个初始化回调的顺序</strong> — @PostConstruct → afterPropertiesSet → init-method，以及为什么</p>
+<p><strong class="text-white">5. 循环依赖与三级缓存在生命周期中的位置</strong> — 实例化后→三级缓存→属性填充→初始化→一级缓存</p>
+<p><strong class="text-white">⚠️ 大厂高频挖坑点：</strong>@PostConstruct 里调 @Async 不生效、prototype @PreDestroy 不触发、Filter 拿到未初始化完成的 Bean</p>
+</div>
+</div>
+</section>
+
+</main>
+
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · Bean 生命周期</footer>
+</body>
+</html>

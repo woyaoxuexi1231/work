@@ -1,0 +1,231 @@
+$ mvn -f spring-interview-qa/pom.xml compile 2>&1
+[exit 1]
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.example:spring-interview-qa >-------------------
+[INFO] Building spring-interview-qa 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.2.0:resources (default-resources) @ spring-interview-qa ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Using 'UTF-8' encoding to copy filtered properties files.
+[INFO] Copying 1 resource
+[INFO] Copying 0 resource
+[INFO] 
+[INFO] --- compiler:3.10.1:compile (default-compile) @ spring-interview-qa ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 25 source files to D:\project\work\spring\05-27\spring-interview-qa\target\classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[198,30] 未结束的字符串文字
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[201,13] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[201,15] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[201,33] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[202,22] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[204,42] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[204,45] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[206,24] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[206,28] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,35] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,37] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,44] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,45] 非法的表达式开始
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[209,27] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[209,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[209,35] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[210,24] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[210,29] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[211,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[211,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[213,27] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[213,32] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[213,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[214,24] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[214,29] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[215,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[215,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,28] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,51] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,59] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,61] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,67] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,68] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,72] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[218,25] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[218,30] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[219,48] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[220,22] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[220,49] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[220,64] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[222,22] 非法字符: '\uff08'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[222,16] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[222,31] 非法字符: '\uff09'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,39] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,27] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,44] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,54] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[225,26] 非法字符: '\uff08'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[225,38] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[225,43] 非法字符: '\uff09'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[226,27] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[226,31] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,32] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,35] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,39] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,45] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,49] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,52] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,34] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,37] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,42] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,48] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,53] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,56] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,16] 非法字符: '#'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[233,16] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,21] 非法字符: '\uff1a'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,18] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,29] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[235,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[235,38] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,16] 非法字符: '#'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[235,40] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,21] 非法字符: '\uff1a'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,18] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,25] 非法字符: '\uff08'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,22] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,34] 非法字符: '\uff09'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,26] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[238,21] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[238,25] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[238,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[240,16] 非法字符: '#'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[240,21] 非法字符: '\uff1a'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[240,18] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[241,22] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[241,50] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[242,15] 未结束的字符串文字
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[99,30] 未结束的字符串文字
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,13] 非法字符: '\u251c'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[100,27] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,14] 非法字符: '\u2500'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,15] 非法字符: '\u2500'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,27] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,20] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,35] 非法字符: '\uff0c'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[102,13] 非法字符: '\u2502'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,36] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[103,13] 非法字符: '\u2502'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[104,13] 非法字符: '\u2502'
+[INFO] 100 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.767 s
+[INFO] Finished at: 2026-05-27T22:50:35+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.10.1:compile (default-compile) on project spring-interview-qa: Compilation failure: Compilation failure: 
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[198,30] 未结束的字符串文字
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[201,13] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[201,15] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[201,33] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[202,22] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[204,42] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[204,45] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[206,24] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[206,28] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,35] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,37] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,44] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[208,45] 非法的表达式开始
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[209,27] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[209,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[209,35] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[210,24] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[210,29] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[211,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[211,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[213,27] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[213,32] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[213,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[214,24] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[214,29] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[215,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[215,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,28] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,51] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,59] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,61] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,67] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,68] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[216,72] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[218,25] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[218,30] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[219,48] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[220,22] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[220,49] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[220,64] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[222,22] 非法字符: '\uff08'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[222,16] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[222,31] 非法字符: '\uff09'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,39] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,27] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,44] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[223,54] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[225,26] 非法字符: '\uff08'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[225,38] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[225,43] 非法字符: '\uff09'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[226,27] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[226,31] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,32] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,35] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,39] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,45] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,49] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[230,52] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,34] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,37] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,42] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,48] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,53] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[231,56] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,16] 非法字符: '#'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[233,16] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,21] 非法字符: '\uff1a'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,18] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[234,29] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[235,31] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[235,38] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,16] 非法字符: '#'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[235,40] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,21] 非法字符: '\uff1a'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,18] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,25] 非法字符: '\uff08'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,22] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,34] 非法字符: '\uff09'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[237,26] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[238,21] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[238,25] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[238,36] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[240,16] 非法字符: '#'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[240,21] 非法字符: '\uff1a'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[240,18] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[241,22] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[241,50] 需要';'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q24_ConfigPriority/ConfigPriorityDemo.java:[242,15] 未结束的字符串文字
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[99,30] 未结束的字符串文字
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,13] 非法字符: '\u251c'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[100,27] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,14] 非法字符: '\u2500'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,15] 非法字符: '\u2500'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,27] 非法字符: '\u2190'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,20] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,35] 非法字符: '\uff0c'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[102,13] 非法字符: '\u2502'
+[ERROR] /D:/project/work/spring/05-27/spring-interview-qa/src/main/java/com/example/springqa/Q22_CustomStarter/CustomStarterDemo.java:[101,36] 不是语句
+[ERROR] /D:/project/work/spring/05-27/spring-interview-
+
+[… truncated 656 chars …]

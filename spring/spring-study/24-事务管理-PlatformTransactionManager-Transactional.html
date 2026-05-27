@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>声明式事务 @Transactional — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">事务管理</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">💾 声明式事务：PlatformTransactionManager & @Transactional</h1>
+<p class="text-[#a6adc8] mt-2">7种传播行为、4种隔离级别、回滚规则 — 面试必考题的完整覆盖</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">PlatformTransactionManager 实现类</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">实现</th><th class="text-left py-2 px-3 text-white">数据源</th><th class="text-left py-2 px-3 text-white">选择依据</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">DataSourceTransactionManager</td><td class="py-2 px-3">JDBC / MyBatis</td><td class="py-2 px-3">Spring Boot 自动检测到 DataSource + 没有 JPA 时选用</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">JpaTransactionManager</td><td class="py-2 px-3">JPA / Hibernate</td><td class="py-2 px-3">Spring Boot 检测到 EntityManagerFactory 时选用</td></tr>
+<tr><td class="py-2 px-3">JtaTransactionManager</td><td class="py-2 px-3">分布式事务</td><td class="py-2 px-3">多数据源需要两阶段提交</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">@Transactional 完整属性</h3>
+<pre class="bg-[#11111b] rounded-lg p-3 text-sm overflow-x-auto border border-[#45475a]"><code>@Transactional(
+    propagation = Propagation.REQUIRED,      // 传播行为
+    isolation = Isolation.READ_COMMITTED,     // 隔离级别
+    timeout = 30,                             // 超时秒数
+    readOnly = false,                         // 只读优化
+    rollbackFor = Exception.class,            // 回滚异常类型
+    noRollbackFor = IllegalArgumentException.class  // 不回滚的异常
+)</code></pre>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<h3 class="text-lg font-bold text-white mb-3">7 种传播行为 — 一张表记牢</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">传播行为</th><th class="text-left py-2 px-3 text-white">外层有事务</th><th class="text-left py-2 px-3 text-white">外层无事务</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3 text-[#a6e3a1]">REQUIRED (默认)</td><td class="py-2 px-3">加入</td><td class="py-2 px-3">新建</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">REQUIRES_NEW</td><td class="py-2 px-3">挂起外层，新建独立</td><td class="py-2 px-3">新建</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">NESTED</td><td class="py-2 px-3">嵌套（savepoint）</td><td class="py-2 px-3">新建</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">SUPPORTS</td><td class="py-2 px-3">加入</td><td class="py-2 px-3">非事务</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">MANDATORY</td><td class="py-2 px-3">加入</td><td class="py-2 px-3">抛异常</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">NOT_SUPPORTED</td><td class="py-2 px-3">挂起外层</td><td class="py-2 px-3">非事务</td></tr>
+<tr><td class="py-2 px-3">NEVER</td><td class="py-2 px-3">抛异常</td><td class="py-2 px-3">非事务</td></tr>
+</tbody></table></div>
+</div>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果没有声明式事务，怎么管理数据库事务？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>每个 Service 方法都要手写 6 行样板：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>Connection conn = null; try {
+    conn = ds.getConnection(); conn.setAutoCommit(false);
+    // ... 业务
+    conn.commit();
+} catch (Exception e) { conn.rollback(); }
+finally { conn.close(); }</code></pre>
+<p>@Transactional 把 6 行变成 1 个注解——AOP 的 @Around 在 proceed() 前后处理事务。这不仅仅是"少写代码"，关键是<strong class="text-white">传播行为的声明式编排</strong>——"这个方法需要独立事务"这种语义写进注解比写进代码清晰得多。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：REQUIRES_NEW 的"挂起"是怎么实现的？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// AbstractPlatformTransactionManager 内部（伪代码）
+if (definition.getPropagationBehavior() == PROPAGATION_REQUIRES_NEW) {
+    SuspendedResourcesHolder suspended = suspend(transaction);
+    // suspend: 把当前事务的 Connection 从 ThreadLocal 中取出暂存
+    // 然后开始一个新事务（新 Connection + setAutoCommit(false)）
+    try {
+        return startNewTransaction();
+    } finally {
+        resume(suspended);  // 把暂存的旧事务资源放回 ThreadLocal
+    }
+}</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>"挂起"不是数据库级别的操作——数据库并不知道事务被"挂起"了。它只是 Spring 把 ThreadLocal 中的旧连接暂存起来，换了一个新连接。恢复时再把旧连接放回去。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 NESTED 的巧思：Savepoint 复用同一连接</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>NESTED 不需要挂起旧事务——它在<strong class="text-white">同一连接</strong>上创建一个 Savepoint（JDBC 的 Connection.setSavepoint()）。内层回滚只需要 conn.rollback(savepoint)，不影响外层。</p>
+<p>代价：JPA 不支持 NESTED——EntityManager 不暴露 Savepoint 操作。只有纯 JDBC 或 MyBatis 可以用。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 10 大失效场景速查</summary>
+<div class="mt-4 text-sm text-[#a6adc8] space-y-1">
+<p>① 非 public 方法 ② 同类自调用 ③ 异常被 try-catch 吞掉 ④ rollbackFor 不匹配 ⑤ 多线程 ⑥ 数据库引擎不支持 ⑦ final 方法 ⑧ 传播行为配错 ⑨ 类未被 Spring 管理 ⑩ 默认只回滚 RuntimeException</p>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（8 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">REQUIRES_NEW 和 NESTED 的本质区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">REQUIRES_NEW = 新连接 + 独立物理事务（内外完全隔离）。NESTED = 同一连接 + Savepoint（外层回滚会连内层一起回滚）。本质区别：REQUIRES_NEW 是<strong class="text-white">两个独立事务</strong>，NESTED 是<strong class="text-white">一个事务内的子事务</strong>。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">默认只对 RuntimeException 回滚——为什么？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">EJB 的历史遗留。EJB 认为 checked exception 是"可恢复的"（如 FileNotFoundException），不应回滚事务。Spring 沿用了这个约定。今天的实践是：<strong class="text-white">始终加 rollbackFor = Exception.class</strong>。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">PlatformTransactionManager 怎么知道该用哪个数据源的事务？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">通过 DataSource 或 EntityManagerFactory 的绑定。JpaTransactionManager 持有一个 EntityManagerFactory 引用——它知道该管哪个数据源。如果有多数据源，需要多个 TransactionManager Bean，用 @Transactional("tm2") 指定。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">隔离级别 READ_UNCOMMITTED 和 SERIALIZABLE 什么时候用？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">READ_UNCOMMITTED：几乎不用——脏读风险太高。SERIALIZABLE：金融对账、库存扣减等场景需要绝对数据一致性时用——代价是大量锁等待和死锁。大多数场景用 READ_COMMITTED（默认）或 REPEATABLE_READ（MySQL 默认）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：日志记录（插入日志表）必须成功，即使业务操作（插入订单）失败了。怎么设计？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">日志方法用 @Transactional(propagation = REQUIRES_NEW)。外层订单事务回滚 → 不影响日志事务（日志已经提交了）。但要注意：如果日志方法抛了异常且被外层 catch 了 → 外层不应该受影响。这是 REQUIRES_NEW 的经典场景。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上发现一个 @Transactional 方法没回滚——排查发现同类自调用。怎么修复？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三种修复：① 拆类——把事务方法移到一个独立的 Service（最佳实践）。② 注入自己——@Autowired private XxxService self，通过 self.method() 调用（绕过 this）。③ AopContext.currentProxy()（需 expireProxy=true）。推荐拆类——不依赖 Spring 内部 API。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：主从数据库分离 + 读写分离，写操作走主库事务，读操作走从库（不需要事务）。怎么让读操作不走事务？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">读方法加 @Transactional(propagation = SUPPORTS, readOnly = true)。SUPPORTS = 外层有事务就加入（写场景），没有就非事务执行（读场景纯查询）。readOnly=true 给 Hibernate/JDBC 驱动一个优化提示（禁用脏检查、flush）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Transactional 标注在接口上和方法上有区别吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">JDK 动态代理时接口上的 @Transactional 生效，CGLIB 代理时接口上的不生效（因为代理是类级别）。Spring 推荐标注在<strong class="text-white">具体类的方法上</strong>而不是接口上——确保两种代理方式都生效。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. 7 种传播行为</strong> — REQUIRED(默认) / REQUIRES_NEW / NESTED 是核心</p>
+<p><strong class="text-white">2. REQUIRES_NEW vs NESTED</strong> — 新连接独立事务 vs 同一连接 Savepoint</p>
+<p><strong class="text-white">3. 10 大失效场景</strong> — 自调用和异常被吞是最高频的两个</p>
+<p><strong class="text-white">4. rollbackFor</strong> — 始终加 Exception.class，不要依赖默认的 RuntimeException</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>接口上的 @Transactional 在 CGLIB 代理下不生效；NESTED 不支持 JPA</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 声明式事务</footer>
+</body>
+</html>

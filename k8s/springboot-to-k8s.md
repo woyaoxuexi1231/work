@@ -49,7 +49,7 @@
 你已有的 Dockerfile 不需要改，单阶段构建，只做复制 JAR + 启动：
 
 ```dockerfile
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:8-jre
 
 ARG JAR_FILE=poker-tracker.jar
 ENV TZ=Asia/Shanghai

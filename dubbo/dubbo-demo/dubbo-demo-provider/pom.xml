@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Provider 模块 — 服务提供者
+        职责：实现服务接口 → 注册到注册中心 → 监听网络端口 → 处理 Consumer 请求
+        对应 Dubbo 五大角色中的 Provider + Container
+    -->
+    <parent>
+        <groupId>com.example.dubbo.demo</groupId>
+        <artifactId>dubbo-demo-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>dubbo-demo-provider</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Dubbo Demo Provider</name>
+    <description>服务提供者 — 实现 UserService / OrderService 并注册到 Zookeeper</description>
+
+    <dependencies>
+        <!-- 依赖 API 模块（共享接口与 POJO） -->
+        <dependency>
+            <groupId>com.example.dubbo.demo</groupId>
+            <artifactId>dubbo-demo-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        API 模块 — 仅包含服务接口与领域模型（POJO）
+        本模块被 Provider 和 Consumer 共同依赖，实现"接口契约共享"。
+        在 Dubbo 架构中，这是 Provider 和 Consumer 之间的"契约"层。
+    -->
+    <parent>
+        <groupId>com.example.dubbo.demo</groupId>
+        <artifactId>dubbo-demo-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>dubbo-demo-api</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Dubbo Demo API</name>
+    <description>共享服务接口 领域模型（Provider 和 Consumer 的公共契约）</description>
+
+    <!--
+        API 模块不需要 Dubbo 运行时能力，只需 POJO + 接口定义。
+        因此排除 dubbo-spring-boot-starter 等重量级依赖，
+        仅保留最小的传递依赖（如 validation-api 等）。
+    -->
+    <dependencies>
+        <!-- 仅保留必要的轻量依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+    </dependencies>
+</project>

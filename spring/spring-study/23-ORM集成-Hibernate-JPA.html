@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORM 集成 Hibernate JPA — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">数据访问</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🔗 ORM 集成：Hibernate & JPA</h1>
+<p class="text-[#a6adc8] mt-2">LocalSessionFactoryBean、EntityManagerFactory、HibernateJpaVendorAdapter — Spring 如何把 ORM 纳入 IoC</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">三个核心工厂 Bean</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">FactoryBean</th><th class="text-left py-3 px-3 text-white">产生什么</th><th class="text-left py-3 px-3 text-white">适用场景</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">LocalSessionFactoryBean</td><td class="py-2 px-3">Hibernate SessionFactory</td><td class="py-2 px-3">纯 Hibernate（不经过 JPA）</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">LocalContainerEntityManagerFactoryBean</td><td class="py-2 px-3">JPA EntityManagerFactory</td><td class="py-2 px-3">⭐ Spring Boot 默认使用</td></tr>
+<tr><td class="py-2 px-3">HibernateJpaVendorAdapter</td><td class="py-2 px-3">（适配器，不是 FactoryBean）</td><td class="py-2 px-3">把 Hibernate 适配到 JPA 接口</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// Spring Boot 自动配置的内部逻辑（简化）
+@Bean @ConditionalOnMissingBean
+public LocalContainerEntityManagerFactoryBean entityManagerFactory(
+        DataSource dataSource, JpaVendorAdapter jpaVendorAdapter) {
+    LocalContainerEntityManagerFactoryBean emfb = new LocalContainerEntityManagerFactoryBean();
+    emfb.setDataSource(dataSource);
+    emfb.setJpaVendorAdapter(jpaVendorAdapter);  // HibernateJpaVendorAdapter
+    emfb.setPackagesToScan("com.example.entity");  // 扫描 @Entity
+    return emfb;
+}
+
+// HibernateJpaVendorAdapter 做了什么：
+// 把 Spring 的配置翻译为 Hibernate 的 JPA 实现属性
+// 比如 spring.jpa.hibernate.ddl-auto → hibernate.hbm2ddl.auto</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果没有 Spring 的 ORM 集成，怎么在 Spring 中使用 Hibernate？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>你需要手写 Hibernate 的 Bootstrap 代码：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 原始 Hibernate 初始化
+StandardServiceRegistry registry = new StandardServiceRegistryBuilder()
+    .applySettings(hibernateProperties).build();
+SessionFactory sf = new MetadataSources(registry)
+    .addAnnotatedClass(User.class).buildMetadata()
+    .buildSessionFactory();</code></pre>
+<p>问题：① SessionFactory 不是 Spring Bean——不能注入、不能参与事务管理；② 事务管理需要手动 try-finally；③ 异常翻译需要自己写。Spring 用 <strong class="text-white">FactoryBean 模式</strong>把 Hibernate 的核心对象包装成 Bean。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：SharedEntityManagerCreator — 每个 @Autowired 的 EntityManager 都是代理</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>注入到 DAO 中的 EntityManager 不是真正的 EntityManager——它是一个<strong class="text-white">代理（SharedEntityManagerCreator）</strong>。每次方法调用时，代理从 TransactionSynchronizationManager 中获取当前线程绑定的真实 EntityManager。这个设计保证了：</p>
+<ul class="list-disc list-inside text-sm text-[#a6adc8] space-y-1">
+<li>同一事务中的所有 DAO 共享同一个 EntityManager（一级缓存一致）</li>
+<li>线程安全（每个线程有自己的 EntityManager）</li>
+</ul>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ Open Session In View (OSIV) 机制</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>Spring Boot 默认开启 OSIV：一个请求开始时打开 Hibernate Session，请求结束时关闭。这让 Controller 层也能触发懒加载——但会<strong class="text-white">长时间占用数据库连接</strong>。在高并发下建议关闭（spring.jpa.open-in-view=false），在 Service 层主动 fetch 所需数据。</p>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">LocalSessionFactoryBean 和 LocalContainerEntityManagerFactoryBean 的区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">前者产生 Hibernate 的 SessionFactory（纯 Hibernate API），后者产生 JPA 的 EntityManagerFactory（标准 JPA 接口 + Hibernate 作为实现）。Spring Boot 默认用后者——它是 JPA 标准，换 ORM 实现（如 EclipseLink）不需要改代码。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">SharedEntityManagerCreator 为什么用代理而不是直接给真实 EntityManager？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">因为 singleton DAO 在容器启动时就创建了，但 EntityManager 是每个事务一个（由 TransactionSynchronizationManager 管理）。singleton DAO 不能持有某个特定事务的 EntityManager——代理在每次方法调用时动态获取当前线程的 EntityManager。这和 @Lazy 注入点的代理思路一致。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">OSIV 为什么建议关闭？关了有什么风险？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">OSIV 让 Session 跨了整个请求生命周期——包括视图渲染阶段（Jackson 序列化 JSON）。这期间数据库连接一直被占用。高并发下连接池耗尽。关闭后，懒加载不能在 Controller 层使用——需要在 Service 层用 JOIN FETCH 或 @EntityGraph 主动加载。风险：开发忘记 fetch → LazyInitializationException。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上出现 LazyInitializationException: could not initialize proxy - no Session。什么原因？怎么排查？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">原因：在 Session 关闭后（@Transactional 结束或 OSIV 关闭后）访问了懒加载关联。排查：① 看异常栈，找到触发懒加载的代码行 → 确认是否在 @Transactional 方法外部。② 如果关了 OSIV → 检查是否在 Controller 层访问未 fetch 的关联。解决：在 Service 层用 JOIN FETCH 或 DTO 投影一次性查出所有需要的数据。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：一个查询关联了 5 张表，用 JPA 的 @OneToMany + lazy loading 产生了 N+1 查询共 500 条 SQL。怎么优化？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三种方案按场景选择：① JOIN FETCH — 一条 SQL 全查出来，但一对多容易笛卡尔积。② @BatchSize — 把 N 条 SQL 合并为 N/100 条 IN 查询，最推荐的"懒人"方案。③ DTO 投影 — 不查 Entity，直接 new DTO 只选需要的列。④ 如果实在复杂 → 别用 JPA，用 MyBatis/JdbcTemplate 手写 SQL。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring Data JPA 的 JpaRepository 是怎么被 Spring 变成实现类的？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不是编译期生成，也不是 CGLIB/ASM 代理——是 JDK 动态代理。JpaRepositoryFactory 为每个 Repository 接口创建一个 Proxy，所有方法调用都被 JpaRepositoryFactory 拦截，解析方法名（findByNameAndAge）→ 生成 JPQL → 通过 EntityManager 执行。它是通过 @EnableJpaRepositories 和 ImportBeanDefinitionRegistrar 在容器启动时动态注册的。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. FactoryBean 模式</strong> — 所有 ORM 核心对象（SessionFactory/EntityManagerFactory）都是 FactoryBean 产物</p>
+<p><strong class="text-white">2. SharedEntityManagerCreator 代理</strong> — 每次调用动态获取当前线程的 EntityManager</p>
+<p><strong class="text-white">3. OSIV</strong> — 方便但有连接池耗尽风险，生产建议关闭</p>
+<p><strong class="text-white">4. N+1 问题</strong> — JOIN FETCH / @BatchSize / DTO 投影 / 直接写 SQL</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>LazyInitializationException 是 OSIV 关闭或事务范围不够的信号</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · ORM 集成</footer>
+</body>
+</html>

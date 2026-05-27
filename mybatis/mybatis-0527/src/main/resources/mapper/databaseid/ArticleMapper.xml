@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.mybatis.databaseid.mapper.ArticleMapper">
+
+    <!--
+        【方式1】使用databaseId进行数据库方言切换
+
+        databaseId是MyBatis提供的原生特性，用于处理不同数据库的SQL差异。
+        使用步骤：
+        1. 在Configuration中配置databaseIdProvider
+        2. 在SQL语句上添加databaseId属性
+        3. MyBatis会根据当前数据库类型自动选择对应的SQL
+
+        优点：
+        - 原生支持，无需额外依赖
+        - 配置简单，易于理解
+
+        缺点：
+        - 每条SQL都需要编写多个版本
+        - 维护成本高
+    -->
+
+    <!-- MySQL分页语法：LIMIT offset, limit -->
+    <select id="selectByPageWithDatabaseId"
+            resultType="com.example.mybatis.databaseid.entity.Article"
+            databaseId="mysql">
+        SELECT id, title, content, author, category, status, create_time, update_time
+        FROM t_article
+        WHERE status = 1
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- Oracle分页语法：ROWNUM -->
+    <select id="selectByPageWithDatabaseId"
+            resultType="com.example.mybatis.databaseid.entity.Article"
+            databaseId="oracle">
+        SELECT id, title, content, author, category, status, create_time, update_time
+        FROM (
+            SELECT t.*, ROWNUM rn
+            FROM (
+                SELECT id, title, content, author, category, status, create_time, update_time
+                FROM t_article
+                WHERE status = 1
+                ORDER BY create_time DESC
+            ) t
+            WHERE ROWNUM &lt;= #{offset} + #{limit}
+        )
+        WHERE rn &gt; #{offset}
+    </select>
+
+    <!-- PostgreSQL分页语法：LIMIT ... OFFSET ... -->
+    <select id="selectByPageWithDatabaseId"
+            resultType="com.example.mybatis.databaseid.entity.Article"
+            databaseId="postgresql">
+        SELECT id, title, content, author, category, status, create_time, update_time
+        FROM t_article
+        WHERE status = 1
+        ORDER BY create_time DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- SQL Server分页语法：OFFSET ... ROWS FETCH NEXT ... ROWS ONLY -->
+    <select id="selectByPageWithDatabaseId"
+            resultType="com.example.mybatis.databaseid.entity.Article"
+            databaseId="sqlserver">
+        SELECT id, title, content, author, category, status, create_time, update_time
+        FROM t_article
+        WHERE status = 1
+        ORDER BY create_time DESC
+        OFFSET #{offset} ROWS
+        FETCH NEXT #{limit} ROWS ONLY
+    </select>
+
+
+    <!--
+        【方式3】使用动态SQL + 数据库类型判断
+
+        通过传入数据库类型参数，使用choose/when/otherwise动态选择SQL
+
+        优点：
+        - 灵活性高，可以处理复杂的条件
+        - 可以在运行时决定使用哪种语法
+
+        缺点：
+        - 需要手动传递数据库类型参数
+        - SQL可读性较差
+    -->
+    <select id="selectByPageWithDynamicSql"
+            resultType="com.example.mybatis.databaseid.entity.Article">
+        SELECT id, title, content, author, category, status, create_time, update_time
+        FROM t_article
+        WHERE status = 1
+        ORDER BY create_time DESC
+        <choose>
+            <when test="dbType == 'mysql'">
+                LIMIT #{offset}, #{limit}
+            </when>
+            <when test="dbType == 'postgresql'">
+                LIMIT #{limit} OFFSET #{offset}
+            </when>
+            <when test="dbType == 'oracle'">
+                <!-- Oracle分页需要嵌套查询 -->
+                <!-- 这里简化处理，实际需要更复杂的SQL -->
+            </when>
+            <otherwise>
+                LIMIT #{offset}, #{limit}
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

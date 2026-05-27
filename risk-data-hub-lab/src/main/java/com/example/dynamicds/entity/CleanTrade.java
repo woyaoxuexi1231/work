@@ -37,10 +37,10 @@ public class CleanTrade {
                                     String cleanMode,
                                     String tradeTime) {
         CleanTrade trade = new CleanTrade();
-        trade.setGlobalId(context.globalId());
-        trade.setSourceSystem(context.sourceSystem());
-        trade.setSourceType(context.sourceType());
-        trade.setSourceRowId(context.sourceRowId());
+        trade.setGlobalId(context.getGlobalId());
+        trade.setSourceSystem(context.getSourceSystem());
+        trade.setSourceType(context.getSourceType());
+        trade.setSourceRowId(context.getSourceRowId());
         trade.setVendorTradeNo(vendorTradeNo);
         trade.setBizType(bizType);
         trade.setDirection(direction);
@@ -48,9 +48,9 @@ public class CleanTrade {
         trade.setStatusName(statusName);
         trade.setCounterpartyName(counterpartyName);
         trade.setCleanMode(cleanMode);
-        trade.setCleanBatch(context.cleanBatch());
+        trade.setCleanBatch(context.getCleanBatch());
         trade.setTradeTime(tradeTime);
-        trade.setCreatedAt(context.createdAt());
+        trade.setCreatedAt(context.getCreatedAt());
         return trade;
     }
 }

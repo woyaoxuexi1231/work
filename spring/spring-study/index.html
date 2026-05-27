@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spring 深度教程 — 总导航</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',green:'#a6e3a1',orange:'#fab387',purple:'#cba6f7'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}.file-link{transition:all .2s}.file-link:hover{border-color:#89b4fa;background:rgba(137,180,250,0.08)}.section-card{border-top:3px solid}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4] min-h-screen">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-5xl mx-auto px-6 py-6">
+<h1 class="text-3xl font-bold text-white">📚 Spring Framework & Spring Boot 深度教程</h1>
+<p class="text-[#a6adc8] mt-2">56 个知识点 · 每个独立 HTML · Part1基础 → Part2触及灵魂 → Part3面试追问</p>
+</div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+<!-- 核心容器 -->
+<div class="section-card border-[#89b4fa] bg-[#1e1e2e] rounded-2xl p-6">
+<h2 class="text-xl font-bold text-[#89b4fa] mb-4">🏗️ 一、核心容器 (Core Container) — 17 个</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+<a href="01-IoC容器-BeanFactory与ApplicationContext.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">01</span> IoC 容器：BeanFactory、ApplicationContext</a>
+<a href="02-依赖注入-构造器Setter字段注入.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">02</span> 依赖注入：构造器、Setter、字段注入</a>
+<a href="03-Bean定义与元数据-XML注解Java配置.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">03</span> Bean 定义与元数据</a>
+<a href="04-Bean作用域-singleton-prototype-request-session.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">04</span> Bean 作用域</a>
+<a href="05-Bean生命周期.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">05</span> Bean 生命周期</a>
+<a href="06-延迟加载-Lazy.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">06</span> 延迟加载：@Lazy</a>
+<a href="07-自动装配-Autowired-Qualifier-Primary-Resource.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">07</span> @Autowired、@Qualifier、@Primary、@Resource</a>
+<a href="08-组件扫描-ComponentScan.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">08</span> 组件扫描：@ComponentScan</a>
+<a href="09-Java配置-Configuration-Bean-Import.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">09</span> @Configuration、@Bean、@Import</a>
+<a href="10-属性注入-Value-PropertySource.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">10</span> @Value、@PropertySource</a>
+<a href="11-SpEL表达式语言.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">11</span> SpEL 表达式语言</a>
+<a href="12-资源抽象-Resource-ResourceLoader.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">12</span> Resource、ResourceLoader</a>
+<a href="13-环境抽象-Environment-Profile-PropertySource.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">13</span> Environment、Profile、PropertySource</a>
+<a href="14-国际化-MessageSource.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">14</span> 国际化：MessageSource</a>
+<a href="15-事件机制-ApplicationEvent.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">15</span> 事件机制：ApplicationEvent</a>
+<a href="16-类型转换-ConversionService.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">16</span> ConversionService、Converter、Formatter</a>
+<a href="17-数据校验-Validator.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#89b4fa] font-bold">17</span> Validator、Errors、Bean Validation</a>
+</div>
+</div>
+
+<!-- AOP -->
+<div class="section-card border-[#a6e3a1] bg-[#1e1e2e] rounded-2xl p-6">
+<h2 class="text-xl font-bold text-[#a6e3a1] mb-4">✂️ 二、AOP 面向切面编程 — 8 个</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+<a href="18-AOP核心概念-切面连接点通知切入点引入.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">18</span> AOP 核心概念：切面、连接点、通知、切入点、引入</a>
+<a href="19-五种通知类型-Before-AfterReturning-AfterThrowing-After-Around.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">19</span> 五种通知：@Before、@AfterReturning、@AfterThrowing、@After、@Around</a>
+<a href="19-切入点表达式完整语法.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">20</span> 切入点表达式：execution、within、this、target、args、@annotation</a>
+<a href="21-引入-DeclareParents.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">21</span> 引入：@DeclareParents</a>
+<a href="22-AspectJ集成与Aspect.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">22</span> AspectJ 集成与 @Aspect</a>
+<a href="20-代理机制-JDK动态代理-vs-CGLIB.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">23</span> 代理机制：JDK 动态代理 vs CGLIB</a>
+<a href="24-ProxyFactoryBean-DefaultAopProxyFactory.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">24</span> ProxyFactoryBean、DefaultAopProxyFactory</a>
+<a href="25-AOP自动代理-EnableAspectJAutoProxy.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#a6e3a1] font-bold">25</span> @EnableAspectJAutoProxy</a>
+</div>
+</div>
+
+<!-- 数据访问与事务 -->
+<div class="section-card border-[#fab387] bg-[#1e1e2e] rounded-2xl p-6">
+<h2 class="text-xl font-bold text-[#fab387] mb-4">🗄️ 三、数据访问与事务管理 — 8 个</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+<a href="26-DataAccessException异常体系.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">26</span> DataAccessException 异常体系</a>
+<a href="27-JdbcTemplate-NamedParameterJdbcTemplate.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">27</span> JdbcTemplate、NamedParameterJdbcTemplate</a>
+<a href="28-数据源配置与DataSourceUtils.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">28</span> 数据源配置与 DataSourceUtils</a>
+<a href="23-ORM集成-Hibernate-JPA.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">29</span> ORM 集成：SessionFactory、EntityManagerFactory、HibernateJpaVendorAdapter</a>
+<a href="30-PlatformTransactionManager.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">30</span> 事务管理抽象：PlatformTransactionManager</a>
+<a href="31-Transactional声明式事务.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">31</span> 声明式事务：@Transactional</a>
+<a href="32-TransactionTemplate编程式事务.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">32</span> 编程式事务：TransactionTemplate</a>
+<a href="33-TransactionSynchronizationManager.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#fab387] font-bold">33</span> TransactionSynchronizationManager</a>
+</div>
+</div>
+
+<!-- Spring MVC -->
+<div class="section-card border-[#cba6f7] bg-[#1e1e2e] rounded-2xl p-6">
+<h2 class="text-xl font-bold text-[#cba6f7] mb-4">🌐 四、Spring MVC — 20 个</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+<a href="34-DispatcherServlet前端控制器.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">34</span> DispatcherServlet 前端控制器</a>
+<a href="35-Controller与RestController.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">35</span> @Controller、@RestController</a>
+<a href="36-请求映射-RequestMapping-GetMapping.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">36</span> @RequestMapping、@GetMapping 等请求映射</a>
+<a href="37-请求参数绑定-RequestParam-PathVariable.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">37</span> 请求参数绑定：@RequestParam、@PathVariable、@RequestBody</a>
+<a href="38-模型与视图-Model-ModelAndView.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">38</span> Model、ModelMap、ModelAndView、@ModelAttribute</a>
+<a href="39-视图解析-ViewResolver.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">39</span> ViewResolver 视图解析</a>
+<a href="40-数据绑定-InitBinder-WebDataBinder.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">40</span> @InitBinder、WebDataBinder</a>
+<a href="41-MVC类型转换-Converter-Formatter.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">41</span> MVC 类型转换：Converter、Formatter</a>
+<a href="42-MVC数据校验-Valid-Validated.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">42</span> @Valid、@Validated、Validator</a>
+<a href="43-HttpMessageConverter.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">43</span> HttpMessageConverter</a>
+<a href="44-内容协商-ContentNegotiationManager.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">44</span> 内容协商：ContentNegotiationManager</a>
+<a href="45-静态资源处理-ResourceHttpRequestHandler.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">45</span> 静态资源：ResourceHttpRequestHandler</a>
+<a href="46-拦截器-HandlerInterceptor.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">46</span> 拦截器：HandlerInterceptor</a>
+<a href="47-异常处理-ExceptionHandler-ControllerAdvice.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">47</span> @ExceptionHandler、@ControllerAdvice</a>
+<a href="48-跨域支持-CrossOrigin-CorsFilter.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">48</span> @CrossOrigin、CorsFilter</a>
+<a href="49-文件上传-MultipartResolver.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">49</span> 文件上传：MultipartResolver</a>
+<a href="50-异步请求-Callable-DeferredResult.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">50</span> 异步请求：Callable、DeferredResult</a>
+<a href="51-WebSocket支持-WebSocketHandler-STOMP.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">51</span> WebSocket：WebSocketHandler、STOMP</a>
+<a href="52-HTTP缓存控制与ETag.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">52</span> HTTP 缓存控制与 ETag</a>
+<a href="53-路径匹配-PathPattern-AntPathMatcher.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#cba6f7] font-bold">53</span> PathPattern、AntPathMatcher</a>
+</div>
+</div>
+
+<!-- 任务调度 -->
+<div class="section-card border-[#f38ba8] bg-[#1e1e2e] rounded-2xl p-6">
+<h2 class="text-xl font-bold text-[#f38ba8] mb-4">⏰ 五、任务调度与异步执行 — 3 个</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+<a href="54-TaskExecutor-TaskScheduler.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#f38ba8] font-bold">54</span> TaskExecutor、TaskScheduler</a>
+<a href="55-Scheduled-Async注解.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#f38ba8] font-bold">55</span> @Scheduled、@Async 注解</a>
+<a href="56-EnableAsync-EnableScheduling配置.html" class="file-link bg-[#11111b] rounded-lg px-4 py-3 border border-[#45475a] block"><span class="text-[#f38ba8] font-bold">56</span> @EnableAsync、@EnableScheduling</a>
+</div>
+</div>
+
+</main>
+
+<footer class="border-t border-[#45475a] mt-16 py-8 text-center text-sm text-[#a6adc8]">
+  Spring Framework & Spring Boot 深度教程 · 共 56 个知识点 · 每个独立 HTML 文件
+</footer>
+
+</body>
+</html>

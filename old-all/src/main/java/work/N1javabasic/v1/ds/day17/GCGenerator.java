@@ -73,9 +73,9 @@ public class GCGenerator {
 
     /** 简单检测当前使用的垃圾收集器名称 */
     private static String detectGC() {
-        var mxBeans = java.lang.management.ManagementFactory.getGarbageCollectorMXBeans();
+        java.util.List<java.lang.management.GarbageCollectorMXBean> mxBeans = java.lang.management.ManagementFactory.getGarbageCollectorMXBeans();
         StringBuilder sb = new StringBuilder();
-        for (var bean : mxBeans) {
+        for (java.lang.management.GarbageCollectorMXBean bean : mxBeans) {
             sb.append(bean.getName()).append(" ");
         }
         return sb.toString().trim();

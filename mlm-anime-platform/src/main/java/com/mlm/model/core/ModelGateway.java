@@ -87,9 +87,15 @@ public class ModelGateway {
             ModelAdapter.TaskStatus vendorStatus = adapter.queryStatus(task.getVendorTaskId());
             task.setPollCount(task.getPollCount() + 1);
             switch (vendorStatus) {
-                case SUCCESS -> handleSuccess(task, adapter, vendorStatus, config);
-                case FAILED -> { task.setStatus(ST_FAILED); }
-                case PROCESSING -> { task.scheduleNextPoll(config.getPollInterval()); }
+                case SUCCESS:
+                    handleSuccess(task, adapter, vendorStatus, config);
+                    break;
+                case FAILED:
+                    task.setStatus(ST_FAILED);
+                    break;
+                case PROCESSING:
+                    task.scheduleNextPoll(config.getPollInterval());
+                    break;
             }
             taskMapper.updateById(task);
         } catch (Exception e) {

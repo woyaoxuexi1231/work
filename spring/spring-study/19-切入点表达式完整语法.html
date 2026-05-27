@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>切入点表达式 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🎯 切入点表达式完整语法</h1>
+<p class="text-[#a6adc8] mt-2">execution / within / this / target / args / @annotation — 六种指示符的精确控制</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">六种指示符一张表</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">指示符</th><th class="text-left py-3 px-3 text-white">匹配维度</th><th class="text-left py-3 px-3 text-white">示例</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3"><code>execution</code></td><td class="py-2 px-3">方法签名</td><td class="py-2 px-3"><code>execution(* com.ex.service.*.*(..))</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3"><code>within</code></td><td class="py-2 px-3">类/包</td><td class="py-2 px-3"><code>within(com.ex.service.*)</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3"><code>this</code></td><td class="py-2 px-3">代理对象类型</td><td class="py-2 px-3"><code>this(com.ex.UserService)</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3"><code>target</code></td><td class="py-2 px-3">目标对象类型</td><td class="py-2 px-3"><code>target(com.ex.UserService)</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3"><code>args</code></td><td class="py-2 px-3">方法参数类型</td><td class="py-2 px-3"><code>args(Long, String)</code></td></tr>
+<tr><td class="py-2 px-3"><code>@annotation</code></td><td class="py-2 px-3">方法上有特定注解</td><td class="py-2 px-3"><code>@annotation(com.ex.Transactional)</code></td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// execution — 最常用，完整语法
+execution(修饰符? 返回类型 包.类.方法(参数) throws?)
+// 示例：
+execution(public * com.example..*.save*(..))  // public、任意返回、save开头
+execution(* com.example.service.*.*(Long, ..)) // 第一个参数Long
+execution(* com.example..*.*(String))          // 仅一个String参数
+
+// within — 简化版，只匹配类
+within(com.example.service.*)                  // service包下所有类
+
+// @annotation — 最灵活，按注解匹配
+@annotation(org.springframework.transaction.annotation.Transactional)
+
+// 组合使用（AND / OR / NOT）
+@Before("execution(* com.ex..*.*(..)) && !within(com.ex.internal.*)")
+@Around("@annotation(Monitor) || @annotation(Timed)")</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 this 和 target 的区别是什么？为什么需要两个？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">this 匹配的是代理对象的类型，target 匹配的是被代理的目标对象的类型。</strong></p>
+<p>如果 UserServiceImpl 实现 UserService 接口：</p>
+<ul class="list-disc list-inside text-sm text-[#a6adc8] space-y-1">
+  <li>JDK 代理时：代理类型 = UserService（接口），目标类型 = UserServiceImpl</li>
+  <li>this(UserServiceImpl) → 不匹配（代理不是 UserServiceImpl）</li>
+  <li>target(UserServiceImpl) → 匹配</li>
+  <li>CGLIB 代理时：代理类型 = UserServiceImpl 子类，目标类型 = UserServiceImpl</li>
+  <li>this(UserServiceImpl) → 匹配（代理是子类实例）</li>
+  <li>target(UserServiceImpl) → 匹配</li>
+</ul>
+<p><strong class="text-white">这个差异在 Spring Boot 2.x 强制 CGLIB 后基本消失了，但理解它有助于理解代理的本质。</strong></p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：切点表达式的"组合力量"</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>切点表达式的真正威力不是单个指示符，而是 <strong class="text-white">&& 和 || 的组合</strong>。就像 SQL 的 WHERE 条件：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 所有 Service 的方法，但排除 InternalService、且排除 @NoLog 标记的
+@Pointcut("execution(* com.example.service.*.*(..))")
+public void serviceLayer() {}
+@Pointcut("!within(com.example.service.InternalService)")
+public void notInternal() {}
+@Pointcut("!@annotation(com.example.NoLog)")
+public void notNoLog() {}
+
+@Before("serviceLayer() && notInternal() && notNoLog()")
+public void log() { }</code></pre>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界：切点表达式的缓存与性能</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱：</p><p>通配符太宽 → 匹配太多类 → 每个 Bean 创建时都要判断是否匹配这个切点。within(com.example..*) 这种全量通配在生产中要谨慎。</p></div>
+<div><p class="text-white font-bold">优化：</p><p>Spring 会缓存切点匹配结果。同一个类只会评估一次。但初次评估的消耗还是存在的。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">execution 和 within 的区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">execution 匹配方法级别（精确到方法签名），within 匹配类型级别（只精确到类）。within 比 execution 更快（粒度更粗）。能用 within 就不用 execution。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@annotation 和 @within 有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@annotation 匹配方法上有该注解的，@within 匹配类上有该注解的所有方法。比如 @Transactional 在类上 → @within(@Transactional) 会匹配该类的所有方法；@annotation(@Transactional) 只匹配标注在方法上的。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">this 和 target 在 Spring Boot 2.x CGLIB 默认代理下还有区别吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">基本没有了。CGLIB 代理是目标类的子类，所以 this 和 target 通常指向同一个类型。但如果你显式配置了 JDK 代理（proxy-target-class=false），区别就又回来了。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：你要给所有标注了 @AuditLog 的方法加上审计日志。切点怎么写？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]"><code>@annotation(com.example.AuditLog)</code>。加一个 @AuditLog 自定义注解，开发只需要在需要审计的方法上加 @AuditLog，切面自动生效。需要审计信息的话，在切面中通过反射读 @AuditLog 的属性。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：Controller 层 100 个方法，但你想只给前 3 个最核心的加性能监控，之后逐步推广。切点怎么灵活控制范围？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 @annotation 而不是包路径。先给 3 个核心方法加 @Monitored。切点 = @annotation(Monitored)。后面推广时只需给新方法加注解。如果后面不想用注解了，可以加一个 @ConditionalOnProperty 开关，配置文件中控制切面是否启用。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">切点表达式中 args 和 execution 的区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">execution 的括号里匹配的是<strong class="text-white">声明的参数类型</strong>，args 匹配的是<strong class="text-white">运行时的实际参数类型</strong>。比如参数声明为 Object，但运行时传的是 String → execution(Object) 匹配，args(String) 也匹配。args 更灵活但更慢（运行时判断）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. execution vs within</strong> — 方法级 vs 类级，粒度与性能的权衡</p>
+<p><strong class="text-white">2. this vs target</strong> — CGLIB 代理下基本无区别，但理解原理很重要</p>
+<p><strong class="text-white">3. @annotation 的实战价值</strong> — 最灵活的匹配方式，渐进式推广</p>
+<p><strong class="text-white">4. 切点组合</strong> — && / || / ! 是切点的灵魂</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>通配符太宽导致性能问题；args 运行时匹配比 execution 慢</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 切入点表达式</footer>
+</body>
+</html>
