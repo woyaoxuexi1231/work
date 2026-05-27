@@ -157,23 +157,19 @@ public class ScopeDemo {
 
         // ===== 方案二：ObjectFactory（函数式） =====
 
-        private final ObjectFactory<PrototypeService> prototypeFactory;
-
-        /**
+        /*
          * 注入 ObjectFactory，每次调用 getObject() 都会从容器获取新实例。
          *
          * 【设计意图】
          * ObjectFactory 是一个函数式接口（只有一个 getObject() 方法），
          * 实现非常轻量。Spring 内部大量使用它来实现"懒加载"——
          * 比如三级缓存中的 singletonFactories 就是
-         * Map&lt;String, ObjectFactory&lt;?&gt;&gt;。
+         * Map<String, ObjectFactory<?>>。
          */
-        public MixedService(ObjectFactory<PrototypeService> prototypeFactory) {
-            this.prototypeFactory = prototypeFactory;
-        }
 
         public PrototypeService getPrototypeByFactory() {
-            return prototypeFactory.getObject();
+            // 直接使用 provider（它实现了 ObjectFactory 接口）
+            return prototypeProvider.getObject();
         }
 
         // ===== 方案三：ObjectProvider（增强版 ObjectFactory） =====
@@ -186,7 +182,6 @@ public class ScopeDemo {
          * - getIfUnique()     — 确保只有一个候选
          * - stream() / iterator() — 流式遍历所有匹配 Bean
          *
-         * 【设计意图】
          * Spring 4.3 引入 ObjectProvider 是为了解决 @Autowired(required=false)
          * 不够灵活的问题——有时候需要"如果有多个则选一个，没有则用默认值"的语义。
          */

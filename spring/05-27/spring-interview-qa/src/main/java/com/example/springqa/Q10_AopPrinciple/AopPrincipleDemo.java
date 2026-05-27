@@ -206,7 +206,11 @@ public class AopPrincipleDemo {
 
         // 模拟 ReflectiveMethodInvocation
         SimpleMethodInvocation invocation = new SimpleMethodInvocation(interceptors);
-        invocation.proceed();
+        try {
+            invocation.proceed();
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
         /*
          * 输出顺序:
          *   [I1] 进入

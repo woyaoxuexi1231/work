@@ -77,20 +77,25 @@ public class ConfigPriorityDemo {
         MutablePropertySources sources = new MutablePropertySources();
 
         // 模拟 application.yml（默认值，优先级最低）
-        sources.addLast(new MapPropertySource("application.yml (classpath)",
-                Map.of("server.port", "8080", "app.name", "spring-qa")));
+        Map<String, Object> appYml = new java.util.HashMap<>();
+        appYml.put("server.port", "8080");
+        appYml.put("app.name", "spring-qa");
+        sources.addLast(new MapPropertySource("application.yml (classpath)", appYml));
 
         // 模拟外部 application.yml
-        sources.addFirst(new MapPropertySource("application.yml (external)",
-                Map.of("server.port", "8081")));
+        Map<String, Object> extYml = new java.util.HashMap<>();
+        extYml.put("server.port", "8081");
+        sources.addFirst(new MapPropertySource("application.yml (external)", extYml));
 
         // 模拟环境变量（优先级更高）
-        sources.addFirst(new MapPropertySource("systemEnvironment",
-                Map.of("SERVER_PORT", "9090")));
+        Map<String, Object> sysEnv = new java.util.HashMap<>();
+        sysEnv.put("SERVER_PORT", "9090");
+        sources.addFirst(new MapPropertySource("systemEnvironment", sysEnv));
 
         // 模拟命令行参数（最高优先级）
-        sources.addFirst(new MapPropertySource("commandLineArgs",
-                Map.of("server.port", "9999")));
+        Map<String, Object> cmdArgs = new java.util.HashMap<>();
+        cmdArgs.put("server.port", "9999");
+        sources.addFirst(new MapPropertySource("commandLineArgs", cmdArgs));
 
         System.out.println("查找 server.port 的值（按优先级顺序）：");
         for (org.springframework.core.env.PropertySource<?> ps : sources) {
