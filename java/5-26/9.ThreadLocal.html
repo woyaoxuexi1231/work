@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreadLocal 内存泄漏 · 线程池最佳实践 · ITTL 致命缺陷与 TTL 方案</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Noto Sans SC', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: { slate: { 850: '#151f32', 950: '#0a0f1c' } }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans SC', system-ui, sans-serif; background: #0a0f1c; color: #cbd5e1; }
+        code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+        .fade-up { opacity: 0; transform: translateY(24px); transition: all 0.5s cubic-bezier(0.22,1,0.36,1); }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+        /* Reference chain visualization */
+        .ref-chain { display: flex; align-items: center; gap: 0; flex-wrap: wrap; margin: 12px 0; }
+        .ref-box {
+            padding: 8px 14px; border-radius: 8px; font-size: 11px; font-weight: 700;
+            position: relative; white-space: nowrap; transition: all 0.3s;
+        }
+        .ref-arrow {
+            width: 32px; height: 2px; position: relative; flex-shrink: 0;
+        }
+        .ref-arrow::after {
+            content: ''; position: absolute; right: -1px; top: -4px;
+            border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+        }
+        .ref-strong { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; }
+        .ref-strong + .ref-arrow { background: rgba(239,68,68,0.4); }
+        .ref-strong + .ref-arrow::after { border-left: 6px solid rgba(239,68,68,0.4); }
+
+        .ref-weak { background: rgba(251,191,36,0.15); border: 1px dashed rgba(251,191,36,0.4); color: #fde68a; }
+        .ref-weak + .ref-arrow { background: repeating-linear-gradient(90deg, rgba(251,191,36,0.4) 0, rgba(251,191,36,0.4) 4px, transparent 4px, transparent 8px); }
+        .ref-weak + .ref-arrow::after { border-left: 6px solid rgba(251,191,36,0.4); }
+
+        .ref-gc { opacity: 0.3; filter: grayscale(1); }
+        .ref-leak { box-shadow: 0 0 0 2px rgba(239,68,68,0.6); animation: leak-pulse 2s ease-in-out infinite; }
+        @keyframes leak-pulse {
+            0%, 100% { box-shadow: 0 0 0 2px rgba(239,68,68,0.6); }
+            50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+        }
+
+        /* Token colors */
+        .tk-kw { color: #c678dd; }
+        .tk-num { color: #d19a66; }
+        .tk-cmt { color: #5c6370; font-style: italic; }
+        .tk-type { color: #e5c07b; }
+        .tk-fn { color: #61afef; }
+        .tk-var { color: #e06c75; }
+        .tk-str { color: #98c379; }
+        .tk-ann { color: #e5c07b; }
+    </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+
+<!-- Header -->
+<header class="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] font-bold tracking-widest text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded uppercase">Memory & Context</span>
+            <h1 class="text-sm font-semibold text-slate-100 hidden sm:block">ThreadLocal Leak · Pool Best Practice · ITTL vs TTL</h1>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 py-16 space-y-20">
+
+    <!-- ═══════════════ HERO ═══════════════ -->
+    <section class="text-center max-w-3xl mx-auto fade-up">
+        <h2 class="text-3xl sm:text-4xl font-black mb-5 leading-tight">
+            <span class="text-rose-400">ThreadLocal</span> 内存泄漏真相<br>
+            与线程池上下文传递的工程解法
+        </h2>
+        <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+            "Key 是弱引用所以会被回收"——这句话只说对了一半。
+            Key 被回收恰恰是 Value 泄漏的<strong class="text-slate-200">直接原因</strong>。
+            本篇从引用链画清泄漏机制，给出线程池中 ThreadLocal 的生产级写法，
+            并拆解 InheritableThreadLocal 在线程池复用场景下的<strong class="text-rose-300">致命数据污染问题</strong>，
+            最后讲透 TransmittableThreadLocal 的解决思路。
+        </p>
+    </section>
+
+    <!-- ═══════════════ SECTION 1: MEMORY LEAK MECHANISM ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 font-bold text-sm">1</span>
+            <h3 class="text-xl font-bold text-white">内存泄漏：为什么 Key 弱引用反而害了 Value？</h3>
+        </div>
+
+        <!-- Reference Chain Diagram -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 text-center">ThreadLocal 引用链全景图</h4>
+
+            <!-- Normal state -->
+            <div class="mb-6">
+                <div class="text-[10px] text-emerald-400 mono font-bold mb-2">✅ 正常状态：Thread 存活期间</div>
+                <div class="ref-chain">
+                    <div class="ref-box ref-strong">Thread.threadLocals</div>
+                    <div class="ref-arrow"></div>
+                    <div class="ref-box ref-strong">ThreadLocalMap</div>
+                    <div class="ref-arrow"></div>
+                    <div class="ref-box ref-strong">Entry[] table</div>
+                    <div class="ref-arrow"></div>
+                    <div class="ref-box ref-strong">Entry (extends WeakReference)</div>
+                </div>
+                <div class="ref-chain ml-8">
+                    <div class="ref-box ref-weak" style="min-width:120px;">Entry.key (弱引用)<br><span class="text-[9px] opacity-70">→ ThreadLocal 对象</span></div>
+                    <div class="ref-arrow" style="width:20px;"></div>
+                    <div class="ref-box ref-strong" style="min-width:120px;">Entry.value (强引用)<br><span class="text-[9px] opacity-70">→ 你的业务对象</span></div>
+                </div>
+                <div class="ref-chain">
+                    <div class="ref-box ref-strong" style="margin-left:auto;">外部变量 myTL (强引用)<br><span class="text-[9px] opacity-70">→ 同一个 ThreadLocal 对象</span></div>
+                </div>
+            </div>
+
+            <!-- Leaked state -->
+            <div class="bg-rose-500/5 border border-rose-500/20 rounded-xl p-5">
+                <div class="text-[10px] text-rose-400 mono font-bold mb-3">💀 泄漏状态：myTL = null 后，GC 发生</div>
+                <div class="ref-chain">
+                    <div class="ref-box ref-strong">Thread.threadLocals</div>
+                    <div class="ref-arrow"></div>
+                    <div class="ref-box ref-strong">ThreadLocalMap</div>
+                    <div class="ref-arrow"></div>
+                    <div class="ref-box ref-strong">Entry[] table</div>
+                    <div class="ref-arrow"></div>
+                    <div class="ref-box ref-strong">Entry</div>
+                </div>
+                <div class="ref-chain ml-8">
+                    <div class="ref-box ref-weak ref-gc" style="min-width:120px;">Entry.key = null<br><span class="text-[9px]">已被 GC 回收 ❌</span></div>
+                    <div class="ref-arrow" style="width:20px;"></div>
+                    <div class="ref-box ref-strong ref-leak" style="min-width:120px;">Entry.value (强引用)<br><span class="text-[9px]">→ 业务对象仍存活 💥</span></div>
+                </div>
+                <div class="ref-chain">
+                    <div class="ref-box ref-gc" style="margin-left:auto; border-style:dashed; opacity:0.3;">myTL = null<br><span class="text-[9px]">外部引用已断开</span></div>
+                </div>
+
+                <div class="mt-4 grid md:grid-cols-2 gap-4 text-xs text-slate-400 leading-relaxed">
+                    <div>
+                        <strong class="text-rose-300 block mb-1">为什么 Key 能被回收？</strong>
+                        Entry 继承自 WeakReference&lt;ThreadLocal&gt;。当外部对 ThreadLocal 对象的强引用全部断开（myTL=null），
+                        GC 发现 Key 只有弱引用可达 → 回收 ThreadLocal 对象 → Entry.key 变为 null。
+                    </div>
+                    <div>
+                        <strong class="text-rose-300 block mb-1">为什么 Value 不能回收？</strong>
+                        Value 是通过 <strong class="text-slate-200">Thread → threadLocals → Map → Entry → value</strong>
+                        这条纯强引用链到达的。只要 Thread 还活着（线程池中线程永不销毁），
+                        这条链就永远存在，Value 永远不会被 GC 触及。
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Why JDK designed this way -->
+        <div class="grid lg:grid-cols-2 gap-6 mb-6">
+            <div class="bg-slate-900 border border-amber-500/20 rounded-xl p-5">
+                <h4 class="text-amber-400 font-bold text-sm mb-3">🤔 为什么 JDK 不把 Value 也设计成弱引用？</h4>
+                <p class="text-xs text-slate-400 leading-relaxed space-y-2">
+                <p>如果 Value 也是弱引用，那么当外部没有强引用 Value 时，Value 会在 GC 时被回收。
+                    但很多场景下，<strong class="text-slate-200">Value 只存在于 ThreadLocal 中</strong>（比如用户上下文、事务信息），
+                    外部并没有额外持有它的强引用。</p>
+                <p>此时 Value 被弱引用回收 → 下次 get() 返回 null → <strong class="text-rose-300">业务逻辑静默出错</strong>。
+                    这比内存泄漏更可怕——泄漏至少还能通过监控发现，数据丢失是无感的。</p>
+                <p class="text-amber-300 pt-1">所以 JDK 选择了"宁可泄漏，不可丢数据"的设计哲学，
+                    并把清理责任交给了开发者（remove）和兜底机制（expungeStaleEntries）。</p>
+                </p>
+            </div>
+
+            <div class="bg-slate-900 border border-emerald-500/20 rounded-xl p-5">
+                <h4 class="text-emerald-400 font-bold text-sm mb-3">🛡️ JDK 的兜底清理机制（不够可靠）</h4>
+                <p class="text-xs text-slate-400 leading-relaxed space-y-2">
+                    ThreadLocalMap 在以下时机尝试清理 key==null 的 stale entry：
+                </p>
+                <ul class="text-[10px] text-slate-400 space-y-1 mt-2 ml-2 leading-relaxed">
+                    <li>• <code class="mono text-emerald-300">get()</code> 时探测式清理（从 hash 位置向后扫描一段）</li>
+                    <li>• <code class="mono text-emerald-300">set()</code> 时替换 stale slot 或启发式清理</li>
+                    <li>• <code class="mono text-emerald-300">remove()</code> 时精确清理</li>
+                </ul>
+                <p class="text-[10px] text-rose-300 mt-3 leading-relaxed">
+                    ⚠️ <strong>但这些都不是保证！</strong>如果某个 stale entry 从未被 get/set 命中，
+                    它就永远不会被清理。在线程池中，线程长期存活且不一定访问所有 TL，
+                    泄漏几乎是必然的。
+                </p>
+            </div>
+        </div>
+
+        <!-- When does leak actually happen -->
+        <div class="bg-rose-500/5 border border-rose-500/20 rounded-xl p-5">
+            <h4 class="text-rose-400 font-bold text-sm mb-3">💥 泄漏发生的三个必要条件（缺一不可）</h4>
+            <div class="grid md:grid-cols-3 gap-4 text-xs text-slate-400 leading-relaxed">
+                <div class="bg-slate-900/50 rounded-lg p-3">
+                    <strong class="text-rose-300 block mb-1">① ThreadLocal 是局部变量</strong>
+                    方法结束后 myTL 引用消失。如果是 static final 字段，外部强引用始终存在，Key 不会被回收，也就不会泄漏。
+                </div>
+                <div class="bg-slate-900/50 rounded-lg p-3">
+                    <strong class="text-rose-300 block mb-1">② 没有调用 remove()</strong>
+                    这是最直接的原因。无论 TL 是局部还是静态，不调 remove 在线程池中都会导致 Value 残留。
+                </div>
+                <div class="bg-slate-900/50 rounded-lg p-3">
+                    <strong class="text-rose-300 block mb-1">③ 线程长期存活</strong>
+                    普通线程执行完就销毁，整条链随 Thread 一起被 GC。只有线程池中的长生命周期线程才会让泄漏积累。
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 2: THREAD POOL BEST PRACTICE ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold text-sm">2</span>
+            <h3 class="text-xl font-bold text-white">线程池中 ThreadLocal 的最佳实践</h3>
+        </div>
+
+        <!-- Core Principle -->
+        <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 mb-6">
+            <h4 class="text-emerald-400 font-bold text-lg mb-3 text-center">黄金法则：谁 set，谁 remove，用 try-finally 兜底</h4>
+            <p class="text-sm text-slate-400 leading-relaxed text-center max-w-2xl mx-auto">
+                在线程池中，ThreadLocal 的生命周期必须绑定到<strong class="text-slate-200">单次任务执行</strong>，
+                而不是线程的生命周期。这意味着每个任务的入口 set、出口 remove，形成闭环。
+            </p>
+        </div>
+
+        <!-- Code Examples -->
+        <div class="space-y-6">
+            <!-- Basic Pattern -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+                    <span class="text-[10px] text-slate-500 mono">基础模式：手动 try-finally</span>
+                    <span class="text-[9px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">最安全</span>
+                </div>
+                <pre class="p-5 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-kw">private static final</span> <span class="tk-type">ThreadLocal</span>&lt;<span class="tk-type">UserContext</span>&gt; USER_CTX = <span class="tk-kw">new</span> <span class="tk-type">ThreadLocal</span>&lt;&gt;();
+
+<span class="tk-cmt">// ✅ 在线程池任务中使用</span>
+executor.submit(() -> {
+    USER_CTX.<span class="tk-fn">set</span>(currentUser);
+    <span class="tk-kw">try</span> {
+        <span class="tk-fn">doBusinessLogic</span>();
+    } <span class="tk-kw">finally</span> {
+        USER_CTX.<span class="tk-fn">remove</span>();  <span class="tk-cmt">// ⚠️ 必须！防止泄漏 + 防止线程复用时读到脏数据</span>
+    }
+});</code></pre>
+            </div>
+
+            <!-- Decorator Pattern -->
+            <div class="bg-slate-900 border border-indigo-500/20 rounded-xl overflow-hidden">
+                <div class="px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+                    <span class="text-[10px] text-slate-500 mono">进阶模式：TaskDecorator 自动清理（Spring / 自定义线程池）</span>
+                    <span class="text-[9px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 font-bold">推荐</span>
+                </div>
+                <pre class="p-5 text-[11px] leading-relaxed mono overflow-x-auto text-slate-400"><code><span class="tk-cmt">// ✅ 封装一个安全的 Runnable 包装器</span>
+<span class="tk-kw">public class</span> <span class="tk-type">SafeRunnable</span> <span class="tk-kw">implements</span> <span class="tk-type">Runnable</span> {
+    <span class="tk-kw">private final</span> <span class="tk-type">Runnable</span> delegate;
+    <span class="tk-kw">private final</span> <span class="tk-type">List</span>&lt;<span class="tk-type">ThreadLocal</span>&lt;?&gt;&gt; threadLocals;
+
+    <span class="tk-kw">public</span> <span class="tk-fn">SafeRunnable</span>(Runnable delegate, <span class="tk-type">ThreadLocal</span>&lt;?&gt;... tls) {
+        <span class="tk-kw">this</span>.delegate = delegate;
+        <span class="tk-kw">this</span>.threadLocals = Arrays.<span class="tk-fn">asList</span>(tls);
+    }
+
+    <span class="tk-ann">@Override</span>
+    <span class="tk-kw">public void</span> <span class="tk-fn">run</span>() {
+        <span class="tk-kw">try</span> {
+            delegate.<span class="tk-fn">run</span>();
+        } <span class="tk-kw">finally</span> {
+            <span class="tk-cmt">// 自动清理所有注册的 ThreadLocal</span>
+            <span class="tk-kw">for</span> (<span class="tk-type">ThreadLocal</span>&lt;?&gt; tl : threadLocals) {
+                tl.<span class="tk-fn">remove</span>();
+            }
+        }
+    }
+}
+
+<span class="tk-cmt">// 使用</span>
+executor.<span class="tk-fn">submit</span>(<span class="tk-kw">new</span> <span class="tk-type">SafeRunnable</span>(() -> {
+    USER_CTX.<span class="tk-fn">set</span>(user);
+    TRACE_ID.<span class="tk-fn">set</span>(traceId);
+    <span class="tk-fn">doBusinessLogic</span>();
+}, USER_CTX, TRACE_ID));</code></pre>
+            </div>
+
+            <!-- Anti-patterns -->
+            <div class="bg-slate-900 border border-rose-500/20 rounded-xl p-5">
+                <h4 class="text-rose-400 font-bold text-sm mb-3">❌ 常见反模式</h4>
+                <div class="grid md:grid-cols-2 gap-4 text-xs text-slate-400 leading-relaxed">
+                    <div class="bg-rose-500/5 rounded-lg p-3">
+                        <strong class="text-rose-300 block mb-1">反模式 1：忘记 remove</strong>
+                        <pre class="text-[10px] mono text-rose-200/60 mt-1">USER_CTX.set(user);
+doLogic();
+// 😱 没有 finally remove
+// 线程复用时下一个请求读到上一个用户的 context</pre>
+                    </div>
+                    <div class="bg-rose-500/5 rounded-lg p-3">
+                        <strong class="text-rose-300 block mb-1">反模式 2：用 null 代替 remove</strong>
+                        <pre class="text-[10px] mono text-rose-200/60 mt-1">USER_CTX.set(null); // ❌
+// Entry 仍然存在，value=null
+// 但 Entry 对象本身占用内存
+// 应该用 remove() 彻底清除 Entry</pre>
+                    </div>
+                    <div class="bg-rose-500/5 rounded-lg p-3">
+                        <strong class="text-rose-300 block mb-1">反模式 3：static TL + 不设初始值</strong>
+                        <pre class="text-[10px] mono text-rose-200/60 mt-1">// 线程池中首次 get 可能拿到
+// 上一个任务遗留的值
+// 必须先 set 再 get，或用 initialValue</pre>
+                    </div>
+                    <div class="bg-rose-500/5 rounded-lg p-3">
+                        <strong class="text-rose-300 block mb-1">反模式 4：大对象存 TL</strong>
+                        <pre class="text-[10px] mono text-rose-200/60 mt-1">// TL 中的对象生命周期 = 线程寿命
+// 存大 byte[]/List → 即使 remove 了
+// GC 前一直占着老年代空间</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 3: ITTL FATAL PROBLEM ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 font-bold text-sm">3</span>
+            <h3 class="text-xl font-bold text-white">InheritableThreadLocal 在线程池中的致命问题</h3>
+        </div>
+
+        <!-- How ITTL works -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+            <h4 class="text-slate-300 font-bold text-sm mb-3">ITTL 的工作原理（先理解才能理解为什么崩）</h4>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                ITTL 的继承发生在 <strong class="text-slate-200">new Thread() 构造函数中</strong>：
+                子线程创建时，JVM 检查父线程的 <code class="mono text-[10px]">inheritableThreadLocals</code> Map，
+                将其中的所有 Entry <strong class="text-amber-300">浅拷贝</strong>到子线程的同名 Map 中。
+            </p>
+            <div class="bg-slate-950 rounded-lg p-3">
+                <pre class="text-[10px] mono text-slate-500 leading-relaxed"><code><span class="tk-cmt">// Thread.java 构造函数内部（简化）</span>
+<span class="tk-kw">if</span> (parent.inheritableThreadLocals != <span class="tk-kw">null</span>) {
+    <span class="tk-kw">this</span>.inheritableThreadLocals =
+        ThreadLocal.<span class="tk-fn">createInheritedMap</span>(parent.inheritableThreadLocals);
+    <span class="tk-cmt">// ↑ 只在 new Thread() 时执行一次！</span>
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Fatal Problems -->
+        <div class="space-y-4 mb-6">
+            <div class="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-3xl">💀</span>
+                    <h4 class="text-rose-400 font-bold text-lg">致命问题一：线程复用导致上下文错乱</h4>
+                </div>
+
+                <div class="grid lg:grid-cols-2 gap-6">
+                    <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+                        <p>线程池中的线程是<strong class="text-slate-200">预先创建并复用</strong>的。
+                            ITTL 的拷贝只发生在 new Thread() 那一刻。之后线程被归还池中再取出时，
+                            <strong class="text-rose-300">不会再触发任何继承逻辑</strong>。</p>
+
+                        <div class="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mt-2">
+                            <p class="text-[10px] text-rose-200/80 leading-relaxed">
+                                <strong>事故还原：</strong><br>
+                                T1 处理用户 A 的请求 → ITTL 中有 userId=A<br>
+                                T1 完成任务归还线程池<br>
+                                T1 被分配处理用户 B 的请求<br>
+                                但 ITTL 中仍然是 userId=A ← <strong class="text-rose-300">数据污染！</strong><br>
+                                用户 B 的操作以用户 A 的身份执行 → 越权 / 数据串号
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950 rounded-lg p-4">
+                        <div class="text-[10px] text-slate-500 mono font-bold mb-2">时序图</div>
+                        <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-cmt">主线程 (userId=M)</span>
+  │
+  ├─ new Thread() ──→ T1 创建
+  │   ITTL.userId = M  <span class="tk-cmt">(拷贝)</span>
+  │
+  ├─ submit(taskA) ──→ T1 执行
+  │   ITTL.userId = M  <span class="tk-cmt">(正确)</span>
+  │   T1 归还池
+  │
+  ├─ submit(taskB) ──→ T1 复用
+  │   ITTL.userId = M  <span class="tk-cmt">❌ 仍是M!</span>
+  │   <span class="tk-cmt">期望是 taskB 的上下文</span>
+  │   <span class="tk-cmt">但 ITTL 不会重新拷贝</span>
+  │
+  └─ 💥 数据错乱</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5">
+                    <h4 class="text-amber-400 font-bold text-sm mb-2">⚠️ 致命问题二：浅拷贝共享可变对象</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        ITTL 拷贝的是 Entry 引用（浅拷贝）。如果 Value 是可变对象（如 List、Map），
+                        父子线程<strong class="text-amber-300">共享同一个对象实例</strong>。
+                        子线程修改了 Value → 父线程看到被篡改的数据 → 并发安全问题。
+                    </p>
+                </div>
+
+                <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5">
+                    <h4 class="text-amber-400 font-bold text-sm mb-2">⚠️ 致命问题三：内存泄漏加倍</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        ITTL 有自己独立的 <code class="mono text-[10px]">inheritableThreadLocals</code> Map。
+                        泄漏机制与普通 TL 完全相同，但因为有<strong class="text-amber-300">两份 Map</strong>，
+                        泄漏风险翻倍，清理也需要分别处理。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-rose-500/10 border border-rose-500/30 rounded-xl p-5">
+            <h4 class="text-rose-300 font-bold text-sm mb-2">🚫 结论：永远不要在线程池中使用 InheritableThreadLocal</h4>
+            <p class="text-xs text-slate-400 leading-relaxed">
+                ITTL 是为"每次 new Thread()"的场景设计的（如 Tomcat 为每个请求创建新线程的旧模型）。
+                在现代线程池复用模型下，它的语义完全不适用。
+                你需要的是一个能在<strong class="text-slate-200">任务提交时捕获上下文、任务执行时恢复上下文、任务结束时清理上下文</strong>的机制。
+            </p>
+        </div>
+    </section>
+
+    <!-- ═══════════════ SECTION 4: TTL SOLUTION ═══════════════ -->
+    <section class="fade-up">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 font-bold text-sm">4</span>
+            <h3 class="text-xl font-bold text-white">TransmittableThreadLocal：正确的上下文传递方案</h3>
+        </div>
+
+        <!-- TTL Core Idea -->
+        <div class="bg-slate-900 border border-cyan-500/20 rounded-2xl p-6 mb-6">
+            <h4 class="text-cyan-400 font-bold text-sm mb-4">核心思路：把"线程创建时拷贝"变成"任务提交时快照"</h4>
+
+            <div class="grid lg:grid-cols-2 gap-6">
+                <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+                    <p>TTL 不依赖 Thread 构造函数。它在三个时间点介入：</p>
+
+                    <div class="space-y-2 mt-3">
+                        <div class="flex gap-3 items-start">
+                            <span class="text-cyan-400 font-bold mono w-5 flex-shrink-0">①</span>
+                            <div><strong class="text-slate-300">Capture（提交时）：</strong>
+                                包装 Runnable/Callable 时，<strong class="text-cyan-300">快照</strong>当前线程所有 TTL 的值。
+                                这个快照作为闭包变量保存在包装对象中。</div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-cyan-400 font-bold mono w-5 flex-shrink-0">②</span>
+                            <div><strong class="text-slate-300">Replay（执行前）：</strong>
+                                线程池中线程开始执行任务前，将快照中的值<strong class="text-cyan-300">回放</strong>到当前线程的 TTL Map 中。
+                                同时备份当前线程原有的 TTL 值（用于后续恢复）。</div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-cyan-400 font-bold mono w-5 flex-shrink-0">③</span>
+                            <div><strong class="text-slate-300">Restore（执行后）：</strong>
+                                任务完成后，将之前备份的原始值<strong class="text-cyan-300">还原</strong>回去。
+                                确保线程回到干净状态，不影响下一个任务。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 rounded-lg p-4">
+                    <pre class="text-[10px] mono text-slate-400 leading-relaxed"><code><span class="tk-cmt">// TtlRunnable.get() 内部简化逻辑</span>
+<span class="tk-kw">class</span> <span class="tk-type">TtlRunnable</span> <span class="tk-kw">implements</span> <span class="tk-type">Runnable</span> {
+    <span class="tk-kw">private final</span> Runnable runnable;
+    <span class="tk-kw">private final</span> Snapshot captured;  <span class="tk-cmt">// ① Capture</span>
+
+    <span class="tk-fn">TtlRunnable</span>(Runnable r) {
+        <span class="tk-kw">this</span>.runnable = r;
+        <span class="tk-kw">this</span>.captured = Ttl.<span class="tk-fn">capture</span>(); <span class="tk-cmt">// 提交时快照</span>
+    }
+
+    <span class="tk-ann">@Override</span>
+    <span class="tk-kw">public void</span> <span class="tk-fn">run</span>() {
+        Snapshot backup = Ttl.<span class="tk-fn">replay</span>(captured); <span class="tk-cmt">// ② Replay</span>
+        <span class="tk-kw">try</span> {
+            runnable.<span class="tk-fn">run</span>();
+        } <span class="tk-kw">finally</span> {
+            Ttl.<span class="tk-fn">restore</span>(backup);  <span class="tk-cmt">// ③ Restore</span>
+        }
+    }
+}
+
+<span class="tk-cmt">// 使用方式</span>
+<span class="tk-type">TransmittableThreadLocal</span>&lt;String&gt; ctx = <span class="tk-kw">new</span> <span class="tk-type">TTL</span>&lt;&gt;();
+ctx.<span class="tk-fn">set</span>(<span class="tk-str">"userId:A"</span>);
+
+executor.<span class="tk-fn">submit</span>(TtlRunnable.<span class="tk-fn">get</span>(() -> {
+    <span class="tk-fn">assert</span> ctx.<span class="tk-fn">get</span>().equals(<span class="tk-str">"userId:A"</span>); <span class="tk-cmt">// ✅ 正确传递</span>
+}));</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- TTL vs ITTL Comparison -->
+        <div class="overflow-x-auto rounded-xl border border-slate-800 mb-6">
+            <table class="w-full text-xs min-w-[500px]">
+                <thead>
+                <tr class="bg-slate-900/80 border-b border-slate-800">
+                    <th class="text-left px-4 py-3 text-slate-400 font-semibold">维度</th>
+                    <th class="text-center px-4 py-3 text-rose-400 font-bold">InheritableThreadLocal</th>
+                    <th class="text-center px-4 py-3 text-cyan-400 font-bold">TransmittableThreadLocal</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60 text-slate-400">
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 font-medium text-slate-300">拷贝时机</td>
+                    <td class="text-center px-4 py-3 text-rose-300">new Thread() 时（一次性）</td>
+                    <td class="text-center px-4 py-3 text-cyan-300">每次 submit/wrap 时</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 font-medium text-slate-300">线程池兼容</td>
+                    <td class="text-center px-4 py-3 text-rose-400 font-bold">❌ 数据污染</td>
+                    <td class="text-center px-4 py-3 text-cyan-400 font-bold">✅ 完美支持</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 font-medium text-slate-300">拷贝方式</td>
+                    <td class="text-center px-4 py-3 text-rose-300">浅拷贝（共享可变对象）</td>
+                    <td class="text-center px-4 py-3 text-cyan-300">可自定义 Copier（深拷贝）</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 font-medium text-slate-300">执行后清理</td>
+                    <td class="text-center px-4 py-3 text-rose-300">无（残留到线程销毁）</td>
+                    <td class="text-center px-4 py-3 text-cyan-300">自动 Restore 原始状态</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 font-medium text-slate-300">框架集成</td>
+                    <td class="text-center px-4 py-3 text-slate-600">需手动改造</td>
+                    <td class="text-center px-4 py-3 text-cyan-300">Java Agent 无侵入增强</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 font-medium text-slate-300">性能开销</td>
+                    <td class="text-center px-4 py-3 text-slate-500">仅 new Thread 时</td>
+                    <td class="text-center px-4 py-3 text-cyan-300">每次 submit 有快照开销<br><span class="text-[9px] text-slate-500">（通常 &lt;1μs，可接受）</span></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Production Integration -->
+        <div class="bg-slate-900 border border-cyan-500/20 rounded-xl p-5">
+            <h4 class="text-cyan-400 font-bold text-sm mb-3">🔧 生产环境接入方式</h4>
+            <div class="grid md:grid-cols-2 gap-4 text-xs text-slate-400 leading-relaxed">
+                <div>
+                    <strong class="text-cyan-300 block mb-2">方式一：Java Agent（推荐，零侵入）</strong>
+                    <pre class="text-[10px] mono text-cyan-200/60 bg-slate-950 rounded p-3 mb-2">-javaagent:transmittable-thread-local-agent.jar</pre>
+                    <p class="text-[10px]">自动增强所有线程池的 submit/execute 方法，
+                        无需修改业务代码。支持 JDK ThreadPoolExecutor、ForkJoinPool、
+                        ScheduledExecutorService 等。</p>
+                </div>
+                <div>
+                    <strong class="text-cyan-300 block mb-2">方式二：手动包装</strong>
+                    <pre class="text-[10px] mono text-cyan-200/60 bg-slate-950 rounded p-3 mb-2">executor.submit(TtlRunnable.get(task));
+// 或装饰整个线程池
+ExecutorService ttlPool = TtlExecutors.getTtlExecutorService(pool);</pre>
+                    <p class="text-[10px]">适合无法使用 Agent 的环境（如部分云函数平台）。
+                        需要确保所有提交点都经过包装，遗漏即失效。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════ FINAL SUMMARY ═══════════════ -->
+    <section class="fade-up">
+        <div class="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-700 rounded-2xl p-6 sm:p-8">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span class="text-xl">🏁</span> 终极总结
+            </h3>
+            <div class="space-y-3 text-sm text-slate-400 leading-relaxed">
+                <p>
+                    <strong class="text-rose-400">ThreadLocal 泄漏</strong>的本质是：
+                    Thread 强引用 → Map → Entry → Value 这条链在线程池中永远不会断。
+                    Key 弱引用被回收不是"保护机制"，而是"泄漏触发器"——它让 Entry 变成无法被主动清理的僵尸。
+                    <strong class="text-slate-200">唯一可靠的解药是 remove()</strong>，放在 finally 里。
+                </p>
+                <p>
+                    <strong class="text-amber-400">InheritableThreadLocal</strong> 是一个为"每请求一新线程"时代设计的遗留 API。
+                    在线程池复用模型下，它会导致<strong class="text-slate-200">上下文错乱、数据越权、浅拷贝并发问题</strong>三重灾难。
+                    如果你的代码里还有它，现在就该替换掉。
+                </p>
+                <p>
+                    <strong class="text-cyan-400">TransmittableThreadLocal</strong> 通过将"线程级继承"重构为"任务级快照-回放-还原"三步曲，
+                    从根本上解决了线程池上下文传递问题。配合 Java Agent 可以做到零侵入接入。
+                    它是目前 Java 生态中<strong class="text-slate-200">线程池上下文传递的事实标准</strong>。
+                </p>
+                <p class="pt-3 border-t border-slate-800 text-xs text-slate-500">
+                    💡 <strong class="text-slate-300">选型口诀：</strong>
+                    "TL 必配 finally remove；ITTL 不进线程池；上下文传递用 TTL；Agent 优先手动补。"
+                </p>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/60 py-8 mt-8">
+    <div class="max-w-5xl mx-auto px-6 text-center">
+        <p class="text-slate-600 text-[11px]">
+            ThreadLocal Memory Leak · Weak Reference Key · Strong Reference Value · Thread Pool Best Practice · InheritableThreadLocal Pitfall · TransmittableThreadLocal
+        </p>
+    </div>
+</footer>
+
+<!-- Scroll Observer -->
+<script>
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+  document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>

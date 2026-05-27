@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 4 问 · Survivor 溢出与过早晋升实战 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.02)); border-left: 3px solid #22c55e; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .danger-box { background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02)); border-left: 3px solid #ef4444; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="03-gc-log-analysis.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">GC · 第 4 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="05-memory-leak.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            Survivor 溢出与<span class="text-emerald-400">过早晋升</span>实战
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            场景：每秒 2000 次支付请求，每次生成 8KB 临时对象，堆 4G，新生代 2G。每隔几小时一次 2 秒停顿。根因不是堆太小，而是 Survivor 区大小和动态年龄判断机制产生了灾难性的协同效应。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. 场景建模 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">1</span>
+            场景建模：数字会说话
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 mb-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>系统参数：
+  请求速率：  2000 TPS（每秒 2000 个支付请求）
+  每请求分配：8KB 临时对象
+  总分配率：  2000 × 8KB = 16MB/秒
+  
+堆配置：
+  总堆：      4GB
+  新生代：    2GB（-Xmn2g 或 -XX:NewRatio=1）
+    Eden：    1.6GB（80%）
+    S0：      0.2GB（10%）
+    S1：      0.2GB（10%）
+
+分析：
+  Eden 填满时间：1.6GB ÷ 16MB/s ≈ 100 秒
+  每 100 秒触发一次 Young GC
+  
+  每次 Young GC 时：
+    Eden 中 1.6GB 的对象需要被扫描
+    假设 98% 死亡 → 存活 32MB
+    但 S0/S1 只有 200MB — 32MB 装得下吗？
+    
+  关键：32MB < 200MB，所以一次 Young GC 没问题。
+  问题出在"每次"上。</code></pre>
+        </div>
+    </section>
+
+    <!-- 2. 动态年龄判断 — 隐藏陷阱 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">2</span>
+            动态年龄判断：好心办坏事的机制
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">HotSpot 的年龄晋升规则（两者满足其一即晋升）</h3>
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">规则 1：固定年龄阈值</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        对象年龄达到 <code class="text-emerald-400 bg-slate-800 px-1 rounded">-XX:MaxTenuringThreshold</code>（默认 15），直接晋升老年代。
+                        只要熬过 15 次 Young GC 没死，就认为你是"长命对象"。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg border border-amber-500/30">
+                    <h4 class="text-sm font-semibold text-amber-400 mb-1">规则 2：动态年龄判断（Dynamic Age Threshold）★ 元凶</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        Survivor 区中，<strong>相同年龄的所有对象大小之和</strong>超过 Survivor 区的
+                        <code class="text-amber-400 bg-slate-800 px-1 rounded">TargetSurvivorRatio</code>（默认 50%）时，
+                        <strong class="text-amber-400">这个年龄及以上的所有对象全部晋升</strong>，不管它们是否达到 MaxTenuringThreshold。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="danger-box p-4 rounded-lg mb-5">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <strong>🔥 为什么这里会帮倒忙？</strong>每次 Young GC 存活 32MB。Survivor 只有 200MB。
+                年龄 1 的对象在第一次 GC 后占 32MB、第二次 GC 后可能又多了 32MB 的 age-1 对象……
+                关键是：<strong>32MB > 200MB × 50% = 100MB 吗？不，32MB < 100MB。</strong>
+                那问题到底在哪？
+            </p>
+        </div>
+
+        <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            问题在于：<strong class="text-amber-400">每次 Young GC 存活的不只是新对象</strong>。
+            Survivor 中已经有前几次 GC 存活下来的对象。这些对象在 Survivor 之间来回复制，有些对象的年龄已经到了 2、3、4……
+            当某个年龄段的对象累积超过 100MB（200MB × 50%）时，这个年龄段及以上的所有对象被强制晋升。
+        </p>
+
+        <p class="text-sm text-slate-400 leading-relaxed mb-3">
+            而且，一旦年龄稍大的对象被晋升到老年代，它们在老年代占用的空间就无法通过 Young GC 回收了。
+            老年代增长的速度被动态年龄判断大幅加速——这就是为什么"每隔几小时"老年代才会满：它不是缓慢泄漏，而是<strong>间歇性的大量晋升</strong>。
+        </p>
+    </section>
+
+    <!-- 3. Young GC 时间暴涨的根因 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">3</span>
+            为什么 Young GC 时间会突然暴涨？
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                Young GC 的时间主要由<strong>存活对象的复制成本</strong>决定。正常情况下，98% 的对象死亡，只需要复制 2% 的对象（32MB），Young GC 应该很快（10-20ms）。
+            </p>
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                但当<strong class="text-red-400">promotion failed</strong>发生时，Young GC 发现老年代没有足够连续空间来接收晋升对象。
+                这会导致一次额外的<strong>Full GC（标记-整理）</strong>，它将整个堆（4G）全部 STW 处理——停顿时间自然暴涨到 2 秒。
+            </p>
+            <p class="text-sm text-slate-400 leading-relaxed">
+                而且 Young GC 的日志中显示的时间也会异常，因为 promotion failed 触发的 Full GC 时间<strong>会计入</strong>那次 Young GC 的耗时统计中。
+            </p>
+        </div>
+    </section>
+
+    <!-- 4. 复现代码 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">4</span>
+            复现代码：Survivor 溢出导致过早晋升
+        </h2>
+
+        <div class="code-dark rounded-lg p-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>/**
+ * 复现 "Survivor 溢出 → 动态年龄判断 → 过早晋升 → Full GC" 场景
+ * 
+ * JVM 参数（JDK 8）：
+ *   -Xmx4g -Xms4g -Xmn2g
+ *   -XX:SurvivorRatio=8          # Eden:S0:S1 = 8:1:1
+ *   -XX:MaxTenuringThreshold=15  # 固定阈值
+ *   -XX:TargetSurvivorRatio=50   # 动态年龄判断阈值
+ *   -XX:+PrintGCDetails
+ *   -XX:+PrintGCDateStamps
+ *   -Xloggc:gc.log
+ */
+public class SurvivorOverflowDemo {
+    
+    // 每批分配大小：模拟每次请求的 8KB 临时对象
+    private static final int CHUNK_SIZE = 8 * 1024;        // 8KB
+    private static final int OBJECTS_PER_BATCH = 2000;     // 每秒 2000 个请求
+    private static final int GC_INTERVAL_SEC = 100;        // Eden 约 100 秒填满
+    
+    public static void main(String[] args) throws Exception {
+        List&lt;byte[]&gt; survivorBait = new ArrayList&lt;&gt;();
+        
+        for (int cycle = 0; cycle &lt; 100; cycle++) {
+            System.out.println("Cycle " + cycle + " start");
+            
+            // ★ 关键：保留一小部分对象不释放，模拟"需要晋升"的对象
+            // 每次 GC 后 2% 的对象存活（32MB），其中的一部分会进 Survivor
+            for (int i = 0; i &lt; 2000 * GC_INTERVAL_SEC; i++) {
+                byte[] data = new byte[CHUNK_SIZE];
+                
+                // 2% 的对象被保留（放进 bait 列表）
+                // 这些对象会从 Eden → Survivor → 累积年龄 → 晋升老年代
+                if (i % 50 == 0) {
+                    survivorBait.add(data);  // 每次循环 4000 个 × 8KB = 32MB
+                }
+                // 其余 98% 在下一次 Young GC 时被回收
+            }
+            
+            // 模拟 Eden 填满 → 触发 Young GC
+            // （实际上上面的分配已经触发了 GC）
+            
+            Thread.sleep(200);
+            System.out.println("Cycle " + cycle + " done. Bait size: " + survivorBait.size());
+        }
+    }
+}
+
+// ★ 预期现象：
+// 1. 前几次 Young GC 正常，Eden → Survivor
+// 2. 随着循环进行，Survivor 中的对象累积
+// 3. 某次 Young GC 时，某个年龄段的累积大小超过 Survivor 的 50%
+// 4. 动态年龄判断触发，大量对象被提前晋升到老年代
+// 5. 老年代逐渐填满 → 触发 Full GC → 2 秒停顿</code></pre>
+        </div>
+    </section>
+
+    <!-- 5. 调优方案 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">5</span>
+            调优方案
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-5">
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-emerald-400 mb-3">方案 A：增大 Survivor（治标）</h3>
+                <div class="code-dark rounded-lg p-3 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>-XX:SurvivorRatio=4  # Eden:S0:S1 = 4:1:1
+# Survivor 从 200MB → 333MB
+# 动态年龄判断阈值：333MB × 50% = 166MB</code></pre>
+                </div>
+                <p class="text-xs text-slate-400">代价：Eden 变小，Young GC 更频繁。但每次 GC 时间更短，总体吞吐可能更好。</p>
+            </div>
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-emerald-400 mb-3">方案 B：提高动态年龄阈值（治标）</h3>
+                <div class="code-dark rounded-lg p-3 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>-XX:TargetSurvivorRatio=90
+# 让 Survivor 用到 90% 才触发动态年龄判断</code></pre>
+                </div>
+                <p class="text-xs text-slate-400">代价：Survivor 空间紧张可能导致复制时频繁触发 promotion，反而增加 Full GC 风险。</p>
+            </div>
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-emerald-400 mb-3">方案 C：降低晋升阈值（治标）</h3>
+                <div class="code-dark rounded-lg p-3 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>-XX:MaxTenuringThreshold=3
+# 对象在 Survivor 只待 3 次就晋升</code></pre>
+                </div>
+                <p class="text-xs text-slate-400">看似反直觉，但本场景中对象是"活不过一次 GC 的临时对象"——强制更快晋升反而减少 Survivor 拥挤。</p>
+            </div>
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl border-emerald-500/30">
+                <h3 class="text-lg font-semibold text-emerald-400 mb-3">方案 D：使用 G1（治本）⭐</h3>
+                <div class="code-dark rounded-lg p-3 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>-XX:+UseG1GC
+-XX:MaxGCPauseMillis=50
+# G1 没有固定的 Survivor 比例
+# 动态 Region 回收，自适应晋升</code></pre>
+                </div>
+                <p class="text-xs text-slate-400">G1 的 Mixed GC 可以增量回收老年代，避免 CMS 的碎片问题。G1 自适应地调整晋升阈值和 Region 大小。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. 面试要点 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试回答框架
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 根因链条（必须串起来说）</h3>
+                <ol class="space-y-1 text-xs text-slate-400 list-decimal pl-4">
+                    <li>高吞吐场景下 Eden 频繁填满 → 高频 Young GC</li>
+                    <li>虽然每次存活率低（2%），但 Survivor 不够大</li>
+                    <li>动态年龄判断在"累积"效应下触发过早晋升</li>
+                    <li>大量半衰期对象涌入老年代 → 老年代加速填满</li>
+                    <li>老年代满 → promotion failed → Full GC → 2 秒停顿</li>
+                </ol>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">🛠️ 调优优先级</h3>
+                <ol class="space-y-1 text-xs text-slate-400 list-decimal pl-4">
+                    <li>先看 GC 日志确认 promotion failed 的频率和触发点</li>
+                    <li>调整 SurvivorRatio / TargetSurvivorRatio</li>
+                    <li>考虑降低 MaxTenuringThreshold</li>
+                    <li>评估是否需要增大堆（4G → 8G）</li>
+                    <li>长期方案：迁移到 G1 或更高的 GC</li>
+                </ol>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="03-gc-log-analysis.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="05-memory-leak.html" class="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors flex items-center gap-2">下一问：内存泄漏排查 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>

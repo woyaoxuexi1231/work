@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 面试题深度解析 - JVM 专题</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        jvm: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+    <!-- 顶部 Hero -->
+    <header class="relative overflow-hidden border-b border-slate-800">
+        <div class="absolute inset-0 bg-gradient-to-br from-emerald-900/30 via-slate-950 to-slate-950"></div>
+        <div class="relative max-w-5xl mx-auto px-6 py-16">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="px-3 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">JVM DEEP DIVE</span>
+                <span class="px-3 py-1 text-xs font-mono bg-slate-800 text-slate-400 border border-slate-700 rounded-full">11 道面试题</span>
+            </div>
+            <h1 class="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
+                JVM 面试题 <span class="text-emerald-400">深度解析</span>
+            </h1>
+            <p class="text-lg text-slate-400 max-w-2xl leading-relaxed">
+                以大厂资深 Java 开发工程师视角，逐题拆解 GC 回收机制、类加载过程、Java 内存模型三大核心模块。
+                每个回答包含原理剖析、源码级细节、线上排障实战和面试要点总结。
+            </p>
+            <div class="flex flex-wrap gap-3 mt-6">
+                <div class="flex items-center gap-2 px-4 py-2 bg-slate-800/80 rounded-lg border border-slate-700/50">
+                    <span class="text-emerald-400">📐</span>
+                    <span class="text-sm text-slate-300">原理图解</span>
+                </div>
+                <div class="flex items-center gap-2 px-4 py-2 bg-slate-800/80 rounded-lg border border-slate-700/50">
+                    <span class="text-emerald-400">💻</span>
+                    <span class="text-sm text-slate-300">代码示例</span>
+                </div>
+                <div class="flex items-center gap-2 px-4 py-2 bg-slate-800/80 rounded-lg border border-slate-700/50">
+                    <span class="text-emerald-400">🔧</span>
+                    <span class="text-sm text-slate-300">排障技巧</span>
+                </div>
+                <div class="flex items-center gap-2 px-4 py-2 bg-slate-800/80 rounded-lg border border-slate-700/50">
+                    <span class="text-emerald-400">⭐</span>
+                    <span class="text-sm text-slate-300">面试要点</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-6 py-12">
+        <!-- 一、GC 回收机制 -->
+        <section class="mb-12">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-sm">1</div>
+                <h2 class="text-2xl font-bold text-white">GC 回收机制 —— 从算法到调优实战</h2>
+            </div>
+            <div class="grid gap-4">
+                <a href="01-gc-algorithms.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-emerald-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">第 1 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-emerald-400 transition-colors">GC 算法与分代收集的深层原理</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">标记-清除 / 标记-整理 / 复制算法的本质差异、分代假设的数学基础、内存分配效率与 CPU 缓存的博弈</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-emerald-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="02-zgc-shenandoah.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-emerald-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">第 2 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-emerald-400 transition-colors">ZGC / Shenandoah：为什么放弃分代？</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">读屏障、颜色指针（Colored Pointers）、并发重定位、G1 vs ZGC 选型决策树</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-emerald-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="03-gc-log-analysis.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-emerald-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">第 3 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-emerald-400 transition-colors">GC 日志分析与 Full GC 诊断</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">GC 日志关键指标解读、Allocation Failure vs Ergonomics、Concurrent Mode Failure 与 Promotion Failed 的根因</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-emerald-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="04-survivor-overflow.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-emerald-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">第 4 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-emerald-400 transition-colors">Survivor 溢出与过早晋升实战</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">2000 TPS 支付系统场景、动态年龄判断的隐藏陷阱、参数调优思路与复现代码</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-emerald-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="05-memory-leak.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-emerald-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">第 5 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-emerald-400 transition-colors">内存泄漏排查与 Heap Dump 分析</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">MAT 支配树视图、GC Root 路径追踪、ThreadLocal 泄漏的完整定位链路</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-emerald-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+            </div>
+        </section>
+
+        <!-- 二、类加载过程 -->
+        <section class="mb-12">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">2</div>
+                <h2 class="text-2xl font-bold text-white">类加载过程 —— 别只背双亲委派</h2>
+            </div>
+            <div class="grid gap-4">
+                <a href="06-class-loading.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-blue-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">第 6 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-blue-400 transition-colors">类加载的三阶段与 &lt;clinit&gt; 细节</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">准备阶段的零值赋值、static final 编译时常量、&lt;clinit&gt; 的多线程安全保证</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-blue-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="07-classloader-isolation.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-blue-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">第 7 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-blue-400 transition-colors">双亲委派的破坏者：Tomcat / SPI / TCCL</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">自定义 ClassLoader、WebappClassLoader 隔离机制、SPI 与线程上下文类加载器的协作</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-blue-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="08-hot-deploy.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-blue-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">第 8 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-blue-400 transition-colors">热部署机制：类卸载、元空间与 ThreadLocal 陷阱</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">类卸载的必要条件、ThreadLocal 阻止 GC 的原理、元空间 OOM 排查思路</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-blue-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+            </div>
+        </section>
+
+        <!-- 三、Java 内存模型 -->
+        <section class="mb-12">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold text-sm">3</div>
+                <h2 class="text-2xl font-bold text-white">Java 内存模型（JMM）—— 和硬件对着干的艺术</h2>
+            </div>
+            <div class="grid gap-4">
+                <a href="09-jmm-detail.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-purple-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-purple-500 bg-purple-500/10 px-2 py-0.5 rounded">第 9 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-purple-400 transition-colors">JMM 主内存/工作内存与 8 个原子操作</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">主内存与工作内存的物理映射、8 个原子操作的规则约束、volatile 读写串行顺序图</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-purple-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="10-volatile-happens-before.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-purple-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-purple-500 bg-purple-500/10 px-2 py-0.5 rounded">第 10 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-purple-400 transition-colors">volatile 内存屏障与 happens-before 验证</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">四种内存屏障排列、StoreLoad 为什么最重、用纯 Java 暴露指令重排序</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-purple-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+                <a href="11-final-jmm.html" class="group block p-5 bg-slate-900 border border-slate-800 rounded-xl hover:border-purple-500/40 hover:bg-slate-800/80 transition-all duration-200">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-mono text-purple-500 bg-purple-500/10 px-2 py-0.5 rounded">第 11 问</span>
+                            <h3 class="text-lg font-semibold text-white mt-2 group-hover:text-purple-400 transition-colors">final 的内存语义与 String 不可变性</h3>
+                            <p class="text-sm text-slate-400 mt-1 leading-relaxed">final 字段的 freeze 语义、构造函数逸出问题、String 不可变的 JMM 保证</p>
+                        </div>
+                        <span class="text-slate-600 group-hover:text-purple-400 transition-colors text-xl mt-1">→</span>
+                    </div>
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-t border-slate-800 py-8 text-center text-sm text-slate-500">
+        <p>以资深 Java 工程师视角编写 · 2025 · 持续更新</p>
+    </footer>
+</body>
+</html>

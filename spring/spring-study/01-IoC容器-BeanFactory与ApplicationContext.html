@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IoC 容器：BeanFactory 与 ApplicationContext — 灵魂深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        base: '#0b0f19', surface: '#111827', card: '#1a2332',
+        border: '#243044', accent: '#38bdf8', accent2: '#818cf8',
+        green: '#4ade80', amber: '#fbbf24', red: '#f87171',
+        text: '#cbd5e1', text2: '#94a3b8', text3: '#64748b'
+      },
+      fontFamily: {
+        sans: ['Inter','Noto Sans SC','sans-serif'],
+        mono: ['JetBrains Mono','Fira Code','monospace']
+      }
+    }
+  }
+}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+body { font-family: 'Inter','Noto Sans SC',sans-serif; }
+code, pre, .mono { font-family: 'JetBrains Mono','Fira Code',monospace; }
+/* 面试气泡 */
+.bubble-q { background: linear-gradient(135deg, #1e3a5f, #1a2744); border: 1px solid #2d4a6f; }
+.bubble-a { background: linear-gradient(135deg, #1a2e1a, #162416); border: 1px solid #2d4a2d; }
+.bubble-think { background: #1a1a2e; border: 1px dashed #6366f1; font-size: 0.8rem; color: #a5b4fc; }
+/* 代码块滚动条 */
+pre::-webkit-scrollbar { height: 6px; }
+pre::-webkit-scrollbar-track { background: #0f172a; }
+pre::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+</style>
+</head>
+<body class="bg-base text-text">
+
+<!-- ===== Header ===== -->
+<header class="sticky top-0 z-50 bg-base/95 backdrop-blur border-b border-border">
+  <div class="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between text-sm">
+    <div class="flex items-center gap-2">
+      <span class="text-accent font-bold text-base">Spring 灵魂剖析</span>
+      <span class="text-text3">· 第 1 篇</span>
+    </div>
+    <div class="flex gap-2 text-xs">
+      <span class="bg-card border border-border px-2.5 py-1 rounded-full text-text2">5年Java</span>
+      <span class="bg-card border border-border px-2.5 py-1 rounded-full text-text2">恒生电子</span>
+      <span class="bg-card border border-border px-2.5 py-1 rounded-full text-text2">多数据源组件</span>
+    </div>
+  </div>
+</header>
+
+<!-- ===== 标题区 ===== -->
+<section class="max-w-4xl mx-auto px-6 pt-16 pb-8">
+  <div class="flex items-center gap-3 mb-3">
+    <span class="text-xs bg-accent/20 text-accent px-3 py-1 rounded-full font-medium">Core Container</span>
+    <span class="text-xs bg-accent2/20 text-accent2 px-3 py-1 rounded-full font-medium">IoC 基础</span>
+  </div>
+  <h1 class="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
+    IoC 容器：BeanFactory 与<br>ApplicationContext
+  </h1>
+  <p class="text-text2 text-lg max-w-2xl">
+    Spring 的心脏——理解了这两个接口的关系，就理解了 Spring 对"对象"这件事的全部态度。
+  </p>
+</section>
+
+<!-- ===== 三部分锚点导航 ===== -->
+<nav class="sticky top-[57px] z-40 bg-base/95 backdrop-blur border-b border-border">
+  <div class="max-w-4xl mx-auto px-6 flex gap-8 text-sm">
+    <a href="#part1" class="py-3 border-b-2 border-accent text-accent font-medium transition">📘 基础认知</a>
+    <a href="#part2" class="py-3 border-b-2 border-transparent hover:border-accent2 text-text2 hover:text-white transition">🔬 原理深潜</a>
+    <a href="#part3" class="py-3 border-b-2 border-transparent hover:border-accent2 text-text2 hover:text-white transition">🎤 面试追问</a>
+  </div>
+</nav>
+
+<!-- ========================== 第一部分 ========================== -->
+<section id="part1" class="max-w-4xl mx-auto px-6 py-12">
+<h2 class="text-3xl font-bold text-white mb-8 flex items-center gap-3">
+  <span class="text-accent">📘</span> 第一部分：基础使用与直观理解
+</h2>
+
+<!-- 1.1 概念 -->
+<div class="bg-card border border-border rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">1.1 一句话说清楚</h3>
+  <p class="text-text2 leading-relaxed mb-4">
+    <strong class="text-white">没有 Spring 之前，你需要手写 <code class="mono text-green text-sm">new UserService()</code> 来创建对象。</strong>有了 Spring，你把"如何创建对象"的配方告诉它，它帮你完成创建、组装依赖、管理生命周期。这个"配方管理器"就是 <strong class="text-accent">IoC 容器</strong>。
+  </p>
+  <p class="text-text2 leading-relaxed">
+    Spring 给这个容器设计了两层接口：<code class="mono text-green text-sm">BeanFactory</code>（底层接口，提供容器最基本的"骨架"）和 <code class="mono text-green text-sm">ApplicationContext</code>（上层接口，在骨架之上增加了企业级"血肉"）。
+  </p>
+</div>
+
+<!-- 1.2 对比表 -->
+<div class="bg-card border border-border rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">1.2 BeanFactory vs ApplicationContext 对比</h3>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="border-b border-border text-left">
+          <th class="py-3 px-4 text-white font-medium">维度</th>
+          <th class="py-3 px-4 text-accent font-medium">BeanFactory</th>
+          <th class="py-3 px-4 text-accent2 font-medium">ApplicationContext</th>
+        </tr>
+      </thead>
+      <tbody class="text-text2">
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">定位</td>
+          <td class="py-3 px-4">IoC 容器的<strong>底层骨架</strong></td>
+          <td class="py-3 px-4">面向开发者的<strong>完整容器</strong></td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">继承关系</td>
+          <td class="py-3 px-4">独立接口</td>
+          <td class="py-3 px-4"><strong>继承自 BeanFactory</strong> + 多个企业级接口</td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">Bean 实例化时机</td>
+          <td class="py-3 px-4"><strong>懒加载</strong>：getBean() 时才创建</td>
+          <td class="py-3 px-4"><strong>预加载</strong>：启动时创建所有单例 Bean</td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">国际化 (i18n)</td>
+          <td class="py-3 px-4 text-red">❌ 不支持</td>
+          <td class="py-3 px-4 text-green">✅ MessageSource（支持多语言）</td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">事件发布</td>
+          <td class="py-3 px-4 text-red">❌ 不支持</td>
+          <td class="py-3 px-4 text-green">✅ ApplicationEventPublisher</td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">资源加载</td>
+          <td class="py-3 px-4 text-red">❌ 不支持</td>
+          <td class="py-3 px-4 text-green">✅ ResourceLoader（classpath/file/URL）</td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">环境抽象 & Profile</td>
+          <td class="py-3 px-4 text-red">❌ 不支持</td>
+          <td class="py-3 px-4 text-green">✅ Environment + @Profile</td>
+        </tr>
+        <tr class="border-b border-border">
+          <td class="py-3 px-4 text-white">BeanPostProcessor 注册</td>
+          <td class="py-3 px-4">需要手动注册</td>
+          <td class="py-3 px-4"><strong>自动检测并注册</strong></td>
+        </tr>
+        <tr>
+          <td class="py-3 px-4 text-white">典型实现类</td>
+          <td class="py-3 px-4">DefaultListableBeanFactory</td>
+          <td class="py-3 px-4">AnnotationConfigApplicationContext<br>ClassPathXmlApplicationContext</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 1.3 代码对比 -->
+<div class="bg-card border border-border rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">1.3 代码对比：两种容器的使用方式</h3>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <p class="text-sm text-accent font-medium mb-2">使用 BeanFactory（底层方式）</p>
+      <pre class="bg-[#0d1117] rounded-xl p-4 text-sm overflow-x-auto border border-[#1e293b]"><code class="text-green">// 1. 创建 BeanFactory
+DefaultListableBeanFactory factory =
+    new DefaultListableBeanFactory();
+
+// 2. 手动注册 BeanDefinition
+BeanDefinitionBuilder builder =
+    BeanDefinitionBuilder
+        .genericBeanDefinition(UserService.class);
+factory.registerBeanDefinition(
+    "userService", builder.getBeanDefinition());
+
+// 3. 手动注册 BeanPostProcessor
+factory.addBeanPostProcessor(
+    new AutowiredAnnotationBeanPostProcessor());
+
+// 4. 获取 Bean（此时才创建）
+UserService svc = factory.getBean(UserService.class);
+svc.doSomething();</code></pre>
+    </div>
+    <div>
+      <p class="text-sm text-accent2 font-medium mb-2">使用 ApplicationContext（日常方式）</p>
+      <pre class="bg-[#0d1117] rounded-xl p-4 text-sm overflow-x-auto border border-[#1e293b]"><code class="text-green">// 一行代码启动容器
+ApplicationContext ctx =
+    new AnnotationConfigApplicationContext(
+        AppConfig.class);
+
+// Spring Boot 中更简洁
+// @SpringBootApplication 启动即可
+
+// 直接获取 Bean（容器启动时就已创建好）
+UserService svc = ctx.getBean(UserService.class);
+svc.doSomething();
+
+// 额外还能做的事：
+ctx.publishEvent(new MyEvent(...)); // 发布事件
+ctx.getMessage("user.title", ...);  // 国际化
+Resource r = ctx.getResource(...);  // 加载资源</code></pre>
+    </div>
+  </div>
+  <p class="text-sm text-text3 mt-4">
+    ⚡ <strong>关键发现：</strong>BeanFactory 只做一件事——管理 Bean。ApplicationContext = BeanFactory + 事件 + 国际化 + 资源加载 + 环境 + 自动 BPP 注册。
+  </p>
+</div>
+
+<!-- 1.4 关联简历 -->
+<div class="bg-card border border-accent2/30 rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-3">1.4 关联你的项目</h3>
+  <div class="flex items-start gap-3">
+    <span class="text-2xl shrink-0">📋</span>
+    <div>
+      <p class="text-text2 leading-relaxed">
+        你在<strong class="text-white">恒生多数据源组件</strong>中，之所以能通过 <code class="mono text-green text-sm">@DS("db1")</code> 切换数据源，底层就是利用 <code class="mono text-green text-sm">ApplicationContext</code> 的<strong>事件机制 + Bean 生命周期管理</strong>。每次数据源切换时，组件在 Bean 初始化阶段拦截，根据注解的值从 ApplicationContext 中取出对应的 DataSource Bean——<strong>这个"能从容器中按名称取出任意 Bean"的能力，正是 ApplicationContext 提供的基础设施。</strong>
+      </p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ========================== 第二部分 ========================== -->
+<section id="part2" class="max-w-4xl mx-auto px-6 py-12">
+<h2 class="text-3xl font-bold text-white mb-8 flex items-center gap-3">
+  <span class="text-accent2">🔬</span> 第二部分：原理深潜与设计动机
+</h2>
+
+<!-- 2.1 痛点 -->
+<div class="bg-card border border-border rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">2.1 假如没有 IoC 容器，会发生什么？</h3>
+
+  <p class="text-text2 leading-relaxed mb-4">想象你在做一个大型金融系统，有 200 个 Service 类，每个 Service 依赖 3-5 个其他类。没有 IoC 容器的时候，你的代码长这样：</p>
+
+  <pre class="bg-[#0d1117] rounded-xl p-4 text-sm overflow-x-auto border border-[#1e293b] mb-4"><code class="text-red">// ❌ 没有 IoC 的世界：每次 new，到处是样板代码
+public class TradeService {
+    private AccountService accountService = new AccountService(
+        new AccountRepository(
+            new DataSource(...),   // 连接从哪里来？
+            new CacheService(...)  // 缓存怎么共享？
+        )
+    );
+    private RiskService riskService = new RiskService(
+        new RiskEngine(...),       // 50 个地方都在 new RiskEngine
+        new RedisClient(...)       // 连接池怎么复用？
+    );
+    // ... 问题：
+    // 1. 到处 new，一旦想换实现，改 50 处
+    // 2. DataSource 被 new 了 200 次（应该只有一个连接池！）
+    // 3. 单元测试要 mock → 只能反射或者重写构造器
+    // 4. 想加日志/事务 → 只能手写，无法统一
+}</code></pre>
+
+  <p class="text-text2 leading-relaxed">
+    <strong class="text-accent">核心痛点不是"麻烦"，而是"不可控"。</strong>对象的创建散落在整个代码库中，你无法统一管理它们的生命周期、依赖关系、以及"一个对象在系统中应该只有几份"这个根本问题。
+  </p>
+</div>
+
+<!-- 2.2 设计巧思 -->
+<div class="bg-card border border-accent2/50 rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">2.2 设计者的破局巧思：从"工厂"到"容器"</h3>
+
+  <p class="text-text2 leading-relaxed mb-4">
+    Rod Johnson 在 2002 年的《Expert One-on-One J2EE》中就提出了核心思想。但他的"啊哈时刻"不是"用工厂模式"，而是——<strong class="text-accent">"让容器本身成为一个巨大的注册表，每个对象在这个注册表里有一个唯一的名字，任何地方都可以按名字或类型取到它。"</strong>
+  </p>
+
+  <div class="bg-[#0d1117] rounded-xl p-5 border border-[#1e293b] mb-4">
+    <p class="text-sm text-amber font-medium mb-2">💡 设计巧思的核心——三层抽象：</p>
+    <div class="space-y-3 text-text2 text-sm">
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0 w-6">1.</span>
+        <div>
+          <p class="text-white font-medium">BeanDefinition（配方）</p>
+          <p>把"如何创建一个对象"变成数据，而非代码。一个 Bean 的类名、scope、依赖关系，全部存为元数据。</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0 w-6">2.</span>
+        <div>
+          <p class="text-white font-medium">BeanFactory（工厂）</p>
+          <p>根据 BeanDefinition 的配方，真正去 new 对象。类似"厨房"——你给我配方，我给你菜。</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0 w-6">3.</span>
+        <div>
+          <p class="text-white font-medium">ApplicationContext（餐厅）</p>
+          <p>在"厨房"之外加了"前台"（事件发布）、"翻译"（国际化）、"采购"（资源加载）、"环境"（Profile）。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="text-text2 leading-relaxed">
+    <strong class="text-white">这个设计的精妙之处：</strong>BeanFactory 只做一件事（管理 Bean），且做得极其精简；ApplicationContext 通过<strong>继承 + 组合</strong>的方式扩展它，而不是重写。这是<strong>接口隔离原则（ISP）</strong>的完美示范。
+  </p>
+</div>
+
+<!-- 2.3 底层机制 -->
+<div class="bg-card border border-border rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">2.3 底层机制逐层剥开</h3>
+
+  <h4 class="text-accent font-medium mt-6 mb-3">层次 1：BeanFactory 的核心数据结构</h4>
+  <pre class="bg-[#0d1117] rounded-xl p-4 text-sm overflow-x-auto border border-[#1e293b]"><code class="text-green">// DefaultListableBeanFactory 的核心内部结构（精简）
+public class DefaultListableBeanFactory extends ... {
+    // ① Bean 定义的注册表：beanName → BeanDefinition
+    private final Map&lt;String, BeanDefinition&gt; beanDefinitionMap =
+        new ConcurrentHashMap&lt;&gt;(256);
+
+    // ② 单例 Bean 的缓存池：beanName → 成品对象（一级缓存）
+    private final Map&lt;String, Object&gt; singletonObjects =
+        new ConcurrentHashMap&lt;&gt;(256);
+
+    // ③ 别名注册表
+    private final Map&lt;String, String&gt; aliasMap =
+        new ConcurrentHashMap&lt;&gt;(16);
+
+    // ④ BeanPostProcessor 列表
+    private final List&lt;BeanPostProcessor&gt; beanPostProcessors =
+        new ArrayList&lt;&gt;();
+}
+
+// ApplicationContext 内部组合了 DefaultListableBeanFactory
+public class AnnotationConfigApplicationContext extends ... {
+    // 核心成员——ApplicationContext 不自己造轮子，
+    // 而是持有一个 BeanFactory 的引用！
+    private final DefaultListableBeanFactory beanFactory;
+
+    // 新增：事件广播器
+    private ApplicationEventMulticaster eventMulticaster;
+
+    // 新增：国际化消息源
+    private MessageSource messageSource;
+}</code></pre>
+
+  <h4 class="text-accent font-medium mt-8 mb-3">层次 2：getBean() 的执行流——容器的心脏跳动</h4>
+  <div class="bg-[#0d1117] rounded-xl p-5 border border-[#1e293b] mb-4">
+    <p class="text-sm text-white font-medium mb-3 font-mono">调用链示意图</p>
+    <pre class="text-sm text-text2 whitespace-pre-wrap leading-relaxed"><code class="text-green">用户代码:    ctx.getBean("userService")
+              │
+              ▼
+BeanFactory:  doGetBean("userService")
+              │
+              ├─► ① 查缓存：singletonObjects.get("userService")
+              │      └─ 找到 → 返回 ✅（大多数情况走这里，O(1)）
+              │
+              ├─► ② 没找到 → 查 BeanDefinition：
+              │      beanDefinitionMap.get("userService")
+              │      └─ 拿到配方：class=UserService, scope=singleton
+              │
+              ├─► ③ 创建 Bean：createBean(beanDefinition)
+              │      ├─ 推断构造器
+              │      ├─ 反射 new 对象（Constructor.newInstance）
+              │      ├─ 属性填充（@Autowired 依赖注入）
+              │      ├─ 初始化（@PostConstruct → afterPropertiesSet）
+              │      └─ BeanPostProcessor.after（AOP 代理在此创建）
+              │
+              └─► ④ 放入缓存 + 返回</code></pre>
+  </div>
+
+  <h4 class="text-accent font-medium mt-8 mb-3">层次 3：ApplicationContext 和 BeanFactory 的启动时序差异</h4>
+  <p class="text-text2 text-sm mb-3">二者最本质的行为差异在于：<strong>Bean 何时被创建</strong>。</p>
+  <pre class="bg-[#0d1117] rounded-xl p-4 text-sm overflow-x-auto border border-[#1e293b]"><code class="text-green">// BeanFactory：懒到极致
+BeanFactory factory = ...;
+// 此时 UserService 还未创建 ⏸️
+UserService svc = factory.getBean(UserService.class);
+// ↑ 现在才真正 new！
+
+// ApplicationContext：启动时全部就绪
+ApplicationContext ctx = new AnnotationConfigApplicationContext(AppConfig.class);
+// ↑ 上面的 new 内部调用了 refresh()
+//   → 所有非懒加载的单例 Bean 都创建好了
+//   → 启动慢，但运行时快（Bean 已经在缓存里）</code></pre>
+</div>
+
+<!-- 2.4 边界 -->
+<div class="bg-card border border-red/30 rounded-2xl p-6 mb-6">
+  <h3 class="text-xl font-bold text-white mb-4">2.4 边界与限制</h3>
+  <table class="w-full text-sm border-collapse">
+    <thead><tr class="border-b border-border text-left"><th class="py-3 px-4 text-white font-medium">限制</th><th class="py-3 px-4 text-white font-medium">说明</th><th class="py-3 px-4 text-white font-medium">应对</th></tr></thead>
+    <tbody class="text-text2">
+      <tr class="border-b border-border">
+        <td class="py-3 px-4 text-amber">BeanFactory 太底层</td>
+        <td class="py-3 px-4">需要手动注册 BPP、不支持事件/国际化</td>
+        <td class="py-3 px-4">绝大多数场景直接用 ApplicationContext</td>
+      </tr>
+      <tr class="border-b border-border">
+        <td class="py-3 px-4 text-amber">容器本身占用内存</td>
+        <td class="py-3 px-4">DefaultListableBeanFactory 内部 5-6 个 ConcurrentHashMap，大项目可达几十 MB</td>
+        <td class="py-3 px-4">合理控制 Bean 数量，避免过度扫描</td>
+      </tr>
+      <tr class="border-b border-border">
+        <td class="py-3 px-4 text-amber">启动时间</td>
+        <td class="py-3 px-4">ApplicationContext 启动时创建所有单例 Bean</td>
+        <td class="py-3 px-4">@Lazy 延迟加载、排除不需要的自动配置</td>
+      </tr>
+      <tr>
+        <td class="py-3 px-4 text-amber">不适用所有对象</td>
+        <td class="py-3 px-4">频繁变化的值对象、请求范围的 DTO 不适合放容器</td>
+        <td class="py-3 px-4">只用容器管理"有状态"和"有依赖"的服务对象</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 2.5 设计哲学 -->
+<div class="bg-card border border-accent/30 rounded-2xl p-6">
+  <h3 class="text-xl font-bold text-white mb-3">🧠 设计哲学总结</h3>
+  <div class="text-text2 leading-relaxed space-y-3">
+    <p>
+      <strong class="text-accent">"BeanFactory 是内核，ApplicationContext 是外壳"</strong>——这不是工程上的妥协，而是深思熟虑的分层设计。如果你只需要一个轻量级的 DI 容器（比如嵌入式设备、测试环境），可以直接用 BeanFactory；如果你在做企业应用，ApplicationContext 提供了完整的基础设施。
+    </p>
+    <p>
+      Rod Johnson 在他的书中写道：<em class="text-amber">"一个好的框架应该让你在 80% 的场景下感受不到框架的存在，在剩下 20% 的场景下给你完全的控制力。"</em>——BeanFactory 就是那 20% 的"控制力后门"，ApplicationContext 就是 80% 的"无感体验"。
+    </p>
+  </div>
+</div>
+</section>
+
+<!-- ========================== 第三部分 ========================== -->
+<section id="part3" class="max-w-4xl mx-auto px-6 py-12">
+<h2 class="text-3xl font-bold text-white mb-8 flex items-center gap-3">
+  <span class="text-green">🎤</span> 第三部分：大厂面试官的灵魂追问
+</h2>
+
+<!-- Q1 -->
+<div class="mb-6">
+  <!-- 面试官 -->
+  <div class="flex gap-3 mb-3">
+    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">官</div>
+    <div class="bubble-q rounded-2xl rounded-tl-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text"><strong class="text-accent">第一层 · 基本认知：</strong>"ApplicationContext 和 BeanFactory 有什么区别？你说 ApplicationContext 继承自 BeanFactory，那它多了哪些能力？</p>
+    </div>
+  </div>
+  <!-- 候选人 -->
+  <div class="flex gap-3 mb-4 justify-end">
+    <div class="bubble-a rounded-2xl rounded-tr-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text">ApplicationContext 继承自 BeanFactory，在此之上多了：事件发布（ApplicationEventPublisher）、国际化（MessageSource）、资源加载（ResourceLoader）、环境抽象（Environment + Profile）。最大的行为差异是：BeanFactory 是懒加载的（getBean 时才创建），ApplicationContext 启动时就预加载所有单例 Bean。</p>
+    </div>
+    <div class="w-8 h-8 bg-green rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">你</div>
+  </div>
+  <!-- 面试官内心 -->
+  <div class="flex gap-3 mb-3 pl-11">
+    <div class="bubble-think rounded-xl px-4 py-2 max-w-[70%]">
+      <p>👁️ <strong>面试官内心：</strong>基础回答，不错。但这不是我想听的——我要看他对"为什么这样设计"有没有自己的理解。</p>
+    </div>
+  </div>
+</div>
+
+<!-- Q2 -->
+<div class="mb-6 mt-8">
+  <div class="flex gap-3 mb-3">
+    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">官</div>
+    <div class="bubble-q rounded-2xl rounded-tl-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text"><strong class="text-accent">第二层 · 内部机制：</strong>"你说 ApplicationContext 启动时创建所有单例 Bean——那它内部到底是怎么做的？BeanFactory 又为什么不这样做？</p>
+    </div>
+  </div>
+  <div class="flex gap-3 mb-4 justify-end">
+    <div class="bubble-a rounded-2xl rounded-tr-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text">ApplicationContext 内部持有一个 DefaultListableBeanFactory 实例。它的 <code class="mono text-green text-xs">refresh()</code> 方法中第 11 步 <code class="mono text-green text-xs">finishBeanFactoryInitialization()</code> 会遍历所有 BeanDefinition，逐个调 <code class="mono text-green text-xs">getBean()</code> 来创建。BeanFactory 没有这个步骤——它是纯「按需供给」，你调 getBean 我才创建，不调就不创建。</p>
+      <p class="text-sm text-text mt-2">设计上的区别：ApplicationContext 选择"启动慢、运行快"，因为企业级应用启动后要应对高并发请求，必须确保所有 Bean 就绪。BeanFactory 选择"启动快、运行时懒"，适合对内存和启动速度敏感的场景。</p>
+    </div>
+    <div class="w-8 h-8 bg-green rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">你</div>
+  </div>
+  <div class="flex gap-3 mb-3 pl-11">
+    <div class="bubble-think rounded-xl px-4 py-2 max-w-[70%]">
+      <p>👁️ <strong>面试官内心：</strong>他能说出 refresh() 内部第 11 步，说明看过源码。接下来我要问边界了。</p>
+    </div>
+  </div>
+</div>
+
+<!-- Q3 -->
+<div class="mb-6 mt-8">
+  <div class="flex gap-3 mb-3">
+    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">官</div>
+    <div class="bubble-q rounded-2xl rounded-tl-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text"><strong class="text-accent">第三层 · 异常与边界：</strong>"如果有一个 Bean 在初始化时抛异常，ApplicationContext 启动会怎样？BeanFactory 呢？另外——你在恒生多数据源项目中，有没有遇到过 Bean 初始化顺序的问题？</p>
+    </div>
+  </div>
+  <div class="flex gap-3 mb-4 justify-end">
+    <div class="bubble-a rounded-2xl rounded-tr-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text">第一个问题：ApplicationContext 会直接启动失败——因为它在启动时执行了所有单例 Bean 的初始化，任何一个失败都会导致 <code class="mono text-green text-xs">refresh()</code> 抛出异常，整个容器不会启动。BeanFactory 则不会——你启动时不加载任何 Bean，只有等你真正调 <code class="mono text-green text-xs">getBean()</code> 发现这个 Bean 有问题时才报错。</p>
+      <p class="text-sm text-text mt-2">这就是为什么 Spring Boot 默认用 ApplicationContext——<strong>宁可启动时炸掉，也别上线了才发现某个 Bean 是坏的</strong>。这也叫「快速失败」原则。</p>
+      <p class="text-sm text-text mt-2">第二个问题——多数据源组件的场景下，确实有 Bean 初始化顺序问题。因为数据源切换的 AOP 切面需要保证在 DataSource Bean 创建<strong>之后</strong>、在 Service Bean 创建<strong>之前</strong>加载，否则切面拿到的是空的数据源。这个问题通过实现 <code class="mono text-green text-xs">PriorityOrdered</code> 接口来提升切面加载的优先级解决的。</p>
+    </div>
+    <div class="w-8 h-8 bg-green rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">你</div>
+  </div>
+  <div class="flex gap-3 mb-3 pl-11">
+    <div class="bubble-think rounded-xl px-4 py-2 max-w-[70%]">
+      <p>👁️ <strong>面试官内心：</strong>很好，他能把原理和他实际项目的坑联系起来。这是 5 年经验的差异化水平。</p>
+    </div>
+  </div>
+</div>
+
+<!-- Q4 -->
+<div class="mb-6 mt-8">
+  <div class="flex gap-3 mb-3">
+    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">官</div>
+    <div class="bubble-q rounded-2xl rounded-tl-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text"><strong class="text-accent">第四层 · 架构取舍与项目结合：</strong>"如果让你重新设计恒生的多数据源组件，你会把 ApplicationContext 用在哪些更巧妙的地方？如果同时有 500 个 DataSource Bean 注册到容器，ApplicationContext 会不会成为瓶颈？</p>
+    </div>
+  </div>
+  <div class="flex gap-3 mb-4 justify-end">
+    <div class="bubble-a rounded-2xl rounded-tr-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text">第一个问题：可以用 ApplicationContext 的<strong>事件机制</strong>做热加载——当运维在配置中心新增一个数据源配置，发布一个 <code class="mono text-green text-xs">DataSourceAddedEvent</code>，监听器动态向容器注册新的 DataSource Bean（通过 <code class="mono text-green text-xs">BeanDefinitionRegistry</code>）。现在你们用的可能是重启生效的方式，用事件机制可以在不重启的情况下动态加载新数据源。</p>
+      <p class="text-sm text-text mt-2">第二个问题：500 个 DataSource 确实有潜在的性能问题。因为 <code class="mono text-green text-xs">singletonObjects</code> 是 ConcurrentHashMap，查询是 O(1)，但启动时要创建 500 个连接池（每个 HikariCP 连接池有一定初始化成本），会拖慢启动。解决方案是把不常用的数据源标记为 @Lazy，或者用 FactoryBean 模式按需创建。</p>
+    </div>
+    <div class="w-8 h-8 bg-green rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">你</div>
+  </div>
+  <div class="flex gap-3 mb-3 pl-11">
+    <div class="bubble-think rounded-xl px-4 py-2 max-w-[70%]">
+      <p>👁️ <strong>面试官内心：</strong>他不仅理解了容器，还能对实际系统做架构层的推演。这是在考察「架构思维」而非「API 记忆」。</p>
+    </div>
+  </div>
+</div>
+
+<!-- Q5 - 附加送命题 -->
+<div class="mb-6 mt-8">
+  <div class="flex gap-3 mb-3">
+    <div class="w-8 h-8 bg-red rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">官</div>
+    <div class="bubble-q rounded-2xl rounded-tl-sm px-5 py-3 max-w-[85%] border-l-red" style="border-left: 3px solid #f87171;">
+      <p class="text-sm text-text"><strong class="text-red">附加送命题：</strong>"你说 BeanFactory 的 getBean 会触发创建——那如果在创建过程中，又触发了另一个 Bean 的 getBean，形成了 A→B→A 的循环，会发生什么？Spring 怎么处理？</p>
+    </div>
+  </div>
+  <div class="flex gap-3 mb-4 justify-end">
+    <div class="bubble-a rounded-2xl rounded-tr-sm px-5 py-3 max-w-[85%]">
+      <p class="text-sm text-text">这就是经典的<strong>循环依赖</strong>问题。Spring 用三级缓存来解决：</p>
+      <p class="text-sm text-text mt-2"><strong class="text-accent">一级缓存</strong>（singletonObjects）存成品；<strong class="text-accent">二级缓存</strong>（earlySingletonObjects）存半成品早期引用；<strong class="text-accent">三级缓存</strong>（singletonFactories）存 ObjectFactory 工厂。</p>
+      <p class="text-sm text-text mt-2">创建 A → 发现需要 B → 创建 B → 发现需要 A → 从三级缓存拿到 A 的早期引用 → B 注入 A → B 完成 → A 注入 B → A 完成。</p>
+      <p class="text-sm text-text mt-2">但<strong>构造器注入的循环依赖无法解决</strong>——因为对象还没创建出来（new 没返回），无法放入任何缓存。</p>
+    </div>
+    <div class="w-8 h-8 bg-green rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">你</div>
+  </div>
+  <div class="flex gap-3 pl-11">
+    <div class="bubble-think rounded-xl px-4 py-2 max-w-[70%]">
+      <p>👁️ <strong>面试官内心：</strong>这道题区分度极大。能说出三级缓存+构造器注入不行的，基本在原理层扎得够深了。过。</p>
+    </div>
+  </div>
+</div>
+
+</section>
+
+<!-- ===== 底部 ===== -->
+<footer class="border-t border-border mt-16">
+  <div class="max-w-4xl mx-auto px-6 py-8 text-center text-text3 text-sm">
+    <p class="mb-2">Spring 灵魂剖析系列 · 第 1 篇：IoC 容器（BeanFactory & ApplicationContext）</p>
+    <p>下一篇：依赖注入的三种方式与自动装配的暗坑</p>
+  </div>
+</footer>
+
+</body>
+</html>

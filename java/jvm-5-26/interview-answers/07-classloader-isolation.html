@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 7 问 · 双亲委派的破坏者：Tomcat / SPI / TCCL | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.02)); border-left: 3px solid #3b82f6; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="06-class-loading.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded">类加载 · 第 7 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="08-hot-deploy.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            双亲委派的<span class="text-blue-400">破坏者</span>：Tomcat / SPI / TCCL
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            双亲委派不是金科玉律。Tomcat 需要隔离不同 Web 应用的类，SPI 需要从子加载器反向查找实现类——两者都"破坏"了双亲委派。理解这些破坏不是为了炫技，而是为了理解类加载器设计的本质：解决"谁加载谁"的问题。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. loadClass 源码 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">1</span>
+            loadClass：双亲委派的代码实现
+        </h2>
+        <div class="code-dark rounded-lg p-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>// java.lang.ClassLoader.loadClass(String, boolean) — 核心逻辑
+protected Class&lt;?&gt; loadClass(String name, boolean resolve)
+        throws ClassNotFoundException {
+    synchronized (getClassLoadingLock(name)) {
+        // Step 1: 检查是否已经加载过
+        Class&lt;?&gt; c = findLoadedClass(name);
+        if (c == null) {
+            try {
+                // Step 2: ★ 先委托给父加载器（双亲委派的核心）
+                if (parent != null) {
+                    c = parent.loadClass(name, false);
+                } else {
+                    // 没有父加载器就用 Bootstrap ClassLoader
+                    c = findBootstrapClassOrNull(name);
+                }
+            } catch (ClassNotFoundException e) {
+                // 父加载器找不到，没关系，继续
+            }
+            if (c == null) {
+                // Step 3: 父加载器找不到，自己来加载
+                c = findClass(name);  // ★ 破坏双亲委派就是改写这里的逻辑
+            }
+        }
+        if (resolve) resolveClass(c);
+        return c;
+    }
+}</code></pre>
+        </div>
+    </section>
+
+    <!-- 2. 破坏方式 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">2</span>
+            两种破坏双亲委派的姿势
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-5">
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-amber-400 mb-3">姿势一：重写 loadClass</h3>
+                <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                    直接把 loadClass 的逻辑改了——"不向上委派，我自己先加载"。
+                </p>
+                <div class="code-dark rounded-lg p-3 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>@Override
+public Class&lt;?&gt; loadClass(String name) {
+    // 不管父加载器，自己先加载
+    Class&lt;?&gt; c = findLoadedClass(name);
+    if (c == null) {
+        try {
+            c = findClass(name); // 自己找
+        } catch (ClassNotFoundException e) {
+            c = super.loadClass(name); // 找不到再兜底
+        }
+    }
+    return c;
+}</code></pre>
+                </div>
+                <p class="text-xs text-slate-500">Tomcat 的 WebappClassLoader 就是这么干的。</p>
+            </div>
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-amber-400 mb-3">姿势二：线程上下文类加载器</h3>
+                <p class="text-xs text-slate-400 leading-relaxed mb-3">
+                    不修改 loadClass，而是通过 TCCL "绕过"父加载器。
+                </p>
+                <div class="code-dark rounded-lg p-3 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>// SPI 的 ServiceLoader 就是这么用的：
+ClassLoader cl = Thread.currentThread()
+    .getContextClassLoader();
+// 用 TCCL 加载实现类，而不是用
+// ServiceLoader 自身的类加载器（Bootstrap）</code></pre>
+                </div>
+                <p class="text-xs text-slate-500">SPI 和 JDBC 驱动的加载依赖这种方式。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. Tomcat WebappClassLoader -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">3</span>
+            Tomcat 的 WebappClassLoader：隔离与共享
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">Tomcat 的类加载器层次</h3>
+            <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                <pre class="text-xs text-slate-300 leading-relaxed"><code>               Bootstrap ClassLoader
+                        │
+               Platform ClassLoader (JDK 9+)
+                        │
+               Common ClassLoader    ← 加载 tomcat/lib/*.jar（共享库）
+                  ┌────────┴────────┐
+                  │                  │
+    WebappClassLoader-A    WebappClassLoader-B
+    (应用 A 的 /WEB-INF)    (应用 B 的 /WEB-INF)
+    
+    ★ 每个 Web 应用有自己独立的 WebappClassLoader
+    
+    加载顺序（WebappClassLoader 的 loadClass）：
+    1. 先检查自己缓存
+    2. 如果之前委托过 → 再试一次委托
+    3. 自己加载（/WEB-INF/classes → /WEB-INF/lib/*.jar）★ 优先自己！
+    4. 如果没找到 → 委托给父加载器（Common → Platform → Bootstrap）
+    
+    ★ 这与标准双亲委派相反！先自己加载，找不到才委托。</code></pre>
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-5">
+            <div class="p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                <h4 class="text-sm font-semibold text-blue-400 mb-2">↔ 隔离原理</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    应用 A 的 <code class="text-blue-400 bg-slate-800 px-1 rounded">com.example.User</code> 由 WebappClassLoader-A 加载，
+                    应用 B 的同名类由 WebappClassLoader-B 加载。
+                    JVM 认为<strong>不同类加载器加载的同名类是不同类</strong>——天然的隔离。
+                </p>
+            </div>
+            <div class="p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                <h4 class="text-sm font-semibold text-blue-400 mb-2">↕ 共享原理</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    当 WebappClassLoader 找不到某个类时，会向上委托给 Common ClassLoader。
+                    Common 里的类（如 servlet-api.jar）对所有 Web 应用可见且由同一个加载器加载——保证了<strong>类型一致</strong>。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. SPI 与 TCCL -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">4</span>
+            SPI 为什么必须用 TCCL？
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">SPI 的困境</h3>
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                以 JDBC 为例：<code class="text-blue-400 bg-slate-800 px-1 rounded">java.sql.DriverManager</code> 是核心类，由<strong>Bootstrap ClassLoader</strong> 加载。
+                但具体的驱动实现（如 <code class="text-blue-400 bg-slate-800 px-1 rounded">com.mysql.cj.jdbc.Driver</code>）是在应用的 classpath 中，由<strong>App ClassLoader</strong> 加载。
+            </p>
+
+            <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                <pre class="text-xs text-slate-300 leading-relaxed"><code>SPI 加载链路图：
+
+Bootstrap ClassLoader 加载：
+  java.sql.DriverManager  ← 核心接口
+  java.util.ServiceLoader ← SPI 加载器（也在 rt.jar 中！）
+
+App ClassLoader 加载：
+  com.mysql.cj.jdbc.Driver  ← 实现类
+
+问题：
+  ServiceLoader 由 Bootstrap 加载，它"看"不到 App ClassLoader 的类！
+  按照双亲委派：Bootstrap → Platform → App → 自定义
+  只能从上往下找，不能从下往上。
+  
+  ServiceLoader 需要"向下"找到实现类 → 但双亲委派只允许"向上"委托 → 矛盾！
+
+解决方案：线程上下文类加载器（TCCL）
+  Thread.currentThread().getContextClassLoader()
+  → 返回的是 App ClassLoader（在 main 线程中默认设置）
+  → ServiceLoader 通过 TCCL 可以"向下"加载到 App ClassLoader 中的实现类</code></pre>
+            </div>
+
+            <div class="highlight-box p-4 rounded-lg">
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    <strong>💡 TCCL 的本质：</strong>它是一个"反向通道"。双亲委派的模型是自顶向下（Bootstrap → App → Custom），
+                    而 TCCL 允许被 Bootstrap 加载的类（如 ServiceLoader）反过来访问应用层的类加载器。
+                    这是对双亲委派模型的"破坏"，但也是 SPI 这种设计模式的必然要求。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试要点
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 核心概念</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> loadClass 的三步：查缓存 → 委派父加载器 → findClass</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> Tomcat 先自己加载，找不到才委派</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> WebappClassLoader 隔离同名类的原理</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> SPI 接口在 Bootstrap，实现在 App → 需要 TCCL 反向加载</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> ServiceLoader 内部使用 TCCL 查找 META-INF/services</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="06-class-loading.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="08-hot-deploy.html" class="px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm hover:bg-blue-500/20 transition-colors flex items-center gap-2">下一问：热部署机制 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>

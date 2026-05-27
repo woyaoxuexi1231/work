@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 1 问 · GC 算法与分代收集的深层原理 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace; }
+        .prose h3 { color: #e2e8f0; }
+        .prose p { line-height: 1.8; }
+        .highlight-box { background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.02)); border-left: 3px solid #22c55e; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+        table { border-collapse: collapse; }
+        th, td { border: 1px solid #334155; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<!-- 导航栏 -->
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="index.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">
+            <span>←</span> 返回索引
+        </a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">GC · 第 1 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="02-zgc-shenandoah.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">
+            下一问 <span>→</span>
+        </a>
+    </div>
+</nav>
+
+<!-- 文章头部 -->
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="px-3 py-1 text-xs font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">GC 回收机制</span>
+            <span class="text-xs text-slate-500">第一问</span>
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            GC 算法与分代收集的<span class="text-emerald-400">深层原理</span>
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            标记-清除、标记-整理、复制算法不只是教科书上的几句描述。它们的本质差异根植于硬件特性——CPU 缓存行、TLB 命中率、内存分配器的 bump-the-pointer 优化。分代收集不是简单的"对象寿命不同"，而是一套完整的概率模型。
+        </p>
+        <div class="flex flex-wrap gap-2 mt-6">
+            <span class="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded">📐 标记-清除</span>
+            <span class="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded">📐 标记-整理</span>
+            <span class="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded">📐 复制算法</span>
+            <span class="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded">🧬 分代假设</span>
+            <span class="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded">⚡ bump-the-pointer</span>
+            <span class="px-2 py-1 text-xs bg-slate-800 text-slate-400 rounded">🔗 跨代引用</span>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- ===== 第一部分：三大算法深度对比 ===== -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">1</span>
+            三大 GC 算法的本质差异
+        </h2>
+
+        <!-- 总览表格 -->
+        <div class="overflow-x-auto mb-6">
+            <table class="w-full text-sm text-left">
+                <thead>
+                    <tr class="bg-slate-800">
+                        <th class="px-4 py-3 text-slate-300 font-medium">维度</th>
+                        <th class="px-4 py-3 text-slate-300 font-medium">标记-清除</th>
+                        <th class="px-4 py-3 text-slate-300 font-medium">标记-整理</th>
+                        <th class="px-4 py-3 text-slate-300 font-medium">复制</th>
+                    </tr>
+                </thead>
+                <tbody class="text-slate-400">
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-mono text-slate-300">核心操作</td>
+                        <td class="px-4 py-3">标记存活对象 → 清除未标记</td>
+                        <td class="px-4 py-3">标记存活 → 向一端滑动 → 更新引用</td>
+                        <td class="px-4 py-3">标记存活 → 拷贝到新空间 → 整体回收旧空间</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-mono text-slate-300">碎片问题</td>
+                        <td class="px-4 py-3"><span class="text-red-400 font-semibold">严重</span> — 不连续空闲链表</td>
+                        <td class="px-4 py-3"><span class="text-emerald-400 font-semibold">无</span> — 对象紧密排列</td>
+                        <td class="px-4 py-3"><span class="text-emerald-400 font-semibold">无</span> — 新空间连续</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-mono text-slate-300">空间开销</td>
+                        <td class="px-4 py-3">低 — 仅标记位</td>
+                        <td class="px-4 py-3">低 — 仅标记位 + 滑动成本</td>
+                        <td class="px-4 py-3"><span class="text-red-400 font-semibold">高</span> — 需要 2× 空间</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-mono text-slate-300">移动对象？</td>
+                        <td class="px-4 py-3">否</td>
+                        <td class="px-4 py-3">是 — 大量移动</td>
+                        <td class="px-4 py-3">是 — 全部存活对象移动</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="px-4 py-3 font-mono text-slate-300">适用场景</td>
+                        <td class="px-4 py-3">存活率极高的老年代</td>
+                        <td class="px-4 py-3">存活率较高的老年代</td>
+                        <td class="px-4 py-3">存活率极低的新生代</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 标记-清除深度 -->
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-6">
+            <h3 class="text-lg font-semibold text-white mb-3">标记-清除：为什么"简单"也有价值</h3>
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                标记-清除是 GC 算法的鼻祖。它的核心思路：从 GC Roots 出发，递归遍历引用图，标记所有可达对象；然后线性遍历堆，回收未标记的块。
+                <strong class="text-amber-400">碎片是它最大的代价</strong>，但<strong class="text-emerald-400">它有一个被严重低估的优势：不移动对象</strong>。
+            </p>
+            <div class="highlight-box p-4 rounded-lg mb-3">
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    <strong>💡 资深视角：</strong>对象不移动意味着 <code class="text-emerald-400 bg-slate-800 px-1 rounded">指针地址不变</code>。在 CMS 并发标记阶段，如果同时移动对象，所有正在运行的 mutator 线程持有的指针都会变成悬垂指针。
+                    这就是为什么 CMS 在并发清除时选择"标记-清除"——它的老年代回收与业务线程并发执行，不能动对象地址。
+                    当然，这也带来了碎片化，所以 CMS 在碎片严重时不得不回退到 Serial Old 做一次标记-整理。
+                </p>
+            </div>
+        </div>
+
+        <!-- 复制算法深度 -->
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-6">
+            <h3 class="text-lg font-semibold text-white mb-3">复制算法：快的秘密不只是"复制"</h3>
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                复制算法的核心优势常被简单归因于"只需要扫描存活对象"。但这只说对了一半。
+                <strong class="text-emerald-400">真正的杀手锏是分配器的极致优化：bump-the-pointer</strong>。
+            </p>
+            <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                <pre class="text-xs text-slate-300"><code>// Bump-the-pointer 分配：只需一条指令
+// 空闲指针 free_ptr，每次分配只需：
+//   1. 读取 free_ptr 当前值
+//   2. 比较 free_ptr + size <= end_of_space
+//   3. CAS free_ptr = free_ptr + size
+// 对比标记-清除的 free-list 分配：
+//   遍历空闲链表 → 找到合适大小的块 → 分裂 → 更新链表
+//   这涉及多次内存访问和指针操作
+
+// 复制算法 + TLAB (Thread Local Allocation Buffer)
+// 每个线程在 Eden 区预先分配一块私有的 TLAB
+// 分配时只需 bump 线程本地指针——无锁竞争
+// 这才是新生代分配效率远超老年代的根本原因</code></pre>
+            </div>
+            <div class="warn-box p-4 rounded-lg mb-3">
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    <strong>⚠️ CPU 缓存友好性：</strong>复制算法将存活对象紧凑地排列在新空间（Survivor），这意味着<strong>相关的对象在物理内存上也是相邻的</strong>。
+                    后续访问这些对象时，它们很可能在同一缓存行（cache line，通常 64 字节）中，极大提升 L1/L2 缓存命中率。
+                    标记-清除的碎片化会导致对象散落在堆各处，CPU 预取几乎失效。
+                </p>
+            </div>
+        </div>
+
+        <!-- 标记-整理深度 -->
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-6">
+            <h3 class="text-lg font-semibold text-white mb-3">标记-整理：昂贵但必要的"搬家"</h3>
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                标记-整理解决了碎片的根本问题。它把存活对象全部向内存一端"滑动"，然后回收边界之外的所有空间。
+                代价是<strong class="text-amber-400">所有存活对象的引用都要更新</strong>——每个被移动的对象，所有指向它的指针都需要重写。
+            </p>
+            <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                在老年代，存活率高（通常 90%+），标记-清除几乎没什么可回收，碎片累积慢。但当碎片确实严重时（CMS 的 concurrent mode failure），需要进行一次 stop-the-world 的标记-整理——这就是 Serial Old 做的事。
+            </p>
+            <div class="highlight-box p-4 rounded-lg">
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    <strong>💡 引用的更新成本：</strong>现代 JVM 不会真的逐个更新引用。Parallel Old 使用"分区并行整理"——将堆分成多个 region，每个线程负责一个 region 的存活对象滑动，然后用一个全局的 offset 表（forwarding pointer table）来统一调整引用。
+                    G1 则进一步把堆分成了更小的 region，混合回收时只整理"垃圾最多"的几个 region——这就是"Garbage-First"名字的来源。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== 第二部分：分代收集的深层原理 ===== -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm">2</span>
+            分代收集：不只是"对象存活率不同"
+        </h2>
+
+        <p class="text-sm text-slate-400 leading-relaxed mb-5">
+            分代假设有两个子假设：
+            <strong class="text-emerald-400">弱分代假设</strong>（Weak Generational Hypothesis）：绝大多数对象都是朝生夕死的；
+            <strong class="text-emerald-400">强分代假设</strong>（Strong Generational Hypothesis）：熬过越多次 GC 的对象越不容易死亡。
+            这两个假设已经在大量生产系统中被验证——通常 <span class="text-amber-400">98% 的对象在第一次 Young GC 时就死了</span>。
+        </p>
+
+        <!-- 为什么新生代用复制 -->
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">新生代用复制算法：四个维度的完整解释</h3>
+
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">① 内存分配效率（最关键）</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        新生代分配频率极高——每秒 2000 个支付请求，每个产生 8KB 临时对象，每秒就要分配 ~16MB。
+                        复制算法 + bump-the-pointer 让分配降到 O(1) 的指针加法。如果用空闲链表分配（标记-清除的分配器），分配一次就要扫描链表——在高频分配下性能差距是数量级的。
+                    </p>
+                </div>
+
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">② 空间碎片（直接原因）</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        新生代对象大量死亡——98% 都活不过一次 GC。如果使用标记-清除，回收后的空间是大量不连续的小洞，后续分配要么找不到合适大小的连续块，要么碎片越来越严重。
+                        复制算法把 2% 的幸存者紧凑复制到 Survivor，整个 Eden 一次性清空，始终保持 Eden 是一个完美的连续空间。
+                    </p>
+                </div>
+
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">③ CPU 缓存友好性</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        复制到 Survivor 的对象是<strong>按遍历顺序排列</strong>的——这意味它们大概率按访问热度聚集在一起。
+                        再加上 Survivor 区本身很小（通常 Eden 的 1/8），整个 Survivor 有可能被 L3 缓存容纳一部分。后续从老年代引用新生代对象时（跨代引用），这些对象在缓存中的命中率更高。
+                    </p>
+                </div>
+
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-emerald-400 mb-1">④ 跨代引用处理</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        跨代引用（老年代对象引用新生代对象）是分代 GC 的"阿克琉斯之踵"——如果每次 Young GC 都要扫描整个老年代来找跨代引用，分代就失去了意义。
+                        JVM 使用<strong>卡表（Card Table）</strong>来解决：把老年代分成 512 字节的"卡片"，当老年代对象被修改（引用字段赋值），对应的卡片变"脏"。
+                        Young GC 时只需扫描脏卡片指向的老年代对象，而不是整个老年代。
+                        因为新生代用复制算法，对象会频繁移动地址，卡表也必须频繁更新——但如果新生代对象本身就少（仅 2% 的幸存者跨过 Survivor），卡表的维护开销是可控的。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 为什么老年代用标记-整理/清除 -->
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">老年代用标记-整理或标记-清除：取舍逻辑</h3>
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-amber-400 mb-1">老年代存活率极高（通常 > 90%）</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        如果老年代用复制算法，需要把 90% 的存活对象全部复制一遍——而回收的只有不到 10%。这个复制成本太高了。
+                        标记-整理虽然也要移动对象（更新引用），但老年代 GC 频率低得多（可能几小时甚至几天一次），摊销下来是可以接受的。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-amber-400 mb-1">CMS：先用标记-清除，碎片严重才整理</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        CMS 追求低停顿，并发清除阶段不能移动对象（否则并发访问的 mutator 指针悬垂）。
+                        所以 CMS 默认用标记-清除，但预留了碎片整理的退路：<code class="text-emerald-400 bg-slate-800 px-1 rounded">-XX:+UseCMSCompactAtFullCollection</code>。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-amber-400 mb-1">Parallel Old：标记-整理最大化吞吐</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        如果追求吞吐量（批处理场景），Parallel Old 直接做标记-整理——虽然单次停顿长，但回收后内存完全规整，后续分配效率最高，长期吞吐量最大。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分代之间的协作图 -->
+        <div class="p-5 bg-slate-900 border border-slate-700 rounded-xl">
+            <h3 class="text-lg font-semibold text-white mb-4">分代协作全流程图</h3>
+            <div class="code-dark rounded-lg p-5 overflow-x-auto">
+                <pre class="text-xs text-slate-300 leading-relaxed"><code>                        ┌──────────────────────────────────────────┐
+                        │                堆内存 (Heap)                 │
+                        │  ┌──────────────┐  ┌────────────────────┐  │
+                        │  │   新生代      │  │     老年代 (Old)    │  │
+                        │  │  ┌──────────┐ │  │                    │  │
+                        │  │  │  Eden    │ │  │  标记-整理/清除     │  │
+    new Object() ──────►│  │  │ (80%)    │ │  │  存活率 > 90%      │  │
+                        │  │  │ bump-ptr │ │  │                    │  │
+                        │  │  └────┬─────┘ │  └────────▲───────────┘  │
+                        │  │       │ Young │           │ 晋升         │
+                        │  │       │  GC   │           │ (≥15次或    │
+                        │  │  ┌────▼─────┐ │           │  Survivor   │
+                        │  │  │ Survivor │ │           │  满)        │
+                        │  │  │  S0 ⇄ S1 │─┼───────────┘            │
+                        │  │  │ (各10%)  │ │                        │
+                        │  │  └──────────┘ │                        │
+                        │  └──────────────┘  │                        │
+                        └──────────────────────────────────────────┘
+
+    GC Roots → 卡表(dirty cards) → 扫描老年代→新生代的跨代引用
+    记忆集(Remembered Set) → 记录哪些老年代对象引用了新生代对象</code></pre>
+            </div>
+            <p class="text-xs text-slate-500 mt-3">
+                Young GC 的触发条件：Eden 区满时触发。存活对象从 Eden + 一个 Survivor 复制到另一个 Survivor。
+                每复制一次，对象头中的 GC 年龄 +1。年龄达到 MaxTenuringThreshold（默认 15）或 Survivor 空间不足时直接晋升老年代。
+            </p>
+        </div>
+    </section>
+
+    <!-- ===== 第三部分：面试要点总结 ===== -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试回答框架
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 必须说到的关键词</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> bump-the-pointer 和 TLAB 的分配效率</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> CPU 缓存行、TLB 命中率</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> 卡表（Card Table）和跨代引用处理</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> 弱分代假设和强分代假设</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> forwarding pointer / 引用更新的成本</li>
+                    <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span> Young GC 98% 对象死亡的统计数据</li>
+                </ul>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">❌ 肤浅回答要避免</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 只说"因为对象存活率不同"</li>
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 说不出 Eden : Survivor 的比例（8:1:1）</li>
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 不知道 TLAB 是什么</li>
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 混淆复制算法和标记-整理的适用场景</li>
+                    <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">✗</span> 说不出跨代引用如何解决（卡表/记忆集）</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- 底部导航 -->
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="index.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2">
+            <span>←</span> 返回索引
+        </a>
+        <a href="02-zgc-shenandoah.html" class="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors flex items-center gap-2">
+            下一问：ZGC/Shenandoah <span>→</span>
+        </a>
+    </div>
+</footer>
+
+</body>
+</html>

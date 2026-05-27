@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第 6 问 · 类加载的三阶段与 clinit 细节 | JVM 深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{jvm:{50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d'}}}}}</script>
+    <style>
+        pre code { font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace; }
+        .highlight-box { background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.02)); border-left: 3px solid #3b82f6; }
+        .warn-box { background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02)); border-left: 3px solid #eab308; }
+        .code-dark { background: #0f172a; border: 1px solid #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans antialiased">
+
+<nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <a href="05-memory-leak.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <div class="flex items-center gap-3">
+            <span class="px-2 py-1 text-xs font-mono bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded">类加载 · 第 6 问</span>
+            <span class="hidden sm:block text-xs text-slate-500">/ 11</span>
+        </div>
+        <a href="07-classloader-isolation.html" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">下一问 <span>→</span></a>
+    </div>
+</nav>
+
+<header class="border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-6 py-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            类加载三阶段与 <span class="text-blue-400">&lt;clinit&gt;</span> 细节
+        </h1>
+        <p class="text-lg text-slate-400 max-w-3xl leading-relaxed">
+            加载 → 链接（验证 → 准备 → 解析）→ 初始化。准备阶段对 static final 的处理经常被误解。&lt;clinit&gt; 的多线程安全不是靠 synchronized——而是 JVM 内部的一把锁，clinit 死锁是真实存在的线上事故。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+    <!-- 1. 三阶段全景 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">1</span>
+            类加载的三个阶段全景图
+        </h2>
+        <div class="code-dark rounded-lg p-5 overflow-x-auto">
+            <pre class="text-xs text-slate-300 leading-relaxed"><code>┌──────────────────────────────────────────────────────────────┐
+│                    类加载生命周期                              │
+├─────────┬─────────┬───────────────────────┬──────────────────┤
+│ 加载    │ 链接 (Linking)                   │ 初始化            │
+│ Loading │ 验证 → 准备 → 解析               │ Initialization   │
+├─────────┼─────────┼───────────┼───────────┼──────────────────┤
+│ 从字节流│ 格式检查 │为静态变量  │符号引用   │ 执行 &lt;clinit&gt;   │
+│ 生成    │ 语义检查 │分配内存并 │转换为     │ 静态变量赋初值   │
+│ Class   │ 字节码   │赋零值     │直接引用   │ 静态代码块执行   │
+│ 对象    │ 验证    │★重点     │(可延迟)  │                  │
+└─────────┴─────────┴───────────┴───────────┴──────────────────┘</code></pre>
+        </div>
+    </section>
+
+    <!-- 2. 准备阶段的坑 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">2</span>
+            准备阶段：static 变量的零值陷阱
+        </h2>
+
+        <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl mb-5">
+            <h3 class="text-lg font-semibold text-white mb-3">static int vs static final int</h3>
+            <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                <pre class="text-xs text-slate-300"><code>public class InitDemo {
+    static int a = 10;            // 场景 1
+    static final int B = 10;      // 场景 2
+    static final Object C = new Object(); // 场景 3
+}
+
+// 准备阶段的值：
+// a = 0        ← 只分配内存并赋零值，10 在初始化阶段才赋值
+// B = 10       ← 关键区别！static final 且是编译时常量
+//                 在准备阶段就已确定了值！
+// C = null     ← static final 引用类型，即便是 final
+//                 准备阶段也是 null，初始化阶段才 new</code></pre>
+            </div>
+
+            <div class="space-y-3">
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-blue-400 mb-1">为什么 B = 10 在准备阶段就是 10？</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        因为 <code class="text-blue-400 bg-slate-800 px-1 rounded">static final int B = 10</code> 是<strong>编译时常量（Compile-Time Constant）</strong>。
+                        javac 在编译时就将 B 的值写入常量池的 ConstantValue 属性。JVM 在准备阶段根据 ConstantValue 直接赋值，无需等到初始化。
+                        这也是为什么 switch-case 中可以使用 static final int 的原因——编译时就能确定。
+                    </p>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-lg">
+                    <h4 class="text-sm font-semibold text-blue-400 mb-1">为什么 C = null（场景 3）即使是 final 也不行？</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        <code class="text-blue-400 bg-slate-800 px-1 rounded">new Object()</code> 不是编译时常量——对象的创建必须在<strong>运行时</strong>发生在堆上。
+                        javac 无法在编译时确定其值，因此在准备阶段 C 只能是 null。
+                        <strong>只有基本类型和 String 的字面量常量才可以在准备阶段确定值</strong>。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. clinit 方法 -->
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm">3</span>
+            &lt;clinit&gt; 方法的生成与多线程安全
+        </h2>
+
+        <div class="space-y-4">
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-white mb-3">&lt;clinit&gt; 是怎么生成的？</h3>
+                <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>// 源代码：
+public class Example {
+    static int x = 1;
+    static {
+        x = 2;
+        System.out.println("static block");
+    }
+}
+
+// javac 编译后生成的 &lt;clinit&gt; 方法（字节码伪代码）：
+static {};  // 方法名就是 &lt;clinit&gt;
+  descriptor: ()V
+  flags: ACC_STATIC
+  Code:
+    0: iconst_1
+    1: putstatic  #2  // x = 1  (静态变量赋值)
+    4: iconst_2
+    5: putstatic  #2  // x = 2  (静态代码块)
+    8: getstatic  #3
+   11: ldc        #4  // "static block"
+   13: invokevirtual #5  // println
+   16: return
+
+// 关键：&lt;clinit&gt; 包含所有静态变量赋值和静态代码块，
+// 按源代码中的顺序合并成一个方法。</code></pre>
+                </div>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    <strong>如果没有静态变量赋值也没有静态代码块</strong>，javac 不会生成 &lt;clinit&gt; 方法——类加载更快。
+                </p>
+            </div>
+
+            <div class="p-5 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-lg font-semibold text-white mb-3">&lt;clinit&gt; 的多线程安全：不是 synchronized</h3>
+                <p class="text-sm text-slate-400 leading-relaxed mb-3">
+                    JVM 保证一个类的 &lt;clinit&gt; 在多线程环境下<strong>只被执行一次</strong>。
+                    但不是通过简单的 synchronized——而是 JVM 内部在类加载时对 Class 对象加了一把<strong>初始化锁（Init Lock）</strong>。
+                </p>
+                <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>多线程同时触发类初始化的流程：
+
+Thread-1                    Thread-2
+  │                           │
+  │ 尝试获取 Init Lock        │
+  ├─ 获得锁 ✓                 │
+  │                           │ 尝试获取 Init Lock
+  │                           ├─ 锁被 T1 持有 → 等待
+  │ 执行 &lt;clinit&gt; 方法        │
+  │ （可能耗时很长）           │ 阻塞中...
+  │                           │
+  │ &lt;clinit&gt; 执行完毕         │
+  │ 释放 Init Lock            │
+  │ 设置 class.state =        │
+  │   fully_initialized       │
+  │                           ├─ 获得锁 ✓
+  │                           │ 检查 class.state = fully_initialized
+  │                           │ 直接跳过 &lt;clinit&gt;，返回！
+  │                           │
+  ▼                           ▼</code></pre>
+                </div>
+            </div>
+
+            <div class="p-5 bg-slate-900 border border-red-500/30 rounded-xl">
+                <h3 class="text-lg font-semibold text-red-400 mb-3">⚠️ &lt;clinit&gt; 死锁——真实线上事故</h3>
+                <div class="code-dark rounded-lg p-4 mb-3 overflow-x-auto">
+                    <pre class="text-xs text-slate-300"><code>// 类 A 的 &lt;clinit&gt; 中引用了类 B
+class A {
+    static { B.getValue(); }  // 触发 B 的初始化
+}
+// 类 B 的 &lt;clinit&gt; 中引用了类 A
+class B {
+    static { A.getValue(); }  // 触发 A 的初始化
+}
+
+// Thread-1 初始化 A，持有 A 的 Init Lock，等待 B
+// Thread-2 初始化 B，持有 B 的 Init Lock，等待 A
+// → 死锁！两个线程永远阻塞在 Init Lock 上
+
+// 排查方法：
+// jstack 中看到线程阻塞在 Class.forName 或直接引用类时
+// thread dump 显示 "waiting to lock &lt;0x...&gt; (a java.lang.Class)"</code></pre>
+                </div>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    <strong>避免方案：</strong>静态初始化块中尽量避免触发其他类的初始化，或者将相互依赖的初始化逻辑移到静态方法中延迟调用。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm">⭐</span>
+            面试要点
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">✅ 必须掌握的细节</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> static final 基本类型常量在准备阶段就有值</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> static final 引用类型准备阶段仍是 null</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> &lt;clinit&gt; 由 javac 自动生成，包含所有静态赋值和静态块</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> JVM 通过 Init Lock 保证 clinit 单次执行</li>
+                    <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span> clinit 中的循环依赖会导致死锁</li>
+                </ul>
+            </div>
+            <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 class="text-sm font-semibold text-white mb-2">🔬 验证命令</h3>
+                <ul class="space-y-2 text-xs text-slate-400">
+                    <li class="font-mono text-blue-400">javap -v -p ClassName</li>
+                    <li class="text-slate-500">查看字节码中的 &lt;clinit&gt; 和 ConstantValue 属性</li>
+                    <li class="font-mono text-blue-400">-XX:+TraceClassLoading</li>
+                    <li class="text-slate-500">追踪类加载过程</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+    <div class="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
+        <a href="05-memory-leak.html" class="text-slate-500 hover:text-white transition-colors text-sm flex items-center gap-2"><span>←</span> 上一问</a>
+        <a href="07-classloader-isolation.html" class="px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm hover:bg-blue-500/20 transition-colors flex items-center gap-2">下一问：双亲委派与隔离 <span>→</span></a>
+    </div>
+</footer>
+
+</body>
+</html>
