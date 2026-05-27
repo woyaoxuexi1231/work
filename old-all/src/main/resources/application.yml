@@ -191,9 +191,10 @@ management:
 
 logging:
   level:
-    org.hulei: debug  # 设置项目包的日志级别为 DEBUG
-    org.springframework.security: debug  # Spring Security 日志
-    org.apache.rocketmq: info            # RocketMQ 日志级别
+#    org.hulei: debug  # 设置项目包的日志级别为 DEBUG
+#    org.springframework.security: debug  # Spring Security 日志
+#    org.apache.rocketmq: info            # RocketMQ 日志级别
+    root: debug
 
 # ========== ID 生成器配置 ==========
 curator:

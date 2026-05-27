@@ -9,7 +9,7 @@
 | **策略模式** (Strategy) | 多支付渠道的统一路由与扩展 | 支付请求：支付宝 / 微信 / 银联 |
 | **责任链模式** (Chain of Responsibility) | 回调通知的有序处理与灵活编排 | 支付回调：验签 → 幂等 → 金额 → 状态 → 风控 → 通知 → 日志 |
 
-技术栈：Spring Boot 3.2 + Java 17 + Maven
+技术栈：Spring Boot 3.2 + Java 8 + Maven
 
 ---
 

@@ -89,7 +89,7 @@ public class OrderProcessingListener {
     @KafkaListener(topics = "order-processing")
     public void receive(ConsumerRecord<String, Order> record, Acknowledgment acknowledgment) {
         log.info("key: {}, offset: {}, partition: {}",
-                record.key(),
+                record.getKey(),
                 record.offset(),
                 record.partition()
         );
@@ -126,7 +126,7 @@ public class OrderProcessingListener {
     @KafkaListener(topics = "order-processing-dlq")
     public void receive2(ConsumerRecord<String, Order> record, Acknowledgment acknowledgment) {
         log.info("key: {}, offset: {}, partition: {}",
-                record.key(),
+                record.getKey(),
                 record.offset(),
                 record.partition()
         );

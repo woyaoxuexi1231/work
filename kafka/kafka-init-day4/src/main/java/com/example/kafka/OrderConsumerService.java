@@ -26,7 +26,7 @@ public class OrderConsumerService {
     public void consumeOrder(ConsumerRecord<String, Order> record, Acknowledgment ack) {
         log.info("接收到消息: topic={}, partition={}, offset={}, key={}, value={}",
                 record.topic(), record.partition(), record.offset(),
-                record.key(), record.value());
+                record.getKey(), record.value());
 
         // 模拟业务处理（可能失败）
         processOrder(record.value());

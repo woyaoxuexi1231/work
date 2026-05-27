@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据校验 Validator — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">✅ 数据校验：Validator & Bean Validation</h1>
+<p class="text-[#a6adc8] mt-2">Spring Validator 接口与 JSR-303 Bean Validation 的协作 — 不为校验，而为"在哪一层校验"的设计争论</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">Spring Validator vs Bean Validation (JSR-303)</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">对比</th><th class="text-left py-3 px-3 text-[#89b4fa]">Spring Validator</th><th class="text-left py-3 px-3 text-[#a6e3a1]">Bean Validation (JSR-303)</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">接口</td><td class="py-2 px-3"><code>org.springframework.validation.Validator</code></td><td class="py-2 px-3"><code>javax.validation.Validator</code></td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">校验逻辑</td><td class="py-2 px-3">Java 代码（编写 validate()）</td><td class="py-2 px-3">注解声明（@NotNull/@Size 等）</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">分组校验</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">✅ @Validated(Group.class)</td></tr>
+<tr><td class="py-2 px-3">现状</td><td class="py-2 px-3">遗留项目、兼容</td><td class="py-2 px-3">⭐ 主流方案</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// Bean Validation — 注解声明式校验
+public class UserDTO {
+    @NotBlank(message = "姓名不能为空")
+    private String name;
+
+    @Email @NotBlank
+    private String email;
+
+    @Min(0) @Max(150)
+    private int age;
+
+    @NotNull(groups = Update.class)  // 只在更新场景校验
+    private Long id;
+}
+
+// Controller — @Valid 触发校验
+@PostMapping("/users")
+public Result create(@Valid @RequestBody UserDTO dto) { ... }
+
+// Spring Validator — 编程式校验（旧风格，很少用）
+public class UserValidator implements Validator {
+    @Override public boolean supports(Class clazz) { return UserDTO.class.equals(clazz); }
+    @Override public void validate(Object target, Errors errors) {
+        UserDTO u = (UserDTO) target;
+        if (u.getName() == null || u.getName().isEmpty())
+            errors.rejectValue("name", "NotEmpty");
+    }
+}</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 假如校验逻辑散落在 Controller、Service、DAO 层？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">真实噩梦：</strong>Controller 里判断 name 是否为空，Service 里判断 age 是否 >0，DAO 里判断 email 格式。<strong class="text-white">同一份数据有三层校验，校验规则改一处其他层不同步。</strong></p>
+<p>Spring 的解法：<strong class="text-white">把校验规则放到 DTO 上</strong>（注解），然后通过 AOP 在 Controller 层统一触发 @Valid。校验逻辑不散落、不改业务代码、一段 DTO 定义所有规则。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：LocalValidatorFactoryBean — Spring 与 Bean Validation 的桥梁</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>Spring 的 Validator 接口和 JSR-303 的 Validator 不是一回事。Spring 用 <strong class="text-white">LocalValidatorFactoryBean</strong>（实现 Spring 的 Validator）来适配 Hibernate Validator（JSR-303 的实现）。</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// Spring Boot 自动配置了这个 Bean
+// 所以 @Valid 触发的其实是：
+// RequestResponseBodyMethodProcessor → DataBinder →
+//   → SpringValidatorAdapter（包装了 Hibernate Validator）
+//     → 遍历 @NotNull/@Size/@Email 注解执行校验
+//       → 结果写入 BindingResult</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>Spring 没有重新发明校验——它引入了一个适配层，让 Bean Validation 成为 Spring 的"默认校验引擎"。你声明的是 JSR-303 注解，但 Spring 在 Bean 生命周期中统一触发。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 @Valid 和 @Validated 的本质区别</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>@Valid 来自 JSR-303，只触发基本校验。@Validated 是 Spring 的包装，额外支持<strong class="text-white">分组校验</strong>和<strong class="text-white">方法级校验</strong>（标注在类上）。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：@Valid 只触发一层校验</p><p>嵌套对象的校验需要 @Valid 层层标注。DTO 里有 List&lt;Item&gt; → Item 里也需要 @Valid。</p></div>
+<div><p class="text-white font-bold">陷阱2：校验失败的 Exception 类型不同</p><p>@RequestBody → MethodArgumentNotValidException。@RequestParam → ConstraintViolationException（需要 @Validated 在类上）。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Valid 和 @Validated 有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Valid 是 JSR-303 标准注解，触发基本校验。@Validated 是 Spring 的扩展，支持分组校验和类级别的方法参数校验。@Valid 用于 @RequestBody 参数，@Validated 用于 @RequestParam/@PathVariable（需标注在类上）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@RequestBody 校验失败和 @RequestParam 校验失败抛的异常一样吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不一样。@RequestBody @Valid → MethodArgumentNotValidException（400）。@RequestParam @Validated（类上） → ConstraintViolationException（500！）。这就是为什么很多人发现 @RequestParam 校验失败返回 500 而不是 400——需要在 @ControllerAdvice 中单独处理 ConstraintViolationException。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">分组校验怎么用？什么场景需要分组？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">同一个 DTO，创建时不需要 ID（@NotNull(groups=Update.class)），更新时需要 ID。@Validated(Update.class) 指定校验分组。分组本质是多套校验规则共享一个 DTO——避免了为每个场景建一个 DTO。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：DTO 中有一个字段只在"审批通过"场景需要校验，其他场景不需要。怎么做？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">定义 Approval.class 分组，该字段注解 @NotBlank(groups = Approval.class)。Controller 方法用 @Validated(Approval.class) 触发。如果业务逻辑太复杂（比如需要动态判断），分组不够用 → 用自定义 Validator 或 @AssertTrue 写 SpEL 表达式。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上发现有些恶意请求绕过了 Controller 层校验（比如通过内部调用），Service 层没做校验导致脏数据入库。怎么设计多层校验？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Controller 做格式校验（@Valid → 字段不为空、格式正确），Service 做业务校验（重复、权限、状态机）。Controller 校验防参数注入，Service 校验防业务黑洞。不能只用 Controller 校验——任何绕过 Controller 的调用（定时任务、MQ 消费者、内部调用）都会导致脏数据。Service 校验可以用 @Validated + @Valid 自动触发，也可以手动 Validator.validate()。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">自定义注解校验怎么做？比如校验身份证号。</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">两步：① 定义 @IdCardNo 注解，标注 @Constraint(validatedBy = IdCardNoValidator.class)。② 实现 ConstraintValidator 接口完成校验逻辑。然后用 @IdCardNo 像 @NotNull 一样用。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">校验失败后的 BindingResult 和 Exception 的关系？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">如果 Controller 方法有 BindingResult 参数 → 校验失败不进 Exception，结果写入 BindingResult（你手动判断 hasErrors()）。如果没有 BindingResult → Spring 自动抛 MethodArgumentNotValidException。推荐不写 BindingResult，让 @ControllerAdvice 统一处理——减少重复代码。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. @Valid vs @Validated</strong> — JSR-303 标准 vs Spring 扩展，分组校验是核心差异</p>
+<p><strong class="text-white">2. 校验失败异常类型</strong> — @RequestBody (400) vs @RequestParam (500)，很多人踩坑</p>
+<p><strong class="text-white">3. 多层校验设计</strong> — Controller 格式校验 + Service 业务校验，不能只靠一层</p>
+<p><strong class="text-white">4. BindingResult</strong> — 有就不抛异常，没有才抛</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>@RequestParam 校验需 @Validated 在类上；只有 @RequestBody 自动触发 400</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 数据校验 · 核心容器总结</footer>
+</body>
+</html>

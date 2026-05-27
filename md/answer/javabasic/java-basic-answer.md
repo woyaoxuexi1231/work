@@ -3647,7 +3647,7 @@ public class ArrayListMicroBench {
 - 通过 `usedMemory()` 可粗略观察堆内存变化，但不够精确，生产推荐 JMH。
 
 ### 🐞 常见错误预警
-- `grow` 方法在 JDK 8 中名为 `private void grow(int minCapacity)`，无法直接覆写，需通过反射或使用更高版本。练习中假设 Java 17+ 环境。
+- `grow` 方法在 JDK 8 中名为 `private void grow(int minCapacity)`，无法直接覆写，需通过反射或使用更高版本。练习中假设 Java 8+ 环境。
 - 使用 `System.nanoTime()` 计时需要预热与排除 GC 干扰，简单测试结果波动大，只能体现趋势。
 - 自动装箱引发的 NPE：如果泛型方法返回 null，而拆箱赋值给基本类型，会抛出 `NullPointerException`。
 

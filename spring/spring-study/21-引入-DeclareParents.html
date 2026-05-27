@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>@DeclareParents 引入 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:2rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span></div><h1 class="text-3xl font-bold text-white">🧩 引入：@DeclareParents</h1><p class="text-[#a6adc8] mt-2">让 Bean 凭空多实现一个接口 — 不改源码的"外挂"能力</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · @DeclareParents 是什么</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6"><p class="text-sm text-[#a6adc8] mb-4">普通 AOP 是<strong class="text-white">增强行为</strong>（方法前后加逻辑）。引入更进一步：<strong class="text-white">让 Bean 多实现一个接口</strong>——不需要改原类的代码，像外挂一样贴上去。</p>
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// 1. 定义接口和默认实现
+public interface Auditable { String getAuditLog(); }
+public class DefaultAuditable implements Auditable {
+    public String getAuditLog() { return "audit: ..."; }
+}
+
+// 2. @DeclareParents 引入
+@Aspect @Component
+public class AuditableIntroduction {
+    @DeclareParents(value = "com.example.service.*+",   // 目标
+                    defaultImpl = DefaultAuditable.class)
+    private Auditable auditable;  // 占位字段
+}
+
+// 3. 使用 — 任何 Service 都能强转为 Auditable
+@Autowired private UserService userService;
+String log = ((Auditable) userService).getAuditLog(); // ✅</code></pre>
+</div>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🤔 如果没有引入，50 个 Service 要加审计能力怎么做？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>要么所有 Service 都实现 Auditable（改 50 个类），要么写抽象父类（改继承关系），要么组合模式（每个 Service 加字段）。无论哪种都要碰源码。引入让你<strong class="text-white">零改动</strong>给 50 个 Service 贴上一个新接口。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 设计巧思：代理同时实现多个接口</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>JDK 代理本来就支持多接口——Proxy.newProxyInstance 可以传多个接口。引入本质就是让代理<strong class="text-white">多实现一个接口</strong>，所有对该接口方法的调用都被转发到 defaultImpl。CGLIB 同理。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ 边界</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>只能引入接口，不能引入类（多继承限制）。defaultImpl 必须有无参构造器。被引入的接口方法不能与目标类已有方法重名（冲突时目标类优先）。</p></div></details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@DeclareParents 和 @Before 的本质区别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Before 增强<strong class="text-white">行为</strong>（方法执行前后加逻辑），@DeclareParents 改变<strong class="text-white">类型</strong>（让 Bean 多实现接口）。前者是"让方法多做一件事"，后者是"让 Bean 多一种身份"。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JDK 和 CGLIB 代理下引入行为一样吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">一样。JDK 代理天然支持多接口，CGLIB 通过生成子类也可以让代理多实现一个接口。行为一致。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：30 个 Service 需要给监控系统暴露 healthCheck() 方法，但不能改 Service 代码。怎么做？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 @DeclareParents。定义 HealthCheckable 接口+默认实现（查连接池、Redis 连通性）。一个切面引入到所有 Service。监控系统遍历容器中所有 Bean，if(b instanceof HealthCheckable) 调 healthCheck()。30 个 Service 零改动。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">defaultImpl 必须有无参构造器吗？为什么？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">是的。Spring 在创建代理时需要实例化 defaultImpl，它通过 Class.newInstance()（反射无参构造器）创建。如果 defaultImpl 只有有参构造器→实例化失败。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">引入的接口方法和目标类同名怎么办？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">目标类优先。代理本身是目标类的子类（CGLIB）或接口实现（JDK），目标类已有的方法不会被引入覆盖。这是个潜在坑——你以为引入了新方法，但实际上目标类已经有了同名方法。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">引入和装饰器模式有什么区别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">装饰器需要手动为每个类写 Wrapper——N 个类 = N 个装饰器。引入只需要一个切面——N 个类一次搞定。引入是<strong class="text-white">批量装饰</strong>，装饰器模式是<strong class="text-white">单类装饰</strong>。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. 引入 = 批量装饰器模式</strong> — 改类型 vs 增强行为</p><p><strong class="text-white">2. defaultImpl 无参构造器</strong> — 反射实例化要求</p><p><strong class="text-white">3. 同名方法目标类优先</strong> — 引入不覆盖已有方法</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · @DeclareParents 引入</footer>
+</body>
+</html>

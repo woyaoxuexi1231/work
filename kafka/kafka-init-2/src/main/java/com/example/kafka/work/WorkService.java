@@ -72,7 +72,7 @@ public class WorkService {
 
     @KafkaListener(topics = "probe-topic", containerFactory = "manualAckContainerFactory")
     public void consumer(ConsumerRecord<String, Object> record, Acknowledgment acknowledgment) {
-        String key = record.key();
+        String key = record.getKey();
         int partition = record.partition();
         long offset = record.offset();
 

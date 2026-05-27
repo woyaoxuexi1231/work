@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自动装配 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring Boot</span>
+<span class="bg-[#fab387]/20 text-[#fab387] px-2 py-0.5 rounded">恒生多数据源</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🎯 自动装配：@Autowired @Qualifier @Primary @Resource</h1>
+<p class="text-[#a6adc8] mt-2">四个注解的协作与冲突 — 不是"记住区别"，而是理解背后的装配决策链</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">四个注解速查</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">注解</th><th class="text-left py-3 px-3 text-white">默认策略</th><th class="text-left py-3 px-3 text-white">必需？</th><th class="text-left py-3 px-3 text-white">限定符</th><th class="text-left py-3 px-3 text-white">来源</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3 font-bold">@Autowired</td><td class="py-2 px-3">byType</td><td class="py-2 px-3">required=true</td><td class="py-2 px-3">@Qualifier</td><td class="py-2 px-3">Spring</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3 font-bold">@Qualifier</td><td class="py-2 px-3">配合 @Autowired 限定名称</td><td class="py-2 px-3">—</td><td class="py-2 px-3">value="beanName"</td><td class="py-2 px-3">Spring</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3 font-bold">@Primary</td><td class="py-2 px-3">提升为首选</td><td class="py-2 px-3">—</td><td class="py-2 px-3">—</td><td class="py-2 px-3">Spring</td></tr>
+<tr><td class="py-2 px-3 font-bold">@Resource</td><td class="py-2 px-3"><strong>byName → byType 降级链</strong></td><td class="py-2 px-3">无 required</td><td class="py-2 px-3">name="beanName"</td><td class="py-2 px-3">JSR-250</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// 多 Bean 冲突时的三种解决方式
+@Service
+public class OrderService {
+    // 方式1：@Qualifier 精确指定
+    @Autowired @Qualifier("wechatPay") private PaymentService pay;
+
+    // 方式2：@Primary 默认首选
+    @Autowired private PaymentService pay;  // 注入标注了 @Primary 的那个
+
+    // 方式3：@Resource name 查找
+    @Resource(name = "alipay") private PaymentService pay;
+}
+
+// @Qualifier 优先级 > @Primary</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂的设计原理</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果只有 @Autowired byType，没有 @Qualifier 和 @Primary？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">痛点：</strong>有多个同类型 Bean 时，@Autowired 直接抛 NoUniqueBeanDefinitionException。开发者被迫走歪路：要么不按接口注入（写死实现类），要么把不需要的实现类从容器中排除（破坏可扩展性）。</p>
+<p>@Qualifier 和 @Primary 提供了<strong class="text-white">两个不同维度的解决方案</strong>：@Qualifier 是"调用方的主动选择"，@Primary 是"定义方的自我推荐"。两者互补，覆盖了所有多实现场景。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：@Resource 的 byName→byType 降级链</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>@Resource 不是单纯的 byName。它的查找逻辑：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// CommonAnnotationBeanPostProcessor 内部逻辑（伪代码）
+String beanName = resource.name();  // 有 name 属性就用它
+if (beanName.isEmpty()) beanName = field.getName();  // 否则用字段名
+
+// 先按名字找
+if (beanFactory.containsBean(beanName)) {
+    return beanFactory.getBean(beanName);  // byName 成功 ✅
+}
+// 名字找不到 → 降级为 byType
+return beanFactory.getBean(field.getType());  // byType</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>这个降级链让 @Resource 比 @Autowired 更"宽容"——大多数情况下，字段名刚好等于 Bean 名，byName 就命中了；没命中也不会报错，byType 兜底。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 装配决策链：AutowireCandidateResolver</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>Spring 内部用 ContextAnnotationAutowireCandidateResolver（一个责任链）来决定"该注入哪个 Bean"：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// 装配解析过程（简化）
+1. 按类型查找候选 Bean 列表
+2. 如果有 @Qualifier → 按名称过滤候选 → 匹配失败抛异常
+3. 如果候选只剩 1 个 → 返回
+4. 如果候选有多个：
+   a. 看有没有 @Primary → 有就返回它
+   b. 尝试字段名匹配（byName fallback）
+   c. 都不行 → NoUniqueBeanDefinitionException</code></pre>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：@Resource 不能用在构造器上</p><p>JDK 的 @Resource 定位是"字段和 Setter"——Target 不包含构造器。</p></div>
+<div><p class="text-white font-bold">陷阱2：@Qualifier + @Primary 同时 → @Qualifier 胜出</p><p>显式 > 隐式。面试高频。</p></div>
+<div><p class="text-white font-bold">陷阱3：@Autowired(required=false) 的 null 地狱</p><p>如果 Bean 可能不存在，用 Optional 或 ObjectProvider 更安全。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Autowired 和 @Resource 的区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Autowired 是 Spring 原生，默认 byType，支持 required/集合/构造器。@Resource 是 JSR-250，先 byName 再 byType 降级链，不支持构造器和集合。区分要点不是"byType vs byName"，而是 @Resource 有降级链——这恰恰是很多人答错的地方。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Qualifier 和 @Primary 同时存在谁赢？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Qualifier 胜出。装配链中先检查 @Qualifier，匹配就直接返回，不会走到 @Primary 的逻辑。显式指定优先于默认推荐。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Map&lt;String, PaymentService&gt; 注入所有实现类，怎么和 @Primary 协作？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Map 注入不受 @Primary 影响——它始终注入所有实现。@Primary 只在单值注入时生效（@Autowired PaymentService 选首选）。如果在 Map 的前提下想默认用某个实现，需要业务层自己逻辑选择（如读取配置或注解标记），不能靠 @Primary。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Resource 不指定 name，怎么决定按什么名字找？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用字段名。private UserService userService → 找名为 "userService" 的 Bean。找不到 → 降级为 byType。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：多数据源中，你有 3 个 DataSource Bean（master/slave1/slave2）。JdbcTemplate 默认应该注入哪个？怎么设计？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">master 标注 @Primary → 默认 JdbcTemplate 注入 master。读写分离的业务代码中，读操作显式注入 slave DataSource（@Qualifier("slave1")）。这样既不破坏默认行为（大部分代码直接用 @Autowired），又给了精确控制的能力。更优雅的做法是自定义 AbstractRoutingDataSource + 切面动态路由——但 @Primary + @Qualifier 是最小成本的方案。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：智能拓客多渠道改造中，5 个渠道适配器都用 @Service 注册。如何在某个 Controller 中动态选择渠道（而不是写死 @Qualifier("smsChannel")）？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 Map&lt;String, ChannelAdapter&gt; 注入所有适配器，key 就是 Bean 名。运行时根据请求参数（如 channel=sms）从 Map 中取对应适配器。如果需要默认渠道，在其中一个适配器上加 @Primary，或者用 @ConditionalOnProperty 控制启用哪个。这样新增渠道只需加一个 @Service，不用改任何 Controller 代码——开闭原则。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Autowired 底层由哪个处理器负责？它的 order 是多少？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">AutowiredAnnotationBeanPostProcessor。它实现 PriorityOrdered，order 值很低（优先执行）。在属性填充阶段（populateBean）中被调用，扫描 @Autowired 和 @Value 注解进行注入。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. @Resource 不是纯粹的 byName</strong> — 降级链是区分点，90% 的人答错</p>
+<p><strong class="text-white">2. @Qualifier > @Primary</strong> — 显式指定永远优先于默认推荐</p>
+<p><strong class="text-white">3. Map 注入是实现策略模式的最简方式</strong> — 但 Map 不受 @Primary 影响</p>
+<p><strong class="text-white">4. 场景设计题最爱考</strong> — 多数据源、多渠道、多支付方式，都是"如何优雅选择多实现"的问题</p>
+<p><strong class="text-white">⚠️ 大厂高频陷阱：</strong>@Resource 不支持构造器注入；@Autowired(required=false) 不如 ObjectProvider</p>
+</div>
+</div>
+</section>
+
+</main>
+
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 自动装配 · @Autowired / @Qualifier / @Primary / @Resource</footer>
+</body>
+</html>

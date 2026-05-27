@@ -14,7 +14,33 @@ public class IdempotencyService {
     private final ObjectProvider<RedissonClient> redissonProvider;
     private final InstanceId instanceId;
 
-    public record Result(boolean firstTime, String key, String handledByInstanceId) {}
+    public static class Result {
+
+        private final boolean firstTime;
+
+        private final String key;
+
+        private final String handledByInstanceId;
+
+
+        public Result(boolean firstTime, String key, String handledByInstanceId) {
+
+            this.firstTime = firstTime;
+
+            this.key = key;
+
+            this.handledByInstanceId = handledByInstanceId;
+
+        }
+
+
+        public boolean isFirstTime() { return firstTime; }
+
+        public String getKey() { return key; }
+
+        public String getHandledByInstanceId() { return handledByInstanceId; }
+
+    }
 
     public Result handleOnce(String bizKey, Duration ttl) {
         String key = "idem:" + bizKey;

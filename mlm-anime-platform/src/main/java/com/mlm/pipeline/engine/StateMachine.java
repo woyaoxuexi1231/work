@@ -52,5 +52,16 @@ public class StateMachine {
     }
 
     /** 简单 pair，内部使用 */
-    private record Pair(EpisodeStatus from, EpisodeStatus to) {}
+    private static class Pair {
+        private final EpisodeStatus from;
+        private final EpisodeStatus to;
+
+        public Pair(EpisodeStatus from, EpisodeStatus to) {
+            this.from = from;
+            this.to = to;
+        }
+
+        public EpisodeStatus getFrom() { return from; }
+        public EpisodeStatus getTo() { return to; }
+    }
 }

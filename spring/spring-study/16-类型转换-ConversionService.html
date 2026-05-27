@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>类型转换 ConversionService — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">🔀 类型转换：ConversionService & Converter</h1>
+<p class="text-[#a6adc8] mt-2">从「String 转 Date 的样板代码」到「注册一个 Converter 全局生效」的完整设计</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">三种转换体系对比</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">体系</th><th class="text-left py-3 px-3 text-white">接口</th><th class="text-left py-3 px-3 text-white">应用层</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">PropertyEditor</td><td class="py-2 px-3">PropertyEditor (JDK)</td><td class="py-2 px-3">XML 配置的 String → Object</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">Converter</td><td class="py-2 px-3"><code>Converter&lt;S, T&gt;</code></td><td class="py-2 px-3">⭐ 任意类型互转</td></tr>
+<tr><td class="py-2 px-3">Formatter</td><td class="py-2 px-3"><code>Formatter&lt;T&gt;</code></td><td class="py-2 px-3">String ↔ 对象（带 Locale）</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// 注册 Converter — 全局生效
+@Component
+public class StringToLocalDateConverter implements Converter&lt;String, LocalDate&gt; {
+    @Override
+    public LocalDate convert(String source) {
+        return LocalDate.parse(source, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+    }
+}
+
+// Spring Boot 会自动把 Converter 注册到 ConversionService
+// 之后 Controller 方法的 LocalDate 参数直接从请求参数转换
+
+// 手动使用
+@Autowired private ConversionService conversionService;
+LocalDate date = conversionService.convert("2025-01-15", LocalDate.class);
+
+// Formatter — 带 Locale
+@Component
+public class LocalDateFormatter implements Formatter&lt;LocalDate&gt; {
+    @Override public LocalDate parse(String text, Locale locale) { ... }
+    @Override public String print(LocalDate object, Locale locale) { ... }
+}</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果没有统一的类型转换，Spring 怎么处理"请求参数 String → Controller 方法参数"？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>没有 Converter 之前，Spring 用 PropertyEditor（JDK 1.0 时代的东西）。PropertyEditor 有两个致命问题：</p>
+<p>① <strong class="text-white">线程不安全</strong>：PropertyEditor 有状态（setValue/getValue），Spring 不得不为每个请求创建新实例。</p>
+<p>② <strong class="text-white">只能 String → Object</strong>：不能做任意类型互转（比如 Long → LocalDate）。</p>
+<p>Spring 3.0 引入 Converter 体系：<strong class="text-white">无状态、线程安全、S→T 通用。</strong>现代 Spring 中 Converter 是主力，PropertyEditor 只保留给 XML 配置的向后兼容。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：GenericConverter — 一对多的万能转换</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>普通 Converter&lt;S, T&gt; 只能一对一。但有很多场景需要一个 Converter 处理多种类型（比如 String → 枚举、String → 集合）。<strong class="text-white">GenericConverter</strong> 解决了这个问题：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// Spring 内置的 StringToCollectionConverter 就是 GenericConverter
+// 它能处理 String → List&lt;T&gt;、String → Set&lt;T&gt;（T 通过递归转换）
+Set&lt;ConvertiblePair&gt; getConvertibleTypes() {
+    return Set.of(
+        new ConvertiblePair(String.class, Collection.class),
+        new ConvertiblePair(String.class, List.class),
+        new ConvertiblePair(String.class, Set.class)
+    );
+}</code></pre>
+<p><strong class="text-white">"啊哈时刻"：</strong>ConversionService 会为每次转换动态查找最合适的 Converter。如果找不到直接匹配的，它会尝试<strong class="text-white">转换链</strong>：String → long → Long → Object。每一步都可能由不同的 Converter 完成。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 Spring Boot 自动注册你的 Converter</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>只要你的 Converter 实现了 Converter 接口且标注了 @Component → Spring Boot 的 WebMvcAutoConfiguration 会自动发现它并注册到 FormattingConversionService——这是 DefaultFormattingConversionService（实现了 ConversionService + FormatterRegistry）的实例。</p>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：Formatter 优先于 Converter</p><p>FormatterRegistry 在查找时先查 Formatter（有 Locale），再查 Converter。如果你注册了 Formatter，Converter 可能被跳过。</p></div>
+<div><p class="text-white font-bold">陷阱2：Converter 失败时返回 null</p><p>不是抛异常。null 被当作类型不匹配，Spring MVC 会转成 TypeMismatchException → 400。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Converter 和 Formatter 的区别？为什么需要两个？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Converter 是通用类型转换（S→T），无状态。Formatter 专门处理 String ↔ Object，带 Locale（用于国际化数字格式、日期格式）。Formatter 在 Web 层（请求参数绑定）中优先级更高，因为它有 Locale 感知。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">PropertyEditor 和 Converter 的根本区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">PropertyEditor 有状态（线程不安全）、只能 String↔Object。Converter 无状态（线程安全）、支持任意类型互转。Spring 3.0 引入 Converter 就是为了解决 PropertyEditor 这两个致命缺陷。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：前端传了 "2025-01-15" 字符串，Controller 参数是 LocalDate，类型不匹配报 400。怎么让它自动转换？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Spring Boot 默认配置了 JavaTimeModule（Jackson）用于 JSON 反序列化。但对于 @RequestParam 的字符串参数，需要注册 Formatter：实现 Formatter&lt;LocalDate&gt; + @Component。或者更简单：在 application.yml 中配置 spring.mvc.format.date=yyyy-MM-dd，Spring Boot 会自动注册对应的 Formatter。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：你的系统对外暴露 API 给 5 个不同前端团队，他们对日期格式要求不一致（yyyy-MM-dd、yyyy/MM/dd、dd-MM-yyyy）。怎么用一个 Converter 支持多种格式？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">在 Converter 里按顺序尝试多个 DateTimeFormatter 解析：先 try yyyy-MM-dd，失败再 try yyyy/MM/dd，依次类推。但更合理的方案是前端统一格式，后端只接受一种——多格式是接口设计的问题，不是技术问题。如果实在要兼容，建议在新版 API 中强制一种格式并提供迁移文档。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">如果 Converter 和 Formatter 都能处理同一种转换，谁生效？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Formatter 优先。FormattingConversionService 先查 FormatterRegistry（Formatter），再查 ConverterRegistry（Converter）。因为 Formatter 有 Locale，被认为更适合 Web 场景。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">ConversionService 能在纯 Java 代码中手动用吗？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">可以。@Autowired 注入 ConversionService，然后 conversionService.convert(source, TargetType.class)。这在非 Web 场景（消息消费、定时任务）中也很有用。Spring 的 DataBinder、BeanWrapper 都是基于 ConversionService 做类型转换的。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. PropertyEditor → Converter 的演进</strong> — 有状态/线程不安全 → 无状态/线程安全</p>
+<p><strong class="text-white">2. Formatter vs Converter</strong> — Locale 感知 vs 通用转换</p>
+<p><strong class="text-white">3. GenericConverter</strong> — 一对多转换的核心抽象</p>
+<p><strong class="text-white">4. 自动注册</strong> — @Component + 实现 Converter 接口 = 全局生效</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>Formatter 优先于 Converter；Converter 失败返回 null 而非抛异常</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 类型转换</footer>
+</body>
+</html>

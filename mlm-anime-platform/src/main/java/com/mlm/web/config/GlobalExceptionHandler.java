@@ -31,14 +31,14 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResult<?> handleBiz(BizException e) {
         log.warn("业务异常: code={}, msg={}", e.getCode(), e.getMessage());
-        return ApiResult.fail(e.getCode(), e.getMessage());
+        return ApiResult.getFail(e.getCode(), e.getMessage());
     }
 
     @ExceptionHandler(PipelineException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResult<?> handlePipeline(PipelineException e) {
         log.warn("Pipeline异常: {}", e.getMessage());
-        return ApiResult.fail(400, e.getMessage());
+        return ApiResult.getFail(400, e.getMessage());
     }
 
     /**
@@ -48,13 +48,13 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResult<?> handleNoResource(NoResourceFoundException e) {
         log.debug("静态资源不存在: {}", e.getResourcePath());
-        return ApiResult.fail(404, "资源不存在");
+        return ApiResult.getFail(404, "资源不存在");
     }
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResult<?> handleOther(Exception e) {
         log.error("系统异常: {}", e.getMessage(), e);
-        return ApiResult.fail(500, "系统异常: " + e.getMessage());
+        return ApiResult.getFail(500, "系统异常: " + e.getMessage());
     }
 }

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>五种通知类型 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:3rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span></div><h1 class="text-3xl font-bold text-white">✂️ 通知类型：@Before、@AfterReturning、@AfterThrowing、@After、@Around</h1><p class="text-[#a6adc8] mt-2">五种通知的执行顺序、适用场景、@Around 的威力与陷阱</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 五种通知一张表</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">通知</th><th class="text-left py-3 px-3 text-white">执行时机</th><th class="text-left py-3 px-3 text-white">拿返回值?</th><th class="text-left py-3 px-3 text-white">拿异常?</th><th class="text-left py-3 px-3 text-white">改返回值?</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3 text-[#89b4fa]">@Before</td><td class="py-2 px-3">目标方法前</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">❌</td></tr>
+<tr class="border-b"><td class="py-2 px-3 text-[#a6e3a1]">@AfterReturning</td><td class="py-2 px-3">正常返回后</td><td class="py-2 px-3">✅ returning</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">❌</td></tr>
+<tr class="border-b"><td class="py-2 px-3 text-[#f38ba8]">@AfterThrowing</td><td class="py-2 px-3">异常抛出后</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">✅ throwing</td><td class="py-2 px-3">❌</td></tr>
+<tr class="border-b"><td class="py-2 px-3 text-[#fab387]">@After</td><td class="py-2 px-3">方法结束(finally)</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">❌</td></tr>
+<tr><td class="py-2 px-3 text-[#cba6f7]">@Around</td><td class="py-2 px-3">包裹整个方法</td><td class="py-2 px-3">✅</td><td class="py-2 px-3">✅</td><td class="py-2 px-3">✅</td></tr></tbody></table></div>
+</div>
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// 执行顺序
+@Around 前 → @Before → 目标方法 → @AfterReturning/Throwing → @After → @Around 后</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🤔 @Around 能替代其他四种吗？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>技术上能——proceed() 前后 = @Before/@After，try-catch = @AfterThrowing。但<strong class="text-white">能不用就不用</strong>：① @Around 代码量大 ② 容易出错：忘调 proceed()→方法不执行，调两次→方法执行两次。能用 @Before 搞定就别用 @Around。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 设计巧思：@After = finally 语义</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>@After 不管正常还是异常都执行——和 try-finally 完全一致。但它<strong class="text-white">拿不到返回值</strong>（因为不知道方法是正常返回还是抛异常）。要拿返回值用 @AfterReturning，要拿异常用 @AfterThrowing。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ @Around 不调 proceed() = 方法静默跳过</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>这是最常见的 AOP 翻车现场——没有报错、没有警告，目标方法就是没执行。Spring 不会检查你是否调了 proceed()。如果条件判断后忘了调 → 线上功能静默失效。</p></div></details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@After 和 @AfterReturning 的区别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@AfterReturning 只在正常返回时执行且能拿返回值；@After 不管正常异常都执行（finally），但拿不到返回值。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Around 不调 proceed()，后面还有 @After 会执行吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不会。proceed() 没调→目标方法没执行→整个通知链中断。@After 也不会执行。@Around 有绝对控制权。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">同一个方法有多个 @Around，执行顺序怎么定？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Order 控制。数字越小越外层（先执行、后返回）。洋葱模型：Order(1)的Around→Order(2)的Around→目标方法→Order(2)返回→Order(1)返回。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上一个大事务 10 秒，怀疑是某个 Service 方法里 HTTP 调用慢。怎么不改代码排查？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">写一个 @Aspect，@Around 切所有 Service 方法，记录执行时间。超过 1 秒打 WARN（类名+方法名+耗时）。加 @Component 生效——零入侵排查。恢复后删掉切面或关掉开关。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：所有 Controller 都要打请求日志（入参、出参、耗时），但你不想改 50 个 Controller。怎么做？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Around + execution(* com..controller.*.*(..)) 切所有 Controller 方法。proceed() 前记入参和开始时间，proceed() 后记出参和耗时。50 个 Controller 零改动。加 @ConditionalOnProperty 让运维能通过配置关闭。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@AfterReturning 能改返回值吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不能。@AfterReturning 参数里的 ret 对象可以修改它的属性（如 ret.setName("xx")），但不能替换 ret 引用本身——返回值已经被目标方法确定了。要改返回值必须用 @Around。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">五个通知可以混合用吗？同一个切点同时有 @Before 和 @Around？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">可以，但不推荐。执行顺序：@Around(高order)→@Before→@AfterReturning/Throwing→@After→@Around(低order的返回)。混用时最容易出错的是：你忘了 @Around 已经包裹了一切，@Before 的执行时机可能和直觉不同。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. @Around 最强大也最危险</strong> — 忘调 proceed 是经典翻车</p><p><strong class="text-white">2. @After = finally</strong> — 不管正常异常都执行</p><p><strong class="text-white">3. @AfterReturning 只能改对象属性不能改引用</strong> — 改返回值要用 @Around</p><p><strong class="text-white">4. 能用简单通知就别用 @Around</strong> — @Before + @AfterReturning 更安全</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 五种通知类型</footer>
+</body>
+</html>

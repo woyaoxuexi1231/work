@@ -33,18 +33,18 @@ public class CleanAsset {
                                     BigDecimal totalAsset,
                                     String statDay) {
         CleanAsset asset = new CleanAsset();
-        asset.setGlobalId(context.globalId());
-        asset.setSourceSystem(context.sourceSystem());
-        asset.setSourceType(context.sourceType());
-        asset.setSourceRowId(context.sourceRowId());
+        asset.setGlobalId(context.getGlobalId());
+        asset.setSourceSystem(context.getSourceSystem());
+        asset.setSourceType(context.getSourceType());
+        asset.setSourceRowId(context.getSourceRowId());
         asset.setAccountName(accountName);
         asset.setAccountNo(accountNo);
         asset.setCashBalance(cashBalance);
         asset.setFrozenBalance(frozenBalance);
         asset.setTotalAsset(totalAsset);
         asset.setStatDay(statDay);
-        asset.setCleanBatch(context.cleanBatch());
-        asset.setCreatedAt(context.createdAt());
+        asset.setCleanBatch(context.getCleanBatch());
+        asset.setCreatedAt(context.getCreatedAt());
         return asset;
     }
 }

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AOP 核心概念 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:3rem}h3{color:#89b4fa;margin-top:2rem}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span></div><h1 class="text-3xl font-bold text-white">🎯 AOP 核心概念：切面、连接点、通知、切入点、引入</h1><p class="text-[#a6adc8] mt-2">五个术语一张图说清 — 这是理解 AOP 的第一道门槛</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 五个术语一张表</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">术语</th><th class="text-left py-3 px-3 text-white">类比</th><th class="text-left py-3 px-3 text-white">含义</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3 font-bold text-[#a6e3a1]">Aspect 切面</td><td class="py-2 px-3">菜谱</td><td class="py-2 px-3">通知+切点的集合（@Aspect 标注的类）</td></tr>
+<tr class="border-b"><td class="py-2 px-3 font-bold text-[#89b4fa]">Join Point 连接点</td><td class="py-2 px-3">厨房里所有食材</td><td class="py-2 px-3">程序执行中<strong>所有</strong>可插入的点（Spring AOP 中=方法调用）</td></tr>
+<tr class="border-b"><td class="py-2 px-3 font-bold text-[#fab387]">Pointcut 切入点</td><td class="py-2 px-3">"哪些菜适用"</td><td class="py-2 px-3">从所有连接点中<strong>筛选</strong>出目标方法（表达式匹配）</td></tr>
+<tr class="border-b"><td class="py-2 px-3 font-bold text-[#f38ba8]">Advice 通知</td><td class="py-2 px-3">炒菜步骤</td><td class="py-2 px-3"><strong>做什么</strong>+<strong>何时做</strong>（@Before/@After 等）</td></tr>
+<tr><td class="py-2 px-3 font-bold text-[#cba6f7]">Introduction 引入</td><td class="py-2 px-3">给菜加新配料</td><td class="py-2 px-3">让目标类<strong>多实现一个接口</strong>（@DeclareParents）</td></tr></tbody></table></div>
+</div>
+<p class="text-sm text-[#a6adc8]">一句话：<strong class="text-white">切面 = 通知 + 切入点</strong>。通知决定"做什么+何时做"，切入点决定"在哪里做"。连接点是所有候选点，切入点是筛选后的。</p>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🤔 为什么要把"在哪里做"和"做什么"拆成两个概念？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>如果切入点和通知不分离，一个 @Before 只能绑定一个方法 = 100 个方法需要 100 个 @Before。分离后，一个切点表达式匹配 100 个方法 + 一个 @Before = 一个切面搞定。切入点是<strong class="text-white">可复用的匹配规则</strong>，通知是<strong class="text-white">可复用的增强逻辑</strong>。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 设计巧思：织入（Weaving）— Spring 的代理织入 vs AspectJ 的编译织入</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>织入就是把切面"弄到"目标对象上的动作。Spring 用<strong class="text-white">运行时代理</strong>（创建代理对象拦截方法），AspectJ 用<strong class="text-white">编译期/类加载期</strong>织入（直接修改字节码）。Spring 的方案更简单（零配置），但有限制（不能增强 private/final）。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ 边界</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>Spring AOP 的连接点只限<strong class="text-white">方法调用</strong>——不能拦截字段访问、构造器调用。AspectJ 可以，但需要编译器支持。</p></div></details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">用一句话解释切面、连接点、通知、切入点。</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">切面是"类"，包含通知和切入点；通知是"做什么+何时做"；切入点是"在哪里做"；连接点是"所有可选的地方"。切面 = 通知 + 切入点。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">织入（Weaving）有几种方式？Spring 用哪种？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三种：编译期（ajc 编译器）、类加载期（LTW）、<strong class="text-white">运行期代理（Spring 方式）</strong>。Spring 用运行期 CGLIB/JDK 代理——不需要额外编译器，但只能拦截方法调用。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">引入（Introduction）和通知的本质区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">通知<strong class="text-white">增强行为</strong>（在方法前后加逻辑），引入<strong class="text-white">改变类型</strong>（让 Bean 多实现一个接口）。前者不改变类结构，后者改变。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JoinPoint 和 ProceedingJoinPoint 什么关系？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">ProceedingJoinPoint 继承 JoinPoint，多了一个 proceed() 方法。@Before/@After 等用 JoinPoint（只能获取元数据），@Around 用 ProceedingJoinPoint（能获取元数据+执行目标方法）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：你要给一个类加"审计"能力（记录谁在什么时候做了什么）。但你不能改这个类的源码。用 AOP 的什么概念？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">两种方案：① 用<strong class="text-white">通知</strong>（@Before/@Around）拦截方法调用，记录参数和调用者。不改类结构，只增强行为。② 用<strong class="text-white">引入</strong>（@DeclareParents）让类多实现一个 Auditable 接口，外部可以((Auditable)bean).getAuditLog()。方案①更简单，方案②更类型安全。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring 为什么只支持方法级 AOP？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">因为 Spring AOP 基于<strong class="text-white">代理</strong>——代理只能拦截方法调用。字段访问、构造器调用发生在代理对象内部，无法被代理拦截。AspectJ 编译期织入可以做到，但需要 ajc 编译器。Spring 选择了"牺牲能力换零配置"。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. 五个术语的关系</strong> — 切面⊃通知+切入点；连接点⊃切入点</p><p><strong class="text-white">2. 织入方式</strong> — 运行时代理（Spring）vs 编译期（AspectJ）</p><p><strong class="text-white">3. JoinPoint vs ProceedingJoinPoint</strong> — 是否有 proceed()</p><p><strong class="text-white">4. Spring AOP 的限制</strong> — 只能拦截方法调用，不能拦截字段/构造器</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · AOP 核心概念</footer>
+</body>
+</html>

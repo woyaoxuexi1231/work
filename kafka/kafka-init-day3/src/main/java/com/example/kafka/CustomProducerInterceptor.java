@@ -14,7 +14,7 @@ public class CustomProducerInterceptor implements ProducerInterceptor<String, Ob
         // 在消息发送前，添加一个自定义 header：timestamp_ms
         long now = System.currentTimeMillis();
         record.headers().add("send-timestamp", String.valueOf(now).getBytes());
-        System.out.println("[Interceptor] 消息即将发送，key=" + record.key() + ", 添加时间戳header");
+        System.out.println("[Interceptor] 消息即将发送，key=" + record.getKey() + ", 添加时间戳header");
         return record;
     }
 

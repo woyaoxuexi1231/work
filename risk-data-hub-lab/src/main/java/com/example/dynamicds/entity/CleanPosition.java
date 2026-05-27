@@ -35,10 +35,10 @@ public class CleanPosition {
                                        BigDecimal marketValue,
                                        String statDay) {
         CleanPosition position = new CleanPosition();
-        position.setGlobalId(context.globalId());
-        position.setSourceSystem(context.sourceSystem());
-        position.setSourceType(context.sourceType());
-        position.setSourceRowId(context.sourceRowId());
+        position.setGlobalId(context.getGlobalId());
+        position.setSourceSystem(context.getSourceSystem());
+        position.setSourceType(context.getSourceType());
+        position.setSourceRowId(context.getSourceRowId());
         position.setAccountName(accountName);
         position.setStockCode(stockCode);
         position.setHoldingQty(holdingQty);
@@ -46,8 +46,8 @@ public class CleanPosition {
         position.setCostPrice(costPrice);
         position.setMarketValue(marketValue);
         position.setStatDay(statDay);
-        position.setCleanBatch(context.cleanBatch());
-        position.setCreatedAt(context.createdAt());
+        position.setCleanBatch(context.getCleanBatch());
+        position.setCreatedAt(context.getCreatedAt());
         return position;
     }
 }

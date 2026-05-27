@@ -33,8 +33,8 @@ public class RsaController {
         log.info("[API] (v2) /secure/echo");
         try {
             CryptoService.DecryptResult decrypted = cryptoService.decryptRequest(request, keyManager.getPrivateKey());
-            String responsePlaintext = "服务端收到你的明文: " + decrypted.plaintext();
-            EncryptResponse response = cryptoService.encryptResponse(responsePlaintext, decrypted.aesKey(), keyManager.getPrivateKey());
+            String responsePlaintext = "服务端收到你的明文: " + decrypted.getPlaintext();
+            EncryptResponse response = cryptoService.encryptResponse(responsePlaintext, decrypted.getAesKey(), keyManager.getPrivateKey());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[API] (v2) 处理失败", e);

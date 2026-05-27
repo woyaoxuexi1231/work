@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AspectJ 集成与 @Aspect — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:2rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span></div><h1 class="text-3xl font-bold text-white">🔗 AspectJ 集成与 @Aspect</h1><p class="text-[#a6adc8] mt-2">Spring AOP 用 AspectJ 的注解，但不用它的编译器 — 一套语法，两种实现</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · Spring AOP 与 AspectJ 的关系</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">维度</th><th class="text-left py-3 px-3 text-[#89b4fa]">Spring AOP</th><th class="text-left py-3 px-3 text-[#a6e3a1]">AspectJ</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3">织入时机</td><td class="py-2 px-3">运行时（代理）</td><td class="py-2 px-3">编译期 / 类加载期</td></tr>
+<tr class="border-b"><td class="py-2 px-3">是否需要特殊编译器</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">✅ ajc</td></tr>
+<tr class="border-b"><td class="py-2 px-3">能拦截什么</td><td class="py-2 px-3">public 方法（代理限制）</td><td class="py-2 px-3">方法/字段/构造器/静态方法</td></tr>
+<tr class="border-b"><td class="py-2 px-3">自调用生效?</td><td class="py-2 px-3">❌</td><td class="py-2 px-3">✅</td></tr>
+<tr><td class="py-2 px-3">@Aspect 注解</td><td class="py-2 px-3">✅ 共用同一套注解语法</td><td class="py-2 px-3">✅ 原生支持</td></tr></tbody></table></div>
+<p class="text-sm text-[#a6adc8] mt-4"><strong class="text-white">核心事实：</strong>Spring AOP 借用了 AspectJ 的<strong class="text-white">注解语法</strong>（@Aspect/@Before/@Around 等），但底层用的是<strong class="text-white">自己的代理机制</strong>，没有用 AspectJ 的编译器。这是一种"偷师"——用最成熟的 AOP 语法，但保留简单的运行时实现。</p>
+</div>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🤔 为什么 Spring 不直接用 AspectJ？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>因为 AspectJ 需要<strong class="text-white">ajc 编译器</strong>或<strong class="text-white">LTW（Load-Time Weaving）</strong>。ajc 意味着要替换 javac，这在企业级 Maven/Gradle 构建中极难推广。LTW 需要 javaagent 启动参数——运维不愿意加。Spring 的选择是：<strong class="text-white">"牺牲部分能力（不能拦截 private/final/自调用），换零配置和零运维成本"</strong>。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 设计巧思：一套语法两个引擎</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>你写的 @Aspect 和 @Before 注解，在 Spring 环境中被 AspectJAutoProxyCreator 解析，在 AspectJ 环境中被 ajc 解析。语法是兼容的——但能力不同。这让你可以在需要时从 Spring AOP 升级到 AspectJ，<strong class="text-white">不改切面代码</strong>，只改构建配置。这也是为什么 Spring 选择了"兼容"而不是"另起炉灶"。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ LTW（Load-Time Weaving）是什么？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>LTW 是 AspectJ 的一种织入方式——在类加载时修改字节码。Spring 支持 LTW 作为 Spring AOP 的增强模式：启动时加 -javaagent:aspectjweaver.jar。代价是启动变慢（每个类加载都要检查是否需要织入），收益是可以拦截 private/final/自调用。生产环境很少用。</p></div></details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@Aspect 是 AspectJ 的还是 Spring 的？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Aspect 注解本身来自 AspectJ 库（org.aspectj.lang.annotation）。Spring 借用了这个注解和整套语法，但解析和执行引擎是 Spring 自己的（AspectJAutoProxyCreator）。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring AOP 什么时候该升级到 AspectJ？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">三个信号：① 需要对 private 方法做 AOP ② 自调用场景太多拆类不现实 ③ 需要对非 Spring Bean（如领域对象）做增强。但 95% 的项目不需要——Spring AOP 的方法级代理已经够用。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：项目里有一个 final 类需要 AOP。Spring AOP 不支持，改成 AspectJ LTW 的步骤？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">① 加依赖 aspectjweaver。② 启动参数加 -javaagent:aspectjweaver.jar。③ 在 META-INF/aop.xml 中声明切面和目标。④ 切面代码不用改。代价：启动时间增加 20%-50%，每个类加载时都要检查是否需要织入。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：自调用 AOP 不生效，除了拆类还有什么解法？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">① 注入自己：@Autowired private XxxService self; 通过 self.method() 调用 ② AopContext.currentProxy()（需 exposeProxy=true）③ 升级到 AspectJ LTW。推荐拆类——不依赖 Spring 内部 API。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">AspectJ 的 execution 和 Spring AOP 的 execution 有区别吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">语法兼容，但匹配范围不同。AspectJ 的 execution 可以匹配 private 方法、静态方法、构造器——Spring AOP 只能在 public 非 final 方法上生效。同一个表达式在两个环境中可能匹配到不同数量的方法。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring 能不用 AspectJ 注解做 AOP 吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">能，但很少用。早期的 Spring AOP 用 XML 配置切面（&lt;aop:config&gt;），或者编程式 ProxyFactory。现在都用 @Aspect 注解——它是事实标准。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. Spring AOP 借用了 AspectJ 注解</strong> — 语法相同，引擎不同</p><p><strong class="text-white">2. 代理 vs 织入</strong> — 运行时代理（简单）vs 编译期织入（能力全）</p><p><strong class="text-white">3. LTW</strong> — 升级路径存在但极少用，代价是启动性能</p><p><strong class="text-white">4. 同一套切面代码可在两种引擎间迁移</strong> — 这是设计的远见</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · AspectJ 集成与 @Aspect</footer>
+</body>
+</html>

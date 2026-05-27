@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: spring-interview-qa
+
+  # H2 内存数据库 — 用于事务 Demo
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+
+  # ===== Q06: Bean 覆盖开关 =====
+  # spring.main.allow-bean-definition-overriding=true
+  # 默认 false：同名 Bean 启动时报错，防止意外覆盖
+  # 设为 true：后加载的 Bean 覆盖先加载的
+
+server:
+  port: 8080
+
+# ===== Q24: 外部化配置优先级 Demo =====
+# 加载顺序（从高到低）：
+# 1. 命令行参数           --spring.profiles.active=prod
+# 2. 环境变量             export SERVER_PORT=9090
+# 3. application-{profile}.yml
+# 4. application.yml
+# 5. @PropertySource 指定的文件
+
+# ===== 自定义配置属性（Q22 自定义 Starter 使用）=====
+my-starter:
+  enabled: true
+  prefix: "QA-"
+  timeout: 3000

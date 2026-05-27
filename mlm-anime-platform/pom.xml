@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.5</version>
+        <version>2.7.18</version>
     </parent>
 
     <groupId>com.mlm</groupId>
@@ -16,7 +16,7 @@
     <name>MLM Anime Platform</name>
 
     <properties>
-        <java.version>17</java.version>
+        <java.version>1.8</java.version>
     </properties>
 
     <dependencies>
@@ -37,7 +37,7 @@
         <!-- MyBatis-Plus -->
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
             <version>3.5.9</version>
         </dependency>
 

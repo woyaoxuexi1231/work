@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>PlatformTransactionManager — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:2rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">事务管理</span></div><h1 class="text-3xl font-bold text-white">🔧 事务管理抽象：PlatformTransactionManager</h1><p class="text-[#a6adc8] mt-2">策略接口 — 三种实现、getTransaction()/commit()/rollback() 的核心流程</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1"><h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 三种实现</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-2 px-3 text-white">实现</th><th class="text-left py-2 px-3 text-white">数据源</th><th class="text-left py-2 px-3 text-white">Spring Boot 选择</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3">DataSourceTransactionManager</td><td class="py-2 px-3">JDBC / MyBatis</td><td class="py-2 px-3">有 DataSource 无 JPA 时</td></tr>
+<tr class="border-b"><td class="py-2 px-3">JpaTransactionManager</td><td class="py-2 px-3">JPA / Hibernate</td><td class="py-2 px-3">有 EntityManagerFactory 时</td></tr>
+<tr><td class="py-2 px-3">JtaTransactionManager</td><td class="py-2 px-3">分布式事务</td><td class="py-2 px-3">多数据源 XA</td></tr></tbody></table></div>
+<pre class="bg-[#11111b] rounded-lg p-3 text-sm mt-4 border border-[#45475a]"><code>// 核心接口
+TransactionStatus getTransaction(TransactionDefinition def) throws TransactionException;
+void commit(TransactionStatus status) throws TransactionException;
+void rollback(TransactionStatus status) throws TransactionException;</code></pre></div>
+</section>
+
+<section id="p2"><h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 策略模式 — 为什么不把事务逻辑写死？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>如果写死 DataSourceTransactionManager→JPA 项目用不了。如果写死 JpaTransactionManager→MyBatis 项目用不了。PlatformTransactionManager 是接口——实现可替换，上层代码（@Transactional）只依赖接口。这是策略模式的教科书级应用。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🔬 getTransaction() 内部流程</summary><div class="mt-4 text-sm text-[#a6adc8]"><pre class="bg-[#11111b] rounded-lg p-3 text-xs border border-[#45475a]"><code>getTransaction(definition) {
+    if (当前线程已有事务) {
+        根据传播行为决定：加入/挂起+新建/抛异常
+    } else {
+        新建事务：ds.getConnection()→setAutoCommit(false)→绑定到ThreadLocal
+    }
+    return TransactionStatus;
+}</code></pre></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ 多数据源需要多个 TransactionManager</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>每个数据源配一个 TransactionManager Bean。@Transactional("tm2") 指定用哪个。如果不指定→Spring 按优先级选默认的。</p></div></details>
+</section>
+
+<section id="p3"><h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">为什么需要 PlatformTransactionManager 接口？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">策略模式——JDBC/JPA/JTA 的事务实现不同，但上层只依赖同一接口。换 ORM 框架不需要改 @Transactional 代码。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">DataSourceTransactionManager 和 JpaTransactionManager 可以共存吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">可以，但通常不需要。Spring Boot 有 DataSource 和 JPA 时自动选 JpaTransactionManager（它包含 DataSource 事务能力）。手动共存用于混合场景：JDBC+JPA 各自管理不同数据源。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：项目同时用 JPA 和 MyBatis 操作同一个数据库。事务管理器怎么配？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 JpaTransactionManager——它管理 EntityManagerFactory 的同时也能管理 JDBC Connection（同一个 DataSource）。不需要两个 TransactionManager。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">TransactionStatus 里存了什么？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">新事务标记、回滚标记（rollbackOnly）、保存点（Savepoint）、是否已完成。它是对当前事务状态的"快照"，commit/rollback 时根据它决策。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">doBegin() 里做了什么？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">DataSourceTransactionManager.doBegin()：获取连接→conn.setAutoCommit(false)→绑定到 TransactionSynchronizationManager（ThreadLocal）→返回 TransactionStatus。这就是事务的物理开端。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">JtaTransactionManager 什么时候用？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">跨多个<strong class="text-white">独立数据源</strong>需要两阶段提交（2PC）时。比如一笔转账：减 A 库余额 + 增 B 库余额——两个操作必须原子。单数据源或主从复制不需要 JTA。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. 策略模式</strong> — PlatformTransactionManager 是可替换的事务实现</p><p><strong class="text-white">2. getTransaction 根据传播行为决策</strong> — 新建/加入/挂起</p><p><strong class="text-white">3. doBegin</strong> — setAutoCommit(false) 是物理事务起点</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · PlatformTransactionManager</footer>
+</body>
+</html>

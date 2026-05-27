@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>@EnableAspectJAutoProxy — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all}h2{border-left:4px solid #89b4fa;padding-left:16px;margin-top:2rem}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur"><div class="max-w-4xl mx-auto px-6 py-5"><div class="flex flex-wrap gap-3 text-xs mb-2"><span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span><span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码</span><span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">AOP</span></div><h1 class="text-3xl font-bold text-white">🔛 AOP 自动代理：@EnableAspectJAutoProxy</h1><p class="text-[#a6adc8] mt-2">AOP 的"总开关" — proxyTargetClass 和 exposeProxy 两个关键属性</p></div></header>
+<nav class="max-w-4xl mx-auto px-6 py-4 flex gap-4 text-sm border-b border-[#45475a]"><a href="#p1" class="text-[#89b4fa]">Part 1</a><a href="#p2" class="text-[#a6e3a1]">Part 2</a><a href="#p3" class="text-[#fab387]">Part 3</a></nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-14">
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 两个关键属性</h2>
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">属性</th><th class="text-left py-3 px-3 text-white">作用</th><th class="text-left py-3 px-3 text-white">Spring Boot 默认</th></tr></thead><tbody>
+<tr class="border-b"><td class="py-2 px-3"><code>proxyTargetClass</code></td><td class="py-2 px-3">true=强制CGLIB / false=按接口选</td><td class="py-2 px-3">true（Boot 2.x起）</td></tr>
+<tr><td class="py-2 px-3"><code>exposeProxy</code></td><td class="py-2 px-3">true=代理暴露到 AopContext.currentProxy()</td><td class="py-2 px-3">false</td></tr></tbody></table></div>
+</div>
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// Spring Boot 不需要手动加这个注解 — AopAutoConfiguration 自动配置了
+@EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = false)
+@Configuration
+public class AopConfig { }
+
+// exposeProxy 用法（自调用的临时解法）
+((UserService) AopContext.currentProxy()).method();</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">🤔 @EnableAspectJAutoProxy 到底做了什么？</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>它向容器注册了一个 <strong class="text-white">AnnotationAwareAspectJAutoProxyCreator</strong>（继承 AbstractAutoProxyCreator）。这是一个 InstantiationAwareBeanPostProcessor——在每个 Bean 初始化后检查是否需要创建代理。</p></div></details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4"><summary class="text-lg font-bold text-white">💡 exposeProxy 的代价</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>每次代理对象被调用时，都要往 ThreadLocal 里写一次引用。虽然微秒级，但高并发下累积可观。更重要的代价是<strong class="text-white">代码耦合</strong>——AopContext.currentProxy() 需要 import Spring 内部 API，你的代码不再是纯 POJO。</p></div></details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]"><summary class="text-lg font-bold text-white">⚠️ 陷阱</summary><div class="mt-4 text-sm text-[#a6adc8]"><p>exposeProxy=true 后，AopContext.currentProxy() 必须在<strong class="text-white">代理方法的执行线程中</strong>调用——异步线程中调用返回 null。</p></div></details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 面试追问（6 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">Spring Boot 需要手动加 @EnableAspectJAutoProxy 吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不需要。AopAutoConfiguration 自动检测 classpath 中有 @Aspect 注解和 aspectjweaver 依赖时自动开启。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">proxyTargetClass=true 和 false 的区别？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">true=强制CGLIB（所有代理都是子类），false=有接口用JDK代理、没接口用CGLIB。Boot 2.x起默认为true，避免 JDK 代理的注入陷阱。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上排查半天发现 @Transactional 没生效，最后发现是因为同类自调用。怎么彻底解决？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">短期：加 exposeProxy=true + AopContext.currentProxy() 让自调用走代理。长期：拆类——把事务方法移到独立 Service。拆类是最佳实践，不依赖 Spring 内部 API，不需要配置开关。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：项目里有些 AOP 切面在单元测试中不需要（比如监控切面）。怎么在不改代码的情况下控制？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">监控切面加 @Profile("!test") 或 @ConditionalOnProperty(name="monitor.enabled", havingValue="true")。测试环境通过 profile 或配置关闭。不需要改切面代码。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">AopContext.currentProxy() 在 @Async 方法里调用能拿到代理吗？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">不能。@Async 换线程 → ThreadLocal 中没有主线程的代理引用 → 返回 null。需要事务+异步的场景，把需要代理的部分在主线程调完，只把结果传进异步方法。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-5 border border-[#45475a] mb-4"><div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">如果有多个 @Configuration 类都加了 @EnableAspectJAutoProxy？</p></div></div><div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">AnnotationAwareAspectJAutoProxyCreator 只会注册一次（BeanDefinitionRegistry 去重）。多个 @EnableAspectJAutoProxy 不冲突，但容易造成配置混乱——建议只在主配置类上加一个。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div></div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]"><h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结 · AOP 章节完结</h3><div class="text-sm text-[#a6adc8] space-y-2"><p><strong class="text-white">1. proxyTargetClass</strong> — Boot 2.x起默认 true，统一CGLIB</p><p><strong class="text-white">2. exposeProxy</strong> — 自调用解药但有框架耦合代价</p><p><strong class="text-white">3. 自动代理注册</strong> — AopAutoConfiguration 自动处理</p><p><strong class="text-white">AOP 完整链路：</strong>核心概念→五种通知→切入点表达式→引入→AspectJ集成→JDK/CGLIB代理→ProxyFactoryBean→@EnableAspectJAutoProxy</p></div></div>
+</section>
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · AOP 自动代理</footer>
+</body>
+</html>

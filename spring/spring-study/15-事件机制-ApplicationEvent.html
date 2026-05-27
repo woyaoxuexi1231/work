@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>事件机制 — 深度剖析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{surface:'#1e1e2e',brand:'#89b4fa',accent:'#f38ba8',muted:'#a6adc8',border:'#45475a'}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&family=JetBrains+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap');body{font-family:'Inter','Noto Sans SC',sans-serif;scroll-behavior:smooth}code,pre{font-family:'JetBrains Mono',monospace}pre{white-space:pre-wrap;word-break:break-all;tab-size:2}.toc a{transition:.2s}.toc a:hover{color:#cba6f7}details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}.bubble-q::before{content:'';position:absolute;left:-8px;top:16px;width:12px;height:12px;background:#1e1e2e;border-left:1px solid #45475a;border-bottom:1px solid #45475a;transform:rotate(45deg)}.bubble-a::before{content:'';position:absolute;right:-8px;top:16px;width:12px;height:12px;background:#1a2a3e;border-right:1px solid #2a4a6e;border-top:1px solid #2a4a6e;transform:rotate(45deg)}</style>
+</head>
+<body class="bg-[#11111b] text-[#cdd6f4]">
+
+<header class="border-b border-[#45475a] bg-[#11111b]/95 sticky top-0 z-50 backdrop-blur">
+<div class="max-w-4xl mx-auto px-6 py-5">
+<div class="flex flex-wrap items-center gap-3 text-xs mb-2">
+<span class="bg-[#89b4fa]/20 text-[#89b4fa] px-2 py-0.5 rounded">5年Java</span>
+<span class="bg-[#a6e3a1]/20 text-[#a6e3a1] px-2 py-0.5 rounded">Spring 源码阅读</span>
+<span class="bg-[#cba6f7]/20 text-[#cba6f7] px-2 py-0.5 rounded">核心容器</span>
+</div>
+<h1 class="text-3xl md:text-4xl font-bold text-white">📢 事件机制：ApplicationEvent & @EventListener</h1>
+<p class="text-[#a6adc8] mt-2">从「Service 之间直接调用」到「发布-订阅解耦」——Spring 观察者模式的完整实现</p>
+</div>
+</header>
+
+<nav class="max-w-4xl mx-auto px-6 py-4 flex flex-wrap gap-4 text-sm toc border-b border-[#45475a]">
+<a href="#p1" class="text-[#89b4fa]">Part 1 · 基础认知</a>
+<a href="#p2" class="text-[#a6e3a1]">Part 2 · 触及灵魂</a>
+<a href="#p3" class="text-[#fab387]">Part 3 · 面试追问</a>
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-10 space-y-16">
+
+<section id="p1">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#89b4fa] pl-4 mb-6">Part 1 · 基础认知</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-6">
+<h3 class="text-lg font-bold text-white mb-3">三种写法对比</h3>
+<div class="overflow-x-auto"><table class="w-full text-sm">
+<thead><tr class="border-b border-[#45475a]"><th class="text-left py-3 px-3 text-white">方式</th><th class="text-left py-3 px-3 text-white">写法</th><th class="text-left py-3 px-3 text-white">特点</th></tr></thead>
+<tbody>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">实现接口</td><td class="py-2 px-3"><code>implements ApplicationListener&lt;OrderEvent&gt;</code></td><td class="py-2 px-3">老派写法，笨重</td></tr>
+<tr class="border-b border-[#45475a]"><td class="py-2 px-3">注解</td><td class="py-2 px-3"><code>@EventListener</code></td><td class="py-2 px-3">⭐ 推荐，灵活</td></tr>
+<tr><td class="py-2 px-3">事务监听</td><td class="py-2 px-3"><code>@TransactionalEventListener</code></td><td class="py-2 px-3">事务提交后才触发</td></tr>
+</tbody></table></div>
+</div>
+
+<pre class="bg-[#11111b] rounded-lg p-4 text-sm overflow-x-auto border border-[#45475a]"><code>// 1. 定义事件
+public class OrderCreatedEvent extends ApplicationEvent {
+    private final Order order;
+    public OrderCreatedEvent(Object source, Order order) { super(source); this.order = order; }
+    public Order getOrder() { return order; }
+}
+
+// 2. 发布事件
+@Service public class OrderService {
+    @Autowired private ApplicationEventPublisher publisher;
+    @Transactional
+    public Order create(OrderDTO dto) {
+        Order order = save(dto);
+        publisher.publishEvent(new OrderCreatedEvent(this, order));  // 发布！
+        return order;
+    }
+}
+
+// 3. 监听事件
+@Component public class OrderEventListener {
+    @EventListener
+    public void handleOrderCreated(OrderCreatedEvent e) { sendSms(e.getOrder()); }
+    
+    @EventListener @Async  // 异步监听
+    public void updateStats(OrderCreatedEvent e) { statsService.incr(); }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void afterCommit(OrderCreatedEvent e) { mqService.send(e.getOrder()); }
+}</code></pre>
+</section>
+
+<section id="p2">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#a6e3a1] pl-4 mb-6">Part 2 · 触及灵魂</h2>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🤔 如果没有事件机制，Service 之间松耦合怎么做？</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p><strong class="text-white">紧耦合代码：</strong>订单创建后要发短信、更新统计、发 MQ。传统做法是在 OrderService.create() 中依次调用这些依赖 → OrderService 依赖了 SMSService、StatsService、MQService：</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// ❌ 紧耦合：新增一个"订单创建后"的动作要改 OrderService
+public Order create(OrderDTO dto) {
+    Order order = save(dto);
+    smsService.send(order);      // 1
+    statsService.update(order);  // 2
+    mqService.send(order);       // 3
+    // 加新的？又要改这里！
+    return order;
+}</code></pre>
+<p>用事件机制：OrderService 只发布事件，<strong class="text-white">谁监听、怎么处理，OrderService 完全不知道</strong>。新增一个监听器不需要改 OrderService。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">💡 设计巧思：@TransactionalEventListener — 事务感知的观察者</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<p>这是 Spring 事件机制最精妙的部分。普通的 @EventListener 在事件发布后立即执行——但此时事务可能还未提交。如果监听器需要读数据库（比如新创建的订单），可能读到旧数据（取决于隔离级别）。</p>
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>// @TransactionalEventListener 的四种触发阶段：
+AFTER_COMMIT      → 事务提交后（默认，最常用）
+AFTER_ROLLBACK    → 事务回滚后
+AFTER_COMPLETION  → 事务结束后（不管提交还是回滚）
+BEFORE_COMMIT     → 事务提交前</code></pre>
+<p><strong class="text-white">内部实现：</strong>它通过 TransactionSynchronizationManager.registerSynchronization() 注册一个回调。事务提交时 → 回调触发 → 执行监听器方法。这和 ThreadLocal 事务机制完美配合。</p>
+</div>
+</details>
+
+<details open class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-4">
+<summary class="text-lg font-bold text-white">🔬 事件的传播链路</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<pre class="bg-[#11111b] rounded-lg p-3 text-xs overflow-x-auto border border-[#45475a]"><code>publishEvent(orderCreatedEvent)
+  → SimpleApplicationEventMulticaster.multicastEvent()
+    → for (ApplicationListener listener : getListeners(event)) {
+          // 默认同步：直接调 listener.onApplicationEvent()
+          // @Async → 线程池异步执行
+      }
+// 默认所有监听器<strong>同步串行</strong>执行 → 一个监听器慢了，事件发布者也慢</code></pre>
+</div>
+</details>
+
+<details class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a]">
+<summary class="text-lg font-bold text-white">⚠️ 边界与陷阱</summary>
+<div class="mt-4 space-y-3 text-sm text-[#a6adc8]">
+<div><p class="text-white font-bold">陷阱1：默认同步执行</p><p>@EventListener 没有 @Async 时，事件发布线程直接调监听器方法。一个慢监听器拖慢整个请求。需要异步时记得加 @Async。</p></div>
+<div><p class="text-white font-bold">陷阱2：事件在事务内触发</p><p>普通 @EventListener 在事务内执行 → 监听器的 DB 操作在同一事务中 → 监听器抛异常会导致业务回滚。用 @TransactionalEventListener(AFTER_COMMIT) 避免。</p></div>
+<div><p class="text-white font-bold">陷阱3：父类事件匹配</p><p>@EventListener 默认也监听子类事件。发布 UserEvent → 监听 ApplicationEvent 的也会触发。</p></div>
+</div>
+</details>
+</section>
+
+<section id="p3">
+<h2 class="text-2xl font-bold text-white border-l-4 border-[#fab387] pl-4 mb-6">Part 3 · 大厂面试官的灵魂追问（7 组）</h2>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@EventListener 和 ApplicationListener 接口有什么区别？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@EventListener 是注解驱动，一个类里可以写多个 @EventListener 监听不同事件。ApplicationListener 是接口，一个类只能监听一种事件（泛型参数）。@EventListener 还支持 SpEL 条件过滤、@Async、@Order 排序。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">多个监听器监听同一个事件，执行顺序怎么控制？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">@Order(1)、@Order(2) 控制。数字越小越先执行。但注意：如果监听器加了 @Async，Order 控制的是"提交到线程池的顺序"，不是"实际执行完的顺序"——异步执行不保证结束后顺序。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">@TransactionalEventListener 怎么做到"事务提交后才触发"？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">通过 TransactionSynchronizationManager.registerSynchronization() 注册了一个回调。事务管理器在 commit() 后会遍历所有 Synchronization 回调——afterCommit、afterCompletion 等。回调里再用 ApplicationEventPublisher 重新发布事件给监听器。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：订单创建后要发短信、更新统计、发 MQ。发短信失败了不应该影响订单创建。你怎么设计？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">用 @TransactionalEventListener + @Async。发短信的监听器加 @Async + AFTER_COMMIT。事务提交后才触发，且异步线程中的异常不会回滚主事务。发短信失败只记录日志+告警，不影响订单。如果发 MQ 需要保证可靠性——不要用事件，用本地消息表 + 定时任务补偿。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">🔧 场景题：线上发现一个订单创建请求非常慢（5秒），排查发现统计更新的监听器执行了 4 秒。怎么解决？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">默认 @EventListener 是同步的——发布者线程直接执行监听器。统计更新慢 → 拖慢主流程。加 @Async 让统计监听器异步执行，主线程立即返回。还要检查统计监听器慢的根本原因（是不是大表没索引）。短期加 @Async 应急，长期优化统计查询。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">事件跟 MQ 有什么区别？什么时候用事件、什么时候用 MQ？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">Spring 事件是<strong class="text-white">进程内</strong>的，MQ 是<strong class="text-white">跨进程</strong>的。事件快（内存调用）、MQ 可靠（持久化 + 重试）。同一个 JVM 内的解耦用事件（发短信、更新统计）；跨服务通信用 MQ（订单服务通知库存服务）。不能把事件当 MQ 用——服务器挂了事件全丢。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-[#1e1e2e] rounded-2xl p-6 border border-[#45475a] mb-5">
+<div class="flex items-start gap-3 mb-3"><div class="w-8 h-8 bg-[#f38ba8] rounded-full flex items-center justify-center text-xs font-bold shrink-0">Q</div><div class="bubble-q bg-[#1e1e2e] border border-[#45475a] rounded-xl p-3 text-sm flex-1"><p class="text-white">监听器里抛了异常会怎样？</p></div></div>
+<div class="flex items-start gap-3 ml-12"><div class="bubble-a bg-[#1a2a3e] border border-[#2a4a6e] rounded-xl p-3 text-sm flex-1"><p class="text-[#a6adc8]">默认同步执行时，监听器异常会<strong class="text-white">直接抛给发布者</strong>——后续的监听器不会执行，发布者也可能因此回滚。加了 @Async 的监听器异常在独立线程中，不影响发布者。所以关键监听器要自己 try-catch，不要指望框架兜底。</p></div><div class="w-8 h-8 bg-[#89b4fa] rounded-full flex items-center justify-center text-xs font-bold shrink-0">A</div></div>
+</div>
+
+<div class="bg-gradient-to-r from-[#1e1e2e] to-[#1a2a3e] rounded-2xl p-6 border border-[#89b4fa]">
+<h3 class="text-lg font-bold text-[#89b4fa] mb-3">📋 面试官总结</h3>
+<div class="text-sm text-[#a6adc8] space-y-2">
+<p><strong class="text-white">1. 事件 vs MQ</strong> — 进程内解耦 vs 跨进程通信，可靠性完全不同</p>
+<p><strong class="text-white">2. @TransactionalEventListener</strong> — 事务感知，解决"事务没提交监听器就读数据"的问题</p>
+<p><strong class="text-white">3. 默认同步执行</strong> — 一个慢监听器拖死整个请求</p>
+<p><strong class="text-white">4. 异常传播</strong> — 同步监听器异常影响发布者</p>
+<p><strong class="text-white">⚠️ 高频陷阱：</strong>把事件当 MQ 用；@Async 后 Order 只控制提交顺序不保证执行完毕顺序</p>
+</div>
+</div>
+</section>
+
+</main>
+<footer class="border-t border-[#45475a] mt-16 py-6 text-center text-xs text-[#a6adc8]">Spring 深度教程系列 · 事件机制</footer>
+</body>
+</html>

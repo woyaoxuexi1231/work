@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ================================================================
+         父工程 — Dubbo 核心概念与架构演示项目
+         模块划分：
+           - dubbo-demo-api      : 共享服务接口 & 领域模型（POJO）
+           - dubbo-demo-provider : 服务提供者（Provider）启动与实现
+           - dubbo-demo-consumer : 服务消费者（Consumer）启动与调用
+         技术栈：Dubbo 2.7.x + Spring Boot 2.7.x + JDK 17 + Nacos 注册中心
+    ================================================================ -->
+    <groupId>com.example.dubbo.demo</groupId>
+    <artifactId>dubbo-demo-parent</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>Dubbo Demo Parent</name>
+    <description>Apache Dubbo 核心概念与架构演示项目（父工程）</description>
+
+    <modules>
+        <module>dubbo-demo-api</module>
+        <module>dubbo-demo-provider</module>
+        <module>dubbo-demo-consumer</module>
+    </modules>
+
+    <!-- ==================== 统一版本管理 ==================== -->
+    <properties>
+        <java.version>1.8</java.version>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- 框架版本 -->
+        <spring-boot.version>2.7.18</spring-boot.version>
+        <dubbo.version>2.7.23</dubbo.version>
+
+        <!-- 注册中心客户端（Nacos） -->
+        <nacos-client.version>1.4.1</nacos-client.version>
+    </properties>
+
+    <!-- ==================== 依赖管理（仅声明，子模块按需引入） ==================== -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Dubbo Spring Boot Starter — 一站式引入 Dubbo 核心 + Spring 集成 -->
+            <dependency>
+                <groupId>org.apache.dubbo</groupId>
+                <artifactId>dubbo-spring-boot-starter</artifactId>
+                <version>${dubbo.version}</version>
+            </dependency>
+
+            <!-- Nacos 注册中心客户端 -->
+            <dependency>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-client</artifactId>
+                <version>${nacos-client.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- ==================== 所有子模块共享的依赖 ==================== -->
+    <dependencies>
+        <!-- Dubbo + Spring Boot 集成 -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!--
+            Nacos 注册中心适配：
+            Dubbo 通过 dubbo-registry-nacos 模块对接 Nacos 注册中心。
+            Nacos（Dynamic Naming and Configuration Service）是阿里巴巴开源
+            的动态服务发现、配置管理与服务管理平台。
+            相比于 Zookeeper，Nacos 原生支持：
+            - 服务健康检查（TCP / HTTP / MySQL）
+            - 动态配置管理（热生效）
+            - 多数据中心
+            - 控制台可视化操作
+        -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+        </dependency>
+
+        <!-- Dubbo Nacos 注册中心适配器 -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-registry-nacos</artifactId>
+            <version>${dubbo.version}</version>
+        </dependency>
+
+        <!-- Spring Boot Web（Consumer 端需要，Provider 端可选） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

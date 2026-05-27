@@ -39,44 +39,157 @@ public class LockLabController {
 
     @PostMapping("/redisson/run")
     public RedissonLockDemoService.RunResult runRedisson(@Valid @RequestBody RedissonRunRequest req) throws InterruptedException {
-        return redissonLockDemoService.run(req.lockKey(), req.waitMs(), req.leaseMs(), req.workMs());
+        return redissonLockDemoService.run(req.getLockKey(), req.getWaitMs(), req.getLeaseMs(), req.getWorkMs());
     }
 
     @PostMapping("/lua/run")
     public LuaValueLockService.RunResult runLua(@Valid @RequestBody LuaRunRequest req) throws InterruptedException {
-        return luaValueLockService.run(req.lockKey(), req.waitMs(), req.leaseMs(), req.renewEveryMs(), req.workMs());
+        return luaValueLockService.run(req.getLockKey(), req.getWaitMs(), req.getLeaseMs(), req.getRenewEveryMs(), req.getWorkMs());
     }
 
     @PostMapping("/ttl")
     public Map<String, Object> ttl(@Valid @RequestBody TtlRequest req) {
         return Map.of(
-                "lockKey", req.lockKey(),
-                "ttlMs", luaValueLockService.ttlMs(req.lockKey())
+                "lockKey", req.getLockKey(),
+                "ttlMs", luaValueLockService.ttlMs(req.getLockKey())
         );
     }
 
     @PostMapping("/idem")
     public IdempotencyService.Result idem(@Valid @RequestBody IdemRequest req) {
-        return idempotencyService.handleOnce(req.bizKey(), Duration.ofSeconds(req.ttlSeconds()));
+        return idempotencyService.handleOnce(req.getBizKey(), Duration.ofSeconds(req.getTtlSeconds()));
     }
 
-    public record RedissonRunRequest(
-            @NotBlank String lockKey,
-            @Min(0) long waitMs,
-            @Min(1) long workMs,
-            Long leaseMs
-    ) {}
+    public static class RedissonRunRequest {
 
-    public record LuaRunRequest(
-            @NotBlank String lockKey,
-            @Min(0) long waitMs,
-            @Min(1) long workMs,
-            @Min(1) long leaseMs,
-            Long renewEveryMs
-    ) {}
+        @NotBlank
 
-    public record TtlRequest(@NotBlank String lockKey) {}
+        private final String lockKey;
 
-    public record IdemRequest(@NotBlank String bizKey, @Min(1) long ttlSeconds) {}
+        @Min(0)
+
+        private final long waitMs;
+
+        @Min(1)
+
+        private final long workMs;
+
+        private final Long leaseMs;
+
+
+        public RedissonRunRequest(String lockKey, long waitMs, long workMs, Long leaseMs) {
+
+            this.lockKey = lockKey;
+
+            this.waitMs = waitMs;
+
+            this.workMs = workMs;
+
+            this.leaseMs = leaseMs;
+
+        }
+
+
+        public String getLockKey() { return lockKey; }
+
+        public long getWaitMs() { return waitMs; }
+
+        public long getWorkMs() { return workMs; }
+
+        public Long getLeaseMs() { return leaseMs; }
+
+    }
+
+    public static class LuaRunRequest {
+
+        @NotBlank
+
+        private final String lockKey;
+
+        @Min(0)
+
+        private final long waitMs;
+
+        @Min(1)
+
+        private final long workMs;
+
+        @Min(1)
+
+        private final long leaseMs;
+
+        private final Long renewEveryMs;
+
+
+        public LuaRunRequest(String lockKey, long waitMs, long workMs, long leaseMs, Long renewEveryMs) {
+
+            this.lockKey = lockKey;
+
+            this.waitMs = waitMs;
+
+            this.workMs = workMs;
+
+            this.leaseMs = leaseMs;
+
+            this.renewEveryMs = renewEveryMs;
+
+        }
+
+
+        public String getLockKey() { return lockKey; }
+
+        public long getWaitMs() { return waitMs; }
+
+        public long getWorkMs() { return workMs; }
+
+        public long getLeaseMs() { return leaseMs; }
+
+        public Long getRenewEveryMs() { return renewEveryMs; }
+
+    }
+
+    public static class TtlRequest {
+
+        @NotBlank
+
+        private final String lockKey;
+
+
+        public TtlRequest(String lockKey) {
+
+            this.lockKey = lockKey;
+
+        }
+
+
+        public String getLockKey() { return lockKey; }
+
+    }
+
+    public static class IdemRequest {
+
+        @NotBlank
+
+        private final String bizKey;
+
+        @Min(1)
+
+        private final long ttlSeconds;
+
+
+        public IdemRequest(String bizKey, long ttlSeconds) {
+
+            this.bizKey = bizKey;
+
+            this.ttlSeconds = ttlSeconds;
+
+        }
+
+
+        public String getBizKey() { return bizKey; }
+
+        public long getTtlSeconds() { return ttlSeconds; }
+
+    }
 }
 

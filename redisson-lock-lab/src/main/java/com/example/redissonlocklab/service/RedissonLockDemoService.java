@@ -13,17 +13,69 @@ import org.springframework.stereotype.Service;
 public class RedissonLockDemoService {
     private final ObjectProvider<RedissonClient> redissonProvider;
 
-    public record RunResult(
-            boolean acquired,
-            String lockKey,
-            Long leaseMs,
-            long workMs,
-            long waitMs,
-            long startedAtMs,
-            long finishedAtMs,
-            Long ttlAfterAcquireMs,
-            Long ttlAfterFinishMs
-    ) {}
+    public static class RunResult {
+
+        private final boolean acquired;
+
+        private final String lockKey;
+
+        private final Long leaseMs;
+
+        private final long workMs;
+
+        private final long waitMs;
+
+        private final long startedAtMs;
+
+        private final long finishedAtMs;
+
+        private final Long ttlAfterAcquireMs;
+
+        private final Long ttlAfterFinishMs;
+
+
+        public RunResult(boolean acquired, String lockKey, Long leaseMs, long workMs, long waitMs, long startedAtMs, long finishedAtMs, Long ttlAfterAcquireMs, Long ttlAfterFinishMs) {
+
+            this.acquired = acquired;
+
+            this.lockKey = lockKey;
+
+            this.leaseMs = leaseMs;
+
+            this.workMs = workMs;
+
+            this.waitMs = waitMs;
+
+            this.startedAtMs = startedAtMs;
+
+            this.finishedAtMs = finishedAtMs;
+
+            this.ttlAfterAcquireMs = ttlAfterAcquireMs;
+
+            this.ttlAfterFinishMs = ttlAfterFinishMs;
+
+        }
+
+
+        public boolean isAcquired() { return acquired; }
+
+        public String getLockKey() { return lockKey; }
+
+        public Long getLeaseMs() { return leaseMs; }
+
+        public long getWorkMs() { return workMs; }
+
+        public long getWaitMs() { return waitMs; }
+
+        public long getStartedAtMs() { return startedAtMs; }
+
+        public long getFinishedAtMs() { return finishedAtMs; }
+
+        public Long getTtlAfterAcquireMs() { return ttlAfterAcquireMs; }
+
+        public Long getTtlAfterFinishMs() { return ttlAfterFinishMs; }
+
+    }
 
     public RunResult run(String lockKey, long waitMs, Long leaseMs, long workMs) throws InterruptedException {
         RLock lock = redissonProvider.getObject().getLock(lockKey);
