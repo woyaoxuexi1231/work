@@ -22,7 +22,7 @@ import java.util.*;
  * </pre>
  */
 @RestController
-@RequestMapping("/upload")
+@RequestMapping("/q16/upload")
 public class FileUploadController {
 
     private static final String UPLOAD_DIR = System.getProperty("java.io.tmpdir") + "/spring-uploads";
