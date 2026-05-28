@@ -1,4 +1,4 @@
-package com.example.springqa.Q16_MvcRequestFlow;
+package com.example.springqa.Q16_MvcRequestFlow.filter;
 
 import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
@@ -10,7 +10,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 
 public class RepeatableRequestWrapper extends HttpServletRequestWrapper {
 

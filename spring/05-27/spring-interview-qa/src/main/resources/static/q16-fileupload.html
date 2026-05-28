@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文件上传 · 流式传输全解</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--text:#c9d1d9;--sub:#6e7781;--accent:#58a6ff;--green:#3fb950;--orange:#d2991d;--red:#f85149;--border:#21262d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:14px}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+h1{font-size:28px;margin:36px 0 4px;text-align:center}h1 span{color:var(--accent)}
+.sub{text-align:center;color:var(--sub);margin-bottom:32px;font-size:14px}
+
+.s{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 26px;margin-bottom:20px}
+.s h2{font-size:18px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.s h2 .n{font-size:12px;background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.code{background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:10px 0}
+.code .bar{background:#161b22;padding:6px 14px;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)}
+.code .bar .file{color:var(--accent)}
+.code .ct{font-family:"JetBrains Mono",Consolas,monospace;font-size:11px;line-height:1.65;padding:12px 16px;overflow-x:auto;white-space:pre;color:#c9d1d9}
+.code .ct .k{color:#ff7b72}.code .ct .t{color:#ffa657}.code .ct .c{color:#8b949e}.code .ct .s{color:#a5d6ff}.code .ct .n{color:#7ee787}
+
+.flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;padding:14px;background:#0d1117;border-radius:10px;border:1px solid var(--border);margin:10px 0}
+.fb{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:8px 14px;text-align:center;font-size:12px;min-width:60px;flex-shrink:0}
+.fb .emj{font-size:18px;display:block}.fb .lbl{font-size:10px;color:var(--sub)}
+.fb.h{border-color:var(--accent)}.fb.g{border-color:var(--green)}
+.fa{font-size:16px;color:var(--sub);flex-shrink:0}
+
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+.compare>div{background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:12px}
+.compare h4{font-size:13px;margin-bottom:6px}
+
+.note{background:#0d1117;border-left:4px solid var(--orange);padding:10px 14px;margin:10px 0;border-radius:0 8px 8px 0;font-size:13px;color:var(--sub)}
+.note strong{color:var(--orange)}
+
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th{background:#161b22;text-align:left;padding:8px 12px;border-bottom:2px solid var(--border)}td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--sub)}
+td code{color:var(--accent)}
+
+.back{text-align:center;padding:40px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>文件上传 · <span>流式传输到底是什么？</span></h1>
+<p class="sub">从 HTTP 协议到 Java IO，一次把"流"这个概念讲透</p>
+
+<!-- ═══════ 1 ═══════ -->
+<div class="s"><h2><span class="n">1</span>"流"到底是什么——一个 10KB 的比喻</h2>
+
+<p style="color:var(--sub);font-size:13px">
+你有一个 10GB 的水库，要把水运到另一个城市。你有两种方案：</p>
+
+<div class="compare">
+<div><h4 style="color:var(--red)">方案 A：把整个水库装车运过去</h4>
+你需要一辆能装 10GB 水的卡车。水箱的容量必须 ≥ 10GB。<br>
+10GB 文件 → 你需要 10GB 内存 → <b>卡车造不出来 → OOM</b>。<br>
+这就是 <code style="color:var(--red)">byte[] body = request.getInputStream().readAllBytes()</code>。</div>
+<div><h4 style="color:var(--green)">方案 B：用水桶一桶一桶舀</h4>
+你只需要一个 8KB 的水桶。舀一桶 → 倒进对面的水池 → 回去再舀一桶。<br>
+任何时刻，你手上只有一桶水——<b>不管水库多大，水桶永远是 8KB</b>。<br>
+这就是 <b>流</b>。</div>
+</div>
+
+<div class="code"><div class="bar"><span class="file">流的本质 — 8KB 的秘密</span></div><div class="ct"><span class="k">byte</span>[] buffer = <span class="k">new byte</span>[<span class="n">8192</span>];  <span class="c">// ← 这个 8KB 数组就是"水桶"</span>
+<span class="k">int</span> bytesRead;
+<span class="k">while</span> ((bytesRead = in.<span class="t">read</span>(buffer)) != -1) {  <span class="c">// 舀一桶</span>
+    out.<span class="t">write</span>(buffer, <span class="n">0</span>, bytesRead);            <span class="c">// 倒掉</span>
+}
+<span class="c">// 循环结束，水库搬空了——但内存只用过 8KB</span></div></div>
+</div>
+
+<!-- ═══════ 2 ═══════ -->
+<div class="s"><h2><span class="n">2</span>文件上传的完整链路：一个字节从网卡到磁盘</h2>
+
+<div class="flow">
+  <div class="fb h"><span class="emj">🌐</span>HTTP Body<div class="lbl">二进制流</div></div>
+  <div class="fa">→</div>
+  <div class="fb"><span class="emj">🖥️</span>Tomcat<div class="lbl">Socket读</div></div>
+  <div class="fa">→</div>
+  <div class="fb"><span class="emj">📦</span>Servlet<div class="lbl">InputStream</div></div>
+  <div class="fa">→</div>
+  <div class="fb h"><span class="emj">🔍</span>MultipartResolver<div class="lbl">解析边界</div></div>
+  <div class="fa">→</div>
+  <div class="fb"><span class="emj">📄</span>MultipartFile<div class="lbl">或临时文件</div></div>
+  <div class="fa">→</div>
+  <div class="fb h"><span class="emj">💻</span>Controller<div class="lbl">transferTo</div></div>
+  <div class="fa">→</div>
+  <div class="fb g"><span class="emj">💾</span>磁盘</div>
+</div>
+
+<table>
+<tr><th>步骤</th><th>谁在做</th><th>数据在哪</th><th>内存占用</th></tr>
+<tr><td>① 客户端发送</td><td>浏览器/curl</td><td>本地磁盘</td><td>—</td></tr>
+<tr><td>② TCP 传输</td><td>操作系统</td><td>Socket buffer</td><td>内核缓冲区 (几十KB)</td></tr>
+<tr><td>③ Tomcat 接收</td><td>NIO Endpoint</td><td>堆外内存 / ByteBuffer</td><td>可配置</td></tr>
+<tr><td>④ Servlet 读出</td><td>HttpServletRequest</td><td><code>InputStream</code>——还未解析</td><td>0（惰性读取）</td></tr>
+<tr><td>⑤ MultipartResolver</td><td>StandardMultipartResolver</td><td>内存或临时文件 ★</td><td>取决于 file-size-threshold</td></tr>
+<tr><td>⑥ Controller 拿到</td><td>你的代码</td><td><code>MultipartFile</code></td><td>已经在④处理好了</td></tr>
+<tr><td>⑦ transferTo</td><td>你的代码</td><td>目标磁盘路径</td><td>流式拷贝，恒定为 8KB buffer</td></tr>
+</table>
+</div>
+
+<!-- ═══════ 3 ═══════ -->
+<div class="s"><h2><span class="n">3</span>MultipartResolver：Spring 帮你做的那一步</h2>
+
+<p style="color:var(--sub);font-size:13px">
+这是整个流程中最关键的一步——也是很多人不理解"Spring 到底帮了我什么"的地方。</p>
+
+<div class="code"><div class="bar"><span class="file">StandardServletMultipartResolver — Spring 的处理逻辑</span></div><div class="ct"><span class="c">// 请求进来时，body 长这样：</span>
+<span class="c">// ------WebKitFormBoundary7MA4YWxk</span>
+<span class="c">// Content-Disposition: form-data; name="file"; filename="photo.jpg"</span>
+<span class="c">// Content-Type: image/jpeg</span>
+<span class="c">//</span>
+<span class="c">// &lt;二进制 JPEG 数据&gt;</span>
+<span class="c">// ------WebKitFormBoundary7MA4YWxk--</span>
+
+<span class="c">// MultipartResolver 做的事：</span>
+<span class="c">// ① 读 boundary 分隔符 —— 找到 file 字段的起止位置</span>
+<span class="c">// ② 解析 Content-Disposition 头 —— 拿到 filename=photo.jpg</span>
+<span class="c">// ③ ★ 核心：读 body 里的文件内容，根据 file-size-threshold 决定放哪：
+<span class="c">//    小于阈值 → new byte[fileSize] → 存在内存</span>
+<span class="c">//    大于阈值 → 创建临时文件 → InputStream → OutputStream 写到磁盘</span>
+<span class="c">// ④ 封装成 MultipartFile 对象，塞进 request 的 parameter map</span>
+<span class="c">// ⑤ Controller 拿到 MultipartFile —— 此时数据已在内存或临时文件里</span></div></div>
+
+<div class="note"><strong>💡 关键洞察：</strong>你在 Controller 里拿到的 <code>MultipartFile</code> 已经不是原始的网络流了——MultipartResolver 已经把文件内容从 HTTP body 中<b>提取出来</b>，放在了内存（小文件）或临时文件（大文件）里。你调 <code>file.getBytes()</code> 时不是去读网卡，是去读内存/临时文件。</div>
+</div>
+
+<!-- ═══════ 4 ═══════ -->
+<div class="s"><h2><span class="n">4</span>四种上传方式，内存占用天差地别</h2>
+
+<table>
+<tr><th>方式</th><th>500MB 文件 → 内存占用</th><th>适用</th></tr>
+<tr><td><code>@RequestBody byte[] body</code></td><td style="color:var(--red)"><b>500MB → OOM 💀</b></td><td>仅限 &lt;1MB</td></tr>
+<tr><td><code>@RequestParam MultipartFile</code></td><td style="color:var(--green)"><b>0MB</b>（已写临时文件）</td><td>通用，最推荐</td></tr>
+<tr><td><code>request.getInputStream()</code> 手动流式</td><td style="color:var(--green)"><b>8KB</b>（缓冲区）</td><td>需要完全控制时</td></tr>
+<tr><td>分片上传</td><td style="color:var(--green)"><b>每片 &lt;5MB</b></td><td>超大文件 + 断点续传</td></tr>
+</table>
+
+<div class="code"><div class="bar"><span class="file">MultipartFile.transferTo() 内部做了什么</span></div><div class="ct"><span class="c">// 你以为 transferTo 是"移动"文件——其实是"拷贝"</span>
+<span class="k">public void</span> <span class="t">transferTo</span>(File dest) {
+    <span class="k">if</span> (文件在内存) {
+        <span class="c">// 直接写 byte[] → OutputStream</span>
+        Files.write(dest.toPath(), <span class="k">this</span>.fileItem.get());
+    } <span class="k">else</span> {
+        <span class="c">// 文件在临时目录 → 重命名（快）或拷贝（跨分区时）</span>
+        <span class="k">this</span>.fileItem.write(dest);
+    }
+}</div></div>
+</div>
+
+<!-- ═══════ 5 ═══════ -->
+<div class="s"><h2><span class="n">5</span>API 测试</h2>
+
+<div class="code"><div class="bar"><span class="file">四个接口的 curl 命令</span></div><div class="ct"><span class="c"># 方式一：MultipartFile（推荐）</span>
+curl -F <span class="s">"file=@test.jpg"</span> -F <span class="s">"desc=test"</span> http://localhost:<span class="n">8080</span>/upload/multipart
+
+<span class="c"># 方式二：byte[]（仅限小文件——接口内置 1MB 保护）</span>
+curl -d <span class="s">"@test.jpg"</span> -H <span class="s">"Content-Type: application/octet-stream"</span> http://localhost:<span class="n">8080</span>/upload/bytes
+
+<span class="c"># 方式三：手动流式（原始方式，恒定 8KB 内存）</span>
+curl --data-binary <span class="s">"@test.jpg"</span> http://localhost:<span class="n">8080</span>/upload/stream
+
+<span class="c"># 方式四：分片上传</span>
+curl -F <span class="s">"chunk=@part1"</span> -F <span class="s">"fileId=abc123"</span> -F <span class="s">"chunkIndex=0"</span> -F <span class="s">"totalChunks=5"</span> http://localhost:<span class="n">8080</span>/upload/chunk
+curl -X POST http://localhost:<span class="n">8080</span>/upload/chunk/merge?fileId=abc123</div></div>
+</div>
+
+<!-- ═══════ 6 ═══════ -->
+<div class="s"><h2><span class="n">6</span>一句话回答"流式传输到底是什么"</h2>
+
+<div class="note">
+<strong>流式传输 = 不用把整个文件读进内存，而是用一个小缓冲区（通常 8KB）循环"读一块→写一块"，直到处理完整个文件。任何时刻内存里只有那个小缓冲区的数据——无论文件是 1MB 还是 1GB，内存占用恒定。</strong>
+</div>
+
+<p style="color:var(--sub);font-size:13px;margin-top:12px">
+Spring 的 <code>MultipartFile.transferTo()</code> 已经帮你做了流式写入目标位置。
+但流式的第一步——把文件内容从 HTTP body 中提取出来——是 <code>MultipartResolver</code> 做的。
+它根据 <code>file-size-threshold</code> 决定放在内存还是临时文件。
+你写的 Controller 代码不需要关心这些——拿到 <code>MultipartFile</code> 时，数据已经就位了。
+</p>
+
+<table>
+<tr><th>概念</th><th>内存占用</th><th>代表代码</th></tr>
+<tr><td>全量读</td><td style="color:var(--red)">= 文件大小 → 大文件必 OOM</td><td><code>byte[] b = inputStream.readAllBytes()</code></td></tr>
+<tr><td>流式读</td><td style="color:var(--green)">= 缓冲区大小（恒定 8KB）</td><td><code>while (in.read(buf) != -1) out.write(buf, 0, n)</code></td></tr>
+</table>
+</div>
+
+<div class="back"><a href="/q16.html">← Q16 答题</a> · <a href="/">返回索引</a></div>
+</div>
+</body>
+</html>

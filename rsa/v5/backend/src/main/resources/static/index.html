@@ -16,6 +16,22 @@
 <div class="glass p-8 w-full max-w-xl shadow-2xl text-white">
     <h1 class="text-2xl font-bold mb-4 text-center">v5：防重放攻击（timestamp + nonce）</h1>
 
+    <!-- 版本升级说明 -->
+    <div class="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-4 mb-4 text-sm leading-relaxed">
+        <div class="mb-3">
+            <div class="font-bold text-yellow-300 mb-1">⚠️ v4 的问题：合法请求可以被原封不动地重放，服务端照单全收</div>
+            <div class="opacity-90">
+                v4 的 token 机制保证了"请求用的是正确的密钥版本"，但 token 在有效期内是可以重复使用的。假设用户 Alice 发了一条 <code class="bg-white/10 px-1 rounded">"向 Bob 转账 100 元"</code>，整个请求包（encryptedKey + encryptedData + keyVersion + token）都是合法的。攻击者 Mallory 在咖啡店的 Wi-Fi 上截获了这个数据包。Mallory 解不开密文，也改不了内容（改了 token 就对不上），但他可以<strong>原封不动地把整个包重新发给服务端</strong>。服务端收到后：token 合法 ✓，keyVersion 匹配 ✓，解密成功 ✓——于是又执行了一次"向 Bob 转账 100 元"。Mallory 把这个包重放 10 次，Alice 的账户就被扣了 1000 元。<strong>这就是重放攻击（Replay Attack）：攻击者不需要破解密码，只需要"复制粘贴"就能让合法操作被执行多次。</strong>现实案例：2016 年某银行 APP 的交易接口因缺乏 nonce 校验，攻击者截获一次充值请求后重放，实现无限充值。
+            </div>
+        </div>
+        <div>
+            <div class="font-bold text-green-300 mb-1">✅ v5 的解决：timestamp + nonce + HMAC 请求签名，每条请求全局唯一</div>
+            <div class="opacity-90">
+                每个请求现在必须带三个新字段：<code class="bg-white/10 px-1 rounded">timestamp</code>（请求发出的毫秒时间戳）、<code class="bg-white/10 px-1 rounded">nonce</code>（16 字节随机数，hex 编码）、<code class="bg-white/10 px-1 rounded">requestSignature</code>（用 AES key 对 <code class="bg-white/10 px-1 rounded">keyVersion|timestamp|nonce|encryptedData</code> 做的 HMAC-SHA256）。服务端校验：(1) timestamp 与服务器时间差不超过 5 分钟——Mallory 不能囤积旧包无限期使用；(2) nonce 在服务端 Redis/内存里全局唯一——同一个 nonce 第二次出现直接拒绝。Mallory 截到的包里的 timestamp 会过期，nonce 已经用过了，<strong>重放必然失败</strong>。页面上还提供了「重放上一包」按钮让你亲手验证：先发一次正常请求（成功），再点重放（被 400 拒绝）。
+            </div>
+        </div>
+    </div>
+
     <div class="bg-white/10 p-4 rounded-lg mb-4">
         <div class="text-sm opacity-90">服务端公钥: <span id="key-status" class="font-mono font-bold">加载中...</span></div>
         <div class="text-xs opacity-70 mt-1">学习点：在 v4 的 keyVersion + token 基础上，再加入 timestamp + nonce + HMAC 请求签名。</div>

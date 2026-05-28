@@ -1,4 +1,4 @@
-package com.example.springqa.Q16_MvcRequestFlow;
+package com.example.springqa.Q16_MvcRequestFlow.controlleradvice;
 
 import com.alibaba.fastjson2.JSON;
 import org.springframework.core.MethodParameter;

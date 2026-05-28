@@ -1,4 +1,4 @@
-package com.example.springqa.Q16_MvcRequestFlow;
+package com.example.springqa.Q16_MvcRequestFlow.controlleradvice;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ControllerAdvice;

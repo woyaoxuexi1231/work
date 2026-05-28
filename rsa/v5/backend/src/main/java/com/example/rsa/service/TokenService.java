@@ -1,9 +1,10 @@
 package com.example.rsa.service;
 
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import javax.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -42,7 +43,7 @@ public class TokenService {
 
     public boolean verifyToken(String token, String expectedKeyVersion, String expectedFingerprint, long nowMs) {
         try {
-            if (token == null || token.isBlank()) return false;
+            if (StringUtils.hasLength( token)) return false;
             String[] parts = token.split("\\.");
             if (parts.length != 2) return false;
 

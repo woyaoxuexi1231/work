@@ -3,6 +3,7 @@ package com.example.rsa.controller;
 import com.example.rsa.dto.DecryptRequest;
 import com.example.rsa.dto.EncryptResponse;
 import com.example.rsa.dto.KeyResponse;
+import com.example.rsa.model.KeyVersion;
 import com.example.rsa.service.CryptoService;
 import com.example.rsa.service.KeyManager;
 import com.example.rsa.service.NonceService;
@@ -10,6 +11,7 @@ import com.example.rsa.service.TokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -41,7 +43,7 @@ public class RsaController {
     @PostMapping("/secure/echo")
     public ResponseEntity<?> secureEcho(@RequestBody DecryptRequest request) {
         try {
-            if (request.getKeyVersion() == null || request.getKeyVersion().isBlank()) {
+            if (StringUtils.hasLength(request.getKeyVersion())) {
                 return ResponseEntity.badRequest().body("Request failed: missing keyVersion");
             }
             KeyVersion kv = keyManager.getKey(request.getKeyVersion());
