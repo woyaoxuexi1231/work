@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q12 · 事务传播</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 12 · 事务</div><h1>事务传播行为</h1><div class="q-sub">REQUIRED / REQUIRES_NEW / NESTED 的区别？REQUIRES_NEW 挂起如何实现？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"REQUIRED 加入当前事务或新建；REQUIRES_NEW 挂起当前事务，新建独立事务；NESTED 嵌套子事务，依赖数据库 Savepoint。REQUIRES_NEW 通过 TransactionSynchronizationManager 的 unbindResource 挂起。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"三种传播行为的本质区别在于对'事务资源'（主要是数据库连接）的处理方式。REQUIRED 最直接——有就用，没有就建。REQUIRES_NEW 需要挂起：TransactionSynchronizationManager.unbindResource(dataSource) 解绑当前连接 → 保存到 SuspendedResourcesHolder → 获取新连接开启新事务 → 内层结束 → 恢复 Holder。这整个过程全部基于 ThreadLocal——这也是 @Transactional 不能跨线程的根本原因。NESTED 的实现不同：它不走挂起/恢复，而是用 JDBC 的 Savepoint——conn.setSavepoint() + conn.rollback(savepoint)。所以 NESTED 的回滚是'子事务内局部回滚'，外层事务继续；而 REQUIRES_NEW 的两个事务完全独立。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>数据源要求：</b>NESTED → JDBC 3.0 Savepoint (H2/MySQL InnoDB/PG/Oracle)。不支持 Savepoint 会降级为 REQUIRED。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"事务传播行为的 7 种取值本质上是 Spring 对'事务边界管理'这个复杂问题的穷举式建模。它把'调用方有事务/无事务'和'被调用方需要事务/不需要/必须独立'做了笛卡尔积——每一种传播行为都是这两个维度上的一个坐标点。REQUIRED 代表'信任调用方'，REQUIRES_NEW 代表'不信任调用方'——后者常用于日志写入（无论如何都要记录）和审计（独立提交、不能因业务回滚而丢失）。挂起机制的设计也有哲学：它没有选择'嵌套连接'（一个事务里开两个连接），因为那会导致死锁和资源耗尽；它选择了'连接切换'——先解绑旧的、绑定新的、用完恢复旧的。这本质上是一种资源池化的思想，ThreadLocal 就是那个'线程本地的资源槽'。理解了这个，你就理解了为什么 Spring 选择 ThreadLocal 管理事务——不是因为简单，而是因为在一个线程一个数据库连接的前提下，ThreadLocal 是最精确的资源映射。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"穷举式建模"、"资源池化思想"、"ThreadLocal 是资源槽"——三个概念证明你从第一性原理推导出设计。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q12 · 事务传播 · <a href="/q13.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

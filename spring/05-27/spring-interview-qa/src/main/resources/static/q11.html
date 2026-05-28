@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q11 · 自研 AOP</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 11 · AOP</div><h1>自研简化版 AOP 引擎</h1><div class="q-sub">如果让你自己实现一个支持前置、后置、环绕通知的 AOP 引擎，核心接口怎么设计？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"核心接口：Advice 接口族（BeforeAdvice / AfterAdvice / AroundAdvice）、Pointcut 接口（matches 方法）、Aspect 类（绑定 Advice + Pointcut）、AopEngine（注册切面 + 创建代理）。代理通过 JDK 动态代理在 Bean 初始化时织入。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"200 行代码的核心架构：Advice 接口族为什么分 Before/After/Around 三个而不是一个？因为不同类型通知有不同的方法签名——Before 不需要返回值，After 需要接收返回值，Around 需要 MethodInvoker 控制链。如果合并成一个接口，每个通知都要写一堆 if-else 判断自己是什么类型。Pointcut 用接口抽象是因为切点的匹配方式多种多样（注解、表达式、正则）——接口让每一种都可以独立实现。MethodInvoker 链是最关键的设计：从目标方法开始，逐层包裹 AroundAdvice，形成洋葱模型。这和 ReflectiveMethodInvocation 的递归是同一个思想——用控制流表达横切关注点的层次。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>对比 Spring：</b>你写的 AopEngine.registerBean() 对应 AbstractAutoProxyCreator.postProcessAfterInitialization()——都是成品阶段织入。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"自研 AOP 引擎的目的不是造轮子——是通过'自己实现一遍'来暴露出 Spring AOP 中那些'如果我来做，我也会这么设计'的必然性。你会发现三个必然：第一，Advice 必须按类型分接口——这是接口隔离原则，你不可能用一个 doEverything() 覆盖所有通知类型。第二，Pointcut 必须是接口——否则换一种匹配方式就要改引擎源码，违反开闭原则。第三，MethodInvoker 链必须是递归——你尝试用 for 循环实现环绕通知就会立刻撞墙。这些不是你选择的，是问题结构本身决定的。理解了这三个必然性，你就理解了 Spring AOP 的架构不是某个人的偏好，而是这个问题的唯一优雅解。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"问题结构本身决定的"、"唯一优雅解"——不是在背 Spring 的设计，是在推演设计。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q11 · 自研 AOP · <a href="/q12.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

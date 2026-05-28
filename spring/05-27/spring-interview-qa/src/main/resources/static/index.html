@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring 面试 24 问</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="logo">Spring 面试 <span>24 问</span></div>
+    <nav>
+      <a href="#ioc">IOC 容器</a>
+      <a href="#aop">AOP</a>
+      <a href="#tx">事务</a>
+      <a href="#mvc">MVC</a>
+      <a href="#boot">自动装配</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div style="padding:48px 0 12px">
+    <h1 style="font-size:32px;font-weight:800">资深 Java 开发 · Spring 深度面试</h1>
+    <p style="color:var(--text-secondary);font-size:16px;margin-top:8px">
+      24 个问题覆盖 IOC · AOP · 事务 · MVC · 自动装配五大模块，
+      每个回答包含架构设计分析、源码级调用链、以及设计者意图推演。
+    </p>
+  </div>
+
+  <!-- ═══════════ IOC 容器 ═══════════ -->
+  <h2 id="ioc" style="margin:36px 0 16px;font-size:22px">一、Spring IOC 容器</h2>
+  <div class="idx-grid">
+
+    <a href="/q01.html" class="idx-card">
+      <div class="idx-num">Q01</div>
+      <div class="idx-title">Bean 生命周期</div>
+      <div class="idx-sub">10 个阶段的完整时间轴及每一步的设计意图</div>
+    </a>
+    <a href="/q02.html" class="idx-card">
+      <div class="idx-num">Q02</div>
+      <div class="idx-title">循环依赖</div>
+      <div class="idx-sub">三级缓存为什么必须是三级、AOP 代理在哪个环节生成</div>
+    </a>
+    <a href="/q03.html" class="idx-card">
+      <div class="idx-num">Q03</div>
+      <div class="idx-title">依赖注入</div>
+      <div class="idx-sub">@Autowired vs @Resource、构造器注入为什么更好</div>
+    </a>
+    <a href="/q04.html" class="idx-card">
+      <div class="idx-num">Q04</div>
+      <div class="idx-title">FactoryBean</div>
+      <div class="idx-sub">FactoryBean vs BeanFactory、MyBatis Mapper 代理原理</div>
+    </a>
+    <a href="/q05.html" class="idx-card">
+      <div class="idx-num">Q05</div>
+      <div class="idx-title">作用域</div>
+      <div class="idx-sub">singleton 注入 prototype 的陷阱与三种解决方案</div>
+    </a>
+    <a href="/q06.html" class="idx-card">
+      <div class="idx-num">Q06</div>
+      <div class="idx-title">Bean 覆盖与冲突</div>
+      <div class="idx-sub">Spring Boot 为什么从默认允许改为默认禁止</div>
+    </a>
+  </div>
+
+  <!-- ═══════════ AOP ═══════════ -->
+  <h2 id="aop" style="margin:36px 0 16px;font-size:22px">二、Spring AOP</h2>
+  <div class="idx-grid">
+
+    <a href="/q07.html" class="idx-card">
+      <div class="idx-num">Q07</div>
+      <div class="idx-title">代理选择</div>
+      <div class="idx-sub">JDK 动态代理 vs CGLIB、Spring Boot 为什么默认改 CGLIB</div>
+    </a>
+    <a href="/q08.html" class="idx-card">
+      <div class="idx-num">Q08</div>
+      <div class="idx-title">内部调用失效</div>
+      <div class="idx-sub">this 调用绕过代理的根因与三种解决方案</div>
+    </a>
+    <a href="/q09.html" class="idx-card">
+      <div class="idx-num">Q09</div>
+      <div class="idx-title">拦截链</div>
+      <div class="idx-sub">@Order 洋葱模型、proceed() 阻断机制</div>
+    </a>
+    <a href="/q10.html" class="idx-card">
+      <div class="idx-num">Q10</div>
+      <div class="idx-title">AOP 实现原理</div>
+      <div class="idx-sub">Advisor/Advice/Pointcut 关系、递归调用链</div>
+    </a>
+    <a href="/q11.html" class="idx-card">
+      <div class="idx-num">Q11</div>
+      <div class="idx-title">自研 AOP 引擎</div>
+      <div class="idx-sub">200 行代码实现完整的 Before/After/Around 通知</div>
+    </a>
+  </div>
+
+  <!-- ═══════════ 事务 ═══════════ -->
+  <h2 id="tx" style="margin:36px 0 16px;font-size:22px">三、Spring 事务管理</h2>
+  <div class="idx-grid">
+
+    <a href="/q12.html" class="idx-card">
+      <div class="idx-num">Q12</div>
+      <div class="idx-title">事务传播行为</div>
+      <div class="idx-sub">REQUIRED / REQUIRES_NEW / NESTED 的区别与挂起实现</div>
+    </a>
+    <a href="/q13.html" class="idx-card">
+      <div class="idx-num">Q13</div>
+      <div class="idx-title">事务失效场景</div>
+      <div class="idx-sub">7 种 @Transactional 失效情况及背后的设计原因</div>
+    </a>
+    <a href="/q14.html" class="idx-card">
+      <div class="idx-num">Q14</div>
+      <div class="idx-title">事务实现原理</div>
+      <div class="idx-sub">TransactionSynchronizationManager 与 afterCommit 回调</div>
+    </a>
+    <a href="/q15.html" class="idx-card">
+      <div class="idx-num">Q15</div>
+      <div class="idx-title">分布式事务</div>
+      <div class="idx-sub">TCC 手动实现、本地消息表、Spring 为什么不内置</div>
+    </a>
+  </div>
+
+  <!-- ═══════════ MVC ═══════════ -->
+  <h2 id="mvc" style="margin:36px 0 16px;font-size:22px">四、Spring MVC</h2>
+  <div class="idx-grid">
+
+    <a href="/q16.html" class="idx-card">
+      <div class="idx-num">Q16</div>
+      <div class="idx-title">请求处理流程</div>
+      <div class="idx-sub">从 DispatcherServlet 到 ViewResolver 的完整链路</div>
+    </a>
+    <a href="/q17.html" class="idx-card">
+      <div class="idx-num">Q17</div>
+      <div class="idx-title">参数绑定与转换</div>
+      <div class="idx-sub">HttpMessageConverter 策略链的设计思想</div>
+    </a>
+    <a href="/q18.html" class="idx-card">
+      <div class="idx-num">Q18</div>
+      <div class="idx-title">拦截器与过滤器</div>
+      <div class="idx-sub">HandlerInterceptor vs Filter 的分层哲学</div>
+    </a>
+    <a href="/q19.html" class="idx-card">
+      <div class="idx-num">Q19</div>
+      <div class="idx-title">统一异常处理</div>
+      <div class="idx-sub">@ControllerAdvice 实现原理与 ResponseBodyAdvice</div>
+    </a>
+    <a href="/q20.html" class="idx-card">
+      <div class="idx-num">Q20</div>
+      <div class="idx-title">异步请求</div>
+      <div class="idx-sub">DeferredResult / Callable / SSE 的线程模型</div>
+    </a>
+  </div>
+
+  <!-- ═══════════ 自动装配 ═══════════ -->
+  <h2 id="boot" style="margin:36px 0 16px;font-size:22px">五、Spring Boot 自动装配</h2>
+  <div class="idx-grid">
+
+    <a href="/q21.html" class="idx-card">
+      <div class="idx-num">Q21</div>
+      <div class="idx-title">自动装配原理</div>
+      <div class="idx-sub">spring.factories + 条件注解的加载与过滤链</div>
+    </a>
+    <a href="/q22.html" class="idx-card">
+      <div class="idx-num">Q22</div>
+      <div class="idx-title">自定义 Starter</div>
+      <div class="idx-sub">双模块结构与 spring-configuration-metadata.json</div>
+    </a>
+    <a href="/q23.html" class="idx-card">
+      <div class="idx-num">Q23</div>
+      <div class="idx-title">启动流程</div>
+      <div class="idx-sub">SpringApplication.run() 的 8 个核心阶段</div>
+    </a>
+    <a href="/q24.html" class="idx-card">
+      <div class="idx-num">Q24</div>
+      <div class="idx-title">配置优先级</div>
+      <div class="idx-sub">外部化配置的 12 级加载顺序与多环境组织</div>
+    </a>
+  </div>
+
+  <footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">
+    Spring Interview QA · 资深 Java 开发面试题库
+  </footer>
+</div>
+
+</body>
+</html>

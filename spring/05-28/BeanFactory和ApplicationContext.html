@@ -88,6 +88,60 @@
             background: linear-gradient(135deg, #1e40af, #3b82f6);
             border-radius: 12px 12px 0 12px;
         }
+
+        /* Timeline Styles */
+        .timeline-line {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(180deg, var(--accent-blue), var(--accent-purple), var(--accent-green));
+            border-radius: 3px;
+        }
+        .timeline-node {
+            position: relative;
+            z-index: 1;
+            transition: all 0.3s ease;
+        }
+        .timeline-node:hover {
+            filter: brightness(1.2);
+            transform: scale(1.02);
+        }
+        .timeline-dot {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 3px solid;
+            background: var(--bg-dark);
+            z-index: 2;
+        }
+        .pain-point {
+            position: relative;
+            border-left: 3px solid #ef4444;
+            padding-left: 16px;
+            background: rgba(239, 68, 68, 0.06);
+            border-radius: 0 12px 12px 0;
+        }
+        .insight-box {
+            position: relative;
+            border-left: 3px solid #f59e0b;
+            padding-left: 16px;
+            background: rgba(245, 158, 11, 0.08);
+            border-radius: 0 12px 12px 0;
+        }
+        .evo-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .evo-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body class="min-h-screen pb-20">
@@ -218,6 +272,372 @@
         </div>
     </section>
 
+    <!-- Section: 历史演进 —— 从 EJB 末日到 Spring 帝国 -->
+    <section class="glass-card p-8">
+        <div class="text-center mb-10">
+            <span class="tag bg-amber-500/20 text-amber-300 mb-4">The Story Behind the Code</span>
+            <h2 class="text-3xl font-bold mt-4 mb-3">
+                <i class="fa-solid fa-timeline text-amber-400"></i>
+                Spring 容器进化史：不是设计出来的，是<span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-red-400">逼</span>出来的
+            </h2>
+            <p class="text-slate-400 max-w-2xl mx-auto">
+                想真正理解 BeanFactory 和 ApplicationContext，必须回到 2002 年——
+                那个 J2EE 开发者被 EJB 折磨得生不如死的年代。
+            </p>
+        </div>
+
+        <!-- 时代背景 -->
+        <div class="grid md:grid-cols-2 gap-8 mb-12">
+            <!-- 左边：EJB 的痛苦 -->
+            <div class="space-y-4">
+                <h3 class="text-xl font-bold text-red-400 flex items-center gap-2">
+                    <i class="fa-solid fa-skull"></i> 2000-2003: EJB 2.x 噩梦
+                </h3>
+                <div class="pain-point p-5 text-sm text-slate-300 space-y-3">
+                    <p class="flex items-start gap-2">
+                        <span class="text-red-400 font-bold shrink-0">1.</span>
+                        <span>写一个 EJB 需要 <strong class="text-red-300">3 个文件</strong>：Home 接口、Remote 接口、Bean 实现类，缺一不可。</span>
+                    </p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-red-400 font-bold shrink-0">2.</span>
+                        <span>必须实现 <code class="code-font text-xs">SessionBean</code> / <code class="code-font text-xs">EntityBean</code> 接口，连 <code class="code-font text-xs">ejbActivate()</code> / <code class="code-font text-xs">ejbPassivate()</code> 这些空方法都得写上。</span>
+                    </p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-red-400 font-bold shrink-0">3.</span>
+                        <span>部署必须打成 EAR 包，扔进 WebLogic / WebSphere / JBoss 等<span class="text-red-300 font-semibold">重量级应用服务器</span>，启动一次 <strong>5 分钟起步</strong>。</span>
+                    </p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-red-400 font-bold shrink-0">4.</span>
+                        <span>单元测试？（苦笑）你必须把整个 EAR 部署到服务器上才能跑——<strong class="text-red-300">TDD 根本不可能</strong>。</span>
+                    </p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-red-400 font-bold shrink-0">5.</span>
+                        <span>一个简单 CRUD 项目，代码量是同等功能 Servlet+JDBC 的 <strong class="text-red-300">3~5 倍</strong>。</span>
+                    </p>
+                </div>
+                <p class="text-xs text-slate-500 italic">
+                    —— Rod Johnson, <em>Expert One-on-One J2EE Design and Development</em>, 2002
+                </p>
+            </div>
+
+            <!-- 右边：Rod Johnson 的洞察 -->
+            <div class="space-y-4">
+                <h3 class="text-xl font-bold text-amber-400 flex items-center gap-2">
+                    <i class="fa-solid fa-lightbulb"></i> Rod Johnson 的核心洞察
+                </h3>
+                <div class="insight-box p-5 text-sm text-slate-300 space-y-3">
+                    <p>"EJB 的复杂性和重量级并不是企业级开发的必需品。"</p>
+                    <div class="border-b border-slate-700 my-3"></div>
+                    <p>他提出三个激进观点：</p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-amber-400 shrink-0">▸</span>
+                        <span><strong>IoC 容器不需要应用服务器</strong> — 一个普通 Java SE 程序就够了。</span>
+                    </p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-amber-400 shrink-0">▸</span>
+                        <span><strong>POJO 可以替代 EJB</strong> — 普通的 Java 对象，不需要实现任何框架接口。</span>
+                    </p>
+                    <p class="flex items-start gap-2">
+                        <span class="text-amber-400 shrink-0">▸</span>
+                        <span><strong>依赖注入 > JNDI 查找</strong> — 对象不该自己去"找"依赖，容器应该主动"注入"。</span>
+                    </p>
+                    <div class="border-b border-slate-700 my-3"></div>
+                    <p class="text-amber-300/80 text-xs">
+                        这套理念就是 Spring 的 DNA。而承载这套理念的第一个容器 —— <strong>就是 BeanFactory</strong>。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 时间线 -->
+        <div class="relative max-w-4xl mx-auto">
+            <div class="timeline-line"></div>
+
+            <div class="space-y-10">
+                <!-- 2003: Spring 0.9 -->
+                <div class="timeline-node glass-card p-6 relative">
+                    <div class="timeline-dot border-blue-500"></div>
+                    <div class="flex flex-wrap items-center gap-4 mb-4">
+                        <span class="tag bg-blue-500/20 text-blue-300 text-lg px-4 py-1">2003</span>
+                        <span class="font-bold text-xl text-white">Spring Framework 0.9</span>
+                        <span class="text-xs text-slate-500">第一个公开版本</span>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-6 text-sm">
+                        <div>
+                            <h4 class="text-blue-400 font-semibold mb-2">👶 BeanFactory 是唯一的主角</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                第一个公开版本里，<code class="code-font text-xs">XmlBeanFactory</code> 就是整个框架。
+                                你写一个 XML 配置文件描述 bean，框架帮你创建和管理它们。
+                                就这么简单，没有 AOP，没有事件，没有国际化。
+                            </p>
+                        </div>
+                        <div>
+                            <h4 class="text-amber-400 font-semibold mb-2">🤔 当时的设计哲学</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                "最小可用"——比 EJB 轻 100 倍，不需要应用服务器，普通 main() 就能跑。
+                                <strong>这是故意为之</strong>：BeanFactory 就是那个"只有 IoC 的极简内核"。
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-3 rounded-lg bg-slate-800/80 code-font text-xs text-green-400">
+                        <span class="text-slate-500">// 2003 年的 Spring 代码 —— 只有 BeanFactory</span><br>
+                        Resource res = <span class="text-blue-300">new</span> ClassPathResource(<span class="text-amber-300">"beans.xml"</span>);<br>
+                        BeanFactory factory = <span class="text-blue-300">new</span> XmlBeanFactory(res);<br>
+                        MyService svc = (MyService) factory.getBean(<span class="text-amber-300">"myService"</span>);
+                    </div>
+                </div>
+
+                <!-- 2004: Spring 1.0 -->
+                <div class="timeline-node glass-card p-6 relative">
+                    <div class="timeline-dot border-purple-500"></div>
+                    <div class="flex flex-wrap items-center gap-4 mb-4">
+                        <span class="tag bg-purple-500/20 text-purple-300 text-lg px-4 py-1">2004.03</span>
+                        <span class="font-bold text-xl text-white">Spring 1.0 GA</span>
+                        <span class="text-xs text-amber-400">⭐ 里程碑</span>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-6 text-sm">
+                        <div>
+                            <h4 class="text-purple-400 font-semibold mb-2">🏛️ ApplicationContext 诞生</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                1.0 正式版里 <strong>ApplicationContext 已经存在</strong>。
+                                但它是作为 BeanFactory 的"增强版"推出的：
+                                <code class="code-font text-xs">ClassPathXmlApplicationContext</code>、
+                                <code class="code-font text-xs">FileSystemXmlApplicationContext</code>。
+                            </p>
+                        </div>
+                        <div>
+                            <h4 class="text-amber-400 font-semibold mb-2">🔑 为什么要分两层？</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                Spring 团队的远见：<strong>不是所有场景都需要全部能力</strong>。
+                                ApplicationContext 继承了 BeanFactory，额外提供：
+                            </p>
+                            <ul class="text-slate-400 mt-2 space-y-1 list-disc pl-4">
+                                <li><code class="code-font text-xs">MessageSource</code> — 国际化</li>
+                                <li><code class="code-font text-xs">ApplicationEventPublisher</code> — 事件机制</li>
+                                <li><code class="code-font text-xs">ResourceLoader</code> — 统一资源加载</li>
+                                <li>自动 BeanPostProcessor 注册</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <p class="text-sm text-slate-300">
+                            <span class="text-purple-400 font-bold">💡 关键认知：</span>
+                            Spring 1.0 就同时有 BeanFactory 和 ApplicationContext。
+                            不是"先有 BeanFactory，后来才加 ApplicationContext"——
+                            它们从 Spring 诞生之初就是<strong class="text-purple-300">分层设计</strong>的两个抽象层次。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 2006-2009: Spring 2.x -->
+                <div class="timeline-node glass-card p-6 relative">
+                    <div class="timeline-dot border-amber-500"></div>
+                    <div class="flex flex-wrap items-center gap-4 mb-4">
+                        <span class="tag bg-amber-500/20 text-amber-300 text-lg px-4 py-1">2006 ~ 2009</span>
+                        <span class="font-bold text-xl text-white">Spring 2.0 → 2.5</span>
+                        <span class="text-xs text-amber-400">🔥 爆发期</span>
+                    </div>
+                    <div class="grid md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <h4 class="text-green-400 font-semibold mb-2">2.0 (2006)</h4>
+                            <ul class="text-slate-300 space-y-1 list-disc pl-4">
+                                <li>XML Schema 替代 DTD</li>
+                                <li>AspectJ 集成</li>
+                                <li><code class="code-font text-xs">&lt;aop:config&gt;</code></li>
+                                <li>JMS / JMX 支持</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="text-green-400 font-semibold mb-2">2.5 (2007)</h4>
+                            <ul class="text-slate-300 space-y-1 list-disc pl-4">
+                                <li><code class="code-font text-xs">@Autowired</code> 诞生</li>
+                                <li><code class="code-font text-xs">@Component</code> / <code class="code-font text-xs">@Service</code></li>
+                                <li>注解驱动开始普及</li>
+                                <li>Classpath 自动扫描</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="text-amber-400 font-semibold mb-2">对容器的影响</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                注解扫描让 BeanFactory 的"手动注册"模式显得过时。
+                                ApplicationContext 的自动装配能力成为标配。
+                                <strong class="text-amber-300">开发者和 BeanFactory 的直接接触越来越少。</strong>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2009-2014: Spring 3.x ~ 4.x -->
+                <div class="timeline-node glass-card p-6 relative">
+                    <div class="timeline-dot border-green-500"></div>
+                    <div class="flex flex-wrap items-center gap-4 mb-4">
+                        <span class="tag bg-green-500/20 text-green-300 text-lg px-4 py-1">2009 ~ 2014</span>
+                        <span class="font-bold text-xl text-white">Spring 3.0 → 4.0</span>
+                        <span class="text-xs text-green-400">🚀 现代化</span>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-6 text-sm">
+                        <div>
+                            <h4 class="text-green-400 font-semibold mb-2">3.0 (2009): JavaConfig 革命</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                <code class="code-font text-xs">@Configuration</code> + <code class="code-font text-xs">@Bean</code> 的出现，
+                                意味着 XML 不再是定义 Bean 的唯一方式。
+                            </p>
+                            <div class="mt-2 p-2 rounded bg-slate-800/80 code-font text-xs text-green-400">
+                                <span class="text-slate-500">// 纯 Java 配置 Spring 容器</span><br>
+                                ApplicationContext ctx = <span class="text-blue-300">new</span><br>
+                                &nbsp;&nbsp;AnnotationConfigApplicationContext(AppConfig.<span class="text-blue-300">class</span>);<br>
+                                <span class="text-slate-500">// 底层依然是 DefaultListableBeanFactory</span>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-green-400 font-semibold mb-2">4.0 (2013): Java 8 时代</h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                <code class="code-font text-xs">@EventListener</code> 让事件发布更简单。
+                                <code class="code-font text-xs">@Async</code> / <code class="code-font text-xs">@Scheduled</code> 的普及，
+                                使得 ApplicationContext 提供的基础设施（事件、线程池、调度）成为业务开发的必需品。
+                            </p>
+                            <p class="mt-3 text-slate-400">
+                                <strong class="text-green-300">此时 BeanFactory 已经彻底退居幕后。</strong>
+                                但每次你写 <code class="code-font text-xs">@EventListener</code>，
+                                ApplicationContext 都在背后调用 BeanFactory 来查找所有匹配的 Listener。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2014-现在: Spring Boot -->
+                <div class="timeline-node glass-card p-6 relative">
+                    <div class="timeline-dot border-orange-500"></div>
+                    <div class="flex flex-wrap items-center gap-4 mb-4">
+                        <span class="tag bg-orange-500/20 text-orange-300 text-lg px-4 py-1">2014 → 现在</span>
+                        <span class="font-bold text-xl text-white">Spring Boot 1.0 → 3.x</span>
+                        <span class="text-xs text-orange-400">👑 王者时代</span>
+                    </div>
+                    <div class="text-sm text-slate-300 leading-relaxed space-y-3">
+                        <p>
+                            Spring Boot 把 ApplicationContext 的创建完全自动化：
+                            <code class="code-font text-xs">SpringApplication.run()</code> 内部根据 classpath 自动选择合适的
+                            ApplicationContext 实现类（Servlet / Reactive），并完成所有配置注入。
+                        </p>
+                        <p>
+                            但这并没有消灭 BeanFactory——
+                            打开 <code class="code-font text-xs">AnnotationConfigServletWebServerApplicationContext</code> 源码，
+                            你会发现它继承链的终点是 <code class="code-font text-xs">DefaultListableBeanFactory</code>。
+                        </p>
+                    </div>
+                    <div class="mt-4 p-4 rounded-lg bg-gradient-to-r from-slate-800/60 to-slate-800/30 border border-slate-700">
+                        <p class="text-sm text-slate-200">
+                            <span class="text-orange-400 font-bold text-lg">📌 </span>
+                            <strong>本页面的价值就在于此：</strong>你用 Spring Boot 3.x 写的每一个
+                            <code class="code-font text-xs">@RestController</code>、
+                            每一个 <code class="code-font text-xs">@Transactional</code>，
+                            最终都是在操作一个被 ApplicationContext 层层包装的
+                            <strong class="text-orange-300">DefaultListableBeanFactory</strong>。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section: 深度追问 —— 为什么不是"只有ApplicationContext"？ -->
+    <section class="glass-card p-8">
+        <h2 class="text-2xl font-bold mb-8 text-center">
+            <i class="fa-solid fa-circle-question text-amber-400"></i>
+            终极拷问：既然 ApplicationContext 这么好，
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-red-400">为什么还要保留 BeanFactory？</span>
+        </h2>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <!-- 理由 1 -->
+            <div class="evo-card glass-card p-6 text-center">
+                <div class="w-14 h-14 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-puzzle-piece text-blue-400 text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-white mb-3">接口隔离原则 (ISP)</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    BeanFactory 定义的是"IoC 容器的最小契约"——就是 getBean + 依赖查找。
+                    如果你只需要一个轻量级 DI 引擎，为什么强迫你依赖 AOP、事件、国际化等 10+ 个模块？
+                </p>
+                <div class="mt-3 pt-3 border-t border-slate-700">
+                    <span class="text-xs text-slate-500">设计模式：<span class="text-blue-300">Interface Segregation</span></span>
+                </div>
+            </div>
+
+            <!-- 理由 2 -->
+            <div class="evo-card glass-card p-6 text-center">
+                <div class="w-14 h-14 rounded-2xl bg-purple-500/20 flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-layer-group text-purple-400 text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-white mb-3">分层架构的基石</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    BeanFactory → HierarchicalBeanFactory → ConfigurableBeanFactory →
+                    ConfigurableListableBeanFactory → DefaultListableBeanFactory。
+                    这 5 层继承链，每一层增加一个"正交"的能力维度。
+                </p>
+                <div class="mt-3 pt-3 border-t border-slate-700">
+                    <span class="text-xs text-slate-500">设计模式：<span class="text-purple-300">Template Method + Decorator</span></span>
+                </div>
+            </div>
+
+            <!-- 理由 3 -->
+            <div class="evo-card glass-card p-6 text-center">
+                <div class="w-14 h-14 rounded-2xl bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-plug text-green-400 text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-white mb-3">可扩展性</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    如果 ApplicationContext 是一个不可拆分的整体，你怎么替换它的国际化实现？
+                    怎么注入自定义的事件广播器？分离接口意味着每一层都可以被替换。
+                </p>
+                <div class="mt-3 pt-3 border-t border-slate-700">
+                    <span class="text-xs text-slate-500">设计模式：<span class="text-green-300">Strategy + SPI</span></span>
+                </div>
+            </div>
+
+            <!-- 理由 4 -->
+            <div class="evo-card glass-card p-6 text-center">
+                <div class="w-14 h-14 rounded-2xl bg-amber-500/20 flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-microchip text-amber-400 text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-white mb-3">资源受限场景</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                    Spring 1.0 时代的目标包括 Applet 和移动设备。
+                    今天，Android 应用、Serverless 函数、IoT 设备，
+                    这些场景对启动速度和内存极度敏感——BeanFactory 的懒加载和极低开销无法替代。
+                </p>
+                <div class="mt-3 pt-3 border-t border-slate-700">
+                    <span class="text-xs text-slate-500">设计目标：<span class="text-amber-300">Write Once, Run Anywhere</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 总结陈述 -->
+        <div class="mt-10 p-6 rounded-xl bg-gradient-to-br from-slate-800/80 to-slate-800/30 border border-slate-700">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-gem text-white text-xl"></i>
+                </div>
+                <div>
+                    <h4 class="font-bold text-lg text-white mb-2">面试时这样回答，直接让面试官眼前一亮</h4>
+                    <div class="text-sm text-slate-300 leading-relaxed space-y-2">
+                        <p>
+                            "<strong class="text-amber-300">BeanFactory 是 Spring 的 IoC '内核'，ApplicationContext 是面向企业开发的'完整运行时'。</strong>
+                            这不仅仅是设计和实现上的分层，更反映了 Spring 团队从 2002 年 Rod Johnson 提出 IoC 理念以来一直坚持的哲学：
+                            <strong class="text-white">框架应该分层提供能力，而不是把所有东西揉成一个整体。</strong>"
+                        </p>
+                        <p>
+                            "从 Spring 1.0 到 Spring Boot 3.x，经历了从 XML 到注解、从 EJB 替代品到云原生基础设施的进化，
+                            但 <code class="code-font text-xs">DefaultListableBeanFactory</code> 始终是那个干活的底层引擎。
+                            ApplicationContext 是对它的增强门面，而 Spring Boot 是对 ApplicationContext 的自动装配封装。
+                            <strong class="text-white">三层抽象，各司其职，从未改变。</strong>"
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Section 3: Comparison Table -->
     <section class="glass-card overflow-hidden">
         <div class="p-6 border-b border-slate-700">
@@ -315,8 +735,9 @@
 </main>
 
 <footer class="text-center py-12 text-slate-600 text-sm">
-    <p>Generated for Deep Understanding of Spring Framework Internals</p>
-    <p class="mt-2">Remember: Frameworks change, but architectural thinking lasts.</p>
+    <p>Spring Framework — 从 2003 年到今天，三层架构从未改变</p>
+    <p class="mt-2">BeanFactory (内核) → ApplicationContext (门面) → Spring Boot (自动装配)</p>
+    <p class="mt-2 text-slate-500">Remember: Frameworks change, but architectural thinking lasts.</p>
 </footer>
 
 <script>

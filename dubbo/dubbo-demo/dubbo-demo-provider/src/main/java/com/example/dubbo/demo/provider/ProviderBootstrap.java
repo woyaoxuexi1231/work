@@ -1,4 +1,4 @@
-package com.example.dubbo.demo.provider.bootstrap;
+package com.example.dubbo.demo.provider;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

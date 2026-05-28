@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q10 · AOP 原理</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 10 · AOP</div><h1>AOP 实现原理</h1><div class="q-sub">Advisor / Advice / Pointcut 的关系？ReflectiveMethodInvocation 递归链如何工作？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Advisor = Advice + Pointcut。Advice 是增强逻辑（做什么），Pointcut 是切点表达式（在哪里做）。ReflectiveMethodInvocation 通过递归调用每个拦截器的 invoke() 方法实现环绕增强。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"AspectJExpressionPointcut 的匹配机制基于方法签名——不是运行时判断，而是通过方法的反射元信息（返回类型、类名、方法名、参数类型）做匹配。这是编译期表达式 + 运行时反射的组合。Advisor 把 Pointcut 和 Advice 打包，然后交给 AbstractAutoProxyCreator 在 BPP.after 阶段使用——对每个 Bean，遍历所有 Advisor，Pointcut 匹配成功就创建代理。AOP Alliance 是一个独立的标准组织，定义了 MethodInterceptor 和 MethodInvocation 接口——Spring AOP 的实现遵守这个标准，所以理论上任何 AOP Alliance 兼容的拦截器都可以在 Spring 中运行。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>为什么用 AOP Alliance？</b>Spring 一贯的设计哲学——依赖标准接口而非具体实现。AOP Alliance 定义了 MethodInterceptor/MethodInvocation，Spring 实现它们，Guice 也可以实现它们。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Advisor/Advice/Pointcut 的三层分离是 Spring AOP 架构的灵魂——它把'在哪里做'（Pointcut）、'做什么'（Advice）、'两者的组合'（Advisor）彻底解耦。这不是过度设计——正是因为这种解耦，你才能写出一个通用的日志切面（Advice），然后通过不同的 Pointcut 表达式把它应用到不同的包——Advice 的代码一行都不需要改。Pointcut 接口的抽象也极其重要：AspectJExpressionPointcut 只是其中一种实现，你可以实现基于注解的、基于正则的、基于自定义规则的任意 Pointcut。ReflectiveMethodInvocation 的递归链则体现了另一个哲学：状态驱动的控制流。for 循环的控制流由循环变量决定（线性的），而递归的控制流由调用栈决定（树状的）——当拦截器需要决定'执行前做什么、执行后做什么'时，递归的树状结构天然匹配。这两个设计合在一起，构成了 Spring AOP 的理论基础：切面是'做什么 + 在哪里做'的声明式分离，拦截是'进入 + 退出'的控制流抽象。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"声明式分离 + 控制流抽象"——两个短语概括了整个 AOP 的理论框架。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q10 · AOP 原理 · <a href="/q11.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

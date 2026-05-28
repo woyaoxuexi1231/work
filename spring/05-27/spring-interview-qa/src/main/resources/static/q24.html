@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q24 · 配置优先级</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 24 · 自动装配</div><h1>配置优先级</h1><div class="q-sub">外部化配置的加载顺序？多环境如何组织？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"命令行参数最高优先级，然后是环境变量、系统属性、application-{profile}.yml、application.yml、@PropertySource、默认值。多环境用 spring.profiles.active 切换。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"12 级顺序中，核心原则是'越靠近部署环境，优先级越高'。同一个 jar 包从开发到生产，不用重新打包——开发用 application-dev.yml 的 8081 端口，上线时用命令行 --server.port=80 覆盖。Environment 中的 PropertySource 是一个有序列表——env.getProperty('server.port') 遍历它，第一个非 null 返回的就是最终值。这正是'列表实现覆盖'的设计——Map 不支持同名 key 的多值语义，列表天然支持。bootstrap.yml 是 Spring Cloud Config 的概念，在 Spring Boot 3.x 中已移除，改用 spring.config.import。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>多环境组织：</b>application.yml（公共）+ application-{profile}.yml（环境专属）+ spring.profiles.group（分组）+ spring.profiles.include（组合）。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Spring 的配置优先级体系本质上是 Twelve-Factor App 原则中'配置与代码分离'的系统化实现。它回答了一个根本问题：一个构建产物如何在开发、测试、预发布、生产四个环境运行而无需任何修改？答案是：代码中只有默认值——打包成 jar 后，所有差异化的配置从外部注入。命令行参数覆盖环境变量、环境变量覆盖配置文件——这个优先级体系的设计不是随意的：命令行是运维人员在部署瞬间决定的（最靠近部署环境），环境变量是容器/K8s 注入的，配置文件是应用自带的（最靠近代码）。每一层的优先级都反映了'谁在做决定'以及'决定离部署有多近'。profile 机制则把环境差异建模为一组命名空间——dev/staging/prod 各有一套配置，同一个 jar 包只需要一个 --spring.profiles.active=prod。这个设计让 Spring Boot 的部署从'打包不同环境的 WAR'变成了'同一个 JAR + 不同的环境变量'——这是 DevOps 时代的基础设施。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"同一个 JAR + 不同的环境变量"——这句话概括了 Spring Boot 配置体系的最终价值。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q24 · 配置优先级 · <a href="/" style="color:var(--accent)">← 返回索引</a></footer>
+</div></body></html>

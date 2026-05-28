@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q01 · Bean 生命周期</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 01 · IOC 容器</div><h1>Bean 生命周期</h1><div class="q-sub">BeanFactory 和 ApplicationContext 加载 Bean 的区别？从实例化到销毁经历哪些阶段？BeanPostProcessor 的 before/after 分别在什么时候触发？想在属性设置前修改属性值用哪个扩展点？</div></div></div>
+<div class="wrap">
+
+<div class="card">
+<h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜（背答案——你现在的水平）</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Spring Bean 生命周期包括：实例化 → 属性填充 → Aware 回调 → BeanPostProcessor.before → 初始化（@PostConstruct / InitializingBean / init-method）→ BeanPostProcessor.after → 就绪 → 销毁时 @PreDestroy / DisposableBean / destroy-method。BeanFactory 是懒加载，ApplicationContext 是预加载并自动注册 BPP。想在属性设置前修改属性值用 BeanFactoryPostProcessor。"
+</blockquote>
+
+<h3>🥈 白银（讲来源——读源码后的水平）</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"生命周期不是你背的那些阶段的简单排列——它分了两条线。一条是 BFPP 线：AbstractApplicationContext.refresh() 中 invokeBeanFactoryPostProcessors()，在所有 Bean 创建之前运行，操作 BeanDefinition。另一条是 BPP 线：每个 Bean 在 doCreateBean() → initializeBean() 中被调用两次——before 时属性已填但 init 未执行，after 时 Bean 已经是个成品。ApplicationContextAware 不在 invokeAwareMethods() 中回调，它在 ApplicationContextAwareProcessor 这个 BPP 的 before 阶段回调——因为它依赖的 ApplicationContext 在 BeanFactory 准备好之后才存在。为什么三层初始化？@PostConstruct 最高优先级，因为 JSR-250 标准与框架解耦；InitializingBean 次之，Spring 原生接口但侵入性强；init-method 最低，给第三方类用的无侵入方式。BeanFactory 只做纯 DI，ApplicationContext 额外提供事件/国际化/资源——所以后者需要额外的 BPP 来处理 Context 级别的 Aware。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>源码调用链：</b><br>
+<code>AbstractApplicationContext.refresh()</code><br>
+&nbsp;&nbsp;→ <code>invokeBeanFactoryPostProcessors()</code> &nbsp;← [0] BFPP<br>
+&nbsp;&nbsp;→ <code>finishBeanFactoryInitialization()</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ <code>doCreateBean()</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>createBeanInstance()</code> &nbsp;← [1] 构造器<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>populateBean()</code> &nbsp;← [2] 属性填充<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>initializeBean()</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>invokeAwareMethods()</code> &nbsp;← [3][4] BF 级 Aware<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>applyBPPsBeforeInit()</code> &nbsp;← [5] Context 级 Aware 在此！<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>invokeInitMethods()</code> &nbsp;← [7a][7b][7c]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>applyBPPsAfterInit()</code> &nbsp;← [8] AOP 代理！<br>
+<code>close()</code><br>
+&nbsp;&nbsp;→ <code>destroySingletons() → DisposableBeanAdapter.destroy()</code> &nbsp;← [10]
+</div>
+</blockquote>
+
+<h3>🥇 王者（讲设计哲学——面试官会记住你）</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Bean 生命周期本质上是 Spring 面对一个核心矛盾——'如何让框架在完全不修改用户代码的前提下，对 Bean 做任意处理'——在 10 年间逐步演化出的解。前三代（构造器/setter、InitializingBean、DisposableBean）是侵入式的：你要扩展就得实现我的接口。第四代 Aware 接口族开始松动：Bean 可以感知容器了，但也得实现接口。真正的转折在第五、六代——BFPP 和 BPP 把扩展从'Bean 内部'抽离到'Bean 外部'，这是一个哥白尼式的翻转。你不再需要修改 Bean 的源码——写一个 BPP，它能拦截所有 Bean。这就是为什么 @Autowired、@Transactional、@Async、@Cacheable 全部基于 BPP 实现——不是碰巧，而是因为只有 BPP 提供了'零侵入 + 全量覆盖'这两个看似矛盾的能力。BPP.before 和 after 的分工也不是随意划分的：before 是'半成品阶段'，适合校验和容器引用注入；after 是'成品阶段'，是生成代理的唯一正确时机——如果在 before 就代理，@PostConstruct 的状态变更根本进不了代理对象。BFPP 则更进一步：它连 Bean 都不需要，直接操作元数据。这两层抽象让 Spring 从'一个 DI 容器'变成了'一个可无限扩展的平台'。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>当你能说出"BFPP 和 BPP 把扩展从 Bean 内部抽离到外部"时，面试官知道你不是在背题——你理解了 Spring 为什么是一个平台而不仅仅是一个框架。
+</div>
+</blockquote>
+</div>
+
+<div class="card"><h2>追问：想在属性设置前修改属性值？</h2>
+<p><strong>BeanFactoryPostProcessor。</strong>不是 BeanPostProcessor——BPP 触发时 Bean 已经实例化且属性已填充完毕。BFPP 操作的是 BeanDefinition（蓝图），此时任何 Bean 都还没创建。<code>PropertySourcesPlaceholderConfigurer</code> 就是一个 BFPP——在所有人之前把 ${server.port} 替换成 8080。</p></div>
+
+<div class="card"><h2>BeanFactory vs ApplicationContext</h2>
+<table>
+<tr><th></th><th>BeanFactory</th><th>ApplicationContext</th></tr>
+<tr><td>加载时机</td><td>懒加载：getBean() 时才创建</td><td>预加载：启动时创建所有单例</td></tr>
+<tr><td>BPP 注册</td><td>手动</td><td>自动检测并注册</td></tr>
+<tr><td>额外能力</td><td>纯 DI</td><td>事件、国际化、资源、Environment</td></tr>
+</table>
+<p>设计意图：BeanFactory 是"基础款"，给资源受限环境；ApplicationContext 是"旗舰款"，启动时多做一点保证运行时零延迟。你永远在用 ApplicationContext。</p></div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q01 · Bean 生命周期 · <a href="/q02.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

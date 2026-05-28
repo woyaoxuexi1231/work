@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring 三级缓存：一堂真正的计算机科学课</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap');
+
+        :root {
+            --bg: #080c14;
+            --card: #111827;
+            --border: rgba(255,255,255,0.06);
+            --blue: #60a5fa;
+            --purple: #a78bfa;
+            --green: #34d399;
+            --amber: #fbbf24;
+            --red: #f87171;
+            --pink: #f472b6;
+            --cyan: #22d3ee;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', 'Noto Serif SC', sans-serif;
+            background: var(--bg);
+            color: #e2e8f0;
+            line-height: 1.8;
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(96,165,250,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(167,139,250,0.06) 0%, transparent 50%);
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .serif { font-family: 'Noto Serif SC', serif; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 14px; border-radius: 999px;
+            font-size: 0.75rem; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+        }
+
+        .code-block {
+            background: #000;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        }
+        .code-block .header {
+            background: #1a1f2e;
+            padding: 10px 18px;
+            font-size: 0.7rem;
+            color: #6b7280;
+            border-bottom: 1px solid #1f2937;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .code-block pre {
+            padding: 18px 22px; margin: 0;
+            font-size: 0.8rem; line-height: 1.9;
+            overflow-x: auto;
+        }
+
+        .callout {
+            border-left: 4px solid;
+            padding: 14px 20px;
+            border-radius: 0 12px 12px 0;
+            font-size: 0.9rem;
+        }
+        .callout-info  { border-color: var(--blue);  background: rgba(96,165,250,0.06); }
+        .callout-warn  { border-color: var(--amber); background: rgba(251,191,36,0.06); }
+        .callout-danger{ border-color: var(--red);   background: rgba(248,113,113,0.06); }
+        .callout-good  { border-color: var(--green); background: rgba(52,211,153,0.06); }
+
+        .timeline {
+            position: relative;
+            padding-left: 32px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute; left: 11px; top: 0; bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--blue), var(--purple), var(--green));
+            border-radius: 1px;
+        }
+        .timeline-step {
+            position: relative;
+            margin-bottom: 22px;
+            padding: 14px 18px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.04);
+            transition: all 0.3s;
+        }
+        .timeline-step:hover { background: rgba(255,255,255,0.04); transform: translateX(4px); }
+        .timeline-step::before {
+            content: '';
+            position: absolute; left: -28px; top: 18px;
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            border: 2px solid;
+            background: var(--bg);
+        }
+        .timeline-step.t-blue::before  { border-color: var(--blue); }
+        .timeline-step.t-purple::before { border-color: var(--purple); }
+        .timeline-step.t-green::before  { border-color: var(--green); }
+        .timeline-step.t-red::before    { border-color: var(--red); }
+        .timeline-step.t-amber::before  { border-color: var(--amber); }
+        .timeline-step.t-cyan::before   { border-color: var(--cyan); }
+
+        .approach {
+            border: 1px solid;
+            border-radius: 12px;
+            padding: 18px 22px;
+            transition: all 0.3s;
+        }
+        .approach:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,0.3); }
+        .approach.fail { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.04); }
+        .approach.win  { border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.06); }
+
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .data-table th {
+            text-align: left; padding: 12px 16px;
+            background: rgba(255,255,255,0.03);
+            color: #9ca3af; font-weight: 600;
+            font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .data-table td {
+            padding: 12px 16px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+        }
+        .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+        .flow-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+            gap: 16px;
+        }
+        .flow-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .flow-card:hover { background: rgba(255,255,255,0.04); transform: translateY(-2px); }
+
+        .hi-blue  { color: var(--blue);  font-weight: 600; }
+        .hi-purple{ color: var(--purple);font-weight: 600; }
+        .hi-green { color: var(--green); font-weight: 600; }
+        .hi-red   { color: var(--red);   font-weight: 600; }
+        .hi-amber { color: var(--amber); font-weight: 600; }
+        .hi-pink  { color: var(--pink);  font-weight: 600; }
+        .hi-cyan  { color: var(--cyan);  font-weight: 600; }
+
+        .num-circle {
+            display: inline-flex;
+            align-items: center; justify-content: center;
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            font-weight: 700; font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+
+        .student-q {
+            background: rgba(251,191,36,0.06);
+            border-left: 4px solid var(--amber);
+            border-radius: 0 12px 12px 0;
+            padding: 16px 20px;
+            margin: 16px 0;
+        }
+        .student-q::before {
+            content: "🙋 追问：";
+            font-weight: 700; color: var(--amber);
+            display: block; margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ════════════════ HERO ════════════════ -->
+<header class="max-w-4xl mx-auto px-6 pt-20 pb-14 text-center">
+    <span class="badge bg-blue-500/10 text-blue-300 border border-blue-500/20 mb-6">
+        <i class="fa-solid fa-graduation-cap"></i> 计算机科学式推演
+    </span>
+    <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 leading-tight">
+        Spring 三级缓存：<br>
+        <span class="bg-gradient-to-r from-blue-400 via-purple-400 to-green-400 bg-clip-text text-transparent">
+            从一个 Map 开始的推演之旅
+        </span>
+    </h1>
+    <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        这不是一篇"三级缓存是什么"的文章。<br>
+        这是一次<strong class="text-white">思维实验</strong>——假设你穿越回 2004 年，
+        是 Spring 团队的一员，面对"循环依赖 + AOP 代理"这个死结，你会怎么办？
+    </p>
+</header>
+
+<!-- ════════════════ MAIN ════════════════ -->
+<main class="max-w-4xl mx-auto px-6 space-y-20 pb-24">
+
+    <!-- ──────── PART 0: 背景 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+            <span class="num-circle bg-slate-700 text-white">0</span>
+            先忘掉三级缓存 —— 回到一切开始的地方
+        </h2>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+            2004 年 Spring 1.0 发布时，它的核心卖点就一句话：<strong class="text-white">一个不需要 EJB 服务器的轻量级 IoC 容器</strong>。
+            本质是什么？就是一个管理对象创建和依赖关系的工厂。
+        </p>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+            <strong class="text-white">如果让你从零开始写一个最简 IoC 容器，你的第一反应是什么？</strong>
+        </p>
+
+        <div class="code-block mb-6">
+            <div class="header">
+                <span>🧪 最简 IoC 容器 —— 版本 0</span>
+                <span class="text-slate-500">v0.0</span>
+            </div>
+            <pre><span class="text-slate-500">// 一个 Map 就是最简单的 IoC 容器</span>
+<span class="text-purple-400">Map</span>&lt;String, Object&gt; <span class="text-amber-300">singletonObjects</span> = <span class="text-blue-400">new</span> <span class="text-purple-400">HashMap</span>&lt;&gt;();
+
+<span class="text-slate-500">// "创建" A：发现需要 B</span>
+<span class="text-purple-400">Object</span> a = <span class="text-amber-300">singletonObjects</span>.get(<span class="text-green-400">"A"</span>);
+<span class="text-blue-400">if</span> (a == <span class="text-blue-400">null</span>) {
+    <span class="text-purple-400">Object</span> b = <span class="text-amber-300">singletonObjects</span>.get(<span class="text-green-400">"B"</span>); <span class="text-slate-500">// 需要 B</span>
+    <span class="text-blue-400">if</span> (b == <span class="text-blue-400">null</span>) {
+        b = <span class="text-blue-400">new</span> B(); <span class="text-slate-500">// 创建 B 需要 A → 💥 死循环!</span>
+    }
+    a = <span class="text-blue-400">new</span> A(b);
+    <span class="text-amber-300">singletonObjects</span>.put(<span class="text-green-400">"A"</span>, a);
+}
+</pre>
+        </div>
+
+        <div class="callout callout-danger">
+            <strong class="block mb-1">💥 问题：循环依赖导致无限递归</strong>
+            <span>A 需要 B → 创建 B → B 需要 A → 创建 A → A 需要 B → ...  StackOverflowError。</span>
+        </div>
+    </section>
+
+    <!-- ──────── PART 1: 二级缓存的诞生 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+            <span class="num-circle bg-blue-500/20 text-blue-400">1</span>
+            第一次突破：把"创建"和"装配"分开
+        </h2>
+
+        <p class="text-slate-300 leading-relaxed mb-8">
+            循环依赖的本质是什么？<strong class="text-white">A 说"我需要完整的 B"，B 说"我需要完整的 A"</strong>——互相等待对方先完成。
+            但如果 A 愿意说"我先把我的<strong>壳</strong>给你，你拿去用，内容我等下再填"呢？
+        </p>
+
+        <div class="bg-slate-900/60 rounded-xl p-6 border border-slate-700 mb-8">
+            <h3 class="font-bold text-white text-lg mb-4">🔑 核心洞察：对象的"出生"可以分两步</h3>
+            <div class="grid md:grid-cols-2 gap-6 text-sm">
+                <div class="bg-slate-800/60 p-4 rounded-lg">
+                    <div class="text-blue-400 font-bold mb-2">第 1 步：实例化 (Instantiation)</div>
+                    <p class="text-slate-400"><code class="mono">new A()</code> —— 构造器执行完毕，对象在堆上有了地址。此时属性全是 null，但<strong class="text-white">引用已经有效</strong>。</p>
+                </div>
+                <div class="bg-slate-800/60 p-4 rounded-lg">
+                    <div class="text-purple-400 font-bold mb-2">第 2 步：初始化 (Initialization)</div>
+                    <p class="text-slate-400">填充属性、执行 <code class="mono">@PostConstruct</code>、Aware 回调、AOP 代理 —— 把对象变成"可用状态"。</p>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+            这就引出了<strong class="text-white">二级缓存</strong>的雏形：
+        </p>
+
+        <div class="flow-grid mb-8">
+            <div class="flow-card">
+                <div class="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-database text-green-400"></i>
+                </div>
+                <h4 class="font-bold text-green-400 text-sm">一级缓存</h4>
+                <p class="text-xs text-slate-400 mt-1">singletonObjects</p>
+                <p class="text-xs text-slate-500 mt-2">存<strong class="text-white">完全初始化</strong>的 Bean</p>
+            </div>
+            <div class="flow-card">
+                <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-egg text-amber-400"></i>
+                </div>
+                <h4 class="font-bold text-amber-400 text-sm">二级缓存</h4>
+                <p class="text-xs text-slate-400 mt-1">earlySingletonObjects</p>
+                <p class="text-xs text-slate-500 mt-2">存<strong class="text-white">刚实例化、未初始化</strong>的 Bean</p>
+            </div>
+        </div>
+
+        <div class="code-block mb-6">
+            <div class="header">
+                <span>✅ 二级缓存方案 —— 适用于纯 POJO</span>
+                <span class="text-amber-400">无 AOP 时完美工作</span>
+            </div>
+            <pre><span class="text-slate-500">// 创建 A 的流程</span>
+<span class="text-purple-400">Object</span> a = <span class="text-blue-400">new</span> A();                           <span class="text-slate-500">// 1. 实例化</span>
+<span class="text-amber-300">earlySingletonObjects</span>.put(<span class="text-green-400">"A"</span>, a);       <span class="text-slate-500">// 2. 放入二级缓存！B 现在可以看到 A</span>
+
+<span class="text-slate-500">// 填充属性：发现需要 B → 去创建 B</span>
+b = <span class="text-blue-400">new</span> B();                                   <span class="text-slate-500">// B 实例化</span>
+<span class="text-slate-500">// B 填充属性时发现需要 A → 从 earlySingletonObjects 拿到 a</span>
+b.setA(a);                                     <span class="text-slate-500">// ✅ B 注入 A 的引用</span>
+
+a.setB(b);                                     <span class="text-slate-500">// A 拿到 B</span>
+a = <span class="text-amber-300">initializeBean</span>(a);                          <span class="text-slate-500">// A 初始化完成</span>
+<span class="text-amber-300">singletonObjects</span>.put(<span class="text-green-400">"A"</span>, a);               <span class="text-slate-500">// 从二级移到一级</span>
+<span class="text-amber-300">earlySingletonObjects</span>.remove(<span class="text-green-400">"A"</span>);
+</pre>
+        </div>
+
+        <div class="callout callout-info">
+            <strong class="block mb-1">✅ 对于纯 POJO（没有 AOP 代理），二级缓存完美工作。</strong>
+            <span>A 实例化后暴露引用 → B 注入了 A → A 后续初始化修改的字段，B 通过同一个引用能读到。因为 Java 的对象引用指向的是堆上的同一块内存。</span>
+        </div>
+    </section>
+
+    <!-- ──────── PART 2: AOP 来了 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-2 flex items-center gap-3">
+            <span class="num-circle bg-purple-500/20 text-purple-400">2</span>
+            风暴降临：AOP 代理打破了平衡
+        </h2>
+
+        <div class="callout callout-warn mb-8">
+            <strong class="block mb-2">⏳ 先回答一个关键历史问题：Spring AOP 和 IoC 容器是同一时期设计的吗？</strong>
+            <p class="text-sm text-slate-300">
+                <strong class="text-white">是的，它们诞生于同一时期（2003~2004），但作为两个独立模块设计。</strong>
+                Spring 1.0（2004.03）同时包含了 <code class="mono text-xs">spring-beans</code>（IoC）和 <code class="mono text-xs">spring-aop</code>（AOP）。
+                但 Rod Johnson 从一开始就刻意把它们<strong class="text-amber-300">设计为解耦的两个模块</strong>：IoC 容器通过 <code class="mono text-xs">BeanPostProcessor</code> 接口暴露扩展点，
+                AOP 模块实现这个接口，作为"插件"接入。IoC 的代码里没有一行 <code class="mono text-xs">import org.springframework.aop</code>。
+            </p>
+            <p class="text-sm text-slate-300 mt-2">
+                <strong class="text-white">三级缓存呢？它不是在 Spring 1.0 就设计好的。</strong>
+                它是在 AOP 和循环依赖这两个独立设计产生冲突后，作为<strong class="text-amber-300">"修补方案"</strong>被引入的。
+                如果你去看 Spring 1.0 的源码，会发现没有 <code class="mono text-xs">singletonFactories</code> 这个 Map。
+                这是后来（大约是 Spring 2.0 前后）为了解决具体 Bug 才加上去的。
+            </p>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-8">
+            有了这段历史背景，我们再来看：<strong class="text-white">为什么 AOP 打破了平衡？</strong>
+        </p>
+
+        <!-- 冲突场景 -->
+        <div class="bg-gradient-to-r from-red-900/10 to-slate-900/60 rounded-xl p-6 border border-red-500/20 mb-8">
+            <h3 class="font-bold text-red-400 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-bolt"></i> 冲突场景：A(@Transactional) 互相依赖 B
+            </h3>
+            <p class="text-sm text-slate-300 mb-4">
+                A 上加了 <code class="mono text-xs">@Transactional</code>，Spring 需要为 A 创建事务代理。
+                A 依赖 B，B 依赖 A。
+            </p>
+
+            <div class="timeline">
+                <div class="timeline-step t-blue">
+                    <div class="text-sm"><strong class="text-blue-400">①</strong> A 实例化 → 得到 <span class="hi-blue">原始 A</span>（new A()）</div>
+                </div>
+                <div class="timeline-step t-blue">
+                    <div class="text-sm"><strong class="text-blue-400">②</strong> <span class="hi-blue">原始 A</span> 放入二级缓存 earlySingletonObjects</div>
+                    <p class="text-xs text-slate-500 mt-1">此时 AOP 代理还远没到创建的时机（它在第 ⑦ 步）</p>
+                </div>
+                <div class="timeline-step t-amber">
+                    <div class="text-sm"><strong class="text-amber-400">③</strong> A 填充属性，发现需要 B → 创建 B</div>
+                </div>
+                <div class="timeline-step t-amber">
+                    <div class="text-sm"><strong class="text-amber-400">④</strong> B 实例化、填充属性，发现需要 A</div>
+                </div>
+                <div class="timeline-step t-red">
+                    <div class="text-sm"><strong class="text-red-400">⑤</strong> B 从二级缓存拿到 <span class="hi-red">原始 A</span></div>
+                    <p class="text-xs text-red-300 mt-1">⚠️ 此时 A 的 AOP 代理还没创建！</p>
+                </div>
+                <div class="timeline-step t-red">
+                    <div class="text-sm"><strong class="text-red-400">⑥</strong> B 持有的引用是 <span class="hi-red">原始 A</span>，不是代理 A</div>
+                    <p class="text-xs text-red-300 mt-1">💥 B 调用 A 的方法 → @Transactional 不生效 → 事务静默失效！</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="student-q">
+            <p class="text-sm text-slate-300 mb-2"><strong>等一下——如果二级缓存不放"原始 A"，改放"提前创建好的代理 A"，不就解决了？</strong></p>
+            <p class="text-xs text-slate-400">这似乎是所有人的第一反应。让我们认真地推演一遍，看看到底哪里会出问题。</p>
+        </div>
+    </section>
+
+    <!-- ──────── PART 3: 穷举 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-2 flex items-center gap-3">
+            <span class="num-circle bg-red-500/20 text-red-400">3</span>
+            穷举法：逐一推演所有替代方案
+        </h2>
+        <p class="text-sm text-slate-500 mb-8 ml-11">
+            我们不假设三级缓存是"唯一正确"的答案——而是把每条路都走一遍，看看到底哪里会撞墙。
+        </p>
+
+        <!-- ═══ 方案 A ═══ -->
+        <div class="approach fail mb-8">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="num-circle bg-red-500/20 text-red-400 shrink-0">A</div>
+                <div>
+                    <h3 class="font-bold text-white text-lg">方案 A：把二级缓存从"放原始对象"改为"放提前创建的代理"</h3>
+                    <p class="text-sm text-slate-400 mt-1">"A 实例化后立刻创建代理，把代理放进 earlySingletonObjects，B 直接拿到代理 A。"</p>
+                </div>
+            </div>
+
+            <p class="text-sm text-slate-300 mb-4"><strong class="text-white">我们先诚实回答一个关键问题：</strong>代理对象的 target 存的是引用，如果后续 populateBean() 给原始 A 填充了属性，代理能通过 target 引用看到这些属性吗？</p>
+
+            <div class="code-block mb-4">
+                <div class="header"><span>🔬 实验：CGLIB 代理能否看到"后来才填充"的属性？</span></div>
+                <pre><span class="text-slate-500">// CGLIB 代理本质是一个子类：</span>
+<span class="text-blue-400">class</span> <span class="text-purple-400">A$$EnhancerByCGLIB</span> <span class="text-blue-400">extends</span> A {
+    <span class="text-slate-500">// 它不"持有"一个 target 引用，它 IS-A A。</span>
+    <span class="text-slate-500">// 所有拦截器织入到重写的子类方法里。</span>
+    <span class="text-slate-500">// this.getName() 读取的是 this.name 字段——</span>
+    <span class="text-slate-500">// 就是代理对象自己的字段（继承自父类 A）。</span>
+}
+
+<span class="text-slate-500">// 所以如果你：</span>
+A proxy = <span class="text-blue-400">new</span> A$$EnhancerByCGLIB();  <span class="text-slate-500">// 创建代理</span>
+proxy.setName(<span class="text-green-400">"hello"</span>);                <span class="text-slate-500">// 通过代理的 setter 设置字段</span>
+proxy.getName();                        <span class="text-slate-500">// → "hello" ✅ 当然看得到！</span>
+</pre>
+            </div>
+
+            <div class="callout callout-info mb-4">
+                <strong class="block mb-2">🤔 诚实地说：如果只是"字段最终能否读到"这个问题，答案是——<span class="text-green-400">能读到</span>。</strong>
+                <p class="text-sm">CGLIB 代理是一个子类实例，它继承并持有父类的所有字段。后续 populateBean() 通过反射给这些字段赋值，代理对象自己的字段就被填充了。如果只是这个维度，方案 A 似乎没问题。</p>
+            </div>
+
+            <p class="text-sm text-slate-300 mb-3"><strong class="text-white">但方案 A 的真正问题不在"字段能否读到"，而在下面三个更深层的问题：</strong></p>
+
+            <div class="space-y-4">
+                <!-- 问题 1 -->
+                <div class="bg-red-950/20 rounded-lg p-4 border border-red-500/20">
+                    <p class="text-sm font-bold text-red-300 mb-2">问题 1：BeanPostProcessor 拿到的不再是原始对象</p>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        Spring 的初始化链是：<code class="mono text-xs">populateBean()</code> → <code class="mono text-xs">@PostConstruct</code> → <code class="mono text-xs">InitializingBean.afterPropertiesSet()</code> → <code class="mono text-xs">BeanPostProcessor.postProcessBeforeInitialization()</code> → <code class="mono text-xs">BeanPostProcessor.postProcessAfterInitialization()</code>。
+                        这条链上所有的处理器都<strong class="text-white">预期收到的是原始 Bean 实例</strong>，而不是一个 CGLIB 子类。
+                    </p>
+                    <p class="text-xs text-slate-400 mt-2">
+                        举个例子：Spring 的 <code class="mono text-xs">CommonAnnotationBeanPostProcessor</code> 负责处理 <code class="mono text-xs">@PostConstruct</code> 和 <code class="mono text-xs">@Resource</code>。
+                        它通过反射在目标类上查找方法。如果传来的已经是一个 CGLIB 子类，反射扫描会扫到 CGLIB 生成的大量 <code class="mono text-xs">CGLIB$xxx</code> 方法，
+                        以及被 final 修饰的原始方法（CGLIB 不能代理 final 方法）。这会导致行为不确定——有些注解可能被处理，有些可能被跳过。
+                    </p>
+                </div>
+
+                <!-- 问题 2 -->
+                <div class="bg-red-950/20 rounded-lg p-4 border border-red-500/20">
+                    <p class="text-sm font-bold text-red-300 mb-2">问题 2：如果 A 同时有多个切面怎么办？</p>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        假设 A 同时有 <code class="mono text-xs">@Transactional</code> 和 <code class="mono text-xs">@Cacheable</code>。
+                        Spring 的 AOP 是按顺序创建多层代理的：先创建事务代理包装原始对象，再创建缓存代理包装事务代理（或者反过来）。
+                        如果你在属性填充之前就创建了代理，你只创建了<strong class="text-white">一层</strong>。
+                        后续的 BPP 还要再套一层——结果就是 B 拿到了单层代理，而最终容器里的是双层代理，<strong class="text-red-300">两者不一致</strong>。
+                    </p>
+                </div>
+
+                <!-- 问题 3 -->
+                <div class="bg-red-950/20 rounded-lg p-4 border border-red-500/20">
+                    <p class="text-sm font-bold text-red-300 mb-2">问题 3：代理创建的逻辑本身依赖 Bean 的完整元数据</p>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        AOP 代理的创建（<code class="mono text-xs">AbstractAutoProxyCreator.wrapIfNecessary()</code>）需要知道：这个 Bean 有哪些 Advisor 匹配？
+                        哪些方法需要被拦截？在属性填充之前，Bean 的某些元数据可能还不完整（比如通过 <code class="mono text-xs">@Value</code> 注入的配置还没到位）。
+                        虽然大多数情况下类级别的注解已经可用，但有些动态切面（比如基于 Bean 名称的匹配）在早期阶段可能得到错误的结果。
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-4 p-4 rounded-lg bg-amber-900/10 border border-amber-500/20">
+                <p class="text-sm text-amber-300">
+                    <strong>💡 所以方案 A 的真正死因不是"代理读不到字段"——这个直觉其实是错的。真正的问题在于：提前创建代理会扰乱 BeanPostProcessor 链的正常执行顺序。Spring 的整个初始化管线是围绕"原始对象"设计的，你把一个 CGLIB 子类塞进去，就像给一个预期接收苹果的流水线塞了一个菠萝——有的工位还能处理，有的直接罢工。</strong>
+                </p>
+            </div>
+        </div>
+
+        <!-- ═══ 方案 B ═══ -->
+        <div class="approach fail mb-8">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="num-circle bg-red-500/20 text-red-400 shrink-0">B</div>
+                <div>
+                    <h3 class="font-bold text-white text-lg">方案 B：让 IoC 容器自己去调 AOP 的 API，在 doCreateBean() 里硬编码创建代理</h3>
+                    <p class="text-sm text-slate-400 mt-1">"既然 AOP 模块的 API 是现成的，IoC 直接调用它，不就绕开了 BPP 时序问题？"</p>
+                </div>
+            </div>
+
+            <p class="text-sm text-slate-300 mb-4">
+                <strong class="text-white">这确实能解决功能问题。</strong>但让我们看看代价：
+            </p>
+
+            <div class="code-block mb-4">
+                <div class="header">
+                    <span>❌ 方案 B 的 doCreateBean() —— IoC 硬编码 AOP</span>
+                    <span class="text-red-400">耦合灾难</span>
+                </div>
+                <pre><span class="text-blue-400">protected</span> Object <span class="text-amber-300">doCreateBean</span>(String beanName, ...) {
+    Object bean = <span class="text-amber-300">createBeanInstance</span>();
+
+    <span class="text-slate-500">// ← 从这里开始，IoC 核心代码被迫认识每一个切面模块：</span>
+
+    <span class="text-blue-400">if</span> (transactionManager.<span class="text-amber-300">needProxy</span>(bean)) {
+        bean = transactionManager.<span class="text-amber-300">createProxy</span>(bean);      <span class="text-slate-500">// 事务</span>
+    }
+    <span class="text-blue-400">if</span> (cacheManager.<span class="text-amber-300">needProxy</span>(bean)) {
+        bean = cacheManager.<span class="text-amber-300">createProxy</span>(bean);             <span class="text-slate-500">// 缓存</span>
+    }
+    <span class="text-blue-400">if</span> (asyncExecutor.<span class="text-amber-300">needProxy</span>(bean)) {
+        bean = asyncExecutor.<span class="text-amber-300">createProxy</span>(bean);            <span class="text-slate-500">// 异步</span>
+    }
+    <span class="text-blue-400">if</span> (retryTemplate.<span class="text-amber-300">needProxy</span>(bean)) {
+        bean = retryTemplate.<span class="text-amber-300">createProxy</span>(bean);            <span class="text-slate-500">// 重试</span>
+    }
+    <span class="text-slate-500">// 每加一个切面，就要在这里加一个 if...</span>
+
+    <span class="text-amber-300">earlySingletonObjects</span>.put(beanName, bean);
+    <span class="text-amber-300">populateBean</span>(beanName, mbd, instanceWrapper);
+    <span class="text-amber-300">initializeBean</span>(beanName, exposedObject, mbd);
+}
+</pre>
+            </div>
+
+            <div class="callout callout-danger mb-4">
+                <strong class="block mb-1">🔥 致命缺陷：恢复了 EJB 时代的"单体噩梦"</strong>
+                <p class="text-sm">
+                    Rod Johnson 设计 Spring 的核心理念之一就是：<strong>核心容器不感知任何切面</strong>。
+                    事务、缓存、异步、重试、日志、监控——这些都是通过同一个 <code class="mono text-xs">BeanPostProcessor</code> 接口插入的。
+                    每个切面模块是一个独立的 jar 包，你引入它就生效，不引入就没有。
+                    这个架构让 Spring 可以在二十年间从 5 个模块扩展到 50+ 个模块，而核心代码几乎不需要修改。
+                </p>
+            </div>
+
+            <div class="student-q">
+                <p class="text-sm text-slate-300 mb-2"><strong>但这是否过于理想主义了？为了架构纯洁性就搞出三级缓存这么复杂的东西？</strong></p>
+                <p class="text-xs text-slate-400">
+                    好问题。这就是工程上的价值判断。如果 Spring 只有两个切面（事务和缓存），那方案 B 可能就用了。
+                    但当你知道这个框架会被全世界数百万开发者用 20 年、在上面构建无数你想象不到的扩展时——
+                    你也会选择多写 50 行代码来保全架构设计。这就是"设计"和"堆功能"的区别。
+                </p>
+            </div>
+        </div>
+
+        <!-- ═══ 方案 C ═══ -->
+        <div class="approach fail mb-8">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="num-circle bg-red-500/20 text-red-400 shrink-0">C</div>
+                <div>
+                    <h3 class="font-bold text-white text-lg">方案 C：禁止 AOP Bean 参与循环依赖，检测到就抛异常</h3>
+                    <p class="text-sm text-slate-400 mt-1">"这个极端场景太罕见了，直接不让用。"</p>
+                </div>
+            </div>
+            <div class="text-sm text-slate-300 space-y-2">
+                <p>这个方案最"省事"，但有两个实际问题：</p>
+                <p>1. <strong class="text-white">A(@Service) ⇄ B(@Service) 的循环在大型项目中极其常见</strong>，不是边缘 case。UserService 需要 OrderService，OrderService 需要 UserService——这种业务上的双向调用太正常了。</p>
+                <p>2. <strong class="text-white">开发者很难理解为什么加上 @Transactional 就报错了。</strong> 从业务视角看，"我在 Service 上加了事务注解"和"出现了循环依赖"这两个现象之间没有任何直观的因果关系。这会是 Spring 被骂得最多的设计。</p>
+                <p>3. 实际上 Spring <strong class="text-white">确实</strong>在某些情况下会抛异常（比如构造器注入的循环依赖），那是因为构造器注入的循环依赖<strong>数学上不可能解决</strong>。而 Setter 注入的循环依赖是可以解决的——所以 Spring 选择解决它，而不是禁止它。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ──────── PART 4: 三级缓存的真正解法 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+            <span class="num-circle bg-green-500/20 text-green-400">4</span>
+            三级缓存的真正精妙之处
+        </h2>
+
+        <p class="text-slate-300 leading-relaxed mb-8">
+            好了，你看到了——方案 A 会扰乱 BPP 管线，方案 B 会破坏架构解耦，方案 C 太粗暴。
+            那么 Spring 团队是怎么找到出路的？
+        </p>
+
+        <div class="bg-gradient-to-r from-green-900/10 to-slate-900/60 rounded-xl p-6 border border-green-500/20 mb-8">
+            <h3 class="font-bold text-green-400 text-lg mb-4">🔑 破局思路：不是"提前创建代理"，而是"推迟决定要不要提前"</h3>
+            <p class="text-sm text-slate-300 leading-relaxed">
+                方案 A 的最大问题是：它<strong class="text-white">无条件地提前创建了代理</strong>。即使没有发生循环依赖（大多数情况），代理也被提前了。
+                这就像你为了防止偶尔堵车，每天凌晨 4 点就出门——代价太大了。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mt-3">
+                Spring 的答案是：<strong class="text-green-300">不要在 A 实例化后就创建代理。而是存一个"如果 B 来找 A，到时候再创建代理"的承诺。</strong>
+                这个承诺就是 <code class="mono text-xs">ObjectFactory</code>（一个 lambda）。
+            </p>
+            <p class="text-sm text-slate-300 leading-relaxed mt-3">
+                如果<strong>没有</strong>发生循环依赖，这个 lambda 永远不会被调用，A 的代理仍然按正常流程在初始化末尾创建。
+                如果<strong>发生了</strong>循环依赖，B 来 getBean(A) 时触发这个 lambda，提前创建代理给 B。
+                <strong class="text-green-300">两全其美。</strong>
+            </p>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+            这就是<strong class="text-white">三级缓存</strong>：它不是存"代理对象"，也不是存"原始对象"，而是存<strong class="text-amber-300">一个能够生产早期引用的工厂</strong>。
+        </p>
+
+        <div class="flow-grid mb-8">
+            <div class="flow-card">
+                <div class="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-database text-green-400"></i>
+                </div>
+                <h4 class="font-bold text-green-400 text-sm">一级: singletonObjects</h4>
+                <p class="text-xs text-slate-500 mt-1">完全就绪的 Bean</p>
+            </div>
+            <div class="flow-card">
+                <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-copy text-amber-400"></i>
+                </div>
+                <h4 class="font-bold text-amber-400 text-sm">二级: earlySingletonObjects</h4>
+                <p class="text-xs text-slate-500 mt-1">从工厂生产出来的早期 Bean<br>（可能是原始对象，也可能是代理）</p>
+            </div>
+            <div class="flow-card" style="border-color: rgba(248,113,113,0.4);">
+                <div class="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-industry text-red-400"></i>
+                </div>
+                <h4 class="font-bold text-red-400 text-sm">三级: singletonFactories</h4>
+                <p class="text-xs text-slate-500 mt-1">ObjectFactory ——<br>一个"按需生产"的 lambda</p>
+            </div>
+        </div>
+
+        <div class="code-block mb-6">
+            <div class="header">
+                <span>✅ Spring 真实源码逻辑（精简）</span>
+                <span class="text-green-400">AbstractAutowireCapableBeanFactory</span>
+            </div>
+            <pre><span class="text-blue-400">protected</span> Object <span class="text-amber-300">doCreateBean</span>(String beanName, ...) {
+    Object bean = <span class="text-amber-300">createBeanInstance</span>();   <span class="text-slate-500">// 1. 实例化</span>
+
+    <span class="text-slate-500">// 2. 放入三级缓存：一个 lambda，不是对象本身！</span>
+    <span class="text-amber-300">addSingletonFactory</span>(beanName, () -> <span class="text-amber-300">getEarlyBeanReference</span>(beanName, mbd, bean));
+
+    Object exposedObject = bean;
+    <span class="text-amber-300">populateBean</span>(beanName, mbd, instanceWrapper);  <span class="text-slate-500">// 3. 属性填充</span>
+    exposedObject = <span class="text-amber-300">initializeBean</span>(beanName, exposedObject, mbd); <span class="text-slate-500">// 4. 初始化</span>
+
+    <span class="text-slate-500">// 5. 检查早期引用和最终对象是否一致</span>
+    Object earlySingletonReference = <span class="text-amber-300">getSingleton</span>(beanName, <span class="text-blue-400">false</span>);
+    <span class="text-blue-400">if</span> (earlySingletonReference != <span class="text-blue-400">null</span>) {
+        <span class="text-blue-400">if</span> (exposedObject == bean) {
+            exposedObject = earlySingletonReference; <span class="text-slate-500">// 用早期引用替换</span>
+        }
+    }
+
+    <span class="text-blue-400">return</span> exposedObject;
+}
+</pre>
+        </div>
+
+        <div class="callout callout-good mb-6">
+            <strong class="block mb-2">🎯 关键：lambda 内部做了什么？</strong>
+            <p class="text-sm text-slate-300">
+                <code class="mono text-xs">getEarlyBeanReference()</code> 遍历所有的 <code class="mono text-xs">SmartInstantiationAwareBeanPostProcessor</code>。
+                AOP 模块的 <code class="mono text-xs">AbstractAutoProxyCreator</code> 实现了这个接口。当它被调用时，
+                <strong class="text-green-300">它判断这个 Bean 是否需要代理，如果需要就提前创建并缓存</strong>。
+                注意：决定"是否创建代理"的逻辑仍然在 AOP 模块内部——<strong class="text-white">IoC 容器依然不知道 AOP 的存在</strong>。
+            </p>
+        </div>
+
+        <div class="student-q">
+            <p class="text-sm text-slate-300 mb-2"><strong>那如果没有循环依赖，lambda 什么时候被清理掉？</strong></p>
+            <p class="text-xs text-slate-400">
+                Bean 初始化完成后，Spring 会调用 <code class="mono text-xs">addSingleton()</code> 把最终 Bean 放入一级缓存。
+                这个操作同时会从三级缓存移除 factory、从二级缓存移除早期引用。lambda 被 GC 回收。
+                整个生命周期中，这个 lambda 可能<strong class="text-white">从未被调用</strong>——这正是设计的目的。
+            </p>
+        </div>
+    </section>
+
+    <!-- ──────── PART 5: B 到底拿到了什么？ ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-2 flex items-center gap-3">
+            <span class="num-circle bg-pink-500/20 text-pink-400">5</span>
+            临门一脚：B 从缓存里拿到的到底是个什么？
+        </h2>
+        <p class="text-sm text-slate-500 mb-8 ml-11">
+            这是九成人脑子最乱的地方——"A 还没创建完呢，A 还依赖 B 呢，B 怎么就拿到了 A？<br class="hidden md:block">
+            拿到的 A 是半成品吗？那后来 A 的字段被填上了，B 手里的引用还能看见吗？"
+        </p>
+
+        <!-- 案例设定 -->
+        <div class="bg-slate-900/60 rounded-xl p-6 border border-slate-700 mb-8">
+            <h3 class="font-bold text-white mb-3">📦 案例设定</h3>
+            <div class="code-block">
+                <div class="header"><span>两个互相依赖的 Service</span></div>
+                <pre><span class="text-pink-400">@Service</span>
+<span class="text-blue-400">public class</span> <span class="text-cyan-300">OrderService</span> {
+    <span class="text-pink-400">@Autowired</span>
+    <span class="text-blue-400">private</span> <span class="text-cyan-300">UserService</span> userService;  <span class="text-slate-500">// A 依赖 B</span>
+
+    <span class="text-pink-400">@Transactional</span>  <span class="text-slate-500">// ← 需要 AOP 代理!</span>
+    <span class="text-blue-400">public void</span> <span class="text-amber-300">createOrder</span>() { ... }
+}
+
+<span class="text-pink-400">@Service</span>
+<span class="text-blue-400">public class</span> <span class="text-cyan-300">UserService</span> {
+    <span class="text-pink-400">@Autowired</span>
+    <span class="text-blue-400">private</span> <span class="text-cyan-300">OrderService</span> orderService;  <span class="text-slate-500">// B 依赖 A</span>
+}</pre>
+            </div>
+            <p class="text-sm text-slate-300 mt-4">
+                我们将分别跟踪<strong class="text-white">两种场景</strong>下每一个对象的<strong class="text-white">内存身份（identity）</strong>：
+            </p>
+            <div class="grid md:grid-cols-2 gap-4 mt-4 text-sm">
+                <div class="bg-slate-800/60 p-4 rounded-lg">
+                    <span class="text-green-400 font-bold">场景 ①：A 没有 @Transactional</span>
+                    <span class="text-slate-500 block mt-1">纯 POJO 循环依赖，二级缓存就能搞定</span>
+                </div>
+                <div class="bg-slate-800/60 p-4 rounded-lg">
+                    <span class="text-pink-400 font-bold">场景 ②：A 有 @Transactional</span>
+                    <span class="text-slate-500 block mt-1">A 需要 AOP 代理，三级缓存介入</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 场景一：无 AOP -->
+        <div class="mb-10">
+            <h3 class="text-xl font-bold text-green-400 mb-6 flex items-center gap-2">
+                <i class="fa-solid fa-circle"></i> 场景 ①：无 AOP —— 二级缓存足够
+            </h3>
+
+            <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+                在这个场景下，<strong class="text-white">只有一个 Java 对象</strong>——<code class="mono text-xs">rawA</code>（OrderService 的实例）。
+                从出生到进容器，它的堆地址从未变过。
+            </p>
+
+            <!-- 生命线图 -->
+            <div class="bg-slate-900/60 rounded-xl p-5 border border-green-500/20 mb-6">
+                <h4 class="font-bold text-sm text-green-300 mb-4">对象 rawA (<span class="mono">OrderService@0x1234</span>) 的生命线</h4>
+                <div class="timeline">
+                    <div class="timeline-step t-blue">
+                        <div class="text-sm"><strong class="text-blue-400">T1 实例化</strong> — <code class="mono text-xs">rawA = new OrderService()</code></div>
+                        <p class="text-xs text-slate-400 mt-1">rawA.userService = <code class="mono">null</code> （字段默认值）</p>
+                    </div>
+                    <div class="timeline-step t-blue">
+                        <div class="text-sm"><strong class="text-blue-400">T2 放入二级缓存</strong> — <code class="mono text-xs">earlySingletonObjects.put("orderService", rawA)</code></div>
+                    </div>
+                    <div class="timeline-step t-amber">
+                        <div class="text-sm"><strong class="text-amber-400">T3 A 填充属性</strong> — 发现需要 B → 触发 B 创建</div>
+                    </div>
+                    <div class="timeline-step t-amber">
+                        <div class="text-sm"><strong class="text-amber-400">T4 B 填充属性</strong> — 发现需要 A → 走缓存查询</div>
+                        <p class="text-xs text-green-300 mt-1">
+                            → L1 miss → L2 <strong class="text-green-400">HIT!</strong>
+                            → <span class="mono">b.orderService = rawA</span>
+                            → <strong class="text-white">B.orderService 指向 @0x1234</strong>
+                        </p>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T5 A 继续初始化</strong> — <code class="mono text-xs">rawA.userService = b</code> （setter 注入）</div>
+                        <p class="text-xs text-slate-400 mt-1">现在 rawA 的字段被填上了！rawA.userService = B@0x5678</p>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T6 A 初始化完成</strong> — @PostConstruct 执行（rawA 身上）</div>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T7 移入一级缓存</strong> — <code class="mono text-xs">singletonObjects.put("orderService", rawA)</code></div>
+                        <p class="text-xs text-slate-400 mt-1">从二级缓存移除。一级缓存里的是同一个 rawA @0x1234。</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="callout callout-good">
+                <strong class="block mb-2">✅ 结论：B 拿到的 rawA 和容器最终持有的 rawA，是<u>同一个 Java 对象</u>。</strong>
+                <div class="text-sm">
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li>T4 时 B 把 rawA 的引用存到了自己的 <code class="mono text-xs">orderService</code> 字段里。</li>
+                        <li>T5 时 Spring 把 B 的引用写入了 <code class="mono text-xs">rawA.userService</code>。</li>
+                        <li>这是<strong class="text-white">同一个堆对象</strong>——它的字段从 null 变成了有值，但地址没变。B 手里的引用天然能看到这些变化。</li>
+                        <li><strong class="text-white">不需要任何"同步"或"回填"</strong>——Java 的引用语义天然保证了这一点。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 场景二：有 AOP -->
+        <div class="mb-10">
+            <h3 class="text-xl font-bold text-pink-400 mb-6 flex items-center gap-2">
+                <i class="fa-solid fa-circle"></i> 场景 ②：有 AOP —— 三级缓存介入
+            </h3>
+
+            <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+                这次，<strong class="text-white">有两个 Java 对象</strong>：<code class="mono text-xs">rawA</code>（OrderService 实例）和 <code class="mono text-xs">proxyA</code>（CGLIB 代理实例）。
+                <code class="mono text-xs">proxyA.target = rawA</code>。
+            </p>
+
+            <!-- 对象关系图 -->
+            <div class="bg-slate-900/60 rounded-xl p-5 border border-pink-500/20 mb-6">
+                <h4 class="font-bold text-sm text-pink-300 mb-4">
+                    两个对象，一个引用链：<span class="mono">proxyA</span> (<span class="text-xs">OrderService$$Enhancer@0xAABB</span>) → <span class="mono">rawA</span> (<span class="text-xs">OrderService@0x1234</span>)
+                </h4>
+                <div class="timeline">
+                    <div class="timeline-step t-blue">
+                        <div class="text-sm"><strong class="text-blue-400">T1 实例化</strong> — <code class="mono text-xs">rawA = new OrderService()</code> (@0x1234)</div>
+                        <p class="text-xs text-slate-400 mt-1">rawA.userService = <code class="mono">null</code></p>
+                    </div>
+                    <div class="timeline-step t-blue">
+                        <div class="text-sm"><strong class="text-blue-400">T2 放入三级缓存</strong> — <code class="mono text-xs">singletonFactories.put("orderService", lambda)</code></div>
+                        <p class="text-xs text-slate-400 mt-1">注意：这里放的是 <strong class="text-blue-300">lambda 工厂</strong>，不是 rawA 本身！</p>
+                    </div>
+                    <div class="timeline-step t-amber">
+                        <div class="text-sm"><strong class="text-amber-400">T3 A 填充属性</strong> — 发现需要 B → 触发 B 创建</div>
+                    </div>
+                    <div class="timeline-step t-amber">
+                        <div class="text-sm"><strong class="text-amber-400">T4 B 填充属性</strong> — 发现需要 A → 走缓存查询</div>
+                        <p class="text-xs text-slate-300 mt-1">
+                            → L1 miss → L2 miss → L3 <strong class="text-pink-400">HIT!</strong>
+                        </p>
+                    </div>
+                    <div class="timeline-step t-red">
+                        <div class="text-sm"><strong class="text-red-400">T5 🔥 关键时刻：调用 lambda.getObject()</strong></div>
+                        <div class="text-xs text-slate-300 mt-1 space-y-1">
+                            <p>→ lambda 内部调用 <code class="mono">getEarlyBeanReference("orderService", rawA)</code></p>
+                            <p>→ 遍历 SmartInstantiationAwareBeanPostProcessor</p>
+                            <p>→ AbstractAutoProxyCreator 拦截："A 有 @Transactional，需要代理！"</p>
+                            <p>→ <code class="mono">proxyA = createProxy(rawA)</code> — 创建 CGLIB 代理 @0xAABB</p>
+                            <p>→ 记录到 <code class="mono">earlyProxyReferences</code>："A 的早期代理已创建"</p>
+                            <p>→ <strong class="text-white">返回 proxyA（不是 rawA！）</strong></p>
+                        </div>
+                    </div>
+                    <div class="timeline-step t-pink">
+                        <div class="text-sm"><strong class="text-pink-400">T6 proxyA 放入二级缓存 + B 获取</strong></div>
+                        <p class="text-xs text-slate-300 mt-1">
+                            <code class="mono">earlySingletonObjects.put("orderService", proxyA)</code><br>
+                            <code class="mono">b.orderService = proxyA</code>
+                            → <strong class="text-white">B.orderService 指向 proxyA @0xAABB</strong>
+                        </p>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T7 A 继续初始化</strong> — 在 <strong>rawA</strong> 身上执行！</div>
+                        <p class="text-xs text-slate-300 mt-1">
+                            <code class="mono">rawA.userService = b</code> （setter 注入到 rawA，不是 proxyA）<br>
+                            <code class="mono">rawA.init()</code> （@PostConstruct 在 rawA 身上执行）
+                        </p>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T8 AOP BPP 后置处理</strong></div>
+                        <p class="text-xs text-slate-300 mt-1">
+                            <code class="mono">postProcessAfterInitialization(rawA, "orderService")</code><br>
+                            → 检查 <code class="mono">earlyProxyReferences.contains("orderService")</code> → <strong class="text-pink-400">TRUE</strong><br>
+                            → <strong>不再创建新代理</strong>，直接返回 rawA<br>
+                            （阻止了第二个代理的产生！）
+                        </p>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T9 最终判定</strong></div>
+                        <p class="text-xs text-slate-300 mt-1">
+                            <code class="mono">exposedObject == bean</code> (rawA == rawA) → true<br>
+                            <code class="mono">earlySingletonReference = getSingleton("orderService")</code> → proxyA<br>
+                            → <code class="mono">exposedObject = proxyA</code> <span class="text-slate-500">// 用早期代理替换！</span>
+                        </p>
+                    </div>
+                    <div class="timeline-step t-green">
+                        <div class="text-sm"><strong class="text-green-400">T10 移入一级缓存</strong> — <code class="mono text-xs">singletonObjects.put("orderService", proxyA)</code></div>
+                        <p class="text-xs text-slate-300 mt-1">
+                            一级缓存里的是 <strong class="text-pink-300">proxyA @0xAABB</strong>。<br>
+                            rawA @0x1234 作为 proxyA 的内部 target 存活，但不直接暴露给外部。
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 关键追问 -->
+            <div class="student-q mb-6">
+                <p class="text-sm text-slate-300 mb-2"><strong>🤔 追问：T7 是在 rawA 身上 populate，那 proxyA 能"看见" rawA 被填充的属性吗？</strong></p>
+                <p class="text-xs text-slate-400">
+                    能。因为 CGLIB 代理的每一个方法调用最终都委托给 <code class="mono text-xs">rawA</code>（target 引用）。
+                    proxyA 自己不存业务字段——它只是一个拦截器壳。
+                </p>
+                <div class="code-block mt-3">
+                    <div class="header"><span>B 调用 A 的方法时发生了什么</span></div>
+                    <pre><span class="text-slate-500">// B 的某段代码：</span>
+orderService.<span class="text-amber-300">createOrder</span>();
+
+<span class="text-slate-500">// orderService 指向 proxyA @0xAABB（CGLIB 代理）</span>
+<span class="text-slate-500">// CGLIB 拦截：</span>
+<span class="text-slate-500">//   1. 开启事务（@Transactional advice）</span>
+<span class="text-slate-500">//   2. 调用 target.createOrder() → rawA.createOrder() @0x1234</span>
+<span class="text-slate-500">//   3. rawA.createOrder() 内部访问 this.userService → rawA.userService → B@0x5678 ✅</span>
+<span class="text-slate-500">//   4. 提交/回滚事务</span>
+<span class="text-slate-500">//   5. 返回结果</span></pre>
+                </div>
+            </div>
+
+            <div class="student-q">
+                <p class="text-sm text-slate-300 mb-2"><strong>🤔 再追问：rawA 不是在 T1 就创建了吗，为什么 T7 才 populate？那 T1~T7 之间 proxyA 如果被 B 调用了，rawA 的字段还是 null，不就出问题了吗？</strong></p>
+                <p class="text-xs text-slate-400">
+                    这是一个<strong class="text-white">时序问题</strong>，答案很简单：<strong class="text-white">B 在 T4~T6 期间只是"持有"了 proxyA 的引用，并没有立即调用 A 的方法。</strong>
+                    循环依赖解决的是"注入"（把引用赋给字段），不是"调用"。
+                </p>
+                <p class="text-xs text-slate-400 mt-2">
+                    Spring 的设计假设：在容器完全启动之前，不会有业务方法被调用。所有 Bean 的依赖注入全部完成后，
+                    容器才发启动完成事件，业务线程才开始访问。在此之前，rawA 的字段已经从 null 变成了有效值（T7 完成）。
+                </p>
+            </div>
+        </div>
+
+        <!-- 汇总表 -->
+        <div>
+            <h3 class="text-lg font-bold text-white mb-4">📊 两种场景对比</h3>
+            <div class="overflow-x-auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>维度</th>
+                            <th class="text-green-400">场景 ① 无 AOP</th>
+                            <th class="text-pink-400">场景 ② 有 AOP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="font-semibold">A 的实例化产物</td>
+                            <td><code class="mono text-xs">rawA @0x1234</code></td>
+                            <td><code class="mono text-xs">rawA @0x1234</code></td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">T2 放入哪个缓存</td>
+                            <td>二级缓存 (earlySingletonObjects)</td>
+                            <td>三级缓存 (singletonFactories) — lambda</td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">B 通过缓存拿到</td>
+                            <td class="text-green-300 font-semibold">rawA @0x1234</td>
+                            <td class="text-pink-300 font-semibold">proxyA @0xAABB</td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">B 拿到的对象和最终<br>容器的单例是否<strong>同一个</strong>？</td>
+                            <td class="text-green-400">✅ 是（地址相同）</td>
+                            <td class="text-pink-400">⚠️ 是 proxyA（rawA 藏在其内部）</td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">A 的属性填充在<br>哪个对象上执行？</td>
+                            <td>rawA（和 B 拿到的是同一个）</td>
+                            <td>rawA（proxyA 的 target）</td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">B 能"看见" A 被<br>填充后的属性吗？</td>
+                            <td class="text-green-400">✅ 能（同一个对象）</td>
+                            <td class="text-pink-400">✅ 能（proxyA 委托给 rawA）</td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">@Transactional 对<br>B 的调用生效吗？</td>
+                            <td class="text-slate-500">N/A（没有 @Transactional）</td>
+                            <td class="text-green-400">✅ 生效（通过 proxyA 的拦截器）</td>
+                        </tr>
+                        <tr>
+                            <td class="font-semibold">需要几级缓存？</td>
+                            <td class="text-green-300 font-semibold">二级就够</td>
+                            <td class="text-pink-300 font-semibold">必须三级</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ──────── PART 6: 源码走读 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+            <span class="num-circle bg-cyan-500/20 text-cyan-400">6</span>
+            源码走读：三个 Map 到底存在哪
+        </h2>
+
+        <p class="text-slate-300 leading-relaxed mb-8">
+            所有三级缓存都定义在 <code class="mono text-xs">org.springframework.beans.factory.support.DefaultSingletonBeanRegistry</code> 中。
+            这是 Spring IoC 最底层的类之一。
+        </p>
+
+        <div class="code-block mb-6">
+            <div class="header">
+                <span>📍 DefaultSingletonBeanRegistry.java</span>
+                <span class="text-slate-500">三个 Map 的声明</span>
+            </div>
+            <pre><span class="text-slate-500">/** 一级缓存：完全就绪的单例 Bean */</span>
+<span class="text-blue-400">private final</span> Map&lt;String, Object&gt; <span class="text-green-400">singletonObjects</span> = <span class="text-blue-400">new</span> ConcurrentHashMap&lt;&gt;(256);
+
+<span class="text-slate-500">/** 三级缓存：单例工厂（lambda），按需生产早期引用 */</span>
+<span class="text-blue-400">private final</span> Map&lt;String, ObjectFactory&lt;?&gt;&gt; <span class="text-red-400">singletonFactories</span> = <span class="text-blue-400">new</span> HashMap&lt;&gt;(16);
+
+<span class="text-slate-500">/** 二级缓存：从工厂生产出来的早期 Bean 引用 */</span>
+<span class="text-blue-400">private final</span> Map&lt;String, Object&gt; <span class="text-amber-400">earlySingletonObjects</span> = <span class="text-blue-400">new</span> ConcurrentHashMap&lt;&gt;(16);
+</pre>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+            <strong class="text-white">获取单例的核心方法</strong> —— 这就是三级缓存查询的完整逻辑：
+        </p>
+
+        <div class="code-block mb-6">
+            <div class="header">
+                <span>📍 DefaultSingletonBeanRegistry.getSingleton()</span>
+                <span class="text-slate-500">完整的三级查询</span>
+            </div>
+            <pre><span class="text-blue-400">protected</span> Object <span class="text-amber-300">getSingleton</span>(String beanName, <span class="text-blue-400">boolean</span> allowEarlyReference) {
+    <span class="text-slate-500">// 第一级：从 singletonObjects 查</span>
+    Object singletonObject = <span class="text-blue-400">this</span>.<span class="text-green-400">singletonObjects</span>.get(beanName);
+    <span class="text-blue-400">if</span> (singletonObject == <span class="text-blue-400">null</span> && isSingletonCurrentlyInCreation(beanName)) {
+        <span class="text-blue-400">synchronized</span> (<span class="text-blue-400">this</span>.<span class="text-green-400">singletonObjects</span>) {
+            <span class="text-slate-500">// 第二级：从 earlySingletonObjects 查</span>
+            singletonObject = <span class="text-blue-400">this</span>.<span class="text-amber-400">earlySingletonObjects</span>.get(beanName);
+            <span class="text-blue-400">if</span> (singletonObject == <span class="text-blue-400">null</span> && allowEarlyReference) {
+                <span class="text-slate-500">// 第三级：从 singletonFactories 取出工厂, 调用 getObject()</span>
+                ObjectFactory&lt;?&gt; singletonFactory = <span class="text-blue-400">this</span>.<span class="text-red-400">singletonFactories</span>.get(beanName);
+                <span class="text-blue-400">if</span> (singletonFactory != <span class="text-blue-400">null</span>) {
+                    singletonObject = singletonFactory.<span class="text-amber-300">getObject</span>(); <span class="text-slate-500">// ← 这里触发 lambda!</span>
+                    <span class="text-blue-400">this</span>.<span class="text-amber-400">earlySingletonObjects</span>.put(beanName, singletonObject); <span class="text-slate-500">// 升级到二级</span>
+                    <span class="text-blue-400">this</span>.<span class="text-red-400">singletonFactories</span>.remove(beanName); <span class="text-slate-500">// 从三级移除</span>
+                }
+            }
+        }
+    }
+    <span class="text-blue-400">return</span> singletonObject;
+}
+</pre>
+        </div>
+
+        <div class="callout callout-info">
+            <strong class="block mb-2">📌 注意数据流向：</strong>
+            <p class="text-sm text-slate-300">
+                三级缓存的数据是<strong class="text-white">单向流动</strong>的：<br>
+                <code class="mono text-xs">singletonFactories</code>（被触发）→ 生产出对象 → 放入 <code class="mono text-xs">earlySingletonObjects</code> → 最终 Bean 就绪后 → 放入 <code class="mono text-xs">singletonObjects</code>。<br>
+                一级不会回退到二级，二级不会回退到三级。这是"承诺兑现"后就不可逆的语义。
+            </p>
+        </div>
+    </section>
+
+    <!-- ──────── PART 7: 设计启示录 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+            <span class="num-circle bg-amber-500/20 text-amber-400">7</span>
+            最后的升华：这到底教会我们什么
+        </h2>
+
+        <div class="space-y-6 text-sm text-slate-300 leading-relaxed">
+            <div class="bg-slate-900/60 rounded-xl p-5 border border-slate-700">
+                <h3 class="font-bold text-white mb-2">1. 三级缓存不是一个"feature"，它是一个"补丁"</h3>
+                <p>
+                    它不是 Spring 团队在 2004 年画在白板上的天才设计。它是当 <strong class="text-amber-300">IoC 的分步创建</strong> 和 <strong class="text-purple-300">AOP 的延迟代理</strong> 这两个独立设计的优雅特性，在<strong class="text-red-300">循环依赖</strong>这个边界条件下发生冲突时，团队找到的<strong class="text-white">代价最小的和解方案</strong>。
+                    这也是为什么 Spring 官方文档几乎不提三级缓存——它更像一个实现细节，而非一个"功能"。
+                </p>
+            </div>
+
+            <div class="bg-slate-900/60 rounded-xl p-5 border border-slate-700">
+                <h3 class="font-bold text-white mb-2">2. 理解框架，要理解它的"边界条件"</h3>
+                <p>
+                    很多开发者知道三级缓存的三个 Map 叫什么名字，但不知道<strong class="text-amber-300">什么时候会触发三级缓存查询</strong>、<strong class="text-purple-300">什么时候 lambda 会被跳过</strong>。
+                    真正理解一个框架，不是记住它的 API，而是能推导出<strong class="text-white">它在极端输入下的行为</strong>。
+                    这就是"背答案"和"真理解"的区别。
+                </p>
+            </div>
+
+            <div class="bg-slate-900/60 rounded-xl p-5 border border-slate-700">
+                <h3 class="font-bold text-white mb-2">3. 架构设计的本质是管理"张力"</h3>
+                <p>
+                    Spring 的设计中充满了这种张力：
+                </p>
+                <ul class="list-disc pl-5 mt-2 space-y-1 text-slate-400">
+                    <li>IoC 想要"简单"（一个 Map），AOP 想要"灵活"（动态代理）→ 三级缓存是妥协</li>
+                    <li>核心容器想要"纯粹"（不知道切面），企业开发想要"方便"（@Transactional 一行搞定）→ BeanPostProcessor 是妥协</li>
+                    <li>框架想要"通用"（支持任何扩展），开发者想要"简单"（开箱即用）→ Spring Boot 是妥协</li>
+                </ul>
+                <p class="mt-2">
+                    好的架构不是没有矛盾，而是<strong class="text-white">让矛盾在正确的抽象层被化解</strong>。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ──────── PART 8: 面试参考 ──────── -->
+    <section class="card p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-8 text-center">
+            <i class="fa-solid fa-comments text-blue-400 mr-2"></i>
+            面试时你可以这样回答
+        </h2>
+
+        <div class="space-y-8">
+            <div class="bg-slate-900/60 rounded-xl p-6 border border-slate-700">
+                <h3 class="font-bold text-red-400 text-sm mb-3">🥉 青铜（背答案——你现在的水平）</h3>
+                <p class="text-sm text-slate-400">
+                    "三级缓存是 singletonObjects、earlySingletonObjects 和 singletonFactories。
+                    一级存放完全初始化的 Bean，二级存放早期暴露的 Bean，三级存放 ObjectFactory 用于生成代理对象。"
+                </p>
+            </div>
+
+            <div class="bg-slate-900/60 rounded-xl p-6 border border-amber-500/20">
+                <h3 class="font-bold text-amber-400 text-sm mb-3">🥈 白银（讲来源——你读完本文后的水平）</h3>
+                <p class="text-sm text-slate-300">
+                    "二级缓存通过分离实例化和初始化解决了纯 POJO 的循环依赖。
+                    但 AOP 代理在初始化末尾才创建，循环依赖发生在属性填充阶段——时间上冲突了。
+                    三级缓存的 ObjectFactory 是一个 lazy evaluation：只有真的发生循环依赖时才提前创建代理，否则 lambda 永远不会被调用，代理仍然在正常时机创建。"
+                </p>
+            </div>
+
+            <div class="bg-slate-900/60 rounded-xl p-6 border border-green-500/30">
+                <h3 class="font-bold text-green-400 text-sm mb-3">🥇 王者（讲设计哲学——面试官会记住你）</h3>
+                <p class="text-sm text-slate-200 leading-relaxed">
+                    "三级缓存本质上是 Spring 面对两个正交设计——分步创建和延迟代理——在循环依赖这一边界条件下产生冲突时，做出的<strong>最小侵入性修复</strong>。
+                    它没有选择让 IoC 硬编码 AOP（破坏解耦），也没有选择无条件提前代理（破坏生命周期），
+                    而是引入了一个 lambda 工厂作为'承诺'，把'是否提前创建代理'的决定推迟到真正需要的时刻。
+                    getEarlyBeanReference 内部通过 SmartInstantiationAwareBeanPostProcessor 仍然走的是 BPP 扩展机制，
+                    IoC 容器一行 AOP 代码都不需要知道。这其实就是<strong>延迟计算 + 开闭原则</strong>的教科书级应用。"
+                </p>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="text-center py-16 border-t border-slate-800">
+    <p class="text-slate-500 text-sm">
+        "Any fool can write code that a computer can understand.<br>
+        Good programmers write code that humans can understand."
+    </p>
+    <p class="text-slate-600 text-xs mt-3">— Martin Fowler</p>
+    <p class="text-slate-600 text-xs mt-8">
+        三级缓存的故事告诉我们：<strong class="text-slate-400">框架设计的精华不在"做了什么"，而在"没做什么"。</strong>
+    </p>
+</footer>
+
+</body>
+</html>

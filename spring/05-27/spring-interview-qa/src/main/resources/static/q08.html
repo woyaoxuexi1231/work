@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q08 · 内部调用失效</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 08 · AOP</div><h1>内部调用失效</h1><div class="q-sub">同一个类中方法 A 调用 B，B 上有 @Transactional，为什么增强失效？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"因为 Spring AOP 基于代理，this 指向原始对象不是代理对象，所以内部调用绕过了切面。解决方案有 AopContext.currentProxy()、注入自身、或者重构到另一个类。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"这个问题的根本原因是代理模式和 Java 方法分派机制的冲突。代理对象的方法调用链是 proxy.method() → 拦截器链 → target.method()，但 target.method() 内部调用 this.otherMethod() 时，this 就是 target 本身——Java 的 invokespecial 指令在编译时就绑定了当前对象。三种解法：AopContext.currentProxy() 从 ThreadLocal 取代理——但需要 exposeProxy=true，有性能开销；注入自身 @Autowired self——Spring 注入的是代理，但构造器注入时不能用（会产生循环依赖）；重构到另一个类——治本，最推荐。AspectJ 编译期织入没有这个问题，因为它直接修改字节码，不存在代理层。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>源码：</b>CglibAopProxy.DynamicAdvisedInterceptor.intercept() 中，target 被保存在 advised 字段中。this 调用根本不会经过这里。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"内部调用失效是 Spring AOP 的'阿喀琉斯之踵'——它暴露了代理模式在模拟真正 AOP 时的根本性局限。Spring 对此有三种态度：第一，不修复——因为修复不了。这不是 bug，是 JVM 方法分派机制的物理定律，除非不用代理而用字节码增强（AspectJ）。第二，给逃生舱——AopContext、注入自身，但都标注了'exposeProxy 有性能开销'的警告。第三，引导最佳实践——重构类结构，让需要被增强的方法独立出来。这三种态度的背后，是 Spring 一贯的务实哲学：承认局限、提供 workaround、引导你走向更好的设计。你甚至可以把它理解为 Spring 在暗示你：'如果你遇到了内部调用失效，说明你的类该拆了'——一个类既需要被代理又需要内部调用自己，本身就是单一职责的反面教材。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"阿喀琉斯之踵"、"引导你走向更好的设计"——这个回答不只是技术分析，是设计哲学层面的洞察。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q08 · 内部调用失效 · <a href="/q09.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

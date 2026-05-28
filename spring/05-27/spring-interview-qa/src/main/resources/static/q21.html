@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q21 · 自动装配</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 21 · 自动装配</div><h1>自动装配原理</h1><div class="q-sub">@SpringBootApplication 包含哪三个注解？条件注解工作原理？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"@SpringBootApplication = @SpringBootConfiguration + @EnableAutoConfiguration + @ComponentScan。自动装配通过 spring.factories 加载 ~180 个配置类，用 @ConditionalOnClass、@ConditionalOnMissingBean 等条件注解过滤。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"核心流程：@EnableAutoConfiguration → @Import(AutoConfigurationImportSelector) → selectImports() → SpringFactoriesLoader.loadFactoryNames() 从所有 jar 的 spring.factories 中读 EnableAutoConfiguration 的候选类 → 全量 ~180 个 → 逐个检查 @Conditional → 不满足的跳过 → 剩余的就是要加载的配置。条件注解的工作：OnClassCondition 通过 classLoader.loadClass() 判断类路径，OnBeanCondition 通过 beanFactory.getBeanNamesForType() 判断容器中是否已有 Bean，OnPropertyCondition 通过 environment.getProperty() 判断配置值。@ConditionalOnMissingBean 是自动配置能被用户覆盖的关键——用户自己定义了就跳过自动配置。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>Spring Boot 3.x 变化：</b>从 spring.factories 改为 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports——一个文件一个目的，语义更清晰。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"自动装配是 Spring 从'配置框架'到'推断平台'的质变。Spring Framework 时代，一切配置都是显式的：你要 DataSource 就自己配，要 TransactionManager 就自己配。Spring Boot 改变了这个范式：'你引入了 HikariCP 的 jar？那你大概率需要 DataSource——我帮你配一个，但如果你自己配了，我自动退让。'这个'大概率'就是条件注解的精髓——它不是 AI，而是在类路径、已有 Bean、配置项这三个维度上做推断。这种自动化的代价是'透明度下降'——你看到 @SpringBootApplication 一行注解，背后注册了上百个配置类。所以 --debug 模式和 actuator/conditions 端点不是可选的附加功能——它们是自动装配体系的'可观测层'，和自动装配本身同等重要。理解了这一点，你就理解了为什么 Spring Boot 3.x 把 spring.factories 拆成独立的 imports 文件：不是语法糖，是在为未来更复杂的推断模式（如 GraalVM native image 的条件注册）做准备。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"推断平台"、"可观测层"——你不是在背 spring.factories 的路径，你理解了自动装配是一个'推断系统'而不仅仅是'自动配置'。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q21 · 自动装配 · <a href="/q22.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

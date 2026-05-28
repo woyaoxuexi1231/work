@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q09 · 拦截链</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 09 · AOP</div><h1>拦截链</h1><div class="q-sub">多个切面作用于同一方法时，执行顺序如何控制？proceed() 不调用会怎样？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"多个切面通过 @Order 控制顺序，值越小越先进入（洋葱模型，先进后出）。proceed() 不调用会阻断后续所有切面和目标方法。@Order 和 @Priority 类似，但切面排序用 @Order。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"拦截链的核心是 ReflectiveMethodInvocation 的递归结构——每个拦截器在 invoke() 中调用 mi.proceed()，形成递归调用栈。为什么用递归而不是 for 循环？因为递归天然支持'进入做 A，退出做 B'的环绕语义——拦截器在 proceed() 之前写前置逻辑，之后写后置逻辑。proceed() 不调用 = 递归在此终止 = 后续拦截器和目标方法全部跳过。这就是 @PreAuthorize 的实现基础——权限不通过时抛异常，异常在递归的某一层被捕获，后面的都不会执行。@Transactional 默认 order=Integer.MAX_VALUE 不是随便选的——事务必须在最接近业务代码的地方开启和提交，否则外层切面的耗时持有数据库连接是浪费。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>关键：</b>ReflectiveMethodInvocation 维护一个 currentInterceptorIndex，每次 proceed() 递增。当 index == interceptors.size() 时，invokeJoinpoint() 执行目标方法。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"拦截链的递归设计是一个精彩的'用控制流表达横切关注点'的案例。for 循环只能表达'依次执行'，无法表达'执行一半、回来再继续'的语义。递归的调用栈天然就是一个'进出栈'——进时从外到内，出时从内到外。更深层地看，proceed() 的阻断能力是整个 Spring Security 注解权限体系的基础——它不是 AOP 的 bug，是 intentionally designed interception point。而 @Transactional 默认最低优先级的设定体现了一个更根本的设计原则：'谁离数据最近，谁最后进来、最先出去'。数据访问层的事务应该是最内层的洋葱皮——日志、权限、缓存这些横切面应该在外面。这个优先级设计不是偶然的，它保证了无论你怎么自定义切面，数据一致性永远是最后一道防线。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"数据一致性是最后一道防线"——这句话让你从'会用 @Order'升级到'理解为什么这么设计'。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q09 · 拦截链 · <a href="/q10.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>
