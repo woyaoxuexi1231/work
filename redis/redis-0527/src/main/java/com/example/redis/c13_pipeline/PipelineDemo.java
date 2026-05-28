@@ -6,6 +6,8 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 /**
  * 13. 管道（Pipeline）与批处理
  * <p>
@@ -91,7 +93,7 @@ public class PipelineDemo {
         }
 
         // Pipeline 批量读取
-        var results = redisTemplate.executePipelined((RedisConnection connection) -> {
+        List<Object> results = redisTemplate.executePipelined((RedisConnection connection) -> {
             for (int i = 0; i < 100; i++) {
                 connection.stringCommands().get(("pipe:read:" + i).getBytes());
             }
@@ -117,7 +119,7 @@ public class PipelineDemo {
      * 若需要原子性，应使用 MULTI/EXEC 或 Lua 脚本。
      */
     public String pipelineMixedOps() {
-        var results = redisTemplate.executePipelined((RedisConnection connection) -> {
+        List<Object> results = redisTemplate.executePipelined((RedisConnection connection) -> {
             // 混合多种操作
             connection.stringCommands().set("pipe:mix:str".getBytes(), "hello".getBytes());
             connection.hashCommands().hSet("pipe:mix:hash".getBytes(), "name".getBytes(), "Redis".getBytes());

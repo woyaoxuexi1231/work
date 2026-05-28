@@ -2,9 +2,11 @@ package com.example.redis.c04_typecmds;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -44,7 +46,7 @@ public class ListCmdDemo {
      * LLEN: 获取长度
      */
     public String basicOps() {
-        var ops = redisTemplate.opsForList();
+        ListOperations<String, String> ops = redisTemplate.opsForList();
 
         // 清空旧数据
         redisTemplate.delete("list:queue");
@@ -99,7 +101,7 @@ public class ListCmdDemo {
      * 这实现了简单的优先级队列
      */
     public String blockingPop() {
-        var ops = redisTemplate.opsForList();
+        ListOperations<String, String> ops = redisTemplate.opsForList();
 
         // 先 push 一条消息
         ops.rightPush("list:mq", "message-1");
@@ -107,7 +109,7 @@ public class ListCmdDemo {
 
         // BRPOP: 阻塞弹出（超时 3 秒）
         // 注意：Spring Data Redis 的 rightPop(key, timeout, unit) 就是 BRPOP
-        var result = ops.rightPop("list:mq", 3, TimeUnit.SECONDS);
+        String result = ops.rightPop("list:mq", 3, TimeUnit.SECONDS);
         log.info("[BRPOP] 消费消息: {}", result);
 
         result = ops.rightPop("list:mq", 3, TimeUnit.SECONDS);
@@ -134,10 +136,10 @@ public class ListCmdDemo {
      * LPUSH + LTRIM 组合 → 新消息插入头部，超出 N 条的旧消息自动丢弃
      */
     public String advancedOps() {
-        var ops = redisTemplate.opsForList();
+        ListOperations<String, String> ops = redisTemplate.opsForList();
 
         // LINSERT: 在元素前/后插入
-        ops.rightPushAll("list:demo", List.of("a", "b", "c", "d"));
+        ops.rightPushAll("list:demo", Arrays.asList("a", "b", "c", "d"));
         ops.leftPush("list:demo", "b", "x"); // 在 b 前面插入 x
         List<String> afterInsert = ops.range("list:demo", 0, -1);
         log.info("[LINSERT] 在b前插入x: {}", afterInsert); // [a, x, b, c, d]
@@ -147,7 +149,7 @@ public class ListCmdDemo {
         // count > 0: 从头到尾删除 count 个
         // count < 0: 从尾到头删除 |count| 个
         // count = 0: 删除所有匹配的
-        ops.rightPushAll("list:rem", List.of("a", "b", "a", "c", "a"));
+        ops.rightPushAll("list:rem", Arrays.asList("a", "b", "a", "c", "a"));
         ops.remove("list:rem", 2, "a"); // 从头删除 2 个 "a"
         List<String> afterRem = ops.range("list:rem", 0, -1);
         log.info("[LREM] 删除2个a后: {}", afterRem); // [c, a]
@@ -158,7 +160,7 @@ public class ListCmdDemo {
         log.info("[LSET] index=0 设为A: {}", afterSet);
 
         // LTRIM: 裁剪列表（保留最新 N 条的经典模式）
-        ops.delete("list:recent");
+        redisTemplate.delete("list:recent");
         for (int i = 1; i <= 10; i++) {
             ops.leftPush("list:recent", "item-" + i);
             ops.trim("list:recent", 0, 4); // 只保留最新 5 条
@@ -166,7 +168,7 @@ public class ListCmdDemo {
         List<String> recent = ops.range("list:recent", 0, -1);
         log.info("[LTRIM] 保留最新5条: {}", recent);
 
-        redisTemplate.delete(List.of("list:demo", "list:rem", "list:recent"));
+        redisTemplate.delete(Arrays.asList("list:demo", "list:rem", "list:recent"));
         return "afterInsert=" + afterInsert + ", recent=" + recent;
     }
 }

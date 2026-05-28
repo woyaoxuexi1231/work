@@ -2,13 +2,16 @@ package com.example.redis.c03_keyops;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.DataType;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,8 +46,8 @@ public class KeyOpsDemo {
      * UNLINK: 异步删除键（后台线程释放内存，不阻塞主线程）
      */
     public String basicKeyOps() {
-        var ops = redisTemplate.opsForValue();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 准备测试数据
         ops.set("key:str", "hello");
@@ -56,11 +59,11 @@ public class KeyOpsDemo {
         log.info("[EXISTS] key:str={}, key:not_exist={}", exists1, exists2);
 
         // EXISTS 批量检查：返回存在的数量
-        Long existCount = redisTemplate.countExistingKeys(List.of("key:str", "key:hash", "key:none"));
+        Long existCount = redisTemplate.countExistingKeys(Arrays.asList("key:str", "key:hash", "key:none"));
         log.info("[EXISTS] 批量检查3个键，存在数量={}", existCount);
 
         // TYPE: 查看键的类型
-        var type = redisTemplate.type("key:str");
+        DataType type = redisTemplate.type("key:str");
         log.info("[TYPE] key:str → {}", type);
 
         // DEL vs UNLINK
@@ -90,7 +93,7 @@ public class KeyOpsDemo {
      * - 同一个键最多返回一次
      */
     public String scanDemo() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         // 准备测试数据
         for (int i = 0; i < 50; i++) {
@@ -134,7 +137,7 @@ public class KeyOpsDemo {
      * - 两种策略配合，既保证及时清理，又避免全量扫描的 CPU 开销
      */
     public String expireDemo() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         ops.set("expire:test", "will-expire", 60, TimeUnit.SECONDS);
 
@@ -170,7 +173,7 @@ public class KeyOpsDemo {
      * COPY: Redis 6.2+ 新增，复制键到新键（不影响原键）
      */
     public String renameCopyDemo() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         ops.set("rename:src", "original-value");
 
@@ -206,16 +209,20 @@ public class KeyOpsDemo {
      * OBJECT FREQ:     键的访问频率—— LFU 淘汰依据
      */
     public String objectInfoDemo() {
-        var ops = redisTemplate.opsForValue();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         ops.set("obj:test", "hello-world");
 
-        byte[] encBytes = conn.encoding("obj:test".getBytes());
+        // 使用 execute 调用底层 OBJECT 命令
+        byte[] encBytes = (byte[]) conn.execute("OBJECT", "ENCODING".getBytes(), "obj:test".getBytes());
         String encoding = encBytes != null ? new String(encBytes) : "nil";
 
-        Long idletime = conn.objectIdletime("obj:test".getBytes());
-        Long refcount = conn.refcount("obj:test".getBytes());
+        byte[] idleBytes = (byte[]) conn.execute("OBJECT", "IDLETIME".getBytes(), "obj:test".getBytes());
+        String idletime = idleBytes != null ? new String(idleBytes) : "0";
+
+        byte[] refBytes = (byte[]) conn.execute("OBJECT", "REFCOUNT".getBytes(), "obj:test".getBytes());
+        String refcount = refBytes != null ? new String(refBytes) : "0";
 
         log.info("[OBJECT] encoding={}, idletime={}s, refcount={}", encoding, idletime, refcount);
 
@@ -233,7 +240,7 @@ public class KeyOpsDemo {
      * Redis 6.2+ 支持 FLUSHDB ASYNC 异步清空，避免阻塞。
      */
     public String flushDbDemo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 查看当前库的键数量
         conn.select(15); // 切换到 db15 做测试，避免影响主库

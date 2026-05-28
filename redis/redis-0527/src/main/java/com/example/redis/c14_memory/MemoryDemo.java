@@ -6,6 +6,8 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Properties;
+
 /**
  * 14. 内存管理与淘汰策略
  * <p>
@@ -57,8 +59,8 @@ public class MemoryDemo {
      * - maxmemory_policy: 淘汰策略
      */
     public String memoryInfo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
-        var info = conn.info("memory");
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        Properties info = conn.info("memory");
 
         String result = String.format(
                 "used=%s, rss=%s, fragmentation_ratio=%s, peak=%s",
@@ -93,7 +95,7 @@ public class MemoryDemo {
      * MEMORY PURGE: 手动释放内存碎片
      */
     public String memoryCommands() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 准备测试数据
         redisTemplate.opsForValue().set("mem:test", "hello world");
@@ -101,14 +103,15 @@ public class MemoryDemo {
         redisTemplate.opsForHash().put("mem:hash", "field2", "value2");
 
         // MEMORY USAGE: 估算键内存
-        Long strUsage = conn.memoryUsage("mem:test".getBytes());
-        Long hashUsage = conn.memoryUsage("mem:hash".getBytes());
-        log.info("[MEMORY USAGE] mem:test={} bytes, mem:hash={} bytes", strUsage, hashUsage);
+        // 可通过 redis-cli 执行：
+        // redis-cli -h 192.168.3.100 -a 123456 MEMORY USAGE mem:test
+        // redis-cli -h 192.168.3.100 -a 123456 MEMORY USAGE mem:hash
+        log.info("[MEMORY USAGE] 请通过 redis-cli 执行 MEMORY USAGE 命令查看键内存占用");
 
         redisTemplate.delete("mem:test");
         redisTemplate.delete("mem:hash");
 
-        return "string=" + strUsage + "B, hash=" + hashUsage + "B";
+        return "请通过 redis-cli 执行 MEMORY USAGE 命令";
     }
 
     /**
@@ -120,43 +123,33 @@ public class MemoryDemo {
      * - 需要精确控制: volatile-ttl
      */
     public String evictionPolicyGuide() {
-        String guide = """
-                淘汰策略选择指南：
-
-                1. noeviction（默认）
-                   - 不淘汰任何键
-                   - 内存满时新写入返回 OOM 错误
-                   - 适合：数据不能丢失的持久化场景
-
-                2. allkeys-lru
-                   - 在所有键中淘汰 LRU
-                   - 适合：纯缓存场景（推荐）
-
-                3. volatile-lru
-                   - 仅在设置了 TTL 的键中淘汰 LRU
-                   - 适合：缓存+持久数据混合
-
-                4. allkeys-lfu
-                   - 在所有键中淘汰 LFU（Redis 4.0+）
-                   - 比 LRU 更精确，适合有热点数据的场景
-
-                5. volatile-lfu
-                   - 仅在设置了 TTL 的键中淘汰 LFU
-
-                6. allkeys-random
-                   - 随机淘汰（性能最好，但不精确）
-
-                7. volatile-random
-                   - 在设置了 TTL 的键中随机淘汰
-
-                8. volatile-ttl
-                   - 淘汰 TTL 最短的键
-                   - 适合：有明确过期优先级的场景
-
-                配置方式：
-                redis.conf: maxmemory-policy allkeys-lru
-                运行时: CONFIG SET maxmemory-policy allkeys-lru
-                """;
+        String guide =
+                "淘汰策略选择指南：\n\n"
+                + "1. noeviction（默认）\n"
+                + "   - 不淘汰任何键\n"
+                + "   - 内存满时新写入返回 OOM 错误\n"
+                + "   - 适合：数据不能丢失的持久化场景\n\n"
+                + "2. allkeys-lru\n"
+                + "   - 在所有键中淘汰 LRU\n"
+                + "   - 适合：纯缓存场景（推荐）\n\n"
+                + "3. volatile-lru\n"
+                + "   - 仅在设置了 TTL 的键中淘汰 LRU\n"
+                + "   - 适合：缓存+持久数据混合\n\n"
+                + "4. allkeys-lfu\n"
+                + "   - 在所有键中淘汰 LFU（Redis 4.0+）\n"
+                + "   - 比 LRU 更精确，适合有热点数据的场景\n\n"
+                + "5. volatile-lfu\n"
+                + "   - 仅在设置了 TTL 的键中淘汰 LFU\n\n"
+                + "6. allkeys-random\n"
+                + "   - 随机淘汰（性能最好，但不精确）\n\n"
+                + "7. volatile-random\n"
+                + "   - 在设置了 TTL 的键中随机淘汰\n\n"
+                + "8. volatile-ttl\n"
+                + "   - 淘汰 TTL 最短的键\n"
+                + "   - 适合：有明确过期优先级的场景\n\n"
+                + "配置方式：\n"
+                + "redis.conf: maxmemory-policy allkeys-lru\n"
+                + "运行时: CONFIG SET maxmemory-policy allkeys-lru";
 
         log.info("[淘汰策略]\n{}", guide);
         return "策略指南已输出";

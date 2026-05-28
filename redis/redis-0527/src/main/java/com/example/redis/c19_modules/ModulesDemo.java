@@ -54,34 +54,26 @@ public class ModulesDemo {
      * 支持 JSONPath 查询，可以读写 JSON 的任意字段。
      */
     public String redisJson() {
-        String commands = """
-                RedisJSON 命令：
-
-                # 存储 JSON
-                JSON.SET user:1001 $ '{"name":"张三","age":28,"address":{"city":"北京","street":"长安街"}}'
-
-                # 读取整个 JSON
-                JSON.GET user:1001
-
-                # 读取指定字段（JSONPath）
-                JSON.GET user:1001 $.name
-                JSON.GET user:1001 $.address.city
-
-                # 修改字段
-                JSON.SET user:1001 $.age 29
-                JSON.SET user:1001 $.email "zhangsan@example.com"
-
-                # 删除字段
-                JSON.DEL user:1001 $.email
-
-                # 数组操作
-                JSON.SET user:1001 $.hobbies '["读书","游泳"]'
-                JSON.ARRAPPEND user:1001 $.hobbies "跑步"
-
-                # 类型检查
-                JSON.TYPE user:1001 $.name
-                JSON.TYPE user:1001 $.hobbies
-                """;
+        String commands =
+                "RedisJSON 命令：\n\n"
+                + "# 存储 JSON\n"
+                + "JSON.SET user:1001 $ '{\"name\":\"张三\",\"age\":28,\"address\":{\"city\":\"北京\",\"street\":\"长安街\"}}'\n\n"
+                + "# 读取整个 JSON\n"
+                + "JSON.GET user:1001\n\n"
+                + "# 读取指定字段（JSONPath）\n"
+                + "JSON.GET user:1001 $.name\n"
+                + "JSON.GET user:1001 $.address.city\n\n"
+                + "# 修改字段\n"
+                + "JSON.SET user:1001 $.age 29\n"
+                + "JSON.SET user:1001 $.email \"zhangsan@example.com\"\n\n"
+                + "# 删除字段\n"
+                + "JSON.DEL user:1001 $.email\n\n"
+                + "# 数组操作\n"
+                + "JSON.SET user:1001 $.hobbies '[\"读书\",\"游泳\"]'\n"
+                + "JSON.ARRAPPEND user:1001 $.hobbies \"跑步\"\n\n"
+                + "# 类型检查\n"
+                + "JSON.TYPE user:1001 $.name\n"
+                + "JSON.TYPE user:1001 $.hobbies";
 
         log.info("[RedisJSON]\n{}", commands);
         return "RedisJSON 命令已输出";
@@ -94,40 +86,32 @@ public class ModulesDemo {
      * 支持文本搜索、数值过滤、地理过滤、聚合等。
      */
     public String redisSearch() {
-        String commands = """
-                RediSearch 命令：
-
-                # 创建索引
-                FT.CREATE idx:users
-                  ON HASH
-                  PREFIX 1 user:
-                  SCHEMA
-                    name TEXT SORTABLE
-                    age NUMERIC SORTABLE
-                    city TAG
-                    location GEO
-
-                # 添加数据（使用普通 Hash 命令）
-                HSET user:1001 name "张三" age 28 city "北京"
-                HSET user:1002 name "李四" age 32 city "上海"
-                HSET user:1003 name "张伟" age 25 city "北京"
-
-                # 全文搜索
-                FT.SEARCH idx:users "张"
-
-                # 条件过滤
-                FT.SEARCH idx:users "@age:[25 30] @city:{北京}"
-
-                # 排序
-                FT.SEARCH idx:users "*" SORTBY age DESC
-
-                # 聚合
-                FT.AGGREGATE idx:users "*" GROUPBY 1 @city REDUCE COUNT 0 AS count
-
-                # 自动补全
-                FT.SUGADD autocomplete "张三" 1
-                FT.SUGGET autocomplete "张"
-                """;
+        String commands =
+                "RediSearch 命令：\n\n"
+                + "# 创建索引\n"
+                + "FT.CREATE idx:users\n"
+                + "  ON HASH\n"
+                + "  PREFIX 1 user:\n"
+                + "  SCHEMA\n"
+                + "    name TEXT SORTABLE\n"
+                + "    age NUMERIC SORTABLE\n"
+                + "    city TAG\n"
+                + "    location GEO\n\n"
+                + "# 添加数据（使用普通 Hash 命令）\n"
+                + "HSET user:1001 name \"张三\" age 28 city \"北京\"\n"
+                + "HSET user:1002 name \"李四\" age 32 city \"上海\"\n"
+                + "HSET user:1003 name \"张伟\" age 25 city \"北京\"\n\n"
+                + "# 全文搜索\n"
+                + "FT.SEARCH idx:users \"张\"\n\n"
+                + "# 条件过滤\n"
+                + "FT.SEARCH idx:users \"@age:[25 30] @city:{北京}\"\n\n"
+                + "# 排序\n"
+                + "FT.SEARCH idx:users \"*\" SORTBY age DESC\n\n"
+                + "# 聚合\n"
+                + "FT.AGGREGATE idx:users \"*\" GROUPBY 1 @city REDUCE COUNT 0 AS count\n\n"
+                + "# 自动补全\n"
+                + "FT.SUGADD autocomplete \"张三\" 1\n"
+                + "FT.SUGGET autocomplete \"张\"";
 
         log.info("[RediSearch]\n{}", commands);
         return "RediSearch 命令已输出";
@@ -146,43 +130,35 @@ public class ModulesDemo {
      * - 黑名单：快速判断 IP/用户是否在黑名单中
      */
     public String redisBloom() {
-        String commands = """
-                RedisBloom 命令：
-
-                # 布隆过滤器
-                # 创建（自动调整参数）
-                BF.RESERVE myfilter 0.001 1000000
-                # 0.001 = 误判率 0.1%
-                # 1000000 = 预期元素数量
-
-                # 添加元素
-                BF.ADD myfilter "user:1001"
-                BF.ADD myfilter "user:1002"
-
-                # 检查元素
-                BF.EXISTS myfilter "user:1001"  # 返回 1（可能存在）
-                BF.EXISTS myfilter "user:9999"  # 返回 0（一定不存在）
-
-                # 批量操作
-                BF.MADD myfilter "user:1003" "user:1004" "user:1005"
-                BF.MEXISTS myfilter "user:1001" "user:9999"
-
-                # 布谷鸟过滤器（支持删除）
-                CF.RESERVE mycuckoo 1000000
-                CF.ADD mycuckoo "item:1"
-                CF.DEL mycuckoo "item:1"
-                CF.EXISTS mycuckoo "item:1"
-
-                # Count-Min Sketch（频率统计）
-                CMS.INITBYDIM mycms 1000 5
-                CMS.INCRBY mycms "item:1" 1
-                CMS.QUERY mycms "item:1"
-
-                # Top-K（热门元素）
-                TOPK.RESERVE mytopk 10 50 3 0.9
-                TOPK.ADD mytopk "item:1" "item:2" "item:3"
-                TOPK.LIST mytopk
-                """;
+        String commands =
+                "RedisBloom 命令：\n\n"
+                + "# 布隆过滤器\n"
+                + "# 创建（自动调整参数）\n"
+                + "BF.RESERVE myfilter 0.001 1000000\n"
+                + "# 0.001 = 误判率 0.1%\n"
+                + "# 1000000 = 预期元素数量\n\n"
+                + "# 添加元素\n"
+                + "BF.ADD myfilter \"user:1001\"\n"
+                + "BF.ADD myfilter \"user:1002\"\n\n"
+                + "# 检查元素\n"
+                + "BF.EXISTS myfilter \"user:1001\"  # 返回 1（可能存在）\n"
+                + "BF.EXISTS myfilter \"user:9999\"  # 返回 0（一定不存在）\n\n"
+                + "# 批量操作\n"
+                + "BF.MADD myfilter \"user:1003\" \"user:1004\" \"user:1005\"\n"
+                + "BF.MEXISTS myfilter \"user:1001\" \"user:9999\"\n\n"
+                + "# 布谷鸟过滤器（支持删除）\n"
+                + "CF.RESERVE mycuckoo 1000000\n"
+                + "CF.ADD mycuckoo \"item:1\"\n"
+                + "CF.DEL mycuckoo \"item:1\"\n"
+                + "CF.EXISTS mycuckoo \"item:1\"\n\n"
+                + "# Count-Min Sketch（频率统计）\n"
+                + "CMS.INITBYDIM mycms 1000 5\n"
+                + "CMS.INCRBY mycms \"item:1\" 1\n"
+                + "CMS.QUERY mycms \"item:1\"\n\n"
+                + "# Top-K（热门元素）\n"
+                + "TOPK.RESERVE mytopk 10 50 3 0.9\n"
+                + "TOPK.ADD mytopk \"item:1\" \"item:2\" \"item:3\"\n"
+                + "TOPK.LIST mytopk";
 
         log.info("[RedisBloom]\n{}", commands);
         return "RedisBloom 命令已输出";
@@ -195,36 +171,28 @@ public class ModulesDemo {
      * 支持自动下采样、聚合查询、标签过滤。
      */
     public String redisTimeSeries() {
-        String commands = """
-                RedisTimeSeries 命令：
-
-                # 创建时间序列（带标签）
-                TS.CREATE sensor:temp:1 LABELS room "office" type "temperature"
-                TS.CREATE sensor:temp:2 LABELS room "meeting" type "temperature"
-
-                # 添加数据点
-                TS.ADD sensor:temp:1 * 25.3
-                TS.ADD sensor:temp:1 * 25.5
-                TS.ADD sensor:temp:1 * 25.1
-
-                # 指定时间戳添加
-                TS.ADD sensor:temp:1 1638307200000 25.3
-
-                # 范围查询
-                TS.RANGE sensor:temp:1 - + COUNT 10
-                TS.RANGE sensor:temp:1 1638307200000 + FILTER_BY_VALUE 24 26
-
-                # 聚合查询（每 5 分钟平均值）
-                TS.RANGE sensor:temp:1 - + AGGREGATION avg 300000
-
-                # 多序列查询（按标签过滤）
-                TS.MRANGE - + FILTER room=office
-                TS.MRANGE - + FILTER type=temperature GROUPBY room REDUCE avg
-
-                # 自动下采样
-                TS.CREATE sensor:temp:1:5min
-                TS.CREATERULE sensor:temp:1 sensor:temp:1:5min AGGREGATION avg 300000
-                """;
+        String commands =
+                "RedisTimeSeries 命令：\n\n"
+                + "# 创建时间序列（带标签）\n"
+                + "TS.CREATE sensor:temp:1 LABELS room \"office\" type \"temperature\"\n"
+                + "TS.CREATE sensor:temp:2 LABELS room \"meeting\" type \"temperature\"\n\n"
+                + "# 添加数据点\n"
+                + "TS.ADD sensor:temp:1 * 25.3\n"
+                + "TS.ADD sensor:temp:1 * 25.5\n"
+                + "TS.ADD sensor:temp:1 * 25.1\n\n"
+                + "# 指定时间戳添加\n"
+                + "TS.ADD sensor:temp:1 1638307200000 25.3\n\n"
+                + "# 范围查询\n"
+                + "TS.RANGE sensor:temp:1 - + COUNT 10\n"
+                + "TS.RANGE sensor:temp:1 1638307200000 + FILTER_BY_VALUE 24 26\n\n"
+                + "# 聚合查询（每 5 分钟平均值）\n"
+                + "TS.RANGE sensor:temp:1 - + AGGREGATION avg 300000\n\n"
+                + "# 多序列查询（按标签过滤）\n"
+                + "TS.MRANGE - + FILTER room=office\n"
+                + "TS.MRANGE - + FILTER type=temperature GROUPBY room REDUCE avg\n\n"
+                + "# 自动下采样\n"
+                + "TS.CREATE sensor:temp:1:5min\n"
+                + "TS.CREATERULE sensor:temp:1 sensor:temp:1:5min AGGREGATION avg 300000";
 
         log.info("[RedisTimeSeries]\n{}", commands);
         return "RedisTimeSeries 命令已输出";

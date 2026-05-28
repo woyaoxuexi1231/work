@@ -6,6 +6,8 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Properties;
+
 /**
  * 5. 持久化
  * <p>
@@ -52,8 +54,8 @@ public class PersistenceDemo {
      * - aof_rewrite_in_progress: AOF 重写是否在进行
      */
     public String persistenceInfo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
-        var info = conn.info("persistence");
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        Properties info = conn.info("persistence");
 
         String result = String.format(
                 "RDB: last_save=%s, bgsave_status=%s | AOF: enabled=%s, rewrite=%s",
@@ -79,7 +81,7 @@ public class PersistenceDemo {
      * 注意：fork 大内存实例时可能短暂阻塞（页表复制）
      */
     public String triggerRdb() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // BGSAVE: 后台保存
         conn.bgSave();
@@ -91,7 +93,7 @@ public class PersistenceDemo {
         } catch (InterruptedException ignored) {
         }
 
-        var info = conn.info("persistence");
+        Properties info = conn.info("persistence");
         String status = info.getProperty("rdb_last_bgsave_status");
         log.info("[RDB] BGSAVE 状态: {}", status);
 
@@ -111,7 +113,7 @@ public class PersistenceDemo {
      * - auto-aof-rewrite-min-size 64mb: AOF 文件最小 64MB 才触发重写
      */
     public String aofOperations() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // BGREWRITEAOF: 触发 AOF 重写
         conn.bgWriteAof();
@@ -122,7 +124,7 @@ public class PersistenceDemo {
         } catch (InterruptedException ignored) {
         }
 
-        var info = conn.info("persistence");
+        Properties info = conn.info("persistence");
         String result = String.format(
                 "aof_enabled=%s, aof_rewrite_in_progress=%s, aof_size=%s",
                 info.getProperty("aof_enabled"),

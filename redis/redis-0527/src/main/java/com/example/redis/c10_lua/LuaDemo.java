@@ -2,12 +2,16 @@ package com.example.redis.c10_lua;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 10. Lua 脚本
@@ -56,26 +60,24 @@ public class LuaDemo {
      * 解锁: Lua 脚本判断 uuid 匹配后才 DEL
      */
     public String distributedLockLua() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         String lockKey = "lua:lock:order:1001";
-        String lockValue = java.util.UUID.randomUUID().toString();
+        String lockValue = UUID.randomUUID().toString();
 
         // 加锁
-        ops.setIfAbsent(lockKey, lockValue, 30, java.util.concurrent.TimeUnit.SECONDS);
+        ops.setIfAbsent(lockKey, lockValue, 30, TimeUnit.SECONDS);
         log.info("[Lua锁] 加锁: key={}, value={}", lockKey, lockValue);
 
         // 释放锁的 Lua 脚本
         // KEYS[1] = lock key
         // ARGV[1] = expected value
         // 返回 1 表示释放成功，0 表示 value 不匹配
-        String unlockScript = """
-                if redis.call('get', KEYS[1]) == ARGV[1] then
-                    return redis.call('del', KEYS[1])
-                else
-                    return 0
-                end
-                """;
+        String unlockScript = "if redis.call('get', KEYS[1]) == ARGV[1] then\n"
+                + "    return redis.call('del', KEYS[1])\n"
+                + "else\n"
+                + "    return 0\n"
+                + "end";
 
         DefaultRedisScript<Long> script = new DefaultRedisScript<>(unlockScript, Long.class);
 
@@ -84,7 +86,7 @@ public class LuaDemo {
         log.info("[Lua锁] 释放(正确value): result={}", result);
 
         // 再次加锁
-        ops.setIfAbsent(lockKey, lockValue, 30, java.util.concurrent.TimeUnit.SECONDS);
+        ops.setIfAbsent(lockKey, lockValue, 30, TimeUnit.SECONDS);
 
         // 错误的 value → 释放失败
         Long result2 = redisTemplate.execute(script, Collections.singletonList(lockKey), "wrong-value");
@@ -106,23 +108,21 @@ public class LuaDemo {
      * 3. 是则 DECRBY，否则返回 -1
      */
     public String atomicStockDeduct() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
         ops.set("lua:stock:item:1001", "10");
 
         // Lua 脚本：原子库存扣减
-        String stockScript = """
-                local stock = tonumber(redis.call('get', KEYS[1]))
-                local quantity = tonumber(ARGV[1])
-                if stock == nil then
-                    return -1
-                end
-                if stock >= quantity then
-                    redis.call('decrby', KEYS[1], quantity)
-                    return stock - quantity
-                else
-                    return -1
-                end
-                """;
+        String stockScript = "local stock = tonumber(redis.call('get', KEYS[1]))\n"
+                + "local quantity = tonumber(ARGV[1])\n"
+                + "if stock == nil then\n"
+                + "    return -1\n"
+                + "end\n"
+                + "if stock >= quantity then\n"
+                + "    redis.call('decrby', KEYS[1], quantity)\n"
+                + "    return stock - quantity\n"
+                + "else\n"
+                + "    return -1\n"
+                + "end";
 
         DefaultRedisScript<Long> script = new DefaultRedisScript<>(stockScript, Long.class);
 
@@ -158,27 +158,25 @@ public class LuaDemo {
      */
     public String rateLimiterLua() {
         // Lua 限流脚本
-        String rateLimitScript = """
-                local key = KEYS[1]
-                local window = tonumber(ARGV[1])
-                local max_requests = tonumber(ARGV[2])
-                local now = tonumber(ARGV[3])
-
-                -- 删除窗口外的记录
-                redis.call('zremrangebyscore', key, 0, now - window)
-
-                -- 统计当前窗口请求数
-                local count = redis.call('zcard', key)
-
-                if count < max_requests then
-                    -- 未超限，添加请求
-                    redis.call('zadd', key, now, now .. ':' .. math.random(1000000))
-                    redis.call('expire', key, math.ceil(window / 1000))
-                    return 1
-                else
-                    return 0
-                end
-                """;
+        String rateLimitScript = "local key = KEYS[1]\n"
+                + "local window = tonumber(ARGV[1])\n"
+                + "local max_requests = tonumber(ARGV[2])\n"
+                + "local now = tonumber(ARGV[3])\n"
+                + "\n"
+                + "-- 删除窗口外的记录\n"
+                + "redis.call('zremrangebyscore', key, 0, now - window)\n"
+                + "\n"
+                + "-- 统计当前窗口请求数\n"
+                + "local count = redis.call('zcard', key)\n"
+                + "\n"
+                + "if count < max_requests then\n"
+                + "    -- 未超限，添加请求\n"
+                + "    redis.call('zadd', key, now, now .. ':' .. math.random(1000000))\n"
+                + "    redis.call('expire', key, math.ceil(window / 1000))\n"
+                + "    return 1\n"
+                + "else\n"
+                + "    return 0\n"
+                + "end";
 
         DefaultRedisScript<Long> script = new DefaultRedisScript<>(rateLimitScript, Long.class);
 
@@ -218,20 +216,18 @@ public class LuaDemo {
      * 例：同时增加阅读数和点赞数
      */
     public String atomicHashIncrement() {
-        var ops = redisTemplate.opsForHash();
+        HashOperations<String, String, String> ops = redisTemplate.opsForHash();
         ops.put("lua:article:1001", "views", "0");
         ops.put("lua:article:1001", "likes", "0");
 
-        String script = """
-                local key = KEYS[1]
-                local views_inc = tonumber(ARGV[1])
-                local likes_inc = tonumber(ARGV[2])
-
-                local new_views = redis.call('hincrby', key, 'views', views_inc)
-                local new_likes = redis.call('hincrby', key, 'likes', likes_inc)
-
-                return {new_views, new_likes}
-                """;
+        String script = "local key = KEYS[1]\n"
+                + "local views_inc = tonumber(ARGV[1])\n"
+                + "local likes_inc = tonumber(ARGV[2])\n"
+                + "\n"
+                + "local new_views = redis.call('hincrby', key, 'views', views_inc)\n"
+                + "local new_likes = redis.call('hincrby', key, 'likes', likes_inc)\n"
+                + "\n"
+                + "return {new_views, new_likes}";
 
         DefaultRedisScript<List> scriptObj = new DefaultRedisScript<>(script, List.class);
 

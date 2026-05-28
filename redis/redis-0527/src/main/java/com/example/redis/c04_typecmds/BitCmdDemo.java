@@ -41,7 +41,7 @@ public class BitCmdDemo {
      * BITCOUNT: 统计 1 的数量
      */
     public String basicOps() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
         byte[] key = "bitmap:demo".getBytes();
 
         // 清空
@@ -86,7 +86,7 @@ public class BitCmdDemo {
      * - 判断某天是否签到只需 GETBIT
      */
     public String userSignIn() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
         byte[] key = "bitmap:sign:user:1001:2024".getBytes();
 
         conn.keyCommands().del(key);
@@ -122,7 +122,7 @@ public class BitCmdDemo {
      * 内存效率极高：1 亿用户只需约 12MB
      */
     public String activeUserStats() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 清空测试数据
         conn.keyCommands().del("bitmap:active:day1".getBytes());

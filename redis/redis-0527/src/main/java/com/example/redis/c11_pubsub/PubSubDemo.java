@@ -10,6 +10,7 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -60,7 +61,7 @@ public class PubSubDemo {
      */
     public String basicPubSub() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(3);
-        var receivedMessages = new java.util.concurrent.ConcurrentLinkedQueue<String>();
+        ConcurrentLinkedQueue<String> receivedMessages = new ConcurrentLinkedQueue<String>();
 
         // 注册监听器
         MessageListener listener = (message, pattern) -> {
@@ -78,8 +79,8 @@ public class PubSubDemo {
 
         // 发布消息
         for (int i = 1; i <= 3; i++) {
-            Long receivers = redisTemplate.convertAndSend("pubsub:demo", "消息-" + i);
-            log.info("[发布者] 发送 '消息-{}', 接收者数量={}", i, receivers);
+            redisTemplate.convertAndSend("pubsub:demo", "消息-" + i);
+            log.info("[发布者] 发送 '消息-{}'", i);
             Thread.sleep(50);
         }
 
@@ -101,7 +102,7 @@ public class PubSubDemo {
      */
     public String multiChannel() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(4);
-        var messages = new java.util.concurrent.ConcurrentLinkedQueue<String>();
+        ConcurrentLinkedQueue<String> messages = new ConcurrentLinkedQueue<String>();
 
         MessageListener listener = (message, pattern) -> {
             String channel = new String(message.getChannel());

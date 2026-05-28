@@ -47,7 +47,7 @@ public class HyperLogLogDemo {
      * 对于 100 万个元素，误差约 8100 个
      */
     public String basicOps() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 清空
         conn.keyCommands().del("hll:demo".getBytes());
@@ -87,7 +87,7 @@ public class HyperLogLogDemo {
      * - HyperLogLog: 固定 12KB
      */
     public String uvStats() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         conn.keyCommands().del("hll:uv:page:home".getBytes());
 

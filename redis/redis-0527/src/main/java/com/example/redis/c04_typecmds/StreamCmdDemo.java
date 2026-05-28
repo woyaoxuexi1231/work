@@ -10,8 +10,10 @@ import org.springframework.data.redis.stream.StreamMessageListenerContainer;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.redis.core.StreamOperations;
 
 /**
  * 4. 各类型核心命令 —— Stream
@@ -60,15 +62,20 @@ public class StreamCmdDemo {
     public String basicOps() {
         redisTemplate.delete("stream:orders");
 
-        var ops = redisTemplate.opsForStream();
+        StreamOperations<String, String, String> ops = redisTemplate.opsForStream();
 
         // XADD: 添加消息（ID 自动生成）
-        String id1 = ops.add("stream:orders",
-                Map.of("user", "1001", "action", "create", "amount", "99.9"));
-        String id2 = ops.add("stream:orders",
-                Map.of("user", "1002", "action", "pay", "amount", "199.0"));
-        String id3 = ops.add("stream:orders",
-                Map.of("user", "1001", "action", "cancel", "amount", "99.9"));
+        Map<String, String> msg1 = new HashMap<>();
+        msg1.put("user", "1001"); msg1.put("action", "create"); msg1.put("amount", "99.9");
+        RecordId id1 = ops.add("stream:orders", msg1);
+
+        Map<String, String> msg2 = new HashMap<>();
+        msg2.put("user", "1002"); msg2.put("action", "pay"); msg2.put("amount", "199.0");
+        RecordId id2 = ops.add("stream:orders", msg2);
+
+        Map<String, String> msg3 = new HashMap<>();
+        msg3.put("user", "1001"); msg3.put("action", "cancel"); msg3.put("amount", "99.9");
+        RecordId id3 = ops.add("stream:orders", msg3);
 
         log.info("[XADD] 消息ID: {}, {}, {}", id1, id2, id3);
 
@@ -77,9 +84,9 @@ public class StreamCmdDemo {
         log.info("[XLEN] 消息数量: {}", len);
 
         // XRANGE: 获取所有消息
-        List<MapRecord<String, Object, Object>> messages = ops.range("stream:orders",
-                Range.unbounded());
-        for (var msg : messages) {
+        List<MapRecord<String, String, String>> messages = ops.range("stream:orders",
+                org.springframework.data.domain.Range.unbounded());
+        for (MapRecord<String, String, String> msg : messages) {
             log.info("[XRANGE] ID={}, fields={}", msg.getId(), msg.getValue());
         }
 
@@ -103,12 +110,13 @@ public class StreamCmdDemo {
     public String consumerGroup() {
         redisTemplate.delete("stream:events");
 
-        var ops = redisTemplate.opsForStream();
+        StreamOperations<String, String, String> ops = redisTemplate.opsForStream();
 
         // 添加测试消息
         for (int i = 0; i < 5; i++) {
-            ops.add("stream:events",
-                    Map.of("event", "click", "page", "/home", "seq", String.valueOf(i)));
+            Map<String, String> eventMsg = new HashMap<>();
+            eventMsg.put("event", "click"); eventMsg.put("page", "/home"); eventMsg.put("seq", String.valueOf(i));
+            ops.add("stream:events", eventMsg);
         }
 
         // 创建消费者组
@@ -122,12 +130,12 @@ public class StreamCmdDemo {
 
         // XREADGROUP: 消费者读取消息
         // consumer-1 从组中读取 2 条消息
-        List<MapRecord<String, Object, Object>> records = ops.read(Consumer.from("order-process-group", "consumer-1"),
-                StreamReadOptions.empty().count(2).noAck(),
+        List<MapRecord<String, String, String>> records = ops.read(Consumer.from("order-process-group", "consumer-1"),
+                StreamReadOptions.empty().count(2),
                 StreamOffset.create("stream:events", ReadOffset.lastConsumed()));
 
         log.info("[XREADGROUP] consumer-1 读取 {} 条消息:", records.size());
-        for (var record : records) {
+        for (MapRecord<String, String, String> record : records) {
             log.info("  ID={}, data={}", record.getId(), record.getValue());
 
             // XACK: 确认消息
@@ -136,9 +144,8 @@ public class StreamCmdDemo {
         }
 
         // XPENDING: 查看未确认消息
-        PendingMessages pending = ops.pending("stream:events", "order-process-group",
-                Range.unbounded(), 10);
-        log.info("[XPENDING] 未确认消息数: {}", pending.getTotal());
+        PendingMessagesSummary pendingSummary = ops.pending("stream:events", "order-process-group");
+        log.info("[XPENDING] 未确认消息数: {}", pendingSummary.getTotalPendingCount());
 
         redisTemplate.delete("stream:events");
         return "消费完成, 读取=" + records.size();
@@ -160,11 +167,13 @@ public class StreamCmdDemo {
     public String streamTrim() {
         redisTemplate.delete("stream:trim");
 
-        var ops = redisTemplate.opsForStream();
+        StreamOperations<String, String, String> ops = redisTemplate.opsForStream();
 
         // 添加 100 条消息
         for (int i = 0; i < 100; i++) {
-            ops.add("stream:trim", Map.of("seq", String.valueOf(i)));
+            Map<String, String> trimMsg = new HashMap<>();
+            trimMsg.put("seq", String.valueOf(i));
+            ops.add("stream:trim", trimMsg);
         }
         log.info("[XADD] 添加 100 条消息, XLEN={}", ops.size("stream:trim"));
 

@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
+
+import java.util.Properties;
 
 /**
  * 8. 集群（Redis Cluster）
@@ -54,8 +57,8 @@ public class ClusterDemo {
      * CLUSTER NODES 返回所有节点信息。
      */
     public String clusterInfo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
-        var info = conn.info("cluster");
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        Properties info = conn.info("cluster");
 
         String result = String.format(
                 "cluster_enabled=%s",
@@ -65,27 +68,22 @@ public class ClusterDemo {
         log.info("[集群信息] {}", result);
 
         // 集群配置说明
-        String clusterConfig = """
-                Redis Cluster 关键配置：
-
-                cluster-enabled yes
-                cluster-config-file nodes.conf
-                cluster-node-timeout 15000
-                cluster-require-full-coverage yes
-                cluster-migration-barrier 1
-
-                # cluster-node-timeout:
-                #   节点超时时间（毫秒），超时后判定为 PFAIL
-                #   建议 15000~30000
-
-                # cluster-require-full-coverage:
-                #   是否要求所有槽都被覆盖才提供服务
-                #   no: 部分槽不可用时其他槽仍可服务
-
-                # cluster-migration-barrier:
-                #   从节点迁移屏障
-                #   主节点至少有 N 个从节点时，多余的从节点才会迁移到孤儿主节点
-                """;
+        String clusterConfig =
+                "Redis Cluster 关键配置：\n\n"
+                + "cluster-enabled yes\n"
+                + "cluster-config-file nodes.conf\n"
+                + "cluster-node-timeout 15000\n"
+                + "cluster-require-full-coverage yes\n"
+                + "cluster-migration-barrier 1\n\n"
+                + "# cluster-node-timeout:\n"
+                + "#   节点超时时间（毫秒），超时后判定为 PFAIL\n"
+                + "#   建议 15000~30000\n\n"
+                + "# cluster-require-full-coverage:\n"
+                + "#   是否要求所有槽都被覆盖才提供服务\n"
+                + "#   no: 部分槽不可用时其他槽仍可服务\n\n"
+                + "# cluster-migration-barrier:\n"
+                + "#   从节点迁移屏障\n"
+                + "#   主节点至少有 N 个从节点时，多余的从节点才会迁移到孤儿主节点";
 
         log.info("[集群配置]\n{}", clusterConfig);
         return result;
@@ -98,7 +96,7 @@ public class ClusterDemo {
      * 这是集群模式下实现多键操作的关键。
      */
     public String hashTag() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         // 使用 hash tag 确保同槽
         // {user:1001} 是 hash tag，只有这部分参与 hash 计算
@@ -127,33 +125,25 @@ public class ClusterDemo {
      * 使用 redis-cli --cluster 工具管理集群。
      */
     public String clusterManagement() {
-        String commands = """
-                集群管理命令：
-
-                # 创建集群（6 节点：3 主 3 从）
-                redis-cli --cluster create \\
-                  192.168.1.101:6379 192.168.1.102:6379 192.168.1.103:6379 \\
-                  192.168.1.104:6379 192.168.1.105:6379 192.168.1.106:6379 \\
-                  --cluster-replicas 1
-
-                # 查看集群信息
-                redis-cli --cluster check 192.168.1.101:6379
-
-                # 查看集群节点
-                redis-cli -h 192.168.1.101 -p 6379 CLUSTER NODES
-
-                # 添加新节点
-                redis-cli --cluster add-node 192.168.1.107:6379 192.168.1.101:6379
-
-                # 重新分片（迁移槽）
-                redis-cli --cluster reshard 192.168.1.101:6379
-
-                # 删除节点
-                redis-cli --cluster del-node 192.168.1.101:6379 <node-id>
-
-                # 修复集群
-                redis-cli --cluster fix 192.168.1.101:6379
-                """;
+        String commands =
+                "集群管理命令：\n\n"
+                + "# 创建集群（6 节点：3 主 3 从）\n"
+                + "redis-cli --cluster create \\\n"
+                + "  192.168.1.101:6379 192.168.1.102:6379 192.168.1.103:6379 \\\n"
+                + "  192.168.1.104:6379 192.168.1.105:6379 192.168.1.106:6379 \\\n"
+                + "  --cluster-replicas 1\n\n"
+                + "# 查看集群信息\n"
+                + "redis-cli --cluster check 192.168.1.101:6379\n\n"
+                + "# 查看集群节点\n"
+                + "redis-cli -h 192.168.1.101 -p 6379 CLUSTER NODES\n\n"
+                + "# 添加新节点\n"
+                + "redis-cli --cluster add-node 192.168.1.107:6379 192.168.1.101:6379\n\n"
+                + "# 重新分片（迁移槽）\n"
+                + "redis-cli --cluster reshard 192.168.1.101:6379\n\n"
+                + "# 删除节点\n"
+                + "redis-cli --cluster del-node 192.168.1.101:6379 <node-id>\n\n"
+                + "# 修复集群\n"
+                + "redis-cli --cluster fix 192.168.1.101:6379";
 
         log.info("[集群管理]\n{}", commands);
         return "管理命令已输出";
