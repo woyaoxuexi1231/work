@@ -4,55 +4,191 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
 /**
- * <h1>Q1：Bean 生命周期 — 每个阶段是哪个特性催生的</h1>
- *
- * <h2>正确的学习方式：不要背阶段，要理解因果链</h2>
- *
- * <p>Spring 的 Bean 生命周期经历了从 2004 到 2014 的十年演化。
- * 每一个扩展点都不是凭空出现的——它背后都有<b>一个具体的特性</b>
- * 在问："如果我要实现这个，需要容器给我什么钩子？"</p>
- *
- * <h2>因果链全景</h2>
+ * <h1>Q1：Bean 生命周期 — 完整时间轴</h1>
  *
  * <pre>
- * ┌──────────┬─────────┬─────────────────────────────────────────┐
- * │  Spring  │  阶段   │  因果链                                  │
- * │  版本    │         │                                         │
- * ├──────────┼─────────┼─────────────────────────────────────────┤
- * │   1.0    │ [1][2]  │ XML &lt;bean&gt; 需要创建对象 + 填充属性        │
- * │  2004    │ [7b][7c]│ 连接池需要"属性注完后再初始化"             │
- * │          │ [10]    │ 连接池需要在"关闭时释放资源"               │
- * ├──────────┼─────────┼─────────────────────────────────────────┤
- * │   2.0    │ [3][4]  │ Scope + AOP 需要 Bean 知道自己的身份       │
- * │  2006    │ [5]     │ 事件/国际化/资源加载能力需要暴露给 Bean     │
- * │          │  (BFPP) │ ${placeholder} 替换（第一个 BFPP 诞生）   │
- * ├──────────┼─────────┼─────────────────────────────────────────┤
- * │   2.5    │ [6][8]  │ @Autowired 需要扫描字段并注入！           │
- * │  2007    │         │ @PostConstruct/@PreDestroy 需要被识别！   │
- * │          │         │ → BPP 爆发：一个个注解对应一个个 BPP      │
- * ├──────────┼─────────┼─────────────────────────────────────────┤
- * │   3.0    │  重点   │ @Configuration + @Bean 要替代 XML！       │
- * │  2009    │   BFPP  │ → ConfigurationClassPostProcessor 解析    │
- * │          │   BPP   │ → AOP 全面注解化（AutoProxyCreator）      │
- * ├──────────┼─────────┼─────────────────────────────────────────┤
- * │   3.2    │   BPP   │ @Async 异步 + @Scheduled 定时任务         │
- * │  2012    │         │ → 又是两个新的 BPP                        │
- * └──────────┴─────────┴─────────────────────────────────────────┘
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │                    Spring 容器启动 (refresh)                         │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │                                                                     │
+ * │  ╔═══════════════════════════════════════════════════════════════╗  │
+ * │  ║  阶段 [0]  BeanFactoryPostProcessor.postProcessBeanFactory()  ║  │
+ * │  ║  ├─ 时机: 所有 Bean 创建之前                                     ║  │
+ * │  ║  ├─ 调用方: AbstractApplicationContext.refresh()                ║  │
+ * │  ║  │         → invokeBeanFactoryPostProcessors()                  ║  │
+ * │  ║  ├─ 操作对象: BeanDefinition（蓝图）                             ║  │
+ * │  ║  ├─ 代表: ConfigurationClassPostProcessor 解析 @Configuration   ║  │
+ * │  ║  │       PropertySourcesPlaceholderConfigurer 替换 ${...}      ║  │
+ * │  ║  └─ 注意: 只执行一次，对【所有】BeanDefinition 生效              ║  │
+ * │  ╚═══════════════════════════════════════════════════════════════╝  │
+ * │                              ↓                                      │
+ * │  ╔═══════════════════════════════════════════════════════════════╗  │
+ * │  ║              这个循环对【每个单例 Bean】执行一次               ║  │
+ * │  ╚═══════════════════════════════════════════════════════════════╝  │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [1]  构造器实例化 ────────────────────────────────────┐    │
+ * │  │  调用方: AbstractAutowireCapableBeanFactory.createBeanInstance()│
+ * │  │  做什么: Constructor.newInstance() → 对象诞生                │    │
+ * │  │  依赖: 无（此时 @Autowired 字段全部为 null）                 │    │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [2]  属性填充 (Populate) ────────────────────────────┐    │
+ * │  │  调用方: AbstractAutowireCapableBeanFactory.populateBean()      │
+ * │  │  做什么:                                                       │
+ * │  │    a) InstantiationAwareBeanPostProcessor.postProcessProperties()│
+ * │  │       → AutowiredAnnotationBeanPostProcessor 处理 @Autowired   │
+ * │  │       → field.set(bean, resolvedDependency)  ← 私有字段也能注入│
+ * │  │       → CommonAnnotationBeanPostProcessor 处理 @Resource       │
+ * │  │    b) XML <property> 或 @Bean 参数注入                         │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [3]  BeanNameAware.setBeanName() ─────────────────────┐    │
+ * │  │  调用方: AbstractAutowireCapableBeanFactory.invokeAwareMethods()│
+ * │  │  做什么: bean.setBeanName(beanDefinition中的name/id)           │
+ * │  │  触发条件: Bean 实现了 BeanNameAware 接口                       │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [4]  BeanClassLoaderAware.setBeanClassLoader() ───────┐    │
+ * │  │  作用: 拿到加载本 Bean 类的 ClassLoader                        │    │
+ * │  │  (和 [3] 在同一个方法中回调，按序执行)                           │    │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [5]  BeanFactoryAware.setBeanFactory() ───────────────┐    │
+ * │  │  调用方: 同上 invokeAwareMethods()                              │
+ * │  │  做什么: bean.setBeanFactory(this)                              │
+ * │  │  此时 Bean 可以手动 getBean() 了                                 │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ╔═══════════════════════════════════════════════════════════════╗  │
+ * │  ║  注意：[3][4][5] 这三个 Aware 的触发条件不同：                ║  │
+ * │  ║  • [3][4][5] 由 AbstractAutowireCapableBeanFactory            ║  │
+ * │  ║              .invokeAwareMethods() 直接回调                    ║  │
+ * │  ║  • EnvironmentAware / ApplicationContextAware /                ║  │
+ * │  ║    MessageSourceAware / ApplicationEventPublisherAware         ║  │
+ * │  ║    等 6 个 Context 级别的 Aware → 不是在这里回调！             ║  │
+ * │  ║    它们由 ApplicationContextAwareProcessor (一个 BPP)          ║  │
+ * │  ║    在阶段 [6] 的 before 中回调（见下面）                       ║  │
+ * │  ╚═══════════════════════════════════════════════════════════════╝  │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [6]  BeanPostProcessor.postProcessBeforeInitialization() ┐ │
+ * │  │  调用方: AbstractAutowireCapableBeanFactory.initializeBean()    │
+ * │  │                                                               │
+ * │  │  遍历所有已注册的 BPP，依次调用:                                │
+ * │  │                                                               │
+ * │  │  ★ ApplicationContextAwareProcessor                           │
+ * │  │    → 检测 Bean 是否实现了 EnvironmentAware                      │
+ * │  │    → 是 → bean.setEnvironment(...)                             │
+ * │  │    → 检测 Bean 是否实现了 ApplicationContextAware               │
+ * │  │    → 是 → bean.setApplicationContext(...)    ← [5'] 在这里！  │
+ * │  │    → 检测 MessageSourceAware / ApplicationEventPublisherAware  │
+ * │  │      / ResourceLoaderAware / EmbeddedValueResolverAware        │
+ * │  │                                                               │
+ * │  │  ★ AutowiredAnnotationBeanPostProcessor                       │
+ * │  │    → 处理 @Autowired 方法注入（构造器已注入，现在是方法）        │
+ * │  │                                                               │
+ * │  │  ★ BeanValidationPostProcessor                                │
+ * │  │    → JSR-303 校验 @NotNull @Size 等                            │
+ * │  │                                                               │
+ * │  │  ★ InitDestroyAnnotationBeanPostProcessor                     │
+ * │  │    → 扫描 @PostConstruct 方法……但还没执行！只是找到它们        │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [7a] @PostConstruct ─────────────────────────────────┐    │
+ * │  │  调用方: CommonAnnotationBeanPostProcessor                     │
+ * │  │         (继承自 InitDestroyAnnotationBeanPostProcessor)        │
+ * │  │  做什么: method.invoke(bean) → 反射调用 @PostConstruct 方法    │
+ * │  │  时机: 在 BPP.before 返回之后，但仍在 initializeBean() 内部    │
+ * │  │  优先级: ★ 最高（最先执行）                                    │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [7b] InitializingBean.afterPropertiesSet() ──────────┐    │
+ * │  │  调用方: AbstractAutowireCapableBeanFactory.invokeInitMethods() │
+ * │  │  做什么: ((InitializingBean) bean).afterPropertiesSet()         │
+ * │  │  触发条件: Bean 实现了 InitializingBean 接口                    │
+ * │  │  优先级: ★★ 中等                                               │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [7c] init-method ────────────────────────────────────┐    │
+ * │  │  调用方: 同上 invokeInitMethods()                               │
+ * │  │  做什么: method.invoke(bean) → 反射调用 XML/注解指定的方法       │
+ * │  │  触发条件: BeanDefinition 中配置了 initMethodName               │
+ * │  │  优先级: ★★★ 最低（最后执行）                                  │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [8]  BeanPostProcessor.postProcessAfterInitialization() ┐  │
+ * │  │  调用方: 同上 initializeBean()                                  │
+ * │  │                                                               │
+ * │  │  遍历所有已注册的 BPP，依次调用:                                │
+ * │  │                                                               │
+ * │  │  ★ AbstractAutoProxyCreator (及其子类)                        │
+ * │  │    → 检查 Bean 是否匹配任何 Advisor/切面                       │
+ * │  │    → 匹配 → wrapIfNecessary() 创建代理对象                    │
+ * │  │    → 返回代理（替换原始 Bean）                                 │
+ * │  │    子类: AnnotationAwareAspectJAutoProxyCreator               │
+ * │  │    它生成的代理让 @Transactional / @Cacheable / @Aspect 生效  │
+ * │  │                                                               │
+ * │  │  ★ AsyncAnnotationBeanPostProcessor                           │
+ * │  │    → 检测 @Async → 创建异步代理                               │
+ * │  │                                                               │
+ * │  │  ★ ScheduledAnnotationBeanPostProcessor                       │
+ * │  │    → 检测 @Scheduled → 注册到 TaskScheduler                   │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [9]  Bean 就绪 ──────────────────────────────────────┐    │
+ * │  │  做什么: 放入 singletonObjects（一级缓存）                     │
+ * │  │  状态: getBean() 从这里开始可以获取到                          │
+ * │  │  注意: 如果 [8] 中创建了代理，存的就是代理对象                 │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                                                                     │
+ * │  ╔═══════════════════════════════════════════════════════════════╗  │
+ * │  ║                    容器运行中……                               ║  │
+ * │  ╚═══════════════════════════════════════════════════════════════╝  │
+ * │                                                                     │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │                    Spring 容器关闭 (close)                           │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │                                                                     │
+ * │  ┌─ 阶段 [10a] @PreDestroy ───────────────────────────────────┐    │
+ * │  │  调用方: CommonAnnotationBeanPostProcessor                     │
+ * │  │         (实现 DestructionAwareBeanPostProcessor 接口)          │
+ * │  │  做什么: method.invoke(bean) → 反射调用 @PreDestroy 方法       │
+ * │  │  触发条件: Bean 有 @PreDestroy 注解 + 是 singleton            │
+ * │  │  注意: prototype Bean 的 @PreDestroy 不会被 Spring 调用       │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [10b] DisposableBean.destroy() ──────────────────────┐    │
+ * │  │  调用方: DisposableBeanAdapter.destroy()                       │
+ * │  │  做什么: ((DisposableBean) bean).destroy()                     │
+ * │  │  触发条件: Bean 实现了 DisposableBean 接口                     │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                              ↓                                      │
+ * │  ┌─ 阶段 [10c] destroy-method ────────────────────────────────┐    │
+ * │  │  调用方: DisposableBeanAdapter.destroy()                       │
+ * │  │  做什么: method.invoke(bean) → 反射调用配置的销毁方法           │
+ * │  │  触发条件: BeanDefinition 中配置了 destroyMethodName            │
+ * │  └─────────────────────────────────────────────────────────────┘    │
+ * │                                                                     │
+ * └─────────────────────────────────────────────────────────────────────┘
  * </pre>
  *
- * <h2>三条核心认知</h2>
+ * <h2>两个关键认知</h2>
  *
- * <ol>
- *   <li><b>BFPP 是因 @Configuration 而成熟的。</b>
- *       没有 ConfigurationClassPostProcessor，@Bean 不会被识别。
- *       Spring 3.0 之前的 Java Config 根本不存在。</li>
- *   <li><b>BPP 是因 @Autowired 而爆发的。</b>
- *       Spring 2.5 引入的注解驱动开发需要一个"通用的注解处理器"模式——
- *       BPP 就是那个答案。之后每一个新注解几乎都对应一个新 BPP。</li>
- *   <li><b>AOP 代理在 BPP.after。</b>
- *       不是偶然——before 时 Bean 还是半成品，after 时才是成品。
- *       这就是全部 AOP 事务/缓存/异步/定时任务的基础。</li>
- * </ol>
+ * <h3>1. Aware 分两批执行</h3>
+ * <p>很多人以为所有 *Aware 接口在同一个阶段回调——不是的：</p>
+ * <ul>
+ *   <li>BeanNameAware、BeanClassLoaderAware、BeanFactoryAware →
+ *       在 [3][4][5] 阶段，由 BeanFactory 直接调用</li>
+ *   <li>ApplicationContextAware、EnvironmentAware、MessageSourceAware 等 →
+ *       在 [6] 阶段，由 ApplicationContextAwareProcessor（一个 BPP）调用</li>
+ * </ul>
+ * <p>分批的原因是：Context 级别的 Aware 依赖 ApplicationContext，
+ * 而 ApplicationContext 在 BeanFactory 创建之后才准备好。
+ * 所以需要的回调时机更晚。</p>
+ *
+ * <h3>2. postProcessBefore 和 @PostConstruct 之间有 "缝隙"</h3>
+ * <p>BPP.before 返回后，@PostConstruct 才开始执行——
+ * 这意味着 BPP.before 中修改的属性，@PostConstruct 能看到；
+ * 但 @PostConstruct 是独立于 BPP 调用的，不在 BPP 链中。</p>
  */
 @Component
 public class BeanLifecycleDemo {
@@ -65,50 +201,56 @@ public class BeanLifecycleDemo {
 
     public String runDemo() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== Q01: Bean 生命周期——因果链 ===\n\n");
+        sb.append("=== Q01: Bean 生命周期 — 完整时间轴 ===\n\n");
 
-        sb.append("Spring 1.0 (2004): 需要一个 DI 容器\n");
-        sb.append("  → 创建了 [1]构造器 + [2]setter（最朴素的反射）\n");
-        sb.append("  → 创建了 [7b]InitializingBean（连接池的 init()）\n");
-        sb.append("  → 创建了 [7c]init-method（第三方类也能用）\n");
-        sb.append("  → 创建了 [10b]DisposableBean + [10c]destroy-method（资源释放）\n\n");
+        sb.append("容器启动 → refresh()\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [0]  BeanFactoryPostProcessor         ← 操作 BeanDefinition\n");
+        sb.append("  │        ConfigurationClassPostProcessor  ← 解析 @Configuration\n");
+        sb.append("  │        PropertySourcesPlaceholderCfg    ← 替换 ${...}\n");
+        sb.append("  │\n");
+        sb.append("  │  ═══ 以下对每个单例 Bean 执行 ═══\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [1]  构造器                               ← Constructor.newInstance()\n");
+        sb.append("  ├─ [2]  属性填充                             ← field.set(bean, dep)\n");
+        sb.append("  │        AutowiredAnnotationBeanPostProcessor ← @Autowired 在此注入\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [3]  BeanNameAware                       ← BeanFactory 直接回调\n");
+        sb.append("  ├─ [4]  BeanClassLoaderAware\n");
+        sb.append("  ├─ [5]  BeanFactoryAware                    ← 此时可手动 getBean()\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [6]  BPP.before                          ← initializeBean() 入口\n");
+        sb.append("  │        ApplicationContextAwareProcessor    ← ApplicationContextAware 等在此回调！\n");
+        sb.append("  │        BeanValidationPostProcessor         ← JSR-303 校验\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [7a] @PostConstruct                      ← JSR-250 标准（最高优先级）\n");
+        sb.append("  ├─ [7b] InitializingBean.afterPropertiesSet  ← Spring 接口（中等优先级）\n");
+        sb.append("  ├─ [7c] init-method                          ← XML/@Bean 指定（最低优先级）\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [8]  BPP.after                           ← ★ AOP 代理在此生成！\n");
+        sb.append("  │        AnnotationAwareAspectJAutoProxyCreator → @Transactional/@Cacheable\n");
+        sb.append("  │        AsyncAnnotationBeanPostProcessor      → @Async\n");
+        sb.append("  │        ScheduledAnnotationBeanPostProcessor  → @Scheduled\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [9]  就绪 → singletonObjects              ← getBean() 可获取\n");
+        sb.append("  │\n");
+        sb.append("  │  ═══════════ 容器运行中 ═══════════\n");
+        sb.append("  │\n");
+        sb.append("容器关闭 → close()\n");
+        sb.append("  │\n");
+        sb.append("  ├─ [10a] @PreDestroy                         ← 销毁前\n");
+        sb.append("  ├─ [10b] DisposableBean.destroy()\n");
+        sb.append("  └─ [10c] destroy-method                      ← 销毁后\n\n");
 
-        sb.append("Spring 2.0 (2006): Scope + AOP 来了\n");
-        sb.append("  → Bean 需要知道自己的身份 → [3]BeanNameAware\n");
-        sb.append("  → Bean 需要手动获取 Bean → [4]BeanFactoryAware\n");
-        sb.append("  → Bean 需要发事件/读资源 → [5]ApplicationContextAware\n\n");
-
-        sb.append("Spring 2.5 (2007): 注解革命——@Autowired 来了！\n");
-        sb.append("  → 需要一个通用注解处理机制 → [6][8]BeanPostProcessor 爆发\n");
-        sb.append("  → @Autowired → AutowiredAnnotationBeanPostProcessor\n");
-        sb.append("  → @PostConstruct → CommonAnnotationBeanPostProcessor\n\n");
-
-        sb.append("Spring 3.0 (2009): 消灭 XML——@Configuration 来了！\n");
-        sb.append("  → 需要解析 @Bean 方法 → [0]BeanFactoryPostProcessor 成熟\n");
-        sb.append("  → ConfigurationClassPostProcessor 是其中的核心\n");
-        sb.append("  → AOP 全面注解化 → AnnotationAwareAspectJAutoProxyCreator(BPP)\n");
-        sb.append("  → @Transactional/@Cacheable 的代理在 [8]BPP.after 生成\n\n");
-
-        sb.append("Spring 3.2 (2012): @Async + @Scheduled\n");
-        sb.append("  → AsyncAnnotationBeanPostProcessor + ScheduledAnnotationBeanPostProcessor\n");
-        sb.append("  → 又是两个 BPP。这个模式已经固化了——\n");
-        sb.append("  → \"每一个新注解，都对应一个新 BPP\"\n\n");
-
-        sb.append("【你猜对了】\n");
-        sb.append("问：没有 ConfigurationClassPostProcessor，Spring 能处理 @Configuration 吗？\n");
-        sb.append("答：不能。Spring 3.0 之前的 Java Config 根本不存在。\n");
-        sb.append("   @Configuration + @Bean 就是为了消灭 XML 而生的，\n");
-        sb.append("   ConfigurationClassPostProcessor 就是实现它的引擎。\n\n");
-
-        sb.append("【你能答出的面试题】\n");
-        sb.append("1. BeanFactoryPostProcessor vs BeanPostProcessor？\n");
-        sb.append("   → BFPP 操作 BeanDefinition（蓝图），在创建前运行\n");
-        sb.append("   → BPP 操作 Bean 实例（成品），在每个 Bean 创建时运行\n\n");
-        sb.append("2. 为什么 AOP 代理在 after 不在 before？\n");
-        sb.append("   → before 时 @PostConstruct 还没执行，是半成品\n\n");
-        sb.append("3. @Autowired 怎么生效的？\n");
-        sb.append("   → AutowiredAnnotationBeanPostProcessor 在 BPP.before 中\n");
-        sb.append("     field.set(bean, dependency)\n");
+        sb.append("【核心调用链追溯】\n");
+        sb.append("  [0] → AbstractApplicationContext.refresh()\n");
+        sb.append("        → invokeBeanFactoryPostProcessors()\n");
+        sb.append("  [1]~[9] → AbstractAutowireCapableBeanFactory\n");
+        sb.append("        → doCreateBean()\n");
+        sb.append("        → createBeanInstance()     [1]\n");
+        sb.append("        → populateBean()           [2]\n");
+        sb.append("        → initializeBean()         [3]~[9]\n");
+        sb.append("  [10] → DefaultSingletonBeanRegistry.destroySingleton()\n");
 
         return sb.toString();
     }

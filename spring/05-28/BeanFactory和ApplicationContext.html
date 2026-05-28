@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深度解析：BeanFactory vs ApplicationContext 面试真相</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            line-height: 1.6;
+        }
+
+        .code-font { font-family: 'JetBrains Mono', monospace; }
+
+        /* Glassmorphism Cards */
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+        /* Animated Gradient Border */
+        .gradient-border {
+            position: relative;
+            z-index: 1;
+        }
+        .gradient-border::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 18px;
+            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple), var(--accent-green));
+            z-index: -1;
+            opacity: 0.6;
+            filter: blur(8px);
+            transition: opacity 0.3s;
+        }
+        .gradient-border:hover::before { opacity: 1; }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        /* Architecture Diagram Styles */
+        .arch-layer {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .arch-layer:hover { transform: translateY(-2px); filter: brightness(1.1); }
+        .connector { stroke-dasharray: 5; animation: dash 30s linear infinite; }
+        @keyframes dash { to { stroke-dashoffset: -1000; } }
+
+        .interview-bubble {
+            position: relative;
+            background: #334155;
+            border-radius: 12px 12px 12px 0;
+        }
+        .candidate-bubble {
+            position: relative;
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            border-radius: 12px 12px 0 12px;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-20">
+
+<!-- Hero Section -->
+<header class="relative overflow-hidden pt-16 pb-12 px-4 text-center">
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900 -z-10"></div>
+    <span class="tag bg-blue-500/20 text-blue-300 mb-4">Spring Core Deep Dive</span>
+    <h1 class="text-4xl md:text-5xl font-bold mb-6 tracking-tight">
+        BeanFactory vs ApplicationContext<br>
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">面试官到底在考什么？</span>
+    </h1>
+    <p class="text-lg text-slate-400 max-w-2xl mx-auto">
+        "现在都用Spring Boot了，谁还手动new BeanFactory啊？"<br>
+        如果你也这么想，请先看完这份关于<span class="text-white font-semibold">框架设计哲学</span>的深度解剖。
+    </p>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 space-y-12">
+
+    <!-- Section 1: The Interviewer's Mindset -->
+    <section class="grid md:grid-cols-2 gap-8 items-start">
+        <div class="glass-card p-8 gradient-border">
+            <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                <i class="fa-solid fa-brain text-purple-400"></i> 面试官的3层潜台词
+            </h2>
+            <div class="space-y-6">
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold shrink-0">1</div>
+                    <div>
+                        <h3 class="font-semibold text-white mb-1">架构抽象能力</h3>
+                        <p class="text-sm text-slate-400">你是否理解Spring如何通过接口将"IOC容器核心"与"企业级基础设施"解耦？这决定了你能否设计出高内聚低耦合的系统。</p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold shrink-0">2</div>
+                    <div>
+                        <h3 class="font-semibold text-white mb-1">源码级认知深度</h3>
+                        <p class="text-sm text-slate-400">你是否知道 <code>ApplicationContext</code> 内部其实持有一个 <code>DefaultListableBeanFactory</code>？它只是门面，干活的还是工厂。</p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 font-bold shrink-0">3</div>
+                    <div>
+                        <h3 class="font-semibold text-white mb-1">极端场景应对力</h3>
+                        <p class="text-sm text-slate-400">当需要编写自定义Starter、实现热部署、或在非Spring环境嵌入IOC容器时，只有BeanFactory级别的API才能救你。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Simulation -->
+        <div class="space-y-4 max-w-md ml-auto">
+            <div class="flex gap-3">
+                <div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center shrink-0"><i class="fa-solid fa-user-tie text-slate-300"></i></div>
+                <div class="interview-bubble p-4 text-sm text-slate-200 shadow-lg">
+                    "既然Spring Boot都封装好了，你觉得还有必要区分BeanFactory和ApplicationContext吗？"
+                </div>
+            </div>
+            <div class="flex gap-3 flex-row-reverse">
+                <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-code text-white"></i></div>
+                <div class="candidate-bubble p-4 text-sm text-white shadow-lg">
+                    <strong class="block mb-1 text-blue-100">❌ 普通回答：</strong>
+                    "没必要吧，反正我都用@Autowired，没区别。"
+                </div>
+            </div>
+            <div class="flex gap-3 flex-row-reverse">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-star text-white"></i></div>
+                <div class="candidate-bubble p-4 text-sm text-white shadow-lg bg-gradient-to-br from-emerald-800 to-teal-900 border border-emerald-500/30">
+                    <strong class="block mb-1 text-emerald-200">✅ 高分回答：</strong>
+                    "业务开发确实无感，但<strong>架构上必须区分</strong>。BeanFactory是IOC的最小内核，负责Bean的生命周期；而Context是面向企业的Facade，整合了AOP、MessageSource、EventPublisher等。Spring Boot的 <code>AnnotationConfigApplicationContext</code> 底层依然是委托给 <code>DefaultListableBeanFactory</code> 完成Bean注册的。理解这个分层，才能在写自定义Starter或排查启动性能问题时，知道该在哪一层动手。"
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 2: Architecture Visualization -->
+    <section class="glass-card p-8">
+        <h2 class="text-2xl font-bold mb-2 text-center">Spring Boot 底层真实架构图</h2>
+        <p class="text-center text-slate-400 text-sm mb-8">点击各层级查看职责说明</p>
+
+        <div class="relative max-w-3xl mx-auto space-y-4">
+            <!-- Layer 3: Spring Boot -->
+            <div class="arch-layer glass-card p-5 border-l-4 border-orange-500 flex items-center justify-between group" onclick="showDetail('boot')">
+                <div class="flex items-center gap-4">
+                    <i class="fa-brands fa-java text-orange-500 text-2xl"></i>
+                    <div>
+                        <h3 class="font-bold text-lg">Spring Boot Application</h3>
+                        <p class="text-xs text-slate-400">自动配置 / Starter / Actuator</p>
+                    </div>
+                </div>
+                <span class="tag bg-orange-500/20 text-orange-300">用户感知层</span>
+            </div>
+
+            <div class="flex justify-center"><i class="fa-solid fa-arrow-down text-slate-600"></i></div>
+
+            <!-- Layer 2: ApplicationContext -->
+            <div class="arch-layer glass-card p-5 border-l-4 border-purple-500 flex items-center justify-between" onclick="showDetail('context')">
+                <div class="flex items-center gap-4">
+                    <i class="fa-solid fa-cubes text-purple-500 text-2xl"></i>
+                    <div>
+                        <h3 class="font-bold text-lg">ApplicationContext (Facade)</h3>
+                        <p class="text-xs text-slate-400">AOP / i18n / Event / ResourceLoader</p>
+                    </div>
+                </div>
+                <span class="tag bg-purple-500/20 text-purple-300">企业级增强层</span>
+            </div>
+
+            <div class="flex justify-center"><i class="fa-solid fa-arrow-down text-slate-600"></i></div>
+
+            <!-- Layer 1: BeanFactory -->
+            <div class="arch-layer glass-card p-5 border-l-4 border-blue-500 flex items-center justify-between" onclick="showDetail('factory')">
+                <div class="flex items-center gap-4">
+                    <i class="fa-solid fa-gears text-blue-500 text-2xl"></i>
+                    <div>
+                        <h3 class="font-bold text-lg">DefaultListableBeanFactory (Core)</h3>
+                        <p class="text-xs text-slate-400">BeanDefinition / 实例化 / 依赖注入 / 生命周期</p>
+                    </div>
+                </div>
+                <span class="tag bg-blue-500/20 text-blue-300">IOC 核心引擎</span>
+            </div>
+
+            <!-- Detail Panel -->
+            <div id="detail-panel" class="mt-6 p-6 rounded-xl bg-slate-800/50 border border-slate-700 hidden transition-all">
+                <h4 id="detail-title" class="font-bold text-lg mb-2"></h4>
+                <p id="detail-content" class="text-slate-300 text-sm leading-relaxed"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3: Comparison Table -->
+    <section class="glass-card overflow-hidden">
+        <div class="p-6 border-b border-slate-700">
+            <h2 class="text-2xl font-bold">核心差异速查表</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-800/80 text-slate-300 uppercase text-xs tracking-wider">
+                <tr>
+                    <th class="px-6 py-4">特性</th>
+                    <th class="px-6 py-4 text-blue-400">BeanFactory</th>
+                    <th class="px-6 py-4 text-purple-400">ApplicationContext</th>
+                    <th class="px-6 py-4 text-slate-500">Spring Boot 现状</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700/50 text-slate-300">
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-6 py-4 font-medium">Bean加载时机</td>
+                    <td class="px-6 py-4">懒加载 (getBean时创建)</td>
+                    <td class="px-6 py-4">预加载 (启动时全部创建)</td>
+                    <td class="px-6 py-4 text-xs text-slate-500">可通过 @Lazy 切换</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-6 py-4 font-medium">国际化 (i18n)</td>
+                    <td class="px-6 py-4 text-red-400"><i class="fa-solid fa-xmark"></i> 不支持</td>
+                    <td class="px-6 py-4 text-green-400"><i class="fa-solid fa-check"></i> MessageSource</td>
+                    <td class="px-6 py-4 text-xs text-slate-500">Web应用必备</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-6 py-4 font-medium">事件发布</td>
+                    <td class="px-6 py-4 text-red-400"><i class="fa-solid fa-xmark"></i> 不支持</td>
+                    <td class="px-6 py-4 text-green-400"><i class="fa-solid fa-check"></i> ApplicationEventPublisher</td>
+                    <td class="px-6 py-4 text-xs text-slate-500">@EventListener 依赖此机制</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-6 py-4 font-medium">AOP 集成</td>
+                    <td class="px-6 py-4 text-yellow-400">需手动配置</td>
+                    <td class="px-6 py-4 text-green-400"><i class="fa-solid fa-check"></i> 自动代理</td>
+                    <td class="px-6 py-4 text-xs text-slate-500">声明式事务/AOP基石</td>
+                </tr>
+                <tr class="hover:bg-slate-800/30 transition">
+                    <td class="px-6 py-4 font-medium">内存占用</td>
+                    <td class="px-6 py-4 text-green-400">极低</td>
+                    <td class="px-6 py-4 text-yellow-400">较高</td>
+                    <td class="px-6 py-4 text-xs text-slate-500">嵌入式/IoT场景选Factory</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Section 4: When to use what -->
+    <section class="grid md:grid-cols-3 gap-6">
+        <div class="glass-card p-6 hover:border-blue-500/50 transition">
+            <div class="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-microchip text-blue-400 text-xl"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">何时退回 BeanFactory?</h3>
+            <ul class="text-sm text-slate-400 space-y-2 list-disc pl-4">
+                <li>开发自定义 Spring Boot Starter</li>
+                <li>实现动态Bean注册/销毁</li>
+                <li>Android / IoT 等资源受限环境</li>
+                <li>编写单元测试仅需轻量容器</li>
+                <li>分析启动性能瓶颈时</li>
+            </ul>
+        </div>
+        <div class="glass-card p-6 hover:border-purple-500/50 transition">
+            <div class="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-server text-purple-400 text-xl"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">何时坚守 Context?</h3>
+            <ul class="text-sm text-slate-400 space-y-2 list-disc pl-4">
+                <li>所有标准Web/API应用</li>
+                <li>需要使用 @Transactional</li>
+                <li>使用 @Async / @Scheduled</li>
+                <li>多语言国际化支持</li>
+                <li>基于事件的模块解耦</li>
+            </ul>
+        </div>
+        <div class="glass-card p-6 hover:border-green-500/50 transition">
+            <div class="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-lightbulb text-green-400 text-xl"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">面试加分技巧</h3>
+            <ul class="text-sm text-slate-400 space-y-2 list-disc pl-4">
+                <li>提到 <code>GenericApplicationContext</code></li>
+                <li>解释 refresh() 方法的12步流程</li>
+                <li>说明 BeanPostProcessor 的作用域</li>
+                <li>关联到 Spring Boot 条件装配原理</li>
+                <li>承认日常不用，但强调"知其所以然"</li>
+            </ul>
+        </div>
+    </section>
+
+</main>
+
+<footer class="text-center py-12 text-slate-600 text-sm">
+    <p>Generated for Deep Understanding of Spring Framework Internals</p>
+    <p class="mt-2">Remember: Frameworks change, but architectural thinking lasts.</p>
+</footer>
+
+<script>
+  const details = {
+    boot: {
+      title: "🚀 Spring Boot Layer",
+      content: "这是开发者直接接触的层面。Spring Boot 并没有创造新的容器，它只是通过 SpringApplication.run() 帮你选择了一个合适的 ApplicationContext 实现类（通常是 AnnotationConfigServletWebServerApplicationContext），并自动完成了配置导入、环境准备和监听器注册。它是'约定优于配置'的终极体现。"
+    },
+    context: {
+      title: "🏛️ ApplicationContext (The Facade)",
+      content: "这是一个'超级接口'。它继承了 BeanFactory，同时组合了 EnvironmentCapable、ListableBeanFactory、HierarchicalBeanFactory、MessageSource、ApplicationEventPublisher、ResourcePatternResolver 等6大接口。它的核心价值在于'整合'——将分散的企业级服务统一到一个入口。注意：它本身不存储Bean，所有getBean()调用最终都委托给内部的 DefaultListableBeanFactory。"
+    },
+    factory: {
+      title: "⚙️ DefaultListableBeanFactory (The Engine)",
+      content: "这是Spring IOC的真正心脏。它实现了 BeanDefinitionRegistry、SingletonBeanRegistry、ConfigurableListableBeanFactory 等核心接口。所有的Bean解析、实例化、属性填充、初始化回调、销毁回调都在这里发生。即使你使用的是最豪华的ApplicationContext，干脏活累活的永远是这个类。理解它，就理解了Spring的灵魂。"
+    }
+  };
+
+  function showDetail(key) {
+    const panel = document.getElementById('detail-panel');
+    const title = document.getElementById('detail-title');
+    const content = document.getElementById('detail-content');
+
+    panel.classList.remove('hidden');
+    // Trigger reflow for animation
+    void panel.offsetWidth;
+
+    title.textContent = details[key].title;
+    content.textContent = details[key].content;
+
+    // Highlight active layer
+    document.querySelectorAll('.arch-layer').forEach(el => el.classList.remove('ring-2', 'ring-white/20'));
+    event.currentTarget.classList.add('ring-2', 'ring-white/20');
+  }
+
+  // Initialize with first detail visible
+  window.addEventListener('DOMContentLoaded', () => {
+    const firstLayer = document.querySelector('.arch-layer');
+    if(firstLayer) firstLayer.click();
+  });
+</script>
+</body>
+</html>
