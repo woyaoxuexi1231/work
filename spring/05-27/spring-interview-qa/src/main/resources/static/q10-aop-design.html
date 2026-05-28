@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spring AOP 核心设计 · 源码级图解</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--text:#c9d1d9;--sub:#6e7781;--accent:#58a6ff;--green:#3fb950;--orange:#d2991d;--pink:#f778ba;--red:#f85149;--purple:#a371f7;--border:#21262d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.7;font-size:14px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+.topbar{background:#0d1117;border-bottom:1px solid var(--border);padding:14px 0;position:sticky;top:0;z-index:100}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:17px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:var(--sub);text-decoration:none;font-size:13px}.topbar a:hover{color:var(--text)}
+
+h1{font-size:28px;margin:36px 0 4px;text-align:center}h1 span{color:var(--accent)}
+.sub{text-align:center;color:var(--sub);margin-bottom:32px;font-size:14px}
+
+.stage{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 26px;margin-bottom:20px}
+.stage h2{font-size:18px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.stage h2 .n{font-size:13px;background:var(--accent);color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stage .intro{color:var(--sub);font-size:13px;margin-bottom:14px}
+
+.code{background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:10px 0}
+.code .bar{background:#161b22;padding:6px 14px;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)}
+.code .bar .file{color:var(--accent)}
+.code .ct{font-family:"JetBrains Mono",Consolas,monospace;font-size:11px;line-height:1.7;padding:12px 16px;overflow-x:auto;white-space:pre;color:#c9d1d9}
+.code .ct .k{color:#ff7b72}.code .ct .t{color:#ffa657}.code .ct .f{color:#d2a8ff}.code .ct .s{color:#a5d6ff}.code .ct .c{color:#8b949e}.code .ct .a{color:#ffa657}.code .ct .n{color:#7ee787}
+
+.flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:16px;background:#0d1117;border-radius:10px;border:1px solid var(--border);margin:10px 0}
+.fb{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:10px 16px;text-align:center;font-size:12px;min-width:75px;flex-shrink:0;transition:all .4s}
+.fb .emj{font-size:20px;display:block;margin-bottom:2px}.fb .lbl{font-size:10px;color:var(--sub)}
+.fb.gl{border-color:var(--accent);box-shadow:0 0 14px rgba(88,166,255,.3)}
+.fb.gg{border-color:var(--green);box-shadow:0 0 14px rgba(63,185,80,.3)}
+.fa{font-size:18px;color:var(--sub);flex-shrink:0}
+
+.sim{background:#0d1117;border:2px solid var(--green);border-radius:12px;padding:20px 24px;margin:10px 0}
+.sim h3{color:var(--green);margin-bottom:10px}
+.sim .out{background:#000;border-radius:6px;padding:12px 16px;font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.8;max-height:240px;overflow-y:auto;color:#c9d1d9}
+.sim .out .tx{color:var(--purple)}.sim .out .lg{color:var(--accent)}.sim .out .tg{color:var(--green)}.sim .out .er{color:var(--red)}
+
+.btn{display:inline-block;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;margin-right:8px;margin-bottom:6px;transition:all .2s}
+.btn-go{background:var(--green);color:#000}.btn-rst{background:#30363d;color:var(--text)}.btn:hover{filter:brightness(1.15)}
+
+.note{background:#0d1117;border-left:4px solid var(--orange);padding:10px 14px;margin:10px 0;border-radius:0 8px 8px 0;font-size:13px;color:var(--sub)}
+.note strong{color:var(--orange)}
+
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+.compare>div{background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:12px}
+.compare h4{font-size:13px;margin-bottom:6px;color:var(--accent)}
+
+.back{text-align:center;padding:40px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo">🎯 Spring AOP · <span>源码级图解</span></div><nav><a href="/">← 索引</a> · <a href="/q10.html">Q10 答题</a></nav></div></header>
+
+<div class="wrap">
+<h1>Spring AOP <span>核心架构</span></h1>
+<p class="sub">以 Spring 源码为蓝本，逐层拆解 AOP 的四大接口 + 代理生成 + 调用链执行</p>
+
+<!-- ═══════ 1. 四大核心接口 ═══════ -->
+<div class="stage"><h2><span class="n">1</span>四大核心接口 —— Spring AOP 的骨架</h2>
+<div class="intro">Spring AOP 不是铁板一块。它由四个解耦的接口组成。理解它们的<b>分工</b>，比记住类名重要十倍。</div>
+
+<div class="flow">
+  <div class="fb" id="f1-1"><span class="emj">🎯</span>Pointcut<div class="lbl">在哪里做？</div></div>
+  <div class="fa">+</div>
+  <div class="fb" id="f1-2"><span class="emj">📝</span>Advice<div class="lbl">做什么？</div></div>
+  <div class="fa">=</div>
+  <div class="fb" id="f1-3"><span class="emj">📦</span>Advisor<div class="lbl">切面</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1-4"><span class="emj">🪞</span>AopProxy<div class="lbl">代理对象</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1-5"><span class="emj">🔗</span>MethodInvocation<div class="lbl">调用链</div></div>
+</div>
+
+<div class="compare">
+<div><h4>Spring 源码中的对应</h4>
+<code style="color:var(--green)">Pointcut</code> → AspectJExpressionPointcut（execution(* com.example..*.*(..))）<br>
+<code style="color:var(--green)">Advice</code> → MethodInterceptor（环绕）、MethodBeforeAdvice（前置）、AfterReturningAdvice（后置）<br>
+<code style="color:var(--green)">Advisor</code> → DefaultPointcutAdvisor（把一个 Pointcut 和一个 Advice 绑在一起）<br>
+<code style="color:var(--green)">AopProxy</code> → JdkDynamicAopProxy / CglibAopProxy<br>
+<code style="color:var(--green)">MethodInvocation</code> → ReflectiveMethodInvocation</div>
+<div><h4>为什么分开设计？</h4>
+同一个 Advice（比如"记录日志"）可以用不同的 Pointcut 应用到不同的包——Advice 代码一行不改。<br><br>
+AopProxy 和 MethodInvocation 分开，因为代理<b>生成</b>（JDK vs CGLIB）和代理<b>执行</b>（递归链）是两个独立的变化维度。换代理方式不影响拦截链逻辑。</div>
+</div>
+</div>
+
+<!-- ═══════ 2. ReflectiveMethodInvocation ═══════ -->
+<div class="stage"><h2><span class="n">2</span>ReflectiveMethodInvocation — 递归调用链</h2>
+<div class="intro">这是 Spring AOP 的<b>心脏</b>。一个对象持有拦截器列表 + 游标，每次 <code>proceed()</code> 游标+1，取出下一个拦截器，把自身传进去——拦截器内部再调 <code>proceed()</code>，形成递归。</div>
+
+<div class="code"><div class="bar"><span class="file">org.springframework.aop.framework.ReflectiveMethodInvocation</span></div>
+<div class="ct"><span class="k">public class</span> <span class="t">ReflectiveMethodInvocation</span> <span class="k">implements</span> <span class="t">ProxyMethodInvocation</span> {
+
+    <span class="k">protected final</span> Object target;       <span class="c">// 原始 Bean</span>
+    <span class="k">protected final</span> Method method;        <span class="c">// 被调用的方法</span>
+    <span class="k">protected</span> Object[] arguments;          <span class="c">// 方法参数</span>
+    <span class="k">protected final</span> List&lt;?&gt; interceptors; <span class="c">// ★ 拦截器链</span>
+    <span class="k">private int</span> currentInterceptorIndex = <span class="n">-1</span>; <span class="c">// ★ 游标</span>
+
+    <span class="k">public</span> Object <span class="f">proceed</span>() <span class="k">throws</span> Throwable {
+        <span class="c">// 游标 +1</span>
+        <span class="k">if</span> (<span class="k">this</span>.currentInterceptorIndex == <span class="k">this</span>.interceptors.size() - <span class="n">1</span>) {
+            <span class="c">// ★ 所有拦截器执行完毕 → 反射调用目标方法</span>
+            <span class="k">return</span> invokeJoinpoint();
+        }
+        <span class="c">// 取出下一个拦截器，把 this 传进去——拦截器内部再调 mi.proceed() → 递归！</span>
+        Object interceptor = <span class="k">this</span>.interceptors.get(++<span class="k">this</span>.currentInterceptorIndex);
+        <span class="k">return</span> ((<span class="t">MethodInterceptor</span>) interceptor).invoke(<span class="k">this</span>);
+    }
+
+    <span class="k">protected</span> Object <span class="f">invokeJoinpoint</span>() <span class="k">throws</span> Throwable {
+        <span class="k">return</span> <span class="t">AopUtils</span>.invokeJoinpointUsingReflection(<span class="k">this</span>.target, <span class="k">this</span>.method, <span class="k">this</span>.arguments);
+    }
+}</div></div>
+
+<div class="note"><strong>💡 面试杀手锏：</strong>为什么用递归而不用 for 循环？因为环绕通知需要在 <code>proceed()</code> 前后写逻辑——递归的调用栈天然表达"进入→退出"。for 循环只能线性执行，没法"执行到一半暂停，后面再回来"。</div>
+</div>
+
+<!-- ═══════ 3. AopProxy ═══════ -->
+<div class="stage"><h2><span class="n">3</span>AopProxy — 代理是怎么生成的</h2>
+<div class="intro">AopProxy 是代理的抽象。JDK 和 CGLIB 是两个实现。它们在 <code>getProxy()</code> 里创建代理对象，在 <code>InvocationHandler.invoke()</code> 里创建 ReflectiveMethodInvocation 并启动链。</div>
+
+<div class="code"><div class="bar"><span class="file">org.springframework.aop.framework.JdkDynamicAopProxy</span></div>
+<div class="ct"><span class="k">final class</span> <span class="t">JdkDynamicAopProxy</span> <span class="k">implements</span> <span class="t">AopProxy</span>, <span class="t">InvocationHandler</span> {
+
+    <span class="k">private final</span> <span class="t">AdvisedSupport</span> advised; <span class="c">// 持有：目标对象 + Advisor 列表 + 接口列表</span>
+
+    <span class="k">public</span> Object <span class="f">getProxy</span>() {
+        <span class="k">return</span> <span class="t">Proxy</span>.newProxyInstance(classLoader, proxiedInterfaces, <span class="k">this</span>);
+    }
+
+    <span class="k">public</span> Object <span class="f">invoke</span>(Object proxy, Method method, Object[] args) <span class="k">throws</span> Throwable {
+        <span class="c">// ① 获取匹配该方法的拦截器链</span>
+        List&lt;Object&gt; chain = <span class="k">this</span>.advised.getInterceptorsAndDynamicInterceptionAdvice(method, targetClass);
+        <span class="k">if</span> (chain.isEmpty()) {
+            <span class="k">return</span> <span class="t">AopUtils</span>.invokeJoinpointUsingReflection(target, method, args); <span class="c">// 无切面 → 直接反射</span>
+        }
+        <span class="c">// ② 创建调用链对象并启动 ★</span>
+        <span class="t">MethodInvocation</span> invocation = <span class="k">new</span> <span class="t">ReflectiveMethodInvocation</span>(proxy, target, method, args, targetClass, chain);
+        <span class="k">return</span> invocation.proceed(); <span class="c">// ← 从这里开始递归</span>
+    }
+}</div></div>
+
+<div class="code"><div class="bar"><span class="file">org.springframework.aop.framework.CglibAopProxy（关键区别）</span></div>
+<div class="ct"><span class="c">// CGLIB 不使用 InvocationHandler——它用 MethodInterceptor（CGLIB 自己的接口）</span>
+<span class="c">// 但最终同样创建 ReflectiveMethodInvocation 并调 proceed()</span>
+<span class="c">// 区别在 getProxy()：用 Enhancer 生成子类，而非 Proxy.newProxyInstance()</span>
+
+<span class="k">public</span> Object <span class="f">getProxy</span>() {
+    <span class="t">Enhancer</span> enhancer = <span class="k">new</span> <span class="t">Enhancer</span>();
+    enhancer.setSuperclass(config.getTargetClass()); <span class="c">// 目标类作为父类</span>
+    enhancer.setInterfaces(config.getProxiedInterfaces());
+    enhancer.setCallback(<span class="k">new</span> <span class="t">DynamicAdvisedInterceptor</span>(config)); <span class="c">// 拦截逻辑</span>
+    <span class="k">return</span> enhancer.create();
+}
+
+<span class="c">// DynamicAdvisedInterceptor.intercept() 内部和 JdkDynamicAopProxy.invoke() 几乎一样：</span>
+<span class="c">// → 获取拦截器链 → new ReflectiveMethodInvocation → proceed()</span></div></div>
+</div>
+
+<!-- ═══════ 4. 运行模拟 ═══════ -->
+<div class="stage"><h2><span class="n">4</span>运行时模拟 — 一次方法调用经历了什么</h2>
+
+<div class="flow">
+  <div class="fb" id="s-client"><span class="emj">💻</span>proxy.doWork()<div class="lbl">客户端调用</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="s-tx"><span class="emj">🔒</span>TxInterceptor<div class="lbl">事务</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="s-log"><span class="emj">📝</span>LogInterceptor<div class="lbl">日志</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="s-target"><span class="emj">🎯</span>Real Target<div class="lbl">目标方法</div></div>
+</div>
+
+<div class="sim">
+<h3>控制台输出</h3>
+<div class="out" id="console">// 点击"执行"按钮开始演示...</div>
+<div style="margin-top:10px">
+  <button class="btn btn-go" onclick="run()">▶ 执行 proxy.doWork()</button>
+  <button class="btn btn-rst" onclick="resetSim()">↺ 重置</button>
+</div>
+</div>
+
+<div class="note"><strong>执行流程：</strong>proxy.doWork() → JdkDynamicAopProxy.invoke() → 获取拦截器链[Tx, Log] → new ReflectiveMethodInvocation → proceed() → TxInterceptor 进入（开启事务）→ proceed() → LogInterceptor 进入（打日志）→ proceed() → 游标到头 → invokeJoinpoint() → 反射调 target.doWork() → 原路返回 → LogInterceptor 退出 → TxInterceptor 退出（提交事务）</div>
+</div>
+
+<!-- ═══════ 5. Advisor 的注册和匹配 ═══════ -->
+<div class="stage"><h2><span class="n">5</span>AnnotationAwareAspectJAutoProxyCreator — 谁在背后生成代理</h2>
+<div class="intro">这个类是 Spring AOP 的<b>总调度</b>——它是一个 BeanPostProcessor，在 <code>postProcessAfterInitialization</code> 阶段检查每个 Bean 是否匹配任何 Advisor，匹配就创建代理。</div>
+
+<div class="code"><div class="bar"><span class="file">AbstractAutoProxyCreator.postProcessAfterInitialization()</span></div>
+<div class="ct"><span class="k">public</span> Object <span class="f">postProcessAfterInitialization</span>(Object bean, String beanName) {
+    <span class="k">if</span> (bean != <span class="k">null</span>) {
+        Object cacheKey = getCacheKey(bean.getClass(), beanName);
+        <span class="k">if</span> (!<span class="k">this</span>.earlyProxyReferences.contains(cacheKey)) {
+            <span class="c">// ★ 检查这个 Bean 是否匹配任何 Advisor</span>
+            <span class="k">return</span> wrapIfNecessary(bean, beanName, cacheKey);
+        }
+    }
+    <span class="k">return</span> bean;
+}
+
+<span class="k">protected</span> Object <span class="f">wrapIfNecessary</span>(Object bean, String beanName, Object cacheKey) {
+    <span class="c">// 获取所有匹配该 Bean 的 Advisor</span>
+    Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, <span class="k">null</span>);
+    <span class="k">if</span> (specificInterceptors != DO_NOT_PROXY) {
+        <span class="c">// 创建代理</span>
+        Object proxy = createProxy(bean.getClass(), beanName, specificInterceptors, <span class="k">new</span> <span class="t">SingletonTargetSource</span>(bean));
+        <span class="k">return</span> proxy;
+    }
+    <span class="k">return</span> bean;
+}</div></div>
+<div class="note"><strong>💡 面试关键：</strong>为什么代理在 after 阶段生成、不在 before？因为 before 时 @PostConstruct 还没执行，Bean 是半成品。after 时才是成品——代理对象能完整替代原始 Bean。</div>
+</div>
+
+<div class="back"><a href="/q10.html">← Q10 答题</a> · <a href="/">返回索引</a></div>
+</div>
+
+<script>
+const out = document.getElementById('console');
+function log(m,c){const d=document.createElement('div');d.className=c||'';d.textContent='> '+m;out.appendChild(d);out.scrollTop=out.scrollHeight}
+function hl(id,c){document.getElementById(id).classList.add(c)}
+function unhl(id,c){document.getElementById(id).classList.remove(c)}
+let running=false;
+
+async function run(){
+  if(running)return;running=true;
+  out.innerHTML='';
+  const tx='s-tx',lg='s-log',tg='s-target';
+  log('proxy.doWork() 被调用','');await s(500);
+  log('JdkDynamicAopProxy.invoke() → 获取拦截器链...','');
+  log('匹配到 2 个 Advisor: TxInterceptor, LogInterceptor','');await s(400);
+  log('new ReflectiveMethodInvocation(target, method, args, [Tx,Log])','');await s(400);
+  log('invocation.proceed() → currentIndex=0 → TxInterceptor.invoke()','tx');await s(500);
+  hl(tx,'gl');log('TxInterceptor: 开启事务 BEGIN','tx');await s(400);
+  log('TxInterceptor: 调用 mi.proceed() → currentIndex=1','tx');await s(300);
+  hl(lg,'gl');log('LogInterceptor: [INFO] method start','lg');await s(400);
+  log('LogInterceptor: 调用 mi.proceed() → currentIndex=2','lg');await s(300);
+  hl(tg,'gg');log('→ 拦截器链走完，currentIndex==size → invokeJoinpoint()','tg');await s(500);
+  log('→ method.invoke(target, args) 执行真正的业务逻辑','tg');await s(500);
+  log('→ 目标方法返回 "OK"','tg');await s(300);
+  unhl(tg,'gg');unhl(lg,'gl');
+  log('LogInterceptor: [INFO] method end (耗时 15ms) ← proceed 返回后','lg');await s(400);
+  log('TxInterceptor: 提交事务 COMMIT ← proceed 返回后','tx');await s(400);
+  unhl(tx,'gl');
+  log('invocation.proceed() 全部返回 → JdkDynamicAopProxy.invoke() 返回 "OK"','');await s(300);
+  log('客户端收到返回值: "OK"','');
+  running=false;
+}
+async function s(ms){return new Promise(r=>setTimeout(r,ms))}
+function resetSim(){
+  out.innerHTML='// 点击"执行"按钮开始演示...';
+  document.querySelectorAll('.fb').forEach(el=>el.classList.remove('gl','gg'));
+}
+</script>
+</body>
+</html>

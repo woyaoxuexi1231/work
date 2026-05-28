@@ -14,6 +14,10 @@ server:
 
 # ==================== Dubbo 完整配置 ====================
 dubbo:
+  # ---------- 服务扫描 ----------
+  scan:
+    base-packages: com.example.dubbo.demo.consumer.controller
+
   # ---------- 应用配置 ----------
   application:
     name: dubbo-demo-consumer
@@ -21,15 +25,11 @@ dubbo:
 
   # ---------- 注册中心配置 ----------
   registry:
-    # Nacos 注册中心地址
-    address: "nacos://192.168.3.100:8848"
+    # Nacos 注册中心地址（含认证参数，双引号防止 & 被 YAML 误解析）
+    address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
     timeout: 10000
     # 启动时不检查注册中心是否可用
     check: false
-    # Nacos 认证信息（parameters 方式，稳定可靠）
-    parameters:
-      username: nacos
-      password: nacos
 
   # ---------- Consumer 默认配置（ConsumerConfig） ----------
   consumer:

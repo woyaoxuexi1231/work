@@ -1,6 +1,5 @@
 package com.example.dubbo.demo.consumer.config;
 
-import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -47,7 +46,7 @@ import org.springframework.context.annotation.Configuration;
  * @see EnableDubbo
  */
 @Configuration
-@EnableDubbo
+// @EnableDubbo 已移至 ConsumerBootstrap 启动类上
 public class DubboConsumerConfig {
 
     /**
