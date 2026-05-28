@@ -5,6 +5,12 @@ import java.util.List;
 
 public class MonitorUtil {
 
+    public static void printSeparator(String msg) {
+        System.out.println("\n═══════════════════════════════════════");
+        System.out.println("  " + msg);
+        System.out.println("═══════════════════════════════════════\n");
+    }
+
     public static void printMemory(String tag) {
 
         Runtime rt = Runtime.getRuntime();
