@@ -18,7 +18,7 @@ spring:
   # 它们通过各自的 main() 独立运行，但被全局 @ComponentScan 扫描到时
   # 会冲突。启用覆盖让容器选择最后一个注册的。
   main:
-    allow-bean-definition-overriding: true
+    allow-circular-references: true
 
 server:
   port: 8080
