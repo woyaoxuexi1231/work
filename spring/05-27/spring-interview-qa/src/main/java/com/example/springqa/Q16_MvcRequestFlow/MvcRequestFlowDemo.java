@@ -1,6 +1,7 @@
 package com.example.springqa.Q16_MvcRequestFlow;
 
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,5 +28,6 @@ public class MvcRequestFlowDemo {
     @PostMapping("/q16-post")
     public void post(@RequestBody Map<String, Object> map) {
         System.out.println("q16-post收到请求: " + map);
+        throw new RuntimeException("测试异常");
     }
 }
