@@ -6,6 +6,8 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Properties;
+
 /**
  * 1. 核心概念与特性
  * <p>
@@ -57,7 +59,7 @@ public class CoreConceptsDemo {
      * 3. 集群模式下只支持 db0
      */
     public String databaseSelect() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 写入 db0
         conn.select(0);
@@ -101,11 +103,11 @@ public class CoreConceptsDemo {
      * - keyspace：各库键数量
      */
     public String serverInfo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
-        var serverInfo = conn.info("server");
-        var memoryInfo = conn.info("memory");
-        var statsInfo = conn.info("stats");
+        Properties serverInfo = conn.info("server");
+        Properties memoryInfo = conn.info("memory");
+        Properties statsInfo = conn.info("stats");
 
         String result = String.format(
                 "版本=%s, 运行时间=%s秒, 内存使用=%s, 命令执行次数=%s",

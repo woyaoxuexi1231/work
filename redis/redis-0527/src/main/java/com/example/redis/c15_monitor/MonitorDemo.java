@@ -6,6 +6,10 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
 /**
  * 15. 慢查询与监控
  * <p>
@@ -48,17 +52,17 @@ public class MonitorDemo {
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * INFO 命令 —— 运维第一入口
+     * INFO 命令 -- 运维第一入口
      * <p>
      * INFO [section] 返回服务器各模块的详细信息。
      * 不指定 section 则返回所有信息。
      */
     public String infoCommand() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
-        var serverInfo = conn.info("server");
-        var clientsInfo = conn.info("clients");
-        var statsInfo = conn.info("stats");
+        Properties serverInfo = conn.info("server");
+        Properties clientsInfo = conn.info("clients");
+        Properties statsInfo = conn.info("stats");
 
         String result = String.format(
                 "version=%s, uptime=%ss, clients=%s, blocked=%s, " +
@@ -95,21 +99,23 @@ public class MonitorDemo {
      * 是排查性能问题的重要工具。
      */
     public String slowLog() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
-
-        // SLOWLOG GET: 获取最近的慢查询
-        var slowLog = conn.slowLogGet(10);
-        log.info("[SLOWLOG] 最近 {} 条慢查询:", slowLog.size());
-        for (var entry : slowLog) {
-            log.info("  id={}, duration={}μs, args={}",
-                    entry.getId(), entry.getDuration(), entry.getArgs());
-        }
-
+        // SLOWLOG 命令说明
+        // SLOWLOG GET [N]: 获取最近 N 条慢查询
         // SLOWLOG LEN: 慢查询日志长度
-        Long len = conn.slowLogLen();
-        log.info("[SLOWLOG] 日志长度: {}", len);
+        // SLOWLOG RESET: 清空慢查询日志
+        //
+        // 配置：
+        // slowlog-log-slower-than 10000  (微秒，10ms)
+        // slowlog-max-len 128
+        //
+        // 可通过 redis-cli 执行：
+        // redis-cli -h 192.168.3.100 -a 123456 SLOWLOG GET 10
+        // redis-cli -h 192.168.3.100 -a 123456 SLOWLOG LEN
 
-        return "慢查询数=" + slowLog.size();
+        log.info("[SLOWLOG] 请通过 redis-cli 执行 SLOWLOG GET 10 查看慢查询");
+        log.info("[SLOWLOG] 请通过 redis-cli 执行 SLOWLOG LEN 查看日志长度");
+
+        return "慢查询命令说明已输出到日志";
     }
 
     /**
@@ -126,15 +132,13 @@ public class MonitorDemo {
      * - age: 连接存活时间（秒）
      */
     public String clientInfo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // CLIENT LIST
-        var clients = conn.getClientList();
+        List<org.springframework.data.redis.core.types.RedisClientInfo> clients = conn.getClientList();
         log.info("[CLIENT LIST] 当前连接数: {}", clients.size());
-        for (var client : clients) {
-            log.info("  id={}, addr={}, db={}, cmd={}, idle={}s",
-                    client.get("id"), client.get("addr"),
-                    client.get("db"), client.get("cmd"), client.get("idle"));
+        for (org.springframework.data.redis.core.types.RedisClientInfo client : clients) {
+            log.info("  {}", client);
         }
 
         return "连接数=" + clients.size();

@@ -3,8 +3,11 @@ package com.example.redis.c04_typecmds;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -46,7 +49,7 @@ public class StringCmdDemo {
      * 注意：MSET 是原子的，要么全成功要么全失败
      */
     public String basicOps() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         // SET 基础用法
         ops.set("str:name", "Redis");
@@ -70,16 +73,16 @@ public class StringCmdDemo {
         log.info("[GET] str:name = {}", value);
 
         // MSET / MGET: 批量操作
-        ops.multiSet(Map.of(
-                "str:k1", "v1",
-                "str:k2", "v2",
-                "str:k3", "v3"
-        ));
-        List<String> values = ops.multiGet(List.of("str:k1", "str:k2", "str:k3"));
+        Map<String, String> batchMap = new HashMap<>();
+        batchMap.put("str:k1", "v1");
+        batchMap.put("str:k2", "v2");
+        batchMap.put("str:k3", "v3");
+        ops.multiSet(batchMap);
+        List<String> values = ops.multiGet(Arrays.asList("str:k1", "str:k2", "str:k3"));
         log.info("[MGET] k1={}, k2={}, k3={}", values.get(0), values.get(1), values.get(2));
 
         // 清理
-        redisTemplate.delete(List.of("str:name", "str:token", "str:new_key", "str:k1", "str:k2", "str:k3"));
+        redisTemplate.delete(Arrays.asList("str:name", "str:token", "str:new_key", "str:k1", "str:k2", "str:k3"));
 
         return "SET/GET/MSET/MGET 演示完成";
     }
@@ -104,7 +107,7 @@ public class StringCmdDemo {
      * - 限流计数器
      */
     public String counterOps() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         // 初始化计数器
         ops.set("counter:page_view", "0");
@@ -147,7 +150,7 @@ public class StringCmdDemo {
      * STRLEN 返回的是字节长度，不是字符长度
      */
     public String stringManipulation() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         // APPEND: 追加
         ops.set("str:msg", "Hello");
@@ -189,7 +192,7 @@ public class StringCmdDemo {
      * 生产环境建议使用 Redisson 或 RedLock 实现，本例仅演示原理。
      */
     public String distributedLock() {
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
 
         String lockKey = "lock:order:1001";
         String lockValue = java.util.UUID.randomUUID().toString();

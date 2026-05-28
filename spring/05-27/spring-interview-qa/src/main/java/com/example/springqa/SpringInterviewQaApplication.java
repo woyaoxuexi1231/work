@@ -2,6 +2,8 @@ package com.example.springqa;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 /**
  * Spring 面试 24 问 — 代码答题项目
@@ -46,6 +48,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * @author Spring Interview QA
  */
 @SpringBootApplication
+@EnableAspectJAutoProxy(exposeProxy = true)   // 全局启用 AOP + 暴露代理（Q07-Q11 需要）
+@EnableTransactionManagement                   // 全局启用声明式事务（Q12-Q14 需要）
+// 自动扫描所有 Q* 包中的 @Component / @Configuration ——
+// 每个包是 Spring Boot 环境下的独立模块，通过 REST 端点触发演示。
 public class SpringInterviewQaApplication {
 
     public static void main(String[] args) {

@@ -4,8 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.SessionCallback;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -49,13 +51,13 @@ public class TransactionDemo {
         redisTemplate.delete("tx:account:A");
         redisTemplate.delete("tx:account:B");
 
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
         ops.set("tx:account:A", "1000");
         ops.set("tx:account:B", "500");
 
         // 使用 SessionCallback 执行事务
         // SessionCallback 保证所有命令在同一个连接中执行
-        List<Object> results = redisTemplate.execute(new SessionCallback<>() {
+        List<Object> results = redisTemplate.execute(new SessionCallback<List<Object>>() {
             @Override
             @SuppressWarnings("unchecked")
             public List<Object> execute(org.springframework.data.redis.core.RedisOperations operations) {
@@ -98,7 +100,7 @@ public class TransactionDemo {
         redisTemplate.delete("tx:lock:A");
         redisTemplate.delete("tx:lock:B");
 
-        var ops = redisTemplate.opsForValue();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
         ops.set("tx:lock:A", "1000");
         ops.set("tx:lock:B", "500");
 
@@ -107,12 +109,12 @@ public class TransactionDemo {
 
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                List<Object> results = redisTemplate.execute(new SessionCallback<>() {
+                List<Object> results = redisTemplate.execute(new SessionCallback<List<Object>>() {
                     @Override
                     @SuppressWarnings("unchecked")
                     public List<Object> execute(org.springframework.data.redis.core.RedisOperations operations) {
                         // WATCH: 监视账户键
-                        operations.watch(List.of("tx:lock:A", "tx:lock:B"));
+                        operations.watch(Arrays.asList("tx:lock:A", "tx:lock:B"));
 
                         // 读取余额
                         String aBalance = (String) operations.opsForValue().get("tx:lock:A");

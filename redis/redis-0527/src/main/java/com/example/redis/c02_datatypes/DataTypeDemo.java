@@ -3,7 +3,13 @@ package com.example.redis.c02_datatypes;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.HashOperations;
+import java.util.Arrays;
+import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,12 +46,16 @@ public class DataTypeDemo {
      * raw:   字符串长度 > 44 字节时，redisObject 与 SDS 分开分配（两次分配）
      */
     public String stringEncoding() {
-        var ops = redisTemplate.opsForValue();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         ops.set("str:int", "12345");
         ops.set("str:embstr", "hello");
-        ops.set("str:raw", "a".repeat(100));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            sb.append("a");
+        }
+        ops.set("str:raw", sb.toString());
 
         String encInt = objectEncoding(conn, "str:int");
         String encEmbstr = objectEncoding(conn, "str:embstr");
@@ -71,8 +81,8 @@ public class DataTypeDemo {
      * 超过阈值后自动转换为 hashtable 编码。
      */
     public String hashEncoding() {
-        var ops = redisTemplate.opsForHash();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        HashOperations<String, Object, Object> ops = redisTemplate.opsForHash();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 小 hash → listpack 编码
         ops.put("hash:small", "name", "张三");
@@ -101,8 +111,8 @@ public class DataTypeDemo {
      * hashtable: 包含非整数元素或数量超限时使用
      */
     public String setEncoding() {
-        var ops = redisTemplate.opsForSet();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        SetOperations<String, String> ops = redisTemplate.opsForSet();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 全整数小集合 → intset
         for (int i = 0; i < 10; i++) {
@@ -130,8 +140,8 @@ public class DataTypeDemo {
      * skiplist + dict: 元素多或成员长时，跳表支持范围查询，dict 支持 O(1) 查分
      */
     public String zsetEncoding() {
-        var ops = redisTemplate.opsForZSet();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        ZSetOperations<String, String> ops = redisTemplate.opsForZSet();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
         // 小 zset → listpack
         ops.add("zset:small", "a", 1.0);
@@ -163,10 +173,10 @@ public class DataTypeDemo {
      * - list-max-listpack-size 控制每个节点的最大大小
      */
     public String listEncoding() {
-        var ops = redisTemplate.opsForList();
-        var conn = redisTemplate.getConnectionFactory().getConnection();
+        ListOperations<String, String> ops = redisTemplate.opsForList();
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
 
-        ops.rightPush("list:demo", "a", "b", "c", "d", "e");
+        ops.rightPushAll("list:demo", Arrays.asList("a", "b", "c", "d", "e"));
         String enc = objectEncoding(conn, "list:demo");
 
         log.info("[List 编码] 5元素列表 → {}", enc);
@@ -182,7 +192,7 @@ public class DataTypeDemo {
      */
     private String objectEncoding(RedisConnection conn, String key) {
         // OBJECT ENCODING key 返回该键底层使用的编码名称
-        byte[] result = conn.encoding(key.getBytes());
+        byte[] result = (byte[]) conn.execute("OBJECT", "ENCODING".getBytes(), key.getBytes());
         return result != null ? new String(result) : "nil";
     }
 }

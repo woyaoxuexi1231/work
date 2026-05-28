@@ -2,9 +2,9 @@ spring:
   application:
     name: spring-interview-qa
 
-  # H2 内存数据库 — 用于事务 Demo
+  # H2 内存数据库 — 事务 Demo 使用（各包用独立 DB 名避免冲突）
   datasource:
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:main;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -14,9 +14,11 @@ spring:
       enabled: true
 
   # ===== Q06: Bean 覆盖开关 =====
-  # spring.main.allow-bean-definition-overriding=true
-  # 默认 false：同名 Bean 启动时报错，防止意外覆盖
-  # 设为 true：后加载的 Bean 覆盖先加载的
+  # 本项目 24 个 Demo 各定义了同名 dataSource / transactionManager Bean，
+  # 它们通过各自的 main() 独立运行，但被全局 @ComponentScan 扫描到时
+  # 会冲突。启用覆盖让容器选择最后一个注册的。
+  main:
+    allow-bean-definition-overriding: true
 
 server:
   port: 8080

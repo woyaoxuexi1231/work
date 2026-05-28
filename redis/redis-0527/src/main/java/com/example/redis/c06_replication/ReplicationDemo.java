@@ -6,6 +6,8 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Properties;
+
 /**
  * 6. 复制（主从）
  * <p>
@@ -33,7 +35,7 @@ import org.springframework.stereotype.Service;
  * <p>
  * 复制积压缓冲区（replication backlog）：
  * - 默认 1MB，可通过 repl-backlog-size 配置
- * - 建议设置为：写入速率 × 平均断线时间
+ * - 建议设置为：写入速率 x 平均断线时间
  * <p>
  * 复制拓扑：
  * - 一主多从：简单，适合读多写少
@@ -57,8 +59,8 @@ public class ReplicationDemo {
      * - repl_backlog_size: 积压缓冲区大小
      */
     public String replicationInfo() {
-        var conn = redisTemplate.getConnectionFactory().getConnection();
-        var info = conn.info("replication");
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        Properties info = conn.info("replication");
 
         String result = String.format(
                 "role=%s, connected_slaves=%s, repl_backlog_size=%s",
@@ -100,28 +102,23 @@ public class ReplicationDemo {
      *   最少从节点保护：若连接的从节点少于指定数量，主节点拒绝写入
      */
     public String replicationConfig() {
-        String config = """
-                主从复制关键配置：
-
-                # 主节点配置
-                requirepass 123456
-                min-replicas-to-write 1
-                min-replicas-max-lag 10
-
-                # 从节点配置
-                replicaof 192.168.1.100 6379
-                masterauth 123456
-                replica-read-only yes
-
-                # 性能优化
-                repl-backlog-size 256mb
-                repl-diskless-sync yes
-                repl-diskless-sync-delay 5
-
-                # 无盘复制适用于：
-                # - 磁盘 I/O 慢但网络带宽大的场景
-                # - 从节点数量多时，避免多次生成 RDB 文件
-                """;
+        String config =
+                "主从复制关键配置：\n\n"
+                + "# 主节点配置\n"
+                + "requirepass 123456\n"
+                + "min-replicas-to-write 1\n"
+                + "min-replicas-max-lag 10\n\n"
+                + "# 从节点配置\n"
+                + "replicaof 192.168.1.100 6379\n"
+                + "masterauth 123456\n"
+                + "replica-read-only yes\n\n"
+                + "# 性能优化\n"
+                + "repl-backlog-size 256mb\n"
+                + "repl-diskless-sync yes\n"
+                + "repl-diskless-sync-delay 5\n\n"
+                + "# 无盘复制适用于：\n"
+                + "# - 磁盘 I/O 慢但网络带宽大的场景\n"
+                + "# - 从节点数量多时，避免多次生成 RDB 文件";
 
         log.info("[复制配置]\n{}", config);
         return "配置已输出到日志";
@@ -142,19 +139,16 @@ public class ReplicationDemo {
      * - 自动通知客户端新主节点地址
      */
     public String failoverNotes() {
-        String notes = """
-                主从切换注意事项：
-
-                手动切换：
-                1. SLAVEOF NO ONE（新主节点）
-                2. SLAVEOF <new-master> <port>（其他从节点）
-                3. 更新客户端配置
-
-                自动切换（Sentinel）：
-                - sentinel monitor mymaster 127.0.0.1 6379 2
-                - sentinel down-after-milliseconds mymaster 5000
-                - sentinel failover-timeout mymaster 60000
-                """;
+        String notes =
+                "主从切换注意事项：\n\n"
+                + "手动切换：\n"
+                + "1. SLAVEOF NO ONE（新主节点）\n"
+                + "2. SLAVEOF <new-master> <port>（其他从节点）\n"
+                + "3. 更新客户端配置\n\n"
+                + "自动切换（Sentinel）：\n"
+                + "- sentinel monitor mymaster 127.0.0.1 6379 2\n"
+                + "- sentinel down-after-milliseconds mymaster 5000\n"
+                + "- sentinel failover-timeout mymaster 60000";
 
         log.info("[主从切换]\n{}", notes);
         return "注意事项已输出";

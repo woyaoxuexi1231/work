@@ -2,9 +2,11 @@ package com.example.redis.c04_typecmds;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -49,7 +51,7 @@ public class SetCmdDemo {
      * SPOP: 随机弹出成员（删除）
      */
     public String basicOps() {
-        var ops = redisTemplate.opsForSet();
+        SetOperations<String, String> ops = redisTemplate.opsForSet();
 
         // SADD: 添加成员
         ops.add("set:tags:article:1", "Java", "Redis", "Spring", "分布式");
@@ -73,11 +75,11 @@ public class SetCmdDemo {
         log.info("[SRANDMEMBER] 随机标签: {}", random);
 
         // SRANDMEMBER 多个（可能重复）
-        var randomList = ops.randomMembers("set:tags:article:1", 3);
+        List<String> randomList = ops.randomMembers("set:tags:article:1", 3);
         log.info("[SRANDMEMBER x3] {}", randomList);
 
         // SRANDMEMBER distinct（不重复）
-        var distinctRandom = ops.distinctRandomMembers("set:tags:article:1", 3);
+        Set<String> distinctRandom = ops.distinctRandomMembers("set:tags:article:1", 3);
         log.info("[SRANDMEMBER x3 distinct] {}", distinctRandom);
 
         // SPOP: 随机弹出（删除并返回）
@@ -110,7 +112,7 @@ public class SetCmdDemo {
      * - 合并标签 = SUNION article:1:tags article:2:tags
      */
     public String setOperations() {
-        var ops = redisTemplate.opsForSet();
+        SetOperations<String, String> ops = redisTemplate.opsForSet();
 
         // 准备数据：用户关注关系
         ops.add("set:user:A:following", "B", "C", "D", "E");
@@ -149,7 +151,7 @@ public class SetCmdDemo {
      *                     或 SPOP（删除，不可重复中奖）
      */
     public String lotteryDemo() {
-        var ops = redisTemplate.opsForSet();
+        SetOperations<String, String> ops = redisTemplate.opsForSet();
 
         // 用户参与抽奖
         ops.add("set:lottery", "user:1001", "user:1002", "user:1003", "user:1004", "user:1005");
@@ -158,7 +160,7 @@ public class SetCmdDemo {
         log.info("[抽奖] 参与人数: {}", participants);
 
         // 随机抽取 2 名中奖者（SRANDMEMBER 不删除，可重复中奖）
-        var winners = ops.distinctRandomMembers("set:lottery", 2);
+        Set<String> winners = ops.distinctRandomMembers("set:lottery", 2);
         log.info("[抽奖] 中奖者: {}", winners);
 
         // 抽取 1 名（SPOP 删除，保证不重复中奖）

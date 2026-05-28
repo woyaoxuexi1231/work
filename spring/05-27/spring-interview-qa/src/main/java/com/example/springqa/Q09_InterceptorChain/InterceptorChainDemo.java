@@ -3,192 +3,112 @@ package com.example.springqa.Q09_InterceptorChain;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.EnableAspectJAutoProxy;
-import org.springframework.core.Ordered;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * <h1>Q9：拦截链 — 多个切面的执行顺序</h1>
  *
- * <h2>面试点</h2>
- * <ul>
- *   <li>多个切面作用于同一方法时，执行顺序如何控制？</li>
- *   <li>@Order 与 @Priority 的区别？</li>
- *   <li>环绕增强的 proceed() 如果不调用会怎样？</li>
- * </ul>
- *
- * <h2>执行顺序</h2>
- *
- * <p>多个切面形成一条"责任链"：</p>
+ * <h2>执行顺序（洋葱模型）</h2>
  * <pre>
- * 外部调用
- *   → 切面1 @Before (order 小)
- *     → 切面2 @Before (order 大)
- *       → 切面3 @Before (order 更大)
- *         → 目标方法执行
- *       → 切面3 @After / @AfterReturning
- *     → 切面2 @After / @AfterReturning
- *   → 切面1 @After / @AfterReturning
- *
- * // 记忆口诀：进入时 order 小先执行（类似栈——先进后出）
- * // @Around 的 proceed() 是分水岭：之前是进，之后是出
+ * 进入: order 小的先进入（先进后出）
+ *   @Order(1) 进入 → @Order(2) 进入 → @Order(3) 进入
+ *     → 目标方法
+ *   @Order(3) 退出 → @Order(2) 退出 → @Order(1) 退出
  * </pre>
  *
  * <h2>@Order vs @Priority</h2>
- * <pre>
- * | 特性      | @Order                          | @Priority (JSR-250)           |
- * |----------|---------------------------------|-------------------------------|
- * | 标准     | Spring 原生                     | JDK 标准                      |
- * | 范围     | 切面 / Bean / Filter / Interceptor | 更通用                        |
- * | 优先级值 | 越小越高                        | 越小越高                      |
- * | Spring   | 切面排序默认用 @Order           | 需要额外配置                   |
- * </pre>
+ * <p>@Order 是 Spring 原生，@Priority 是 JSR-250 标准。切面排序默认用 @Order。</p>
  *
  * <h2>proceed() 不调用的后果</h2>
- * <p>proceed() 是分水岭——调用它才会继续执行链中的下一个切面。
- * 如果不调用：后续所有切面 + 目标方法都不会执行。
- * <b>这是实现"权限拦截"的基础</b>——如果权限不通过，直接返回，不调用 proceed()。</p>
- *
- * <h2>Spring 为什么这样设计？</h2>
- * <p>责任链模式是拦截器/过滤器的经典实现。Spring 选择用 @Order 控制排序，
- * 是因为这个注解已经被广泛使用（@Order 在 Spring 2.0 就有了），
- * 复用现有机制比引入新概念更好。</p>
- *
- * @author Spring Interview QA
+ * <p>后续所有切面 + 目标方法都不会执行——这是"权限拦截"的实现基础。</p>
  */
+@Component
 public class InterceptorChainDemo {
 
-    public static void main(String[] args) {
-        System.out.println("========== Q9: 拦截链 Demo ==========\n");
+    private final Q09BusinessService service;
 
-        AnnotationConfigApplicationContext ctx =
-                new AnnotationConfigApplicationContext(DemoConfig.class);
+    public InterceptorChainDemo(Q09BusinessService service) {
+        this.service = service;
+    }
 
-        BusinessService service = ctx.getBean(BusinessService.class);
-        System.out.println(">>> 调用 doBusiness():\n");
-        service.doBusiness();
+    public String runDemo() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Q09: 拦截链 ===\n\n");
 
-        System.out.println("\n>>> 调用 doBusinessWithBlock():\n");
-        service.doBusinessWithBlock();
+        sb.append("调用 doBusiness()：\n");
+        sb.append("  ").append(service.doBusiness()).append("\n\n");
 
-        ctx.close();
-        System.out.println("\n========== Demo 结束 ==========");
+        sb.append("调用 doBusinessWithBlock()（权限不通过）：\n");
+        sb.append("  ").append(service.doBusinessWithBlock()).append("\n\n");
+
+        sb.append("【执行顺序验证】\n");
+        sb.append("查看控制台日志，输出顺序应为：\n");
+        sb.append("  [Logging  @Order(1)] >>> 进入（外层）\n");
+        sb.append("  [Security @Order(2)] >>> 权限检查...\n");
+        sb.append("  [Tx       @Order(3)] >>> 开启事务（最内层）\n");
+        sb.append("    → 目标方法执行\n");
+        sb.append("  [Tx       @Order(3)] <<< 提交事务\n");
+        sb.append("  [Security @Order(2)] <<< 权限通过\n");
+        sb.append("  [Logging  @Order(1)] <<< 退出\n\n");
+
+        sb.append("【为什么事务在最内层？】\n");
+        sb.append("事务应最靠近业务代码——外层切面执行时间长会浪费数据库连接。\n");
+        sb.append("Spring @Transactional 默认 order = LOWEST_PRECEDENCE（最低优先级），\n");
+        sb.append("保证用户自定义切面在外层、事务在最内层。\n");
+
+        return sb.toString();
     }
 
     // ================================================================
-    // 三个切面，模拟：日志 → 权限 → 性能监控
-    // ================================================================
-
-    /**
-     * 日志切面：order=1（最外层，最先进入，最后退出）
-     *
-     * 【设计意图】
-     * 为什么日志切面放在最外层？
-     * 因为它要记录"整个请求"的开始和结束时间。
-     * 如果放在内层，那就记录不到外层切面的耗时。
-     */
-    @Aspect
-    @Component
-    @Order(1)
+    @Aspect @Component @Order(1)
     static class LoggingAspect {
-
-        @Around("execution(* com.example.springqa.Q09_InterceptorChain.BusinessService.*(..))")
+        @Around("execution(* com.example.springqa.Q09_InterceptorChain.Q09BusinessService.*(..))")
         public Object around(ProceedingJoinPoint pjp) throws Throwable {
-            System.out.println("  [Logging  @Order(1)] >>> 进入（外层）");
-            Object result = pjp.proceed();  // ← 调用下一个切面
-            System.out.println("  [Logging  @Order(1)] <<< 退出（外层）");
+            System.out.println("  [Logging  @Order(1)] >>> 进入");
+            Object result = pjp.proceed();
+            System.out.println("  [Logging  @Order(1)] <<< 退出");
             return result;
         }
     }
 
-    /**
-     * 权限切面：order=2（中间层）
-     *
-     * 注意 doBusinessWithBlock 方法——如果权限不通过，
-     * proceed() 不被调用，后续所有切面和目标方法都不会执行。
-     */
-    @Aspect
-    @Component
-    @Order(2)
+    @Aspect @Component @Order(2)
     static class SecurityAspect {
-
-        @Around("execution(* com.example.springqa.Q09_InterceptorChain.BusinessService.*(..))")
+        @Around("execution(* com.example.springqa.Q09_InterceptorChain.Q09BusinessService.*(..))")
         public Object around(ProceedingJoinPoint pjp) throws Throwable {
-            String methodName = pjp.getSignature().getName();
             System.out.println("  [Security @Order(2)] >>> 权限检查...");
-
-            if (methodName.contains("Block")) {
-                // 模拟权限不通过——不调用 proceed()
-                System.out.println("  [Security @Order(2)] 🚫 权限不通过，阻断请求！");
-                /*
-                 * 【核心知识点】
-                 * 不调用 proceed() 意味着：
-                 * 1. 当前切面的 after 部分不会执行
-                 * 2. 后续切面（@Order(3)）完全不会执行
-                 * 3. 目标方法不会执行
-                 *
-                 * 这就是 Spring Security 的 @PreAuthorize 实现基础！
-                 * 如果表达式求值为 false，切面直接抛 AccessDeniedException，
-                 * 不调用 proceed()。
-                 */
-                return "BLOCKED";
+            if (pjp.getSignature().getName().contains("Block")) {
+                System.out.println("  [Security @Order(2)] 🚫 权限不通过，阻断！");
+                return "BLOCKED"; // 不调用 proceed() → 后续全部跳过
             }
-
             Object result = pjp.proceed();
-            System.out.println("  [Security @Order(2)] <<< 权限通过，清理安全上下文");
+            System.out.println("  [Security @Order(2)] <<< 权限通过");
             return result;
         }
     }
 
-    /**
-     * 事务切面：order=3（最内层，最后进入，最先退出）
-     *
-     * 【设计意图】
-     * 为什么事务切面放在最内层？
-     * 因为事务应该在最靠近业务代码的地方开启和提交——
-     * 如果外层切面（如日志）执行了很长时间，事务持有数据库连接会浪费资源。
-     *
-     * Spring 的 @Transactional 默认 order = Ordered.LOWEST_PRECEDENCE
-     * （即 Integer.MAX_VALUE），这样用户自定义切面默认在外层，
-     * 事务在最内层。这是合理的默认值。
-     */
-    @Aspect
-    @Component
-    @Order(3)
+    @Aspect @Component @Order(3)
     static class TransactionAspect {
-
-        @Around("execution(* com.example.springqa.Q09_InterceptorChain.BusinessService.*(..))")
+        @Around("execution(* com.example.springqa.Q09_InterceptorChain.Q09BusinessService.*(..))")
         public Object around(ProceedingJoinPoint pjp) throws Throwable {
-            System.out.println("  [Tx       @Order(3)] >>> 开启事务（最内层）");
+            System.out.println("  [Tx       @Order(3)] >>> 开启事务");
             Object result = pjp.proceed();
-            System.out.println("  [Tx       @Order(3)] <<< 提交事务（最内层）");
+            System.out.println("  [Tx       @Order(3)] <<< 提交事务");
             return result;
         }
     }
 
-    // ================================================================
     @Component
-    static class BusinessService {
-
+    static class Q09BusinessService {
         public String doBusiness() {
-            System.out.println("    🎯 目标方法 doBusiness() 执行中...");
+            System.out.println("    🎯 目标方法 doBusiness()");
             return "OK";
         }
 
         public String doBusinessWithBlock() {
-            System.out.println("    🎯 目标方法 doBusinessWithBlock() 执行中...");
+            System.out.println("    🎯 目标方法 doBusinessWithBlock()");
             return "OK";
         }
-    }
-
-    // ================================================================
-    @Configuration
-    @ComponentScan(basePackageClasses = InterceptorChainDemo.class)
-    @EnableAspectJAutoProxy
-    static class DemoConfig {
     }
 }

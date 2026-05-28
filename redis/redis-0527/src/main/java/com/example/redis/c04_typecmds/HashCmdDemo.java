@@ -2,11 +2,17 @@ package com.example.redis.c04_typecmds;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 4. 各类型核心命令 —— Hash
@@ -45,7 +51,7 @@ public class HashCmdDemo {
      * HLEN: 返回字段数量
      */
     public String basicOps() {
-        var ops = redisTemplate.opsForHash();
+        HashOperations<String, Object, Object> ops = redisTemplate.opsForHash();
 
         // HSET: 设置单个字段
         ops.put("hash:user:1001", "name", "张三");
@@ -53,18 +59,18 @@ public class HashCmdDemo {
         ops.put("hash:user:1001", "email", "zhangsan@example.com");
 
         // HSET 批量设置（推荐，一次网络往返）
-        ops.putAll("hash:user:1002", Map.of(
-                "name", "李四",
-                "age", "32",
-                "email", "lisi@example.com"
-        ));
+        Map<String, String> user1002 = new HashMap<>();
+        user1002.put("name", "李四");
+        user1002.put("age", "32");
+        user1002.put("email", "lisi@example.com");
+        ops.putAll("hash:user:1002", user1002);
 
         // HGET: 获取单个字段
         String name = (String) ops.get("hash:user:1001", "name");
         log.info("[HGET] user:1001 name={}", name);
 
         // HMGET: 批量获取
-        List<Object> fields = ops.multiGet("hash:user:1001", List.of("name", "age", "email"));
+        List<Object> fields = ops.multiGet("hash:user:1001", Arrays.asList("name", "age", "email"));
         log.info("[HMGET] user:1001 → name={}, age={}, email={}", fields.get(0), fields.get(1), fields.get(2));
 
         // HGETALL: 获取所有字段（生产慎用，大 hash 会阻塞）
@@ -101,7 +107,7 @@ public class HashCmdDemo {
      * HSCAN: 安全遍历（增量式，不阻塞）
      */
     public String counterAndScan() {
-        var ops = redisTemplate.opsForHash();
+        HashOperations<String, Object, Object> ops = redisTemplate.opsForHash();
 
         // HINCRBY: 原子计数
         ops.put("hash:counter:page", "view", "0");
@@ -117,22 +123,23 @@ public class HashCmdDemo {
         log.info("[HINCRBYFLOAT] price={}", price);
 
         // HKEYS / HVALS: 获取所有字段名/值
-        var keys = ops.keys("hash:user:1001".isEmpty() ? "hash:counter:page" : "hash:counter:page");
+        Set<Object> keys = ops.keys("hash:counter:page");
         log.info("[HKEYS] {}", keys);
 
-        var values = ops.values("hash:counter:page");
+        List<Object> values = ops.values("hash:counter:page");
         log.info("[HVALS] {}", values);
 
         // HSCAN: 安全遍历（生产推荐）
         // 对于大 hash，HGETALL 会阻塞，HSCAN 是增量式遍历
-        ops.putAll("hash:large", Map.of());
+        Map<String, String> emptyMap = new HashMap<>();
+        ops.putAll("hash:large", emptyMap);
         for (int i = 0; i < 100; i++) {
             ops.put("hash:large", "field:" + i, "value:" + i);
         }
 
-        var scanOps = redisTemplate.opsForHash();
-        var cursor = scanOps.scan("hash:large",
-                org.springframework.data.redis.core.ScanOptions.scanOptions().count(20).build());
+        HashOperations<String, Object, Object> scanOps = redisTemplate.opsForHash();
+        Cursor<Map.Entry<Object, Object>> cursor = scanOps.scan("hash:large",
+                ScanOptions.scanOptions().count(20).build());
         int scanCount = 0;
         while (cursor.hasNext()) {
             cursor.next();
@@ -168,7 +175,7 @@ public class HashCmdDemo {
      * - 需要字段级过期 → Hash（Redis 7.4+）
      */
     public String objectStorage() {
-        var ops = redisTemplate.opsForHash();
+        HashOperations<String, Object, Object> ops = redisTemplate.opsForHash();
 
         // 使用 Hash 存储用户对象
         String userKey = "user:profile:1001";

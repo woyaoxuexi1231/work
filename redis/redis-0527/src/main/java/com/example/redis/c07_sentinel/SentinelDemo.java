@@ -48,32 +48,27 @@ public class SentinelDemo {
      * spring.redis.sentinel.nodes=host1:26379,host2:26379,host3:26379
      */
     public String sentinelInfo() {
-        String info = """
-                Sentinel 高可用架构说明：
-
-                1. 部署模式：
-                   - 至少 3 个 Sentinel 节点（奇数，避免脑裂）
-                   - Sentinel 与 Redis 实例分开部署
-                   - 每个 Sentinel 监控所有 Redis 主从节点
-
-                2. 故障检测流程：
-                   主节点无响应 → SDOWN（主观下线）
-                   → 询问其他 Sentinel → ODOWN（客观下线）
-                   → Sentinel 领导者选举（Raft）
-                   → 执行故障转移
-
-                3. 故障转移步骤：
-                   a) 选择最优从节点（优先级→offset→runid）
-                   b) SLAVEOF NO ONE 提升为新主
-                   c) 其他从节点 SLAVEOF 新主
-                   d) 更新 Sentinel 配置
-                   e) 通知客户端新主地址
-
-                4. Spring Boot 配置：
-                   spring.redis.sentinel.master=mymaster
-                   spring.redis.sentinel.nodes=s1:26379,s2:26379,s3:26379
-                   spring.redis.sentinel.password=123456
-                """;
+        String info =
+                "Sentinel 高可用架构说明：\n\n"
+                + "1. 部署模式：\n"
+                + "   - 至少 3 个 Sentinel 节点（奇数，避免脑裂）\n"
+                + "   - Sentinel 与 Redis 实例分开部署\n"
+                + "   - 每个 Sentinel 监控所有 Redis 主从节点\n\n"
+                + "2. 故障检测流程：\n"
+                + "   主节点无响应 -> SDOWN（主观下线）\n"
+                + "   -> 询问其他 Sentinel -> ODOWN（客观下线）\n"
+                + "   -> Sentinel 领导者选举（Raft）\n"
+                + "   -> 执行故障转移\n\n"
+                + "3. 故障转移步骤：\n"
+                + "   a) 选择最优从节点（优先级->offset->runid）\n"
+                + "   b) SLAVEOF NO ONE 提升为新主\n"
+                + "   c) 其他从节点 SLAVEOF 新主\n"
+                + "   d) 更新 Sentinel 配置\n"
+                + "   e) 通知客户端新主地址\n\n"
+                + "4. Spring Boot 配置：\n"
+                + "   spring.redis.sentinel.master=mymaster\n"
+                + "   spring.redis.sentinel.nodes=s1:26379,s2:26379,s3:26379\n"
+                + "   spring.redis.sentinel.password=123456";
 
         log.info("[Sentinel]\n{}", info);
         return "Sentinel 说明已输出";
@@ -92,30 +87,22 @@ public class SentinelDemo {
      * - SENTINEL ckquorum <name>: 检查 quorum 是否可达
      */
     public String sentinelCommands() {
-        String commands = """
-                Sentinel 常用命令：
-
-                # 查看所有主节点
-                SENTINEL masters
-
-                # 查看主节点 mymaster 的信息
-                SENTINEL master mymaster
-
-                # 获取主节点地址
-                SENTINEL get-master-addr-by-name mymaster
-
-                # 查看从节点
-                SENTINEL replicas mymaster
-
-                # 查看其他 Sentinel
-                SENTINEL sentinels mymaster
-
-                # 手动触发故障转移
-                SENTINEL failover mymaster
-
-                # 检查 quorum 是否可达
-                SENTINEL ckquorum mymaster
-                """;
+        String commands =
+                "Sentinel 常用命令：\n\n"
+                + "# 查看所有主节点\n"
+                + "SENTINEL masters\n\n"
+                + "# 查看主节点 mymaster 的信息\n"
+                + "SENTINEL master mymaster\n\n"
+                + "# 获取主节点地址\n"
+                + "SENTINEL get-master-addr-by-name mymaster\n\n"
+                + "# 查看从节点\n"
+                + "SENTINEL replicas mymaster\n\n"
+                + "# 查看其他 Sentinel\n"
+                + "SENTINEL sentinels mymaster\n\n"
+                + "# 手动触发故障转移\n"
+                + "SENTINEL failover mymaster\n\n"
+                + "# 检查 quorum 是否可达\n"
+                + "SENTINEL ckquorum mymaster";
 
         log.info("[Sentinel 命令]\n{}", commands);
         return "命令列表已输出";

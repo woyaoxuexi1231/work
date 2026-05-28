@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import org.springframework.data.redis.core.GeoOperations;
 
 /**
  * 4. 各类型核心命令 —— Geo（地理位置）
@@ -45,7 +46,7 @@ public class GeoCmdDemo {
      * 纬度范围：-85.05112878 ~ 85.05112878
      */
     public String basicOps() {
-        var ops = redisTemplate.opsForGeo();
+        GeoOperations<String, String> ops = redisTemplate.opsForGeo();
 
         // 清空
         redisTemplate.delete("geo:shops");
@@ -87,7 +88,7 @@ public class GeoCmdDemo {
      * - COUNT N: 限制返回数量
      */
     public String nearbySearch() {
-        var ops = redisTemplate.opsForGeo();
+        GeoOperations<String, String> ops = redisTemplate.opsForGeo();
 
         redisTemplate.delete("geo:shops");
 
@@ -125,7 +126,7 @@ public class GeoCmdDemo {
                 "geo:shops",
                 "故宫",
                 new Distance(3, Metrics.KILOMETERS),
-                RedisGeoCommands.GeoRadiusCommandArgs.newGeoRadiusCommandArgs()
+                RedisGeoCommands.GeoRadiusCommandArgs.newGeoRadiusArgs()
                         .includeDistance()
                         .sortAscending()
         );

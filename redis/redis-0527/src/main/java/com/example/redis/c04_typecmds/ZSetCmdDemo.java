@@ -53,7 +53,7 @@ public class ZSetCmdDemo {
      * ZCARD: 成员总数
      */
     public String basicOps() {
-        var ops = redisTemplate.opsForZSet();
+        ZSetOperations<String, String> ops = redisTemplate.opsForZSet();
 
         // ZADD: 添加成员
         ops.add("zset:leaderboard", "Alice", 95.5);
@@ -97,7 +97,7 @@ public class ZSetCmdDemo {
      * WITHSCORES: 同时返回分数
      */
     public String rangeQuery() {
-        var ops = redisTemplate.opsForZSet();
+        ZSetOperations<String, String> ops = redisTemplate.opsForZSet();
 
         // 准备数据
         ops.add("zset:rank", "Alice", 95.5);
@@ -110,7 +110,7 @@ public class ZSetCmdDemo {
         Set<ZSetOperations.TypedTuple<String>> top3 = ops.reverseRangeWithScores("zset:rank", 0, 2);
         log.info("[ZREVRANGE] Top 3 排行榜:");
         int rank = 1;
-        for (var tuple : top3) {
+        for (ZSetOperations.TypedTuple<String> tuple : top3) {
             log.info("  第{}名: {} ({}分)", rank++, tuple.getValue(), tuple.getScore());
         }
 
@@ -146,7 +146,7 @@ public class ZSetCmdDemo {
      * - 支持任务重试
      */
     public String delayQueue() {
-        var ops = redisTemplate.opsForZSet();
+        ZSetOperations<String, String> ops = redisTemplate.opsForZSet();
 
         long now = System.currentTimeMillis();
 
@@ -186,7 +186,7 @@ public class ZSetCmdDemo {
      * 缺点：内存消耗较大（每请求一条记录）
      */
     public String slidingWindowRateLimit() {
-        var ops = redisTemplate.opsForZSet();
+        ZSetOperations<String, String> ops = redisTemplate.opsForZSet();
 
         String rateLimitKey = "zset:rate:user:1001";
         long windowMs = 10000; // 10 秒窗口

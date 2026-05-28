@@ -55,45 +55,40 @@ public class ProtocolDemo {
      * 每个响应以类型前缀开头，后跟数据和 \r\n。
      */
     public String respProtocol() {
-        String protocol = """
-                RESP 协议格式：
-
-                RESP2 基本类型：
-                ─────────────────────────────────
-                类型        前缀    示例
-                ─────────────────────────────────
-                简单字符串  +       +OK\\r\\n
-                错误        -       -ERR unknown command\\r\\n
-                整数        :       :1000\\r\\n
-                批量字符串  $       $5\\r\\nhello\\r\\n
-                数组        *       *2\\r\\n$3\\r\\nfoo\\r\\n$3\\r\\nbar\\r\\n
-                ─────────────────────────────────
-
-                RESP3 新增类型（Redis 6.0+）：
-                ─────────────────────────────────
-                类型        前缀    示例
-                ─────────────────────────────────
-                空值        _       _\\r\\n
-                布尔        #       #t\\r\\n
-                双精度      ,       ,1.23\\r\\n
-                大数        (       (34928903284092385093248509\\r\\n
-                映射        %       %2\\r\\n
-                集合        ~       ~3\\r\\n
-                推送        >       >2\\r\\n
-                ─────────────────────────────────
-
-                示例：SET hello world 的 RESP 编码：
-                *3\\r\\n$3\\r\\nSET\\r\\n$5\\r\\nhello\\r\\n$5\\r\\nworld\\r\\n
-
-                解析：
-                *3     → 数组，3 个元素
-                $3     → 批量字符串，3 字节
-                SET    → 命令名
-                $5     → 批量字符串，5 字节
-                hello  → 键名
-                $5     → 批量字符串，5 字节
-                world  → 键值
-                """;
+        String protocol =
+                "RESP 协议格式：\n\n"
+                + "RESP2 基本类型：\n"
+                + "─────────────────────────────────\n"
+                + "类型        前缀    示例\n"
+                + "─────────────────────────────────\n"
+                + "简单字符串  +       +OK\\r\\n\n"
+                + "错误        -       -ERR unknown command\\r\\n\n"
+                + "整数        :       :1000\\r\\n\n"
+                + "批量字符串  $       $5\\r\\nhello\\r\\n\n"
+                + "数组        *       *2\\r\\n$3\\r\\nfoo\\r\\n$3\\r\\nbar\\r\\n\n"
+                + "─────────────────────────────────\n\n"
+                + "RESP3 新增类型（Redis 6.0+）：\n"
+                + "─────────────────────────────────\n"
+                + "类型        前缀    示例\n"
+                + "─────────────────────────────────\n"
+                + "空值        _       _\\r\\n\n"
+                + "布尔        #       #t\\r\\n\n"
+                + "双精度      ,       ,1.23\\r\\n\n"
+                + "大数        (       (34928903284092385093248509\\r\\n\n"
+                + "映射        %       %2\\r\\n\n"
+                + "集合        ~       ~3\\r\\n\n"
+                + "推送        >       >2\\r\\n\n"
+                + "─────────────────────────────────\n\n"
+                + "示例：SET hello world 的 RESP 编码：\n"
+                + "*3\\r\\n$3\\r\\nSET\\r\\n$5\\r\\nhello\\r\\n$5\\r\\nworld\\r\\n\n\n"
+                + "解析：\n"
+                + "*3     -> 数组，3 个元素\n"
+                + "$3     -> 批量字符串，3 字节\n"
+                + "SET    -> 命令名\n"
+                + "$5     -> 批量字符串，5 字节\n"
+                + "hello  -> 键名\n"
+                + "$5     -> 批量字符串，5 字节\n"
+                + "world  -> 键值";
 
         log.info("[RESP 协议]\n{}", protocol);
         return "协议说明已输出";
@@ -118,40 +113,32 @@ public class ProtocolDemo {
      *    - 适合热点键监控
      */
     public String clientCaching() {
-        String caching = """
-                客户端缓存（Client-side caching）：
-
-                # 普通模式
-                CLIENT TRACKING ON
-                GET user:1001      # 服务端记录此键
-                # ... 其他客户端修改 user:1001 ...
-                # 服务端推送失效通知 → 客户端删除本地缓存
-
-                # 广播模式
-                CLIENT TRACKING ON BCAST PREFIX user:
-                # 所有 user: 开头的键被修改时都会收到通知
-
-                # Opt-in 模式（只跟踪明确请求的键）
-                CLIENT TRACKING ON OPTIN
-                CLIENT CACHING YES
-                GET user:1001      # 只跟踪这个键
-
-                # Opt-out 模式（默认跟踪，明确排除）
-                CLIENT TRACKING ON OPTOUT
-                CLIENT CACHING NO
-                GET temp:123       # 不跟踪这个键
-
-                # 重定向（将失效通知发送到另一个连接）
-                CLIENT TRACKING ON REDIRECT 123
-
-                # 取消跟踪
-                CLIENT TRACKING OFF
-
-                Spring Boot 配置：
-                # 启用客户端缓存
-                spring.data.redis.client-type=lettuce
-                # Lettuce 支持客户端缓存
-                """;
+        String caching =
+                "客户端缓存（Client-side caching）：\n\n"
+                + "# 普通模式\n"
+                + "CLIENT TRACKING ON\n"
+                + "GET user:1001      # 服务端记录此键\n"
+                + "# ... 其他客户端修改 user:1001 ...\n"
+                + "# 服务端推送失效通知 -> 客户端删除本地缓存\n\n"
+                + "# 广播模式\n"
+                + "CLIENT TRACKING ON BCAST PREFIX user:\n"
+                + "# 所有 user: 开头的键被修改时都会收到通知\n\n"
+                + "# Opt-in 模式（只跟踪明确请求的键）\n"
+                + "CLIENT TRACKING ON OPTIN\n"
+                + "CLIENT CACHING YES\n"
+                + "GET user:1001      # 只跟踪这个键\n\n"
+                + "# Opt-out 模式（默认跟踪，明确排除）\n"
+                + "CLIENT TRACKING ON OPTOUT\n"
+                + "CLIENT CACHING NO\n"
+                + "GET temp:123       # 不跟踪这个键\n\n"
+                + "# 重定向（将失效通知发送到另一个连接）\n"
+                + "CLIENT TRACKING ON REDIRECT 123\n\n"
+                + "# 取消跟踪\n"
+                + "CLIENT TRACKING OFF\n\n"
+                + "Spring Boot 配置：\n"
+                + "# 启用客户端缓存\n"
+                + "spring.data.redis.client-type=lettuce\n"
+                + "# Lettuce 支持客户端缓存";
 
         log.info("[客户端缓存]\n{}", caching);
         return "客户端缓存说明已输出";
@@ -163,50 +150,42 @@ public class ProtocolDemo {
      * Redis 连接管理的最佳实践。
      */
     public String connectionManagement() {
-        String management = """
-                连接管理最佳实践：
-
-                1. 连接池配置
-                   Lettuce（推荐）：
-                   - 基于 Netty，支持异步和响应式
-                   - 单连接多路复用，资源占用少
-                   - 自动重连和重试
-
-                   Jedis：
-                   - 同步阻塞模型
-                   - 基于 Apache Commons Pool2
-                   - 每个操作占用一个连接
-
-                2. 连接池参数
-                   max-active: 最大连接数（建议 16~32）
-                   max-idle: 最大空闲连接（建议 8~16）
-                   min-idle: 最小空闲连接（建议 4~8）
-                   max-wait: 获取连接最大等待时间
-
-                3. 超时配置
-                   connect-timeout: 连接超时（建议 3~5 秒）
-                   command-timeout: 命令超时（建议 3~5 秒）
-                   idle-timeout: 空闲连接超时
-
-                4. 健康检查
-                   test-while-idle: 空闲时检测连接有效性
-                   time-between-eviction-runs: 检测间隔
-
-                5. 重试策略
-                   - 网络抖动时自动重试
-                   - 指数退避
-                   - 最大重试次数限制
-
-                Spring Boot 配置示例：
-                spring.data.redis.host=192.168.3.100
-                spring.data.redis.port=6379
-                spring.data.redis.password=123456
-                spring.data.redis.timeout=5000ms
-                spring.data.redis.lettuce.pool.max-active=16
-                spring.data.redis.lettuce.pool.max-idle=8
-                spring.data.redis.lettuce.pool.min-idle=4
-                spring.data.redis.lettuce.pool.max-wait=3000ms
-                """;
+        String management =
+                "连接管理最佳实践：\n\n"
+                + "1. 连接池配置\n"
+                + "   Lettuce（推荐）：\n"
+                + "   - 基于 Netty，支持异步和响应式\n"
+                + "   - 单连接多路复用，资源占用少\n"
+                + "   - 自动重连和重试\n\n"
+                + "   Jedis：\n"
+                + "   - 同步阻塞模型\n"
+                + "   - 基于 Apache Commons Pool2\n"
+                + "   - 每个操作占用一个连接\n\n"
+                + "2. 连接池参数\n"
+                + "   max-active: 最大连接数（建议 16~32）\n"
+                + "   max-idle: 最大空闲连接（建议 8~16）\n"
+                + "   min-idle: 最小空闲连接（建议 4~8）\n"
+                + "   max-wait: 获取连接最大等待时间\n\n"
+                + "3. 超时配置\n"
+                + "   connect-timeout: 连接超时（建议 3~5 秒）\n"
+                + "   command-timeout: 命令超时（建议 3~5 秒）\n"
+                + "   idle-timeout: 空闲连接超时\n\n"
+                + "4. 健康检查\n"
+                + "   test-while-idle: 空闲时检测连接有效性\n"
+                + "   time-between-eviction-runs: 检测间隔\n\n"
+                + "5. 重试策略\n"
+                + "   - 网络抖动时自动重试\n"
+                + "   - 指数退避\n"
+                + "   - 最大重试次数限制\n\n"
+                + "Spring Boot 配置示例：\n"
+                + "spring.data.redis.host=192.168.3.100\n"
+                + "spring.data.redis.port=6379\n"
+                + "spring.data.redis.password=123456\n"
+                + "spring.data.redis.timeout=5000ms\n"
+                + "spring.data.redis.lettuce.pool.max-active=16\n"
+                + "spring.data.redis.lettuce.pool.max-idle=8\n"
+                + "spring.data.redis.lettuce.pool.min-idle=4\n"
+                + "spring.data.redis.lettuce.pool.max-wait=3000ms";
 
         log.info("[连接管理]\n{}", management);
         return "连接管理说明已输出";

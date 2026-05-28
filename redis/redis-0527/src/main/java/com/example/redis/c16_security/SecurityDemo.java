@@ -50,50 +50,38 @@ public class SecurityDemo {
      * 每个用户可以有独立的命令权限、键权限和密码。
      */
     public String aclCommands() {
-        String aclGuide = """
-                ACL 命令与用法：
-
-                # 列出所有用户
-                ACL LIST
-
-                # 查看当前用户
-                ACL WHOAMI
-
-                # 创建用户
-                ACL SETUSER alice on >password123 ~cache:* +@read +@write
-
-                # 创建只读用户
-                ACL SETUSER readonly on >read123 ~* +@read -@write -@admin
-
-                # 创建管理员
-                ACL SETUSER admin on >admin123 ~* &* +@all
-
-                # 删除用户
-                ACL DELUSER alice
-
-                # 查看用户权限
-                ACL GETUSER alice
-
-                # 保存 ACL 配置
-                ACL SAVE
-
-                # 权限类别：
-                # +@read     读命令
-                # +@write    写命令
-                # +@admin    管理命令
-                # +@dangerous 危险命令
-                # +@all      所有命令
-                # -@all      拒绝所有命令
-
-                # 键模式：
-                # ~*         所有键
-                # ~cache:*   cache: 开头的键
-                # ~user:*    user: 开头的键
-
-                # 频道模式：
-                # &*         所有频道
-                # &news:*    news: 开头的频道
-                """;
+        String aclGuide =
+                "ACL 命令与用法：\n\n"
+                + "# 列出所有用户\n"
+                + "ACL LIST\n\n"
+                + "# 查看当前用户\n"
+                + "ACL WHOAMI\n\n"
+                + "# 创建用户\n"
+                + "ACL SETUSER alice on >password123 ~cache:* +@read +@write\n\n"
+                + "# 创建只读用户\n"
+                + "ACL SETUSER readonly on >read123 ~* +@read -@write -@admin\n\n"
+                + "# 创建管理员\n"
+                + "ACL SETUSER admin on >admin123 ~* &* +@all\n\n"
+                + "# 删除用户\n"
+                + "ACL DELUSER alice\n\n"
+                + "# 查看用户权限\n"
+                + "ACL GETUSER alice\n\n"
+                + "# 保存 ACL 配置\n"
+                + "ACL SAVE\n\n"
+                + "# 权限类别：\n"
+                + "# +@read     读命令\n"
+                + "# +@write    写命令\n"
+                + "# +@admin    管理命令\n"
+                + "# +@dangerous 危险命令\n"
+                + "# +@all      所有命令\n"
+                + "# -@all      拒绝所有命令\n\n"
+                + "# 键模式：\n"
+                + "# ~*         所有键\n"
+                + "# ~cache:*   cache: 开头的键\n"
+                + "# ~user:*    user: 开头的键\n\n"
+                + "# 频道模式：\n"
+                + "# &*         所有频道\n"
+                + "# &news:*    news: 开头的频道";
 
         log.info("[ACL]\n{}", aclGuide);
         return "ACL 指南已输出";
@@ -110,32 +98,27 @@ public class SecurityDemo {
      * - SHUTDOWN: 关闭服务器
      */
     public String dangerousCommands() {
-        String guide = """
-                危险命令处理：
-
-                # 在 redis.conf 中重命名命令
-                rename-command FLUSHALL ""
-                rename-command FLUSHDB ""
-                rename-command KEYS ""
-                rename-command DEBUG ""
-                rename-command CONFIG "CONFIG_b93c4e2a"
-
-                # 或重命名为自定义名称
-                # rename-command SHUTDOWN SHUTDOWN_custom
-
-                # 需要注意：
-                # 1. Sentinel 和 Cluster 需要 CONFIG 命令
-                # 2. 重命名后 Sentinel/Cluster 配置也要更新
-                # 3. 空字符串表示禁用该命令
-
-                # 其他安全建议：
-                # 1. 设置 requirepass
-                # 2. bind 绑定内网地址
-                # 3. protected-mode yes
-                # 4. 使用 ACL 限制权限
-                # 5. 防火墙限制访问 IP
-                # 6. 禁用危险命令
-                """;
+        String guide =
+                "危险命令处理：\n\n"
+                + "# 在 redis.conf 中重命名命令\n"
+                + "rename-command FLUSHALL \"\"\n"
+                + "rename-command FLUSHDB \"\"\n"
+                + "rename-command KEYS \"\"\n"
+                + "rename-command DEBUG \"\"\n"
+                + "rename-command CONFIG \"CONFIG_b93c4e2a\"\n\n"
+                + "# 或重命名为自定义名称\n"
+                + "# rename-command SHUTDOWN SHUTDOWN_custom\n\n"
+                + "# 需要注意：\n"
+                + "# 1. Sentinel 和 Cluster 需要 CONFIG 命令\n"
+                + "# 2. 重命名后 Sentinel/Cluster 配置也要更新\n"
+                + "# 3. 空字符串表示禁用该命令\n\n"
+                + "# 其他安全建议：\n"
+                + "# 1. 设置 requirepass\n"
+                + "# 2. bind 绑定内网地址\n"
+                + "# 3. protected-mode yes\n"
+                + "# 4. 使用 ACL 限制权限\n"
+                + "# 5. 防火墙限制访问 IP\n"
+                + "# 6. 禁用危险命令";
 
         log.info("[安全配置]\n{}", guide);
         return "安全指南已输出";
@@ -147,37 +130,29 @@ public class SecurityDemo {
      * Redis 的网络安全配置是第一道防线。
      */
     public String networkSecurity() {
-        String guide = """
-                网络安全配置：
-
-                # 1. 绑定地址（只监听内网）
-                bind 127.0.0.1 192.168.1.100
-
-                # 2. 保护模式（无密码且无 bind 时拒绝外部连接）
-                protected-mode yes
-
-                # 3. 端口（可修改默认端口）
-                port 6379
-
-                # 4. TLS/SSL（Redis 6.0+）
-                tls-port 6380
-                tls-cert-file /path/to/redis.crt
-                tls-key-file /path/to/redis.key
-                tls-ca-cert-file /path/to/ca.crt
-
-                # 5. 连接限制
-                maxclients 10000
-                timeout 300
-
-                # 6. 输入缓冲区限制（防止客户端发送过大命令）
-                client-output-buffer-limit normal 0 0 0
-                client-output-buffer-limit replica 256mb 64mb 60
-                client-output-buffer-limit pubsub 32mb 8mb 60
-
-                # 7. 防火墙规则（示例）
-                # iptables -A INPUT -p tcp --dport 6379 -s 192.168.1.0/24 -j ACCEPT
-                # iptables -A INPUT -p tcp --dport 6379 -j DROP
-                """;
+        String guide =
+                "网络安全配置：\n\n"
+                + "# 1. 绑定地址（只监听内网）\n"
+                + "bind 127.0.0.1 192.168.1.100\n\n"
+                + "# 2. 保护模式（无密码且无 bind 时拒绝外部连接）\n"
+                + "protected-mode yes\n\n"
+                + "# 3. 端口（可修改默认端口）\n"
+                + "port 6379\n\n"
+                + "# 4. TLS/SSL（Redis 6.0+）\n"
+                + "tls-port 6380\n"
+                + "tls-cert-file /path/to/redis.crt\n"
+                + "tls-key-file /path/to/redis.key\n"
+                + "tls-ca-cert-file /path/to/ca.crt\n\n"
+                + "# 5. 连接限制\n"
+                + "maxclients 10000\n"
+                + "timeout 300\n\n"
+                + "# 6. 输入缓冲区限制（防止客户端发送过大命令）\n"
+                + "client-output-buffer-limit normal 0 0 0\n"
+                + "client-output-buffer-limit replica 256mb 64mb 60\n"
+                + "client-output-buffer-limit pubsub 32mb 8mb 60\n\n"
+                + "# 7. 防火墙规则（示例）\n"
+                + "# iptables -A INPUT -p tcp --dport 6379 -s 192.168.1.0/24 -j ACCEPT\n"
+                + "# iptables -A INPUT -p tcp --dport 6379 -j DROP";
 
         log.info("[网络安全]\n{}", guide);
         return "网络安全指南已输出";
