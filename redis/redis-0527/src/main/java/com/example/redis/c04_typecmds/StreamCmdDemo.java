@@ -145,7 +145,7 @@ public class StreamCmdDemo {
 
         // XPENDING: 查看未确认消息
         PendingMessagesSummary pendingSummary = ops.pending("stream:events", "order-process-group");
-        log.info("[XPENDING] 未确认消息数: {}", pendingSummary.getTotalPendingCount());
+        log.info("[XPENDING] 未确认消息数: {}", pendingSummary.getTotalPendingMessages());
 
         redisTemplate.delete("stream:events");
         return "消费完成, 读取=" + records.size();

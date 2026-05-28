@@ -148,7 +148,7 @@ public class BitCmdDemo {
 
         // BITOP OR: 合并两天 → 两天内活跃的用户（去重）
         conn.bitOp(
-                org.springframework.data.redis.connection.BitOperation.OR,
+                org.springframework.data.redis.connection.RedisStringCommands.BitOperation.OR,
                 "bitmap:active:merged".getBytes(),
                 "bitmap:active:day1".getBytes(),
                 "bitmap:active:day2".getBytes()
@@ -158,7 +158,7 @@ public class BitCmdDemo {
 
         // BITOP AND: 两天都活跃的用户
         conn.bitOp(
-                org.springframework.data.redis.connection.BitOperation.AND,
+                org.springframework.data.redis.connection.RedisStringCommands.BitOperation.AND,
                 "bitmap:active:merged".getBytes(),
                 "bitmap:active:day1".getBytes(),
                 "bitmap:active:day2".getBytes()

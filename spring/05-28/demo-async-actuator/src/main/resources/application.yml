@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+# Actuator 配置 —— 暴露所有端点，health 显示详情
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
+  endpoint:
+    health:
+      show-details: always       # 显示各 HealthIndicator 的详细状态
+      show-components: always    # 显示所有组件（redis / diskSpace / ping 等）
+
+# 日志
+logging:
+  level:
+    com.example.demo: DEBUG
