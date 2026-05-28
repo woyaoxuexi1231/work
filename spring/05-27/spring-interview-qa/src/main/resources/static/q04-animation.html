@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q04 · 代理对象生成动画图解</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--text:#c9d1d9;--sub:#8b949e;--accent:#58a6ff;--green:#3fb950;--orange:#d2991d;--pink:#f778ba;--red:#f85149;--border:#30363d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.7;font-size:14px}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+.topbar{background:#0d1117;border-bottom:1px solid var(--border);padding:16px 0;position:sticky;top:0;z-index:100}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:17px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:var(--sub);text-decoration:none;font-size:13px}.topbar a:hover{color:var(--text)}
+
+h1{font-size:26px;margin:36px 0 8px}
+.subtitle{color:var(--sub);font-size:14px;margin-bottom:28px}
+
+/* Section */
+.section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px 32px;margin-bottom:24px}
+.section h2{font-size:19px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.section h2 .badge{font-size:11px;padding:2px 10px;border-radius:10px;font-weight:600}
+.badge-jdk{background:#1f3a5f;color:var(--accent)}
+.badge-cglib{background:#3d1f3d;color:var(--pink)}
+.badge-mybatis{background:#3d2f1f;color:var(--orange)}
+.section p{color:var(--sub);margin-bottom:16px;font-size:13px}
+
+/* Stage */
+.stage{background:#0d1117;border:1px solid var(--border);border-radius:10px;padding:18px 22px;margin-bottom:14px;position:relative;cursor:pointer;transition:border-color .3s,box-shadow .3s}
+.stage:hover{border-color:var(--accent);box-shadow:0 0 12px rgba(88,166,255,.1)}
+.stage.active{border-color:var(--green);box-shadow:0 0 16px rgba(63,185,80,.15)}
+.stage .step-num{position:absolute;top:-10px;left:-10px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.stage.active .step-num{background:var(--green)}
+.stage h3{font-size:15px;margin-bottom:4px;margin-left:12px}
+.stage .code{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px 16px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;line-height:1.6;overflow-x:auto;margin:10px 0;white-space:pre;color:#c9d1d9}
+.stage .code .kw{color:#ff7b72}.stage .code .str{color:#a5d6ff}.stage .code .cmt{color:#8b949e}.stage .code .fn{color:#d2a8ff}.stage .code .cls{color:#ffa657}
+.stage .desc{color:var(--sub);font-size:13px;margin:8px 0 0 12px}
+.stage .arrow-down{text-align:center;font-size:20px;color:var(--accent);margin:4px 0}
+
+/* Flow diagram */
+.flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin:16px 0;padding:16px;background:#0d1117;border-radius:10px;border:1px solid var(--border)}
+.flow-box{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;text-align:center;transition:all .4s;min-width:80px}
+.flow-box.highlight{border-color:var(--accent);box-shadow:0 0 16px rgba(88,166,255,.25);transform:scale(1.05)}
+.flow-box.highlight-green{border-color:var(--green);box-shadow:0 0 16px rgba(63,185,80,.25);transform:scale(1.05)}
+.flow-arrow{font-size:22px;color:var(--sub)}
+.flow-box .icon{font-size:22px;display:block;margin-bottom:4px}
+.flow-box .label{font-size:11px;color:var(--sub)}
+
+/* Timeline */
+.timeline{margin:14px 0;padding-left:20px;border-left:2px solid var(--border)}
+.timeline-item{padding:8px 0 8px 16px;position:relative;font-size:13px;color:var(--sub);opacity:.5;transition:all .4s}
+.timeline-item.active{color:var(--text);opacity:1}
+.timeline-item.active::before{content:'';position:absolute;left:-6px;top:12px;width:10px;height:10px;border-radius:50%;background:var(--green)}
+
+/* Button */
+.btn{display:inline-block;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;margin-right:8px;margin-bottom:8px;transition:all .2s}
+.btn-play{background:var(--green);color:#fff}.btn-play:hover{filter:brightness(1.2)}
+.btn-reset{background:var(--border);color:var(--text)}.btn-reset:hover{background:#484f58}
+.btn-step{background:var(--accent);color:#fff}.btn-step:hover{filter:brightness(1.2)}
+
+/* VSCode-style code */
+.vscode{background:#1e1e1e;border-radius:8px;overflow:hidden;margin:12px 0;border:1px solid #333}
+.vscode .titlebar{background:#323233;padding:6px 12px;font-size:11px;color:#ccc;display:flex;align-items:center;gap:6px}
+.vscode .titlebar .dot{width:10px;height:10px;border-radius:50%}
+.vscode .titlebar .dot.r{background:#ff5f56}.vscode .titlebar .dot.y{background:#ffbd2e}.vscode .titlebar .dot.g{background:#27c93f}
+.vscode .body{padding:14px 18px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;line-height:1.8;overflow-x:auto;color:#d4d4d4}
+.vscode .body .k{color:#569cd6}.vscode .body .s{color:#ce9178}.vscode .body .c{color:#6a9955}.vscode .body .f{color:#dcdcaa}.vscode .body .t{color:#4ec9b0}
+
+/* Agent box */
+.agent{background:linear-gradient(135deg,#1a1a2e,#16213e);border:2px dashed var(--accent);border-radius:12px;padding:18px 22px;margin:14px 0;text-align:center;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{border-color:var(--accent)}50%{border-color:var(--green)}}
+.agent .title{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px}
+.agent pre{background:#0d1117;border-radius:6px;padding:10px;font-family:"JetBrains Mono",monospace;font-size:11px;color:#c9d1d9;text-align:left;max-width:500px;margin:0 auto}
+
+/* Diff */
+.diff-add{background:rgba(63,185,80,.1);color:var(--green)}
+.diff-line{font-family:monospace;font-size:12px;padding:1px 8px}
+
+.back{text-align:center;padding:40px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a> · <a href="/q04.html">Q04 答题</a></nav></div></header>
+
+<div class="wrap">
+<h1>🔬 代理对象生成 · 动画图解</h1>
+<p class="subtitle">JDK 动态代理 → CGLIB 子类代理 → MyBatis Mapper 代理。三步走，点击每个阶段看代码如何"织入"。</p>
+
+<!-- ════════════════════════════════════════ JDK ════════════════════════════════════════ -->
+<div class="section" id="jdk">
+<h2><span class="badge badge-jdk">JDK</span> JDK 动态代理 — Proxy.newProxyInstance</h2>
+<p>核心 API：<code>Proxy.newProxyInstance(ClassLoader, interfaces[], InvocationHandler)</code>。
+在运行时动态生成一个实现了指定接口的代理类，所有方法调用被转发到 InvocationHandler.invoke()。</p>
+
+<div class="flow" id="jdk-flow">
+  <div class="flow-box" id="jdk-box-cl"><div class="icon">📦</div>ClassLoader<div class="label">加载类</div></div>
+  <div class="flow-arrow">+</div>
+  <div class="flow-box" id="jdk-box-if"><div class="icon">📋</div>interfaces[]<div class="label">UserMapper.class</div></div>
+  <div class="flow-arrow">+</div>
+  <div class="flow-box" id="jdk-box-ih"><div class="icon">🎯</div>InvocationHandler<div class="label">invoke()方法</div></div>
+  <div class="flow-arrow" style="font-size:26px">→</div>
+  <div class="flow-box" id="jdk-box-result"><div class="icon">✨</div>$Proxy<div class="label">代理对象</div></div>
+</div>
+
+<div id="jdk-stages"></div>
+
+<div style="margin-top:12px">
+  <button class="btn btn-play" onclick="playJDK()">▶ 自动播放</button>
+  <button class="btn btn-step" onclick="stepJDK()">⏭ 逐步演示</button>
+  <button class="btn btn-reset" onclick="resetJDK()">↺ 重置</button>
+</div>
+
+<div class="timeline" id="jdk-timeline">
+  <div class="timeline-item" id="jdk-t1">① 传入 ClassLoader — 代理类需要被加载到 JVM 中</div>
+  <div class="timeline-item" id="jdk-t2">② 传入接口数组 — 告诉 JDK "代理类要实现哪些方法"</div>
+  <div class="timeline-item" id="jdk-t3">③ 传入 InvocationHandler — 所有方法调用的"终点站"</div>
+  <div class="timeline-item" id="jdk-t4">④ JDK 在内存中生成 $Proxy0.class 字节码</div>
+  <div class="timeline-item" id="jdk-t5">⑤ ClassLoader 加载字节码 → newInstance() 创建代理对象</div>
+  <div class="timeline-item" id="jdk-t6">⑥ 调用代理方法 → 全部转发到 InvocationHandler.invoke()</div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════ CGLIB ════════════════════════════════════════ -->
+<div class="section" id="cglib">
+<h2><span class="badge badge-cglib">CGLIB</span> CGLIB 子类代理 — Enhancer.create</h2>
+<p>核心 API：<code>Enhancer.create(Class, Callback)</code>。
+通过 ASM 字节码框架直接操作 class 文件，生成目标类的子类。所有非 final 方法被重写，调用转发到 MethodInterceptor.intercept()。</p>
+
+<div class="flow" id="cglib-flow">
+  <div class="flow-box" id="cg-box-src"><div class="icon">🧬</div>Target.class<div class="label">目标类</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box" id="cg-box-asm"><div class="icon">⚙️</div>ASM 字节码<div class="label">读取/生成</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box" id="cg-box-sub"><div class="icon">🧬</div>Target$$CGLIB<div class="label">子类字节码</div></div>
+  <div class="flow-arrow" style="font-size:26px">→</div>
+  <div class="flow-box" id="cg-box-result"><div class="icon">✨</div>CGLIB 代理<div class="label">子类实例</div></div>
+</div>
+
+<div id="cglib-stages"></div>
+
+<div style="margin-top:12px">
+  <button class="btn btn-play" onclick="playCGLIB()">▶ 自动播放</button>
+  <button class="btn btn-step" onclick="stepCGLIB()">⏭ 逐步演示</button>
+  <button class="btn btn-reset" onclick="resetCGLIB()">↺ 重置</button>
+</div>
+
+<div class="timeline" id="cglib-timeline">
+  <div class="timeline-item" id="cg-t1">① CGLIB 读取目标类 Target.class 字节码</div>
+  <div class="timeline-item" id="cg-t2">② ASM 框架解析字节码 → 获取所有非 final 方法签名</div>
+  <div class="timeline-item" id="cg-t3">③ 生成子类 Target$$EnhancerByCGLIB 字节码</div>
+  <div class="timeline-item" id="cg-t4">④ 子类重写所有非 final 方法 → 插入 MethodInterceptor 钩子</div>
+  <div class="timeline-item" id="cg-t5">⑤ ClassLoader 加载子类 → 创建子类实例（代理对象）</div>
+  <div class="timeline-item" id="cg-t6">⑥ 调用代理方法 → 全部转发到 MethodInterceptor.intercept()</div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════ MyBatis ════════════════════════════════════════ -->
+<div class="section" id="mybatis">
+<h2><span class="badge badge-mybatis">MyBatis</span> MyBatis-Spring 完整链路 — 从接口到 SQL</h2>
+<p>MyBatis 使用 FactoryBean + JDK 动态代理。每个 Mapper 接口对应一个 MapperFactoryBean，
+getObject() 返回 JDK 代理对象。代理内部的 MapperProxy 负责"接口方法 → SQL 语句"的转换。</p>
+
+<div class="flow" id="myb-flow">
+  <div class="flow-box" id="myb-box-if"><div class="icon">📋</div>UserMapper<div class="label">接口定义</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box" id="myb-box-fb"><div class="icon">🏭</div>MapperFactoryBean<div class="label">getObject()</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box" id="myb-box-jdk"><div class="icon">🪞</div>JDK 动态代理<div class="label">$Proxy</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box" id="myb-box-mp"><div class="icon">🎯</div>MapperProxy<div class="label">invoke()</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box" id="myb-box-sql"><div class="icon">🗄️</div>SqlSession<div class="label">执行 SQL</div></div>
+</div>
+
+<div id="mybatis-stages"></div>
+
+<div style="margin-top:12px">
+  <button class="btn btn-play" onclick="playMyBatis()">▶ 自动播放</button>
+  <button class="btn btn-step" onclick="stepMyBatis()">⏭ 逐步演示</button>
+  <button class="btn btn-reset" onclick="resetMyBatis()">↺ 重置</button>
+</div>
+
+<div class="timeline" id="myb-timeline">
+  <div class="timeline-item" id="myb-t1">① Spring 启动 → 扫描 @MapperScan → 找到 UserMapper 接口</div>
+  <div class="timeline-item" id="myb-t2">② 为 UserMapper 注册 MapperFactoryBean (实现 FactoryBean)</div>
+  <div class="timeline-item" id="myb-t3">③ Spring getBean("userMapper") → 触发 MapperFactoryBean.getObject()</div>
+  <div class="timeline-item" id="myb-t4">④ getObject() 内部调用 Proxy.newProxyInstance → 生成 $Proxy</div>
+  <div class="timeline-item" id="myb-t5">⑤ $Proxy 的 InvocationHandler = MapperProxy</div>
+  <div class="timeline-item" id="myb-t6">⑥ 调用 userMapper.findById(1L) → MapperProxy.invoke() 拦截</div>
+  <div class="timeline-item" id="myb-t7">⑦ MapperProxy 根据方法名找到 SQL → 通过 SqlSession 执行 → 返回结果</div>
+</div>
+</div>
+
+<div class="back"><a href="/q04.html">← 返回 Q04 答题</a> · <a href="/">返回索引</a></div>
+</div>
+
+<script>
+// ═══════════════ JDK Animation ═══════════════
+let jdkStep = 0, jdkTimer = null;
+const jdkTimelineItems = ['jdk-t1','jdk-t2','jdk-t3','jdk-t4','jdk-t5','jdk-t6'];
+const jdkFlowBoxes = ['jdk-box-cl','jdk-box-if','jdk-box-ih','jdk-box-result'];
+
+function resetJDK(){
+  clearInterval(jdkTimer); jdkStep=0;
+  jdkTimelineItems.forEach(id=>document.getElementById(id).classList.remove('active'));
+  jdkFlowBoxes.forEach(id=>document.getElementById(id).classList.remove('highlight','highlight-green'));
+  document.getElementById('jdk-stages').innerHTML='';
+}
+function stepJDK(){
+  if(jdkStep>=6){resetJDK();return}
+  if(jdkStep<3)document.getElementById(jdkFlowBoxes[jdkStep]).classList.add('highlight');
+  if(jdkStep===3){document.getElementById(jdkFlowBoxes[3]).classList.add('highlight-green'); showJDKStage(jdkStep)}
+  if(jdkStep>3)showJDKStage(jdkStep);
+  document.getElementById(jdkTimelineItems[jdkStep]).classList.add('active');
+  jdkStep++;
+}
+function playJDK(){resetJDK();jdkTimer=setInterval(()=>{if(jdkStep>=6){clearInterval(jdkTimer);return}stepJDK()},900)}
+function showJDKStage(i){
+  const stages=[
+    `<div class="agent"><div class="title">🔧 JDK 在内存中动态生成 $Proxy0.class</div><pre>public final class $Proxy0 extends Proxy implements UserMapper {
+    private static Method m1; // findById
+    private static Method m2; // insert
+
+    public $Proxy0(InvocationHandler h) { super(h); }
+
+    public String findById(Long id) {
+        return (String) h.invoke(this, m1, new Object[]{id});
+    }
+    public int insert(String user) {
+        return (int) h.invoke(this, m2, new Object[]{user});
+    }
+}</pre></div>`,
+    `<div class="agent"><div class="title">📥 ClassLoader 加载 → 实例化代理对象</div><pre style="text-align:center;padding:16px">Class&lt;?&gt; proxyClass = classLoader.loadClass("$Proxy0");
+Constructor ctor = proxyClass.getConstructor(InvocationHandler.class);
+Object proxy = ctor.newInstance(mapperProxy);   ← 这就是最终返回的代理对象!</pre></div>`,
+    `<div class="agent"><div class="title">🎯 方法调用拦截全景</div><pre>// 1. 业务代码调用
+userMapper.findById(1L);
+
+// 2. $Proxy0.findById() 执行
+→ h.invoke(this, m1, new Object[]{1L});
+
+// 3. MapperProxy.invoke() 收到调用
+→ 方法名="findById", 参数=[1L]
+→ 匹配 SQL → 执行 → 返回 User{id=1, name='Alice'}</pre></div>`
+  ];
+  document.getElementById('jdk-stages').innerHTML=stages[i-3]||'';
+}
+
+// ═══════════════ CGLIB Animation ═══════════════
+let cgStep=0,cgTimer=null;
+const cgTimelineItems=['cg-t1','cg-t2','cg-t3','cg-t4','cg-t5','cg-t6'];
+const cgFlowBoxes=['cg-box-src','cg-box-asm','cg-box-sub','cg-box-result'];
+
+function resetCGLIB(){
+  clearInterval(cgTimer);cgStep=0;
+  cgTimelineItems.forEach(id=>document.getElementById(id).classList.remove('active'));
+  cgFlowBoxes.forEach(id=>document.getElementById(id).classList.remove('highlight','highlight-green'));
+  document.getElementById('cglib-stages').innerHTML='';
+}
+function stepCGLIB(){
+  if(cgStep>=6){resetCGLIB();return}
+  if(cgStep<4)document.getElementById(cgFlowBoxes[Math.min(cgStep,3)]).classList.add('highlight');
+  if(cgStep===4){document.getElementById(cgFlowBoxes[3]).classList.add('highlight-green');showCGLIBStage(cgStep)}
+  if(cgStep>4)showCGLIBStage(cgStep);
+  document.getElementById(cgTimelineItems[cgStep]).classList.add('active');
+  cgStep++;
+}
+function playCGLIB(){resetCGLIB();cgTimer=setInterval(()=>{if(cgStep>=6){clearInterval(cgTimer);return}stepCGLIB()},900)}
+function showCGLIBStage(i){
+  const stages=[
+    `<div class="agent"><div class="title">🧬 CGLIB 生成的子类字节码（伪代码）</div><pre>public class UserService$$EnhancerByCGLIB extends UserService {
+    private MethodInterceptor interceptor;
+
+    @Override
+    public String findById(Long id) {
+        // ★ CGLIB 在重写的方法里插入拦截钩子
+        return (String) interceptor.intercept(
+            this,           // 代理对象
+            originalMethod, // 原始方法引用
+            new Object[]{id}, // 参数
+            methodProxy     // ★ CGLIB 专用: 可绕过反射直接调用父类
+        );
+    }
+}</pre><p style="color:var(--sub);font-size:12px;margin-top:8px">对比 JDK: CGLIB 多了一个 <code>methodProxy</code> 参数 —— 可以通过 MethodProxy.invokeSuper() 直接调用父类方法，<b>不需要反射</b>。这就是 CGLIB 比 JDK 代理快的原因。</p></div>`,
+    `<div class="agent"><div class="title">⚡ MethodProxy.invokeSuper() —— CGLIB 的性能关键</div><pre>// JDK 代理调用目标方法: 必须通过反射
+method.invoke(target, args);  // 慢——每次调用都要走反射
+
+// CGLIB 代理调用目标方法: 直接调用父类
+methodProxy.invokeSuper(proxy, args);
+// ↑ CGLIB 提前生成了一个 FastClass，
+// 通过索引直接定位到父类方法——不需要反射！</pre></div>`
+  ];
+  document.getElementById('cglib-stages').innerHTML=stages[i-4]||'';
+}
+
+// ═══════════════ MyBatis Animation ═══════════════
+let mybStep=0,mybTimer=null;
+const mybTimelineItems=['myb-t1','myb-t2','myb-t3','myb-t4','myb-t5','myb-t6','myb-t7'];
+const mybFlowBoxes=['myb-box-if','myb-box-fb','myb-box-jdk','myb-box-mp','myb-box-sql'];
+
+function resetMyBatis(){
+  clearInterval(mybTimer);mybStep=0;
+  mybTimelineItems.forEach(id=>document.getElementById(id).classList.remove('active'));
+  mybFlowBoxes.forEach(id=>document.getElementById(id).classList.remove('highlight','highlight-green'));
+  document.getElementById('mybatis-stages').innerHTML='';
+}
+function stepMyBatis(){
+  if(mybStep>=7){resetMyBatis();return}
+  document.getElementById(mybFlowBoxes[Math.min(mybStep,4)]).classList.add(mybStep>=4?'highlight-green':'highlight');
+  document.getElementById(mybTimelineItems[mybStep]).classList.add('active');
+  if(mybStep===3)showMyBatisStage(0);
+  if(mybStep===4)showMyBatisStage(1);
+  if(mybStep===6)showMyBatisStage(2);
+  mybStep++;
+}
+function playMyBatis(){resetMyBatis();mybTimer=setInterval(()=>{if(mybStep>=7){clearInterval(mybTimer);return}stepMyBatis()},900)}
+function showMyBatisStage(i){
+  const stages=[
+    `<div class="agent"><div class="title">🏭 MapperFactoryBean.getObject() 源码</div><pre>public class MapperFactoryBean&lt;T&gt; implements FactoryBean&lt;T&gt; {
+    private Class&lt;T&gt; mapperInterface;
+
+    @Override
+    public T getObject() {
+        return (T) Proxy.newProxyInstance(
+            mapperInterface.getClassLoader(),   // ① ClassLoader
+            new Class[]{mapperInterface},       // ② 接口数组
+            new MapperProxy&lt;T&gt;(sqlSession, mapperInterface) // ③ InvocationHandler
+        );
+    }
+
+    @Override public Class&lt;?&gt; getObjectType() { return mapperInterface; }
+    @Override public boolean isSingleton() { return true; } // ★ 代理是单例!
+}</pre><p style="color:var(--sub);font-size:12px;margin-top:8px">关键细节: isSingleton() 返回 true —— 代理对象无状态，真正的线程安全由 SqlSessionTemplate (ThreadLocal) 保证。</p></div>`,
+    `<div class="agent"><div class="title">🎯 MapperProxy.invoke() —— 接口方法 → SQL 的桥梁</div><pre>public class MapperProxy&lt;T&gt; implements InvocationHandler {
+    private SqlSession sqlSession;
+    private Class&lt;T&gt; mapperInterface;
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) {
+        // Object 的方法 (toString/hashCode/equals) → 直接执行
+        if (Object.class.equals(method.getDeclaringClass()))
+            return method.invoke(this, args);
+
+        // ★ Mapper 接口方法 → 查找对应的 SQL 语句
+        MapperMethod mapperMethod = cachedMethods.get(method);
+        return mapperMethod.execute(sqlSession, args);
+    }
+}</pre></div>`,
+    `<div class="agent"><div class="title">🗄️ 完整调用链路</div><pre>// 1. 业务代码 —— 就像调用本地方法一样
+User user = userMapper.findById(1L);
+
+// 2. $Proxy0.findById() —— JDK 代理自动转发
+→ h.invoke(proxy, findByIdMethod, new Object[]{1L});
+
+// 3. MapperProxy.invoke() —— MyBatis 的 MapperProxy
+→ 方法名="findById" → 查缓存获取 MapperMethod
+→ MapperMethod 知道对应的 SQL: "SELECT * FROM users WHERE id=?"
+
+// 4. SqlSession —— 执行 SQL
+→ sqlSession.selectOne("com.example.UserMapper.findById", 1L);
+→ JDBC → MySQL → 返回结果集 → 映射为 User 对象
+
+// ★ 整个过程对于调用者来说只是一行 userMapper.findById(1L)
+// 背后经历了: 代理 → MapperProxy → SQL 查找 → JDBC → 结果映射</pre><p style="color:var(--green);font-size:12px;margin-top:8px">这就是 MyBatis 把"接口"变成"DAO"的魔法 —— 全部基于 JDK 动态代理。</p></div>`
+  ];
+  document.getElementById('mybatis-stages').innerHTML=stages[i]||'';
+}
+</script>
+</body>
+</html>

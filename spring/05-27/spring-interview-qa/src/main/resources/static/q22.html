@@ -1,37 +1,15 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q22 · 自定义 Starter</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q22 · 自定义 Starter</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 22 · 自动装配</div><h1>自定义 Starter</h1><div class="q-sub">如果让你写一个 my-starter，需要哪些模块？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q22 · 自定义 Starter</b> — 双模块结构。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">如果让你写一个 my-starter，需要哪些模块？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">双模块——<br><br>
+<b>starter 模块：</b>空壳 POM，只做依赖聚合。用户引入 my-starter 时自动带来自动配置 + 所有传递依赖。<br>
+<b>autoconfigure 模块：</b>包含 @ConfigurationProperties（配置属性类）、自动配置类（@Configuration + @Conditional）、业务 Service 类、以及 META-INF/spring.factories（注册自动配置类）。<br><br>
+<b>为什么分开？</b>用户可以只引入 autoconfigure 而不引入 starter——如果他只想用配置模型但自己做依赖管理。<br><br>
+spring-configuration-metadata.json <b>不是手写的。</b>spring-boot-configuration-processor 编译时扫描 @ConfigurationProperties，提取 prefix、字段名、Javadoc、默认值，自动生成。IDE 读取它提供自动补全。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"需要两个模块：autoconfigure 模块（自动配置类、属性类）和 starter 模块（空壳 POM 做依赖聚合）。@ConfigurationProperties 绑定配置前缀，spring-boot-configuration-processor 自动生成 IDE 提示的 metadata.json。"
-</blockquote>
+<div class="reflect"><strong>❓ 自问：</strong>写 Starter 最需要注意什么？<br><strong>答：</strong>条件注解的使用——你的自动配置应该尽可能"温和"。用 @ConditionalOnMissingBean 让用户能覆盖；用 @ConditionalOnProperty 提供开关；不要假设用户的环境一定满足你的条件。</div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"双模块结构不是过度设计。starter 模块：零代码，只定义依赖——用户引入 my-starter 时自动带来自动配置 + 所有传递依赖。autoconfigure 模块：包含 @ConfigurationProperties（配置绑定）、@AutoConfiguration（自动配置类 + @Conditional 条件）、以及业务 Service。为什么分开？因为用户可以不引入 starter 而直接引入 autoconfigure——如果他只想用你的配置模型但自己做依赖管理。spring-configuration-metadata.json 不是手写的——configuration-processor 在编译时扫描 @ConfigurationProperties 的 prefix、字段名、Javadoc，自动生成。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>注册：</b>META-INF/spring/...AutoConfiguration.imports 中写自动配置类全限定名。Spring Boot 启动时 AutoConfigurationImportSelector 扫描。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"自定义 Starter 的设计揭示了一个平台级框架的核心竞争力：'扩展的标准化'。一个 Starter 本质上是一套约定——自动配置类放在哪里、配置属性怎么命名、条件注解怎么用、如何注册到 spring.factories——所有这些都有明确的规范。这个规范让 Spring Boot 从一个'框架'变成了一个'平台'——任何人都可以写 Starter 来扩展它，而且所有的 Starter 遵循同一套游戏规则。这就是为什么 Spring Boot 生态能如此繁荣：不是 Spring 团队写了所有的 Starter，而是他们定义了写 Starter 的规范，让整个社区来贡献。这种能力是 Spring 二十年来最重要的架构决策：把扩展点标准化，然后把实现交给生态。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"扩展的标准化"——你不是在说怎么写 Starter，你在说 Spring 为什么能成为一个生态平台。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q22 · Starter · <a href="/q23.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q23.html">下一题 → Q23 · 启动流程</a></div></div></body></html>

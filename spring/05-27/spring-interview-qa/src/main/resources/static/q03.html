@@ -1,37 +1,22 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q03 · 依赖注入</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q03 · 依赖注入</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.bubble pre{background:#1a1a2e;color:#e0e0e0;padding:10px 14px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.6;margin:6px 0}.bubble pre code{background:none;padding:0;color:inherit}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.qinfo h3{font-size:15px;margin-bottom:4px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 03 · IOC 容器</div><h1>依赖注入</h1><div class="q-sub">@Autowired 和 @Resource 的查找逻辑有何不同？字段注入的致命缺陷？为什么官方推荐构造器注入？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><h3>📋 Q03 · 依赖注入</h3><p>@Autowired vs @Resource、构造器注入 vs 字段注入——Spring 最基础但也最容易答浅的问题。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">@Autowired 和 @Resource 的查找逻辑有什么不同？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>@Autowired 默认按类型找，@Resource 默认按名称找。</b><br><br>
+@Autowired：从容器中找所有匹配类型的 Bean → 只有一个就直接注入 → 多个用 @Qualifier 或 @Primary 决定 → 都没有就用字段名匹配。<br><br>
+@Resource：先按 name 找（如果写了 @Resource(name="xxx") 就用 name，没写就用字段名当 name）→ 找不到再按类型找。<br><br>
+<b>优先级顺序：</b>@Qualifier > @Primary > 字段名匹配 > 类型匹配。越明确的意图优先级越高。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@Autowired 默认按类型注入，@Resource 默认按名称注入。构造器注入比字段注入好，因为依赖可以是 final，而且不会出现 NPE。@Qualifier 优先级比 @Primary 高。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">字段注入有什么缺陷？为什么官方推荐构造器注入？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">字段注入三个致命缺陷：<br><br>
+<b>1. 不能写单元测试。</b>你 new Service() 后所有 @Autowired 字段都是 null——调用任何方法都 NPE。必须启动整个 Spring 容器或者用 @InjectMocks。构造器注入可以直接 new Service(mockDao)。<br>
+<b>2. 依赖不可变。</b>字段不能是 final——任何代码都可以在运行时修改它。构造器注入的依赖是 final，编译期保证不可变。<br>
+<b>3. 隐藏依赖。</b>一个类有 8 个 @Autowired 字段，你第一眼看不出它依赖了多少东西。构造器参数列表一眼看到所有依赖——如果参数太多，说明类该拆了。<br><br>
+Spring 4.3 之后单构造器不需要 @Autowired——比字段注入还省一行注解。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@Autowired 和 @Resource 本质上是两套不同的注入体系。@Autowired 由 AutowiredAnnotationBeanPostProcessor 处理，在 populateBean() 中通过 field.set(bean, dependency) 注入——它走的是 Spring 自己的候选解析链：先按类型找所有匹配 → 多个候选时按 @Primary → @Qualifier → 字段名逐级筛选。@Resource 由 CommonAnnotationBeanPostProcessor 处理，是 JSR-250 标准，先按 name 属性找（如果没有指定 name 就用字段名），找不到再降级为 byType。两者的优先级规则也体现了不同的设计哲学：@Qualifier > @Primary——因为 @Qualifier 是调用方明确指定的意图，应覆盖提供方的声明。字段注入最大的问题不是'不好看'，而是它让依赖关系变成隐式的——你 new 一个对象时编译器不会告诉你漏了依赖，只有在运行时才炸 NPE。构造器注入强制你在编译期就面对所有依赖。"
+<div class="follow"><strong>追问：</strong>"你在团队里怎么强制推行构造器注入？"<br><strong>答：</strong>三管齐下。SonarQube 规则禁止字段注入；Checkstyle 检查；CR 时看到 @Autowired 在字段上直接打回。IDE 模板设置成生成 private final 字段 + 构造器。</div>
+<div class="reflect"><strong>❓ 自问：</strong>构造器注入有没有缺点？<br><strong>答：</strong>有。如果一个类有 8 个依赖，构造器就有 8 个参数——代码很难看。但这不是构造器注入的问题，是你类违反单一职责的信号——8 个依赖说明这个类做了太多事，该拆了。构造器注入在这里起到了"设计坏味道检测器"的作用。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>team 推行：</b>SonarQube 规则 spring:S6813 禁止字段注入；Checkstyle + IDE 模板强制 private final + 构造器；CR 时字段上有 @Autowired 直接打回。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"三种注入方式对应三种对象状态保证。字段/setter 注入的问题是对象存在一个'不完整窗口期'——构造器执行完毕后、注入完成前，对象处于非法状态。这违反了 OOP 最基本的约束：构造器应该返回一个可用的对象。构造器注入消除了这个窗口——对象诞生的那一刻就完整可用。这才是 Spring 推荐构造器注入的根本原因，不是'方便测试'这种表面理由。更深一层看，@Autowired 和 @Resource 的分歧反映的是 Java 生态的标准之争：Spring 选择 byType 优先是因为类型是编译期可追踪的（重构安全），而 @Resource 的 byName 优先继承自 EJB 时代的 JNDI 查找惯例——在 EJB 中，每个资源都有全局唯一的 JNDI 名称。今天我们在 Spring 中用 @Resource，实际上是在为一个已经死去的架构惯例买单。认识到这一点，你就能理解为什么 Spring 虽然支持 @Resource，但所有新特性（@Autowired、构造器注入）全部默认 byType。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>你说出"不完整窗口期"和"为已死去的架构惯例买单"时，面试官知道你的思考深度远超五年平均水准。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q03 · 依赖注入 · <a href="/q04.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q04.html">下一题 → Q04 · FactoryBean</a></div></div></body></html>

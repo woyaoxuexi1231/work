@@ -1,37 +1,14 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q14 · 事务原理</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q14 · 事务原理</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 14 · 事务</div><h1>事务实现原理</h1><div class="q-sub">@Transactional 如何通过 AOP 织入？如何在事务提交后执行自定义逻辑？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q14 · 事务实现原理</b> — @Transactional 如何织入 + afterCommit 回调。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">@Transactional 是如何通过 AOP 织入事务的？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">@EnableTransactionManagement → 注册一个 Advisor（Pointcut 匹配 @Transactional 方法，Advice 是 TransactionInterceptor）→ Bean 初始化时 BPP 检测到匹配 → 创建 AOP 代理。方法调用时 TransactionInterceptor.invoke() → getTransaction() 开启/加入事务 → 执行目标方法 → 成功 commit、异常 rollback。<br><br>PlatformTransactionManager 的三个核心方法：getTransaction()、commit()、rollback()。它是一个 SPI——JDBC、JTA、Hibernate 各有实现。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@Transactional 通过 AOP 代理织入：TransactionInterceptor 在方法前后调用 PlatformTransactionManager 的 getTransaction/commit/rollback。事务提交后执行逻辑用 TransactionSynchronization.afterCommit()。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">如何在一个事务提交后执行自定义逻辑？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() { afterCommit() { ... } })。<br><br><b>为什么不在方法末尾直接发 MQ？</b>因为 @Transactional 方法返回 ≠ 事务已提交——如果 commit 失败（数据库连接断开），消息已经发出去了。afterCommit 保证只在真正提交后才执行。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"完整流程：@EnableTransactionManagement → 注册 InfrastructureAdvisorAutoProxyCreator（BPP）+ BeanFactoryTransactionAttributeSourceAdvisor（Pointcut=有@Transactional的方法，Advice=TransactionInterceptor）。Bean 初始化时 BPP 检测到匹配 → 创建代理。方法调用时 TransactionInterceptor.invoke() → 从注解/配置获取 TransactionAttribute → 根据传播行为调用 PlatformTransactionManager.getTransaction() → 执行目标方法 → 成功则 commit，异常则判断 rollbackOn → rollback。TransactionSynchronizationManager 用 ThreadLocal 存储：当前连接、事务名、只读标志、隔离级别、以及 TransactionSynchronization 回调链。afterCommit 在 commit 后、finally 块中触发。"
+<div class="reflect"><strong>❓ 自问：</strong>TransactionSynchronizationManager 怎么管理事务上下文？<br><strong>答：</strong>全部基于 ThreadLocal——当前连接、事务名、只读标志、隔离级别、以及 Synchronization 回调链。这就是事务不能跨线程的原因。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>回调链：</b>beforeCommit → beforeCompletion → afterCommit → afterCompletion。afterCompletion 无论成功失败都会调用。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"TransactionSynchronization 的设计体现了 Spring 对'事务生命周期的关注点分离'的极致追求。事务的核心操作（开启/提交/回滚）由 PlatformTransactionManager 完成——这是一个 SPI，解耦了具体的事务实现（JDBC/JTA/Hibernate）。而事务的'副作用'（发 MQ、清缓存、记录日志）由 TransactionSynchronization 完成——这是一个回调接口，解耦了'什么时候做'和'做什么'。这两个接口的分离让事务管理的核心逻辑和业务副作用完全解耦——你可以切换 JTA 实现而 afterCommit 的逻辑一行不改。afterCommit 的设计尤其精妙：为什么不在业务代码末尾直接发 MQ？因为 @Transactional 方法返回 ≠ 事务已提交——如果 commit 失败（比如数据库连接断开），消息已经发出去了。afterCommit 保证消息只在实际提交成功后发送——这个时序差异在高并发下是数据一致性的生命线。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"为什么不在业务代码末尾发 MQ？"这个追问本身就能过滤掉 80% 的候选人。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q14 · 事务原理 · <a href="/q15.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q15.html">下一题 → Q15 · 分布式事务</a></div></div></body></html>

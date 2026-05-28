@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyBatis 完整链路</title>
+<style>
+:root{--bg:#090c10;--card:#11161e;--text:#c9d1d9;--sub:#6e7781;--accent:#58a6ff;--green:#3fb950;--orange:#d2991d;--pink:#f778ba;--red:#f85149;--border:#21262d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.7;font-size:14px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+h1{font-size:28px;margin:36px 0 4px;text-align:center}
+h1 span{color:var(--accent)}
+.sub{text-align:center;color:var(--sub);margin-bottom:32px;font-size:14px}
+
+/* Stage */
+.stage{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px 28px;margin-bottom:22px;position:relative}
+.stage .idx{position:absolute;top:-12px;left:-12px;width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.stage h2{font-size:18px;margin:0 0 12px 20px}
+.stage .tagline{color:var(--sub);font-size:13px;margin:0 0 14px 20px}
+
+/* Flow */
+.flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:16px;background:#090c10;border-radius:10px;border:1px solid var(--border);margin:10px 0;overflow-x:auto}
+.fb{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:10px 16px;text-align:center;font-size:13px;min-width:80px;flex-shrink:0;transition:all .5s}
+.fb .emj{font-size:22px;display:block;margin-bottom:4px}
+.fb .lbl{font-size:10px;color:var(--sub)}
+.fb.hl{border-color:var(--accent);box-shadow:0 0 16px rgba(88,166,255,.3);transform:scale(1.05);z-index:2}
+.fb.hlg{border-color:var(--green);box-shadow:0 0 16px rgba(63,185,80,.3);transform:scale(1.05);z-index:2}
+.fa{font-size:20px;color:var(--sub);flex-shrink:0}
+
+/* Code */
+.code{background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:12px 0}
+.code .bar{background:#161b22;padding:6px 14px;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)}
+.code .bar .file{color:var(--accent)}
+.code .ct{font-family:"JetBrains Mono",Consolas,monospace;font-size:11px;line-height:1.65;padding:12px 16px;overflow-x:auto;white-space:pre;color:#c9d1d9}
+.code .ct .k{color:#ff7b72}.code .ct .t{color:#ffa657}.code .ct .f{color:#d2a8ff}.code .ct .s{color:#a5d6ff}.code .ct .c{color:#8b949e}.code .ct .a{color:#ffa657}
+
+/* Transition arrow between stages */
+.stage-arrow{text-align:center;font-size:28px;color:var(--accent);margin:4px 0}
+
+/* Timeline list */
+.tlist{padding:0;list-style:none;margin:8px 0}
+.tlist li{padding:4px 0 4px 20px;color:var(--sub);font-size:13px;position:relative;border-left:2px solid var(--border);margin-left:8px}
+.tlist li::before{content:'';position:absolute;left:-5px;top:9px;width:8px;height:8px;border-radius:50%;background:var(--border)}
+.tlist li.hl{color:var(--text);border-left-color:var(--accent)}
+.tlist li.hl::before{background:var(--accent)}
+
+/* Btn */
+.btns{margin:8px 0}
+.btn{display:inline-block;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;margin-right:6px;margin-bottom:6px;transition:all .2s}
+.btn-play{background:var(--green);color:#000}.btn-step{background:var(--accent);color:#fff}.btn-reset{background:#30363d;color:var(--text)}
+.btn:hover{filter:brightness(1.15)}
+
+/* Summary */
+.summary{background:linear-gradient(135deg,#0d1117,#11161e);border:2px solid var(--green);border-radius:14px;padding:24px 28px;margin:28px 0;text-align:center}
+.summary h2{color:var(--green);font-size:20px;margin-bottom:12px}
+.summary p{color:var(--sub);font-size:13px;line-height:2}
+.summary code{background:rgba(63,185,80,.1);padding:1px 6px;border-radius:3px;color:var(--green)}
+
+.back{text-align:center;padding:36px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MyBatis 完整链路：<span>从 XML/注解 → SQL 执行</span></h1>
+<p class="sub">四个阶段 · 一个动画 · 一次看明白</p>
+
+<!-- ═══════════ STAGE 1 ═══════════ -->
+<div class="stage" id="s1">
+<div class="idx">1</div>
+<h2>启动时：XML / 注解 → MappedStatement</h2>
+<p class="tagline">MyBatis 在启动阶段把每条 SQL 解析成一个 <code style="color:var(--accent)">MappedStatement</code> 对象，存入 Configuration。</p>
+
+<div class="flow" id="flow1">
+  <div class="fb" id="f1-1"><span class="emj">📄</span>XML 文件<div class="lbl">UserMapper.xml</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1-2"><span class="emj">🔧</span>XMLMapperBuilder<div class="lbl">解析 XML</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1-3"><span class="emj">📋</span>MappedStatement<div class="lbl">存 SQL + 映射</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1-4"><span class="emj">🗄️</span>Configuration<div class="lbl">Map&lt;String, MS&gt;</div></div>
+</div>
+
+<div class="flow" id="flow1b">
+  <div class="fb" id="f1b-1"><span class="emj">📋</span>@Select/@Insert<div class="lbl">注解 SQL</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1b-2"><span class="emj">🔧</span>MapperAnnotationBuilder<div class="lbl">解析注解</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f1b-3"><span class="emj">📋</span>MappedStatement<div class="lbl">同样的产物</div></div>
+</div>
+
+<div class="code"><div class="bar"><span class="file">📦 MappedStatement 结构</span></div><div class="ct"><span class="k">public class</span> <span class="t">MappedStatement</span> {
+    <span class="k">private</span> <span class="t">String</span> id;           <span class="c">// = "com.example.UserMapper.findById"</span>
+    <span class="k">private</span> <span class="t">SqlSource</span> sqlSource;    <span class="c">// SQL 模板: "SELECT * FROM users WHERE id = ?"</span>
+    <span class="k">private</span> <span class="t">SqlCommandType</span> type;  <span class="c">// SELECT / INSERT / UPDATE / DELETE</span>
+    <span class="k">private</span> <span class="t">ResultMap</span> resultMap;   <span class="c">// 列 → 字段 映射</span>
+    <span class="c">// ...</span>
+}</div></div>
+
+<div class="code"><div class="bar"><span class="file">🗄️ Configuration 内部</span></div><div class="ct"><span class="k">protected final</span> <span class="t">Map</span>&lt;<span class="t">String</span>, <span class="t">MappedStatement</span>&gt; mappedStatements
+    = <span class="k">new</span> <span class="t">HashMap</span>&lt;&gt;();
+
+<span class="c">// 启动后，Map 里的内容：</span>
+<span class="c">// "com.example.UserMapper.findById"  → MappedStatement(SELECT * FROM users WHERE id = ?)</span>
+<span class="c">// "com.example.UserMapper.insert"    → MappedStatement(INSERT INTO users ...)</span>
+<span class="c">// "com.example.OrderMapper.findById" → MappedStatement(SELECT * FROM orders WHERE id = ?)</span></div></div>
+
+<p style="color:var(--orange);font-size:12px;margin-top:6px">💡 XML 和注解只是<b>表达方式不同</b>，最终产物都是 <b>MappedStatement</b>。存入 Configuration 的 mappedStatements 这个 HashMap，key = 接口全限定名 + "." + 方法名。</p>
+</div>
+
+<div class="stage-arrow">↓</div>
+
+<!-- ═══════════ STAGE 2 ═══════════ -->
+<div class="stage" id="s2">
+<div class="idx">2</div>
+<h2>Spring 启动时：@MapperScan → FactoryBean → JDK 代理</h2>
+<p class="tagline">接口没有实现类——所以 Spring 不直接实例化它，而是用 <code style="color:var(--accent)">MapperFactoryBean</code> 这个工厂来生成 JDK 动态代理。</p>
+
+<div class="flow" id="flow2">
+  <div class="fb" id="f2-1"><span class="emj">🔍</span>@MapperScan<div class="lbl">扫描接口</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f2-2"><span class="emj">📦</span>BeanDefinition<div class="lbl">beanClass=MFB</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f2-3"><span class="emj">🏭</span>MapperFactoryBean<div class="lbl">getObject()</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f2-4"><span class="emj">🪞</span>$Proxy<div class="lbl">JDK 代理对象</div></div>
+</div>
+
+<div class="code"><div class="bar"><span class="file">🏭 MapperFactoryBean.getObject()</span></div><div class="ct"><span class="k">public</span> <span class="t">T</span> <span class="f">getObject</span>() {
+    <span class="k">return</span> (<span class="t">T</span>) <span class="t">Proxy</span>.newProxyInstance(
+        mapperInterface.getClassLoader(),       <span class="c">// ClassLoader</span>
+        <span class="k">new</span> <span class="t">Class</span>&lt;?&gt;[]{mapperInterface},             <span class="c">// 要实现哪个接口</span>
+        <span class="k">new</span> <span class="t">MapperProxy</span>&lt;&gt;(sqlSession, mapperInterface) <span class="c">// ★ InvocationHandler</span>
+    );
+}</div></div>
+
+<p style="color:var(--sub);font-size:13px;margin-top:6px">生成的 <code>$Proxy0</code> 实现了 UserMapper 接口。每个方法的方法体就一行：<code style="color:var(--accent)">return h.invoke(this, method, args);</code> — 全部转发给 MapperProxy。</p>
+</div>
+
+<div class="stage-arrow">↓</div>
+
+<!-- ═══════════ STAGE 3 ═══════════ -->
+<div class="stage" id="s3">
+<div class="idx">3</div>
+<h2>调用时：MapperProxy.invoke() → 查 MappedStatement</h2>
+<p class="tagline">代理对象的方法被调用时，MapperProxy 用<b>接口全限定名 + "." + 方法名</b>作为 key，去 Configuration 的 Map 里查 MappedStatement。</p>
+
+<div class="flow" id="flow3">
+  <div class="fb" id="f3-1"><span class="emj">💻</span>userMapper.findById(1L)</div>
+  <div class="fa">→</div>
+  <div class="fb" id="f3-2"><span class="emj">🪞</span>$Proxy0.findById()<div class="lbl">自动转发</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f3-3"><span class="emj">🎯</span>MapperProxy.invoke()<div class="lbl">InvocationHandler</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f3-4"><span class="emj">🔑</span>拼 key<div class="lbl">接口名+方法名</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f3-5"><span class="emj">📋</span>查 MappedStatement<div class="lbl">HashMap.get()</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f3-6"><span class="emj">🗄️</span>执行 SQL</div>
+</div>
+
+<div class="code"><div class="bar"><span class="file">🎯 MapperProxy.invoke() — 核心逻辑</span></div><div class="ct"><span class="k">public</span> <span class="t">Object</span> <span class="f">invoke</span>(<span class="t">Object</span> proxy, <span class="t">Method</span> method, <span class="t">Object</span>[] args) {
+
+    <span class="c">// ① Object 的方法 (toString/hashCode/equals) 直接执行</span>
+    <span class="k">if</span> (<span class="t">Object</span>.<span class="k">class</span>.equals(method.getDeclaringClass())) {
+        <span class="k">return</span> method.invoke(<span class="k">this</span>, args);
+    }
+
+    <span class="c">// ② 从缓存获取或新建 MapperMethod</span>
+    <span class="t">MapperMethod</span> mapperMethod = cachedMapperMethod(method);
+
+    <span class="c">// ③ ★ 执行——MapperMethod 内部会查 MappedStatement</span>
+    <span class="k">return</span> mapperMethod.execute(sqlSession, args);
+}</div></div>
+
+<div class="code"><div class="bar"><span class="file">📋 MapperMethod.execute() — 怎么找到对应的 SQL</span></div><div class="ct"><span class="k">public</span> <span class="t">Object</span> <span class="f">execute</span>(<span class="t">SqlSession</span> sqlSession, <span class="t">Object</span>[] args) {
+
+    <span class="c">// ★ 拼 statementId = 接口全限定名 + "." + 方法名</span>
+    <span class="t">String</span> statementId = mapperInterface.getName() + <span class="s">"."</span> + method.getName();
+    <span class="c">// → "com.example.mapper.UserMapper.findById"</span>
+
+    <span class="c">// ★ 从 Configuration 的 Map 中直接查！O(1) 的 HashMap.get()</span>
+    <span class="t">MappedStatement</span> ms = configuration.getMappedStatement(statementId);
+
+    <span class="c">// 根据 SQL 类型（SELECT/INSERT/UPDATE/DELETE）走不同分支</span>
+    <span class="k">switch</span> (ms.getSqlCommandType()) {
+        <span class="k">case</span> SELECT:
+            <span class="c">// 处理参数：@Param 注解、Map、POJO → 转成 SQL 参数</span>
+            <span class="t">Object</span> param = convertArgsToSqlCommandParam(args);
+            <span class="k">return</span> sqlSession.selectOne(statementId, param);
+        <span class="k">case</span> INSERT:
+            <span class="c">// ...</span>
+    }
+}</div></div>
+
+<p style="color:var(--green);font-size:12px;margin-top:8px">💡 关键：<b>没有扫描、没有反射查找、没有循环匹配。</b>就是 <code>configuration.getMappedStatement("com.example.mapper.UserMapper.findById")</code> — 一次 HashMap.get()。</p>
+</div>
+
+<div class="stage-arrow">↓</div>
+
+<!-- ═══════════ STAGE 4 ═══════════ -->
+<div class="stage" id="s4">
+<div class="idx">4</div>
+<h2>SqlSession 往下：参数绑定 → JDBC → 结果映射</h2>
+<p class="tagline">拿到 MappedStatement 后，SqlSession 把参数交给 JDBC，执行 SQL，把 ResultSet 映射回 User 对象。</p>
+
+<div class="flow" id="flow4">
+  <div class="fb" id="f4-1"><span class="emj">🗄️</span>SqlSession<div class="lbl">selectOne()</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f4-2"><span class="emj">⚡</span>Executor<div class="lbl">缓存/事务</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f4-3"><span class="emj">📝</span>StatementHandler<div class="lbl">拼 SQL</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f4-4"><span class="emj">🔗</span>ParameterHandler<div class="lbl">设置 ?</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f4-5"><span class="emj">🗃️</span>JDBC Statement<div class="lbl">执行</div></div>
+  <div class="fa">→</div>
+  <div class="fb" id="f4-6"><span class="emj">📦</span>ResultSetHandler<div class="lbl">映射→User</div></div>
+</div>
+
+<div class="code"><div class="bar"><span class="file">📝 SqlSource 把 SQL 模板 + 参数 → 可执行的 SQL</span></div><div class="ct"><span class="c">// MappedStatement 里的 SqlSource 是 SQL 模板（带占位符）</span>
+<span class="t">SqlSource</span> sqlSource = ms.getSqlSource();
+<span class="c">// 模板内容: "SELECT * FROM users WHERE id = ?"  ← 注意这个 ?</span>
+
+<span class="c">// 调用时，ParameterHandler 把 ? 替换成实际参数</span>
+<span class="t">BoundSql</span> boundSql = sqlSource.getBoundSql(param);
+<span class="c">// → "SELECT * FROM users WHERE id = ?"</span>
+<span class="c">//   参数列表: [1L]</span>
+
+<span class="c">// ParameterHandler 设置 PreparedStatement:</span>
+preparedStatement.setLong(<span class="s">1</span>, <span class="s">1L</span>);  <span class="c">// 把 ? 替换成 1L</span></div></div>
+
+<div class="code"><div class="bar"><span class="file">📦 ResultSetHandler — 把数据库返回的行映射成 User 对象</span></div><div class="ct"><span class="c">// JDBC 返回 ResultSet:</span>
+<span class="c">// | id | name  | age |</span>
+<span class="c">// | 1  | Alice | 25  |</span>
+
+<span class="t">ResultSet</span> rs = statement.executeQuery();
+
+<span class="c">// ResultSetHandler 根据 ResultMap 做映射:</span>
+<span class="c">// 列 "id"   → user.setId(rs.getLong("id"))</span>
+<span class="c">// 列 "name" → user.setName(rs.getString("name"))</span>
+<span class="c">// 列 "age"  → user.setAge(rs.getInt("age"))</span>
+
+<span class="k">return</span> user;  <span class="c">// → User{id=1, name="Alice", age=25}</span></div></div>
+</div>
+
+<!-- ═══════════ SUMMARY ═══════════ -->
+<div class="summary">
+<h2>✅ 完整链路：一次调用，四层接力</h2>
+<p>
+<b>配置层：</b>XMLMapperBuilder / MapperAnnotationBuilder → <code>MappedStatement</code> → 存入 <code>Configuration.mappedStatements</code>（一个 HashMap）<br><br>
+<b>代理层：</b>@MapperScan → 为每个接口注册 <code>MapperFactoryBean</code> → getObject() → <code>Proxy.newProxyInstance()</code> → 生成 <code>$Proxy</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;代理的 InvocationHandler = <code>MapperProxy</code><br><br>
+<b>路由层：</b>调用 <code>userMapper.findById(1L)</code> → $Proxy 转发 → <code>MapperProxy.invoke()</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 拼 key = <code>"com.example.mapper.UserMapper.findById"</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>configuration.getMappedStatement(key)</code> — <b>一次 HashMap.get()</b><br><br>
+<b>执行层：</b>SqlSession → Executor → StatementHandler → ParameterHandler (设置 ?) → JDBC → ResultSetHandler (映射回对象)<br>
+</p>
+</div>
+
+<div class="back"><a href="/q04.html">← 返回 Q04 答题</a> · <a href="/">返回索引</a></div>
+</div>
+
+<script>
+document.querySelectorAll('.fb').forEach(el=>{el.addEventListener('mouseenter',()=>el.classList.add('hlg'));el.addEventListener('mouseleave',()=>el.classList.remove('hlg'))});
+</script>
+</body>
+</html>

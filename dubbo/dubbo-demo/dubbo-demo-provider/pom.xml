@@ -7,7 +7,7 @@
 
     <!--
         Provider 模块 — 服务提供者
-        职责：实现服务接口 → 注册到注册中心 → 监听网络端口 → 处理 Consumer 请求
+        职责：实现服务接口 → 注册到 Nacos → 监听 Dubbo 协议端口 → 处理 Consumer 请求
         对应 Dubbo 五大角色中的 Provider + Container
     -->
     <parent>
@@ -20,14 +20,42 @@
     <packaging>jar</packaging>
 
     <name>Dubbo Demo Provider</name>
-    <description>服务提供者 — 实现 UserService / OrderService 并注册到 Zookeeper</description>
+    <description>服务提供者 — 实现 UserService / OrderService 并注册到 Nacos</description>
 
     <dependencies>
-        <!-- 依赖 API 模块（共享接口与 POJO） -->
+        <!-- ======= 共享契约 ======= -->
         <dependency>
             <groupId>com.example.dubbo.demo</groupId>
             <artifactId>dubbo-demo-api</artifactId>
-            <version>${project.version}</version>
+        </dependency>
+
+        <!-- ======= Dubbo RPC 核心（含 Spring 集成） ======= -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- ======= Nacos 注册中心（客户端 + Dubbo 适配器） ======= -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-registry-nacos</artifactId>
+        </dependency>
+
+        <!-- ======= Spring Boot 基础（含 logback 日志） ======= -->
+        <!--
+            spring-boot-starter 包含:
+            - spring-boot-starter-logging → logback-classic + slf4j
+            - spring-core / spring-context
+            - 自动配置支持
+            Provider 不需要 Web 容器（不暴露 HTTP），因此不用 spring-boot-starter-web
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
         </dependency>
     </dependencies>
 </project>

@@ -1,37 +1,18 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q08 · 内部调用失效</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q08 · 内部调用失效</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 08 · AOP</div><h1>内部调用失效</h1><div class="q-sub">同一个类中方法 A 调用 B，B 上有 @Transactional，为什么增强失效？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q08 · 内部调用失效</b> — 同一个类中方法 A 调用 B，B 上的增强为什么失效？</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">同一个类中，方法 A 调用方法 B，B 上有 @Transactional 或 @Cacheable，为什么增强失效？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">因为 Spring AOP 基于代理。外部调用 proxy.methodA() 时被代理拦截，但 methodA() 内部调用 this.methodB() 时——<b>this 指向原始对象，不是代理。</b>methodB 上的切面完全不会触发。<br><br>这是 Java 方法分派机制的物理限制，不是 Spring 的 bug。this.method() 在编译期就绑定到当前对象——不管外面包了多少层代理都改变不了这个事实。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"因为 Spring AOP 基于代理，this 指向原始对象不是代理对象，所以内部调用绕过了切面。解决方案有 AopContext.currentProxy()、注入自身、或者重构到另一个类。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">怎么解决？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">三种方案：<br><br>
+<b>1. AopContext.currentProxy()：</b>从 ThreadLocal 获取当前代理对象。需要 @EnableAspectJAutoProxy(exposeProxy = true)——有轻微性能开销。<br>
+<b>2. 注入自身 @Autowired self：</b>Spring 注入的是代理，调用 self.methodB() 走代理。但构造器注入时不能用（循环依赖）。<br>
+<b>3. 重构到另一个类（最推荐）：</b>把 methodB 抽到单独的 Bean 里。而且这通常说明原来的类职责太多了。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"这个问题的根本原因是代理模式和 Java 方法分派机制的冲突。代理对象的方法调用链是 proxy.method() → 拦截器链 → target.method()，但 target.method() 内部调用 this.otherMethod() 时，this 就是 target 本身——Java 的 invokespecial 指令在编译时就绑定了当前对象。三种解法：AopContext.currentProxy() 从 ThreadLocal 取代理——但需要 exposeProxy=true，有性能开销；注入自身 @Autowired self——Spring 注入的是代理，但构造器注入时不能用（会产生循环依赖）；重构到另一个类——治本，最推荐。AspectJ 编译期织入没有这个问题，因为它直接修改字节码，不存在代理层。"
+<div class="follow"><strong>追问：</strong>"AspectJ 能解决这个问题吗？"<br><strong>答：</strong>能。AspectJ 编译期织入直接修改字节码，没有代理层，不存在 this 绕过的问题。但 AspectJ 配置复杂，实际项目用得少。</div>
+<div class="reflect"><strong>❓ 自问：</strong>怎么判断该用哪种方案？<br><strong>答：</strong>methodB 如果是独立的业务逻辑（比如发送通知）→ 抽到另一个类。如果是类内部的辅助方法 → 用 AopContext 或注入自身。如果整个类大量内部调用 → 重新设计类结构。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>源码：</b>CglibAopProxy.DynamicAdvisedInterceptor.intercept() 中，target 被保存在 advised 字段中。this 调用根本不会经过这里。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"内部调用失效是 Spring AOP 的'阿喀琉斯之踵'——它暴露了代理模式在模拟真正 AOP 时的根本性局限。Spring 对此有三种态度：第一，不修复——因为修复不了。这不是 bug，是 JVM 方法分派机制的物理定律，除非不用代理而用字节码增强（AspectJ）。第二，给逃生舱——AopContext、注入自身，但都标注了'exposeProxy 有性能开销'的警告。第三，引导最佳实践——重构类结构，让需要被增强的方法独立出来。这三种态度的背后，是 Spring 一贯的务实哲学：承认局限、提供 workaround、引导你走向更好的设计。你甚至可以把它理解为 Spring 在暗示你：'如果你遇到了内部调用失效，说明你的类该拆了'——一个类既需要被代理又需要内部调用自己，本身就是单一职责的反面教材。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"阿喀琉斯之踵"、"引导你走向更好的设计"——这个回答不只是技术分析，是设计哲学层面的洞察。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q08 · 内部调用失效 · <a href="/q09.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q09.html">下一题 → Q09 · 拦截链</a></div></div></body></html>

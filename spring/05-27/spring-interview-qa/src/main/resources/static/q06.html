@@ -1,37 +1,18 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q06 · Bean 覆盖</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q06 · Bean 覆盖</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.qinfo h3{font-size:15px;margin-bottom:4px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 06 · IOC 容器</div><h1>Bean 覆盖与冲突</h1><div class="q-sub">Spring Boot 中同名 Bean 默认允许覆盖吗？多模块冲突怎么排查？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><h3>📋 Q06 · Bean 覆盖与冲突</h3><p>Spring Boot 从 1.x 到 2.x 改了一个默认值，背后是无数生产事故。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">Spring Boot 中同名 Bean 默认允许覆盖吗？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>默认不允许。</b>Spring Boot 2.1+ 会直接报 ConflictingBeanDefinitionException。<br><br>但 Spring Framework 原生默认是允许的——后注册的静默覆盖前面的。Spring Boot 加了一层安全锁。为什么改？因为 1.x 时代太多生产事故——你引入一个 starter，它内部定义了一个同名 Bean，静默把你的替换了，没有警告、没有报错，上线出问题根本不知道怎么排查。改成 false 后 fail-fast——启动就报错，你必须显式解决冲突。<br><br>可以通过 spring.main.allow-bean-definition-overriding=true 开启——但我不推荐，这会掩盖问题。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Spring Boot 2.1+ 默认不允许 Bean 覆盖，启动会报 ConflictingBeanDefinitionException。可以通过 spring.main.allow-bean-definition-overriding=true 开启。排查时用 --debug 看 AUTO-CONFIGURATION REPORT。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你遇到过多模块同名 Bean 冲突怎么排错？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">三步走：<br><b>1.</b> 看错误日志——哪个 Bean 名称冲突了，是哪两个类<br>
+<b>2.</b> 决定谁优先——@Primary 让其中一个成为主选，或者 @Qualifier 精确指定<br>
+<b>3.</b> 如果冲突来自自动配置——用 @ConditionalOnMissingBean 让自动配置"温和注册"（用户定义了我就不注册）<br><br>
+实在排查不出来，用 --debug 启动。日志里会打印完整的自动配置报告——Positive matches（生效了）和 Negative matches（被条件注解跳过了）。找到冲突的那个 Bean，看它是从哪里注册的。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Spring Framework 原生和 Spring Boot 在 Bean 覆盖上的默认行为是不同的——这是很多人踩坑的地方。Spring Framework 的 DefaultListableBeanFactory.allowBeanDefinitionOverriding 默认是 true，后注册的悄悄覆盖前面的。Spring Boot 在 2.1 通过 SpringApplication 把这个值改成了 false。为什么要改？生产事故太多——你引入一个 starter，它内部定义了一个和你同名的 Bean，1.x 时代静默覆盖，没有任何警告，出问题根本不知道是哪个 Bean 被替换了。改成 false 后启动直接报错，fail-fast。"
+<div class="follow"><strong>追问：</strong>"allow-bean-definition-overriding=true 有什么风险？"<br><strong>答：</strong>它是全局开关——影响所有 Bean，不是某一个。你没法只允许 A 覆盖 B 而不允许 C 覆盖 D。一旦打开，任何同名 Bean 都会静默覆盖，你完全不知道谁覆盖了谁。</div>
+<div class="reflect"><strong>❓ 自问：</strong>多模块项目怎么从设计上避免 Bean 冲突？<br><strong>答：</strong>给 Bean 起唯一名字——加上模块前缀。自动配置类用 @ConditionalOnMissingBean。公共模块的 Bean 不要用通用名字（如 dataSource），让各模块自己定义。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>排查工具链：</b>--debug 启动 → Positive matches（生效的）/ Negative matches（跳过的）→ 看哪个 Condition 不满足。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Bean 覆盖的默认值变更揭示了一个更深层的设计哲学演变：Spring Framework 的'宽松'是为了灵活性——它最初是一个框架，开发者应该自己知道在做什么。Spring Boot 的'严格'是为了安全性——它已经变成了一个平台，面对的是数百万开发者，不能假设每个人都理解所有配置的含义。从'true'到'false'的这一个字符的变更，背后是从'框架思维'到'平台思维'的跨越——框架提供能力，平台提供护栏。这和 Java 的 checked exception、Rust 的所有权系统是同一个方向：在编译/启动期暴露错误，而不是在生产环境等着爆炸。你团队里的多模块冲突，解决思路只有两条路：治标的 @Primary/@Qualifier 指定优先级，治本的 @ConditionalOnMissingBean 让自动配置变成'温和注册'——用户不定义我才注册，用户定义了我自动退让。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"从框架思维到平台思维的跨越"——这个概括说明你理解的是设计趋势，不是孤立的配置项。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q06 · Bean 覆盖 · <a href="/q07.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q07.html">下一题 → Q07 · 代理选择</a></div></div></body></html>

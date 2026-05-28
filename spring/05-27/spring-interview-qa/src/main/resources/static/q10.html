@@ -1,37 +1,19 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q10 · AOP 原理</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q10 · AOP 原理</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 10 · AOP</div><h1>AOP 实现原理</h1><div class="q-sub">Advisor / Advice / Pointcut 的关系？ReflectiveMethodInvocation 递归链如何工作？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q10 · AOP 原理</b> — Advisor/Advice/Pointcut 关系和递归链。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">Advisor、Advice、Pointcut 的关系？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>Advisor = Advice + Pointcut。</b><br>
+Pointcut：<b>在哪里做？</b>筛选需要增强的方法（切点表达式）。<br>
+Advice：<b>做什么？</b>增强逻辑（前置/后置/环绕/异常通知）。<br>
+Advisor：把两者打包在一起。<br><br>
+为什么要分开？因为同一个 Advice 可以用不同的 Pointcut 应用到不同的包——Advice 的代码一行不用改。AspectJExpressionPointcut 只匹配方法签名（类名、方法名、参数类型），在初始化时通过反射判断，不是运行时判断。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Advisor = Advice + Pointcut。Advice 是增强逻辑（做什么），Pointcut 是切点表达式（在哪里做）。ReflectiveMethodInvocation 通过递归调用每个拦截器的 invoke() 方法实现环绕增强。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">ReflectiveMethodInvocation 的递归调用链是如何工作的？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">核心机制是<b>递归而非 for 循环。</b>ReflectiveMethodInvocation 维护一个拦截器列表和一个 index。每次 proceed() 调用取下一个拦截器，把 this 传给拦截器的 invoke()。拦截器内部再调用 mi.proceed()——形成递归。<br><br>
+为什么必须用递归？因为环绕通知需要在 proceed() 前后写逻辑。递归的调用栈天然表达"进入→执行→退出"的三段结构。for 循环只能线性执行，没法表达"执行一半暂停、回来再继续"。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"AspectJExpressionPointcut 的匹配机制基于方法签名——不是运行时判断，而是通过方法的反射元信息（返回类型、类名、方法名、参数类型）做匹配。这是编译期表达式 + 运行时反射的组合。Advisor 把 Pointcut 和 Advice 打包，然后交给 AbstractAutoProxyCreator 在 BPP.after 阶段使用——对每个 Bean，遍历所有 Advisor，Pointcut 匹配成功就创建代理。AOP Alliance 是一个独立的标准组织，定义了 MethodInterceptor 和 MethodInvocation 接口——Spring AOP 的实现遵守这个标准，所以理论上任何 AOP Alliance 兼容的拦截器都可以在 Spring 中运行。"
+<div class="reflect"><strong>❓ 自问：</strong>Spring AOP 遵循什么标准？<br><strong>答：</strong>AOP Alliance——一个独立的 AOP 标准组织，定义了 MethodInterceptor 和 MethodInvocation 接口。Spring 遵守这个标准而非自己发明接口。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>为什么用 AOP Alliance？</b>Spring 一贯的设计哲学——依赖标准接口而非具体实现。AOP Alliance 定义了 MethodInterceptor/MethodInvocation，Spring 实现它们，Guice 也可以实现它们。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Advisor/Advice/Pointcut 的三层分离是 Spring AOP 架构的灵魂——它把'在哪里做'（Pointcut）、'做什么'（Advice）、'两者的组合'（Advisor）彻底解耦。这不是过度设计——正是因为这种解耦，你才能写出一个通用的日志切面（Advice），然后通过不同的 Pointcut 表达式把它应用到不同的包——Advice 的代码一行都不需要改。Pointcut 接口的抽象也极其重要：AspectJExpressionPointcut 只是其中一种实现，你可以实现基于注解的、基于正则的、基于自定义规则的任意 Pointcut。ReflectiveMethodInvocation 的递归链则体现了另一个哲学：状态驱动的控制流。for 循环的控制流由循环变量决定（线性的），而递归的控制流由调用栈决定（树状的）——当拦截器需要决定'执行前做什么、执行后做什么'时，递归的树状结构天然匹配。这两个设计合在一起，构成了 Spring AOP 的理论基础：切面是'做什么 + 在哪里做'的声明式分离，拦截是'进入 + 退出'的控制流抽象。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"声明式分离 + 控制流抽象"——两个短语概括了整个 AOP 的理论框架。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q10 · AOP 原理 · <a href="/q11.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q11.html">下一题 → Q11 · 自研 AOP</a></div></div></body></html>

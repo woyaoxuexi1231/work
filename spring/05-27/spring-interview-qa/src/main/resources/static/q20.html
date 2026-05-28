@@ -1,37 +1,14 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q20 · 异步请求</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q20 · 异步请求</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 20 · MVC</div><h1>异步请求</h1><div class="q-sub">DeferredResult 和 Callable 的处理流程？如何释放容器线程？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q20 · 异步请求</b> — DeferredResult / Callable / SSE。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">DeferredResult 和 Callable 的处理流程？如何释放容器线程？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">同步模型：每个请求占用一个 Tomcat 线程直到响应返回——200 个线程全阻塞，第 201 个排队。<br><br>
+<b>Callable：</b>Controller 返回 Callable → Spring 提交给 TaskExecutor → Tomcat 线程立即释放 → Callable 执行完 → 新 Tomcat 线程写响应。适合简单异步。<br>
+<b>DeferredResult：</b>更灵活——你可以在任意线程（MQ 消费者、定时任务）中调用 setResult()。适合事件驱动和长轮询。<br><br>
+两者都基于 Servlet 3.0 的 request.startAsync()。SSE 通过 SseEmitter 实现服务器单向推送——比 WebSocket 更轻量（HTTP 协议，自动重连）。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Callable 返回异步任务给 TaskExecutor 执行，DeferredResult 可以在任意线程 setResult。SSE 通过 SseEmitter 实现服务器推送。核心价值是释放 Tomcat 线程提高吞吐。"
-</blockquote>
+<div class="reflect"><strong>❓ 自问：</strong>什么时候同步就够了？<br><strong>答：</strong>大部分业务同步足够。只有当你需要调用外部 API、等待 MQ 消息、或者处理长时间计算时才需要异步。不要为了异步而异步——增加复杂度。</div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"同步模型的瓶颈不是 CPU 是线程——200 个 Tomcat 线程全部阻塞在等待外部 API 响应上，第 201 个请求排队。Callable 的方案：Controller 返回 Callable → Spring 提交给 TaskExecutor → Tomcat 线程立即释放 → Callable 执行完 → 新 Tomcat 线程写响应。DeferredResult 更灵活——它不依赖 TaskExecutor，你可以在 MQ 消费者的回调中 setResult()，实现真正的'等待事件驱动'。两者都基于 Servlet 3.0 的 request.startAsync()。SSE 通过 Content-Type: text/event-stream 实现长连接推送——比 WebSocket 更轻量（单方向，HTTP 协议，自动重连）。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>线程模型：</b>Callable → 业务线程池。DeferredResult → 任意线程。都通过 AsyncContext 与 Servlet 容器交互。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"异步请求的设计解决了 Web 容器的根本矛盾：'线程是昂贵的，但连接是廉价的'。200 个线程阻塞 5 秒等外部 API——这就是 200 × 5s = 1000 秒的线程时间被浪费在等待上。Callable 和 DeferredResult 把'等待'从容器线程中剥离开——让容器线程只做'接收请求'和'返回响应'这两件必须由容器做的事情，而'等待外部服务'这个最耗时的部分交给业务线程池。这本质上是一种资源分层管理：IO 线程负责调度，Worker 线程负责执行。Netty 的 EventLoop 模型、Node.js 的事件循环、Go 的 Goroutine 调度——全部是这个思想的变体。Spring MVC 没有重新发明它，而是在 Servlet 3.0 的 AsyncContext 基础上提供了更友好的编程接口。认识到这是'资源分层管理'而非'异步语法糖'，你就能理解什么时候该用异步、什么时候同步就够了。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"资源分层管理"——把异步请求和 Netty/Node.js/Go 的调度模型联系起来，证明你有跨技术栈的视野。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q20 · 异步请求 · <a href="/q21.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q21.html">下一题 → Q21 · 自动装配</a></div></div></body></html>

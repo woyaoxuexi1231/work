@@ -1,37 +1,18 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q11 · 自研 AOP</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q11 · 自研 AOP</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 11 · AOP</div><h1>自研简化版 AOP 引擎</h1><div class="q-sub">如果让你自己实现一个支持前置、后置、环绕通知的 AOP 引擎，核心接口怎么设计？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q11 · 自研 AOP</b> — 自己实现一个 AOP 引擎，核心接口怎么设计？</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">如果让你自己实现一个支持前置、后置、环绕通知的 AOP 引擎，核心接口怎么设计？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">五个核心组件：<br><br>
+<b>1. Advice 接口族：</b>BeforeAdvice / AfterAdvice / AroundAdvice。为什么分开而不是一个？因为前置不需要返回值、后置需要接收返回值、环绕需要控制调用链——方法签名不同，合并会变成一堆 if-else。<br>
+<b>2. Pointcut 接口：</b>一个 matches(Method, Class) 方法。为什么是接口？因为切点可能是注解、表达式、正则——接口让每种方式独立实现。<br>
+<b>3. Aspect 类：</b>绑定 Advice + Pointcut + order。<br>
+<b>4. AopEngine：</b>注册切面 + 在 Bean 初始化时织入代理（用 JDK 动态代理）。<br>
+<b>5. MethodInvoker 链：</b>递归结构——每个 AroundAdvice 包裹下一层，形成洋葱模型。<br><br>
+<b>200 行代码能完成一个最小可用版本。</b>Spring 的实现更复杂——它多了异常通知、多切面排序、三级缓存与代理的协调。但核心思路完全一样。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"核心接口：Advice 接口族（BeforeAdvice / AfterAdvice / AroundAdvice）、Pointcut 接口（matches 方法）、Aspect 类（绑定 Advice + Pointcut）、AopEngine（注册切面 + 创建代理）。代理通过 JDK 动态代理在 Bean 初始化时织入。"
-</blockquote>
+<div class="follow"><strong>追问：</strong>"如何在 Bean 初始化时织入代理？"<br><strong>答：</strong>对应 Spring 的 postProcessAfterInitialization()——Bean 初始化完成后、放入缓存前。此时 Bean 是成品，生成的代理能完整替代它。</div>
+<div class="reflect"><strong>❓ 自问：</strong>面试官想从这道题看到什么？<br><strong>答：</strong>不是你的代码量，是你的接口设计思路——为什么这么分、每个接口的职责。能说清楚"Advice 按类型分接口是接口隔离原则，Pointcut 是接口是为了开闭原则"，比写 500 行代码更有说服力。</div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"200 行代码的核心架构：Advice 接口族为什么分 Before/After/Around 三个而不是一个？因为不同类型通知有不同的方法签名——Before 不需要返回值，After 需要接收返回值，Around 需要 MethodInvoker 控制链。如果合并成一个接口，每个通知都要写一堆 if-else 判断自己是什么类型。Pointcut 用接口抽象是因为切点的匹配方式多种多样（注解、表达式、正则）——接口让每一种都可以独立实现。MethodInvoker 链是最关键的设计：从目标方法开始，逐层包裹 AroundAdvice，形成洋葱模型。这和 ReflectiveMethodInvocation 的递归是同一个思想——用控制流表达横切关注点的层次。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>对比 Spring：</b>你写的 AopEngine.registerBean() 对应 AbstractAutoProxyCreator.postProcessAfterInitialization()——都是成品阶段织入。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"自研 AOP 引擎的目的不是造轮子——是通过'自己实现一遍'来暴露出 Spring AOP 中那些'如果我来做，我也会这么设计'的必然性。你会发现三个必然：第一，Advice 必须按类型分接口——这是接口隔离原则，你不可能用一个 doEverything() 覆盖所有通知类型。第二，Pointcut 必须是接口——否则换一种匹配方式就要改引擎源码，违反开闭原则。第三，MethodInvoker 链必须是递归——你尝试用 for 循环实现环绕通知就会立刻撞墙。这些不是你选择的，是问题结构本身决定的。理解了这三个必然性，你就理解了 Spring AOP 的架构不是某个人的偏好，而是这个问题的唯一优雅解。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"问题结构本身决定的"、"唯一优雅解"——不是在背 Spring 的设计，是在推演设计。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q11 · 自研 AOP · <a href="/q12.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q12.html">下一题 → Q12 · 事务传播</a></div></div></body></html>

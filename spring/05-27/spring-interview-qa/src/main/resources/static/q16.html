@@ -1,37 +1,17 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q16 · MVC 流程</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q16 · MVC 流程</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 16 · MVC</div><h1>请求处理流程</h1><div class="q-sub">从 DispatcherServlet 到返回结果经过了哪些组件？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q16 · MVC 请求流程</b> — DispatcherServlet 的完整链路。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">一个 HTTP 请求从 DispatcherServlet 到最终返回结果，经过了哪些组件？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">Filter 链 → DispatcherServlet.doDispatch() →<br>
+<b>① HandlerMapping：</b>根据 URL 找 Handler，返回 HandlerExecutionChain（Handler + Interceptors）<br>
+<b>② HandlerAdapter：</b>适配不同 Handler 类型，反射调用 Controller<br>
+<b>③ 参数解析：</b>HandlerMethodArgumentResolver 处理 @RequestParam/@RequestBody/@PathVariable<br>
+<b>④ 返回值处理：</b>@ResponseBody → HttpMessageConverter 序列化；String → ViewResolver 渲染<br><br>
+<b>为什么需要 HandlerAdapter？</b>适配器模式。早期 Controller 要实现 Controller 接口，后来引入 @RequestMapping 注解驱动——两种 Handler 调用方式不同。Adapter 让 DispatcherServlet 不需要知道这些差异。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"HandlerMapping 根据 URL 找 Handler，HandlerAdapter 适配不同 Handler 类型，ViewResolver 解析视图名。DispatcherServlet 做总调度。"
-</blockquote>
+<div class="follow"><strong>追问：</strong>"HandlerMapping 怎么找到 Controller 的？"<br><strong>答：</strong>RequestMappingHandlerMapping 启动时扫描所有 @Controller 类的 @RequestMapping 注解，建立 URL→HandlerMethod 的映射表。请求来了直接查表——不是每次请求都扫描。</div>
+<div class="reflect"><strong>❓ 自问：</strong>DispatcherServlet 的本质是什么？<br><strong>答：</strong>一个策略模式大集合——HandlerMapping、HandlerAdapter、ViewResolver、HandlerExceptionResolver 全部是策略接口。它只负责组装和调度，不负责具体实现。</div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"doDispatch() 的核心流程：HandlerMapping.getHandler() 返回 HandlerExecutionChain（Handler + Interceptors）→ HandlerAdapter.handle() 调用 Controller → 参数通过 HandlerMethodArgumentResolver 解析 → 返回值通过 HandlerMethodReturnValueHandler 处理 → @ResponseBody 走 HttpMessageConverter 序列化，String 走 ViewResolver 渲染。HandlerAdapter 是适配器模式——早期 Controller 需要实现 Controller 接口，后来引入 @RequestMapping 注解驱动，两种 Handler 的调用方式不同，Adapter 解耦了这个差异。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>扩展点：</b>想自定义参数解析？实现 HandlerMethodArgumentResolver。想自定义返回值处理？实现 HandlerMethodReturnValueHandler。开闭原则的教科书。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"DispatcherServlet 的设计是一个策略模式的大集合——HandlerMapping、HandlerAdapter、ViewResolver、HandlerExceptionResolver 全部是策略接口。这种设计让 Spring MVC 从一个'MVC 框架'变成了一个'MVC 扩展平台'——你想换 URL 映射策略？换一个 HandlerMapping 实现。想支持新的视图技术？实现 ViewResolver。想自定义参数绑定？实现 ArgumentResolver。Spring 在 DispatcherServlet 中只做一件事：组装这些策略并按顺序调用。这就是为什么 Spring MVC 能二十年来不被淘汰——它从一开始就不是'某个人的 MVC 设计'，而是'MVC 模式的可插拔实现'。每一个组件都可替换，但整体流程保持稳定。理解了这个，你就理解了为什么 Spring 的文档中到处都是'strategy interface'这个词。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"从 MVC 框架到 MVC 扩展平台"、"策略模式大集合"——这是对 Spring MVC 架构最精准的概括。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q16 · MVC 流程 · <a href="/q17.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q17.html">下一题 → Q17 · 参数绑定</a></div></div></body></html>

@@ -15,6 +15,7 @@ public class Q04MapperFactoryBean<T> implements FactoryBean<T> {
     @Override
     @SuppressWarnings("unchecked")
     public T getObject() {
+        // org.mybatis.spring.mapper.MapperFactoryBean
         return (T) Proxy.newProxyInstance(
                 mapperInterface.getClassLoader(),
                 new Class<?>[]{mapperInterface},
