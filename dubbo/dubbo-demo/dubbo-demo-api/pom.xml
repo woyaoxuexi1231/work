@@ -23,7 +23,7 @@
     <packaging>jar</packaging>
 
     <name>Dubbo Demo API</name>
-    <description>共享服务接口 & 领域模型（纯 POJO，零框架依赖）</description>
+    <description>共享服务接口 领域模型（纯 POJO，零框架依赖）</description>
 
     <!--
         API 模块不需要任何依赖 — 只有接口定义和 Serializable POJO。

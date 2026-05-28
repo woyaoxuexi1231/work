@@ -1,17 +1,100 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q16 · MVC 流程</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
-<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q16 · MVC 请求流程</b> — DispatcherServlet 的完整链路。</p></div><div class="chat">
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q16 · MVC 请求流程</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+.chat{padding:20px 0}
+.msg{display:flex;margin-bottom:16px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}
+.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}
+.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}
+.msg .bubble{max-width:88%;padding:12px 16px;border-radius:8px;font-size:14px;line-height:1.85}
+.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}
+.bubble b{color:#111}.bubble code{background:rgba(0,0,0,.08);padding:1px 6px;border-radius:3px;font-size:13px;font-family:"JetBrains Mono",Consolas,monospace}
+.bubble .scene{display:block;background:#f5f5f5;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;color:#555;border-left:3px solid var(--accent)}
+.bubble .fix{display:block;background:#e8f5e9;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;border-left:3px solid #2e7d32}
+.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.qinfo h3{font-size:15px;margin-bottom:2px}.qinfo p{color:var(--sub);font-size:13px}
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a> · <a href="/q16-deep.html">📖 演化史</a></nav></div></header>
+<div class="wrap">
+<div class="qinfo"><h3>📋 Q16 · MVC 请求处理流程</h3><p>不考组件名字——考你<b>排查过什么实际问题</b>。每个答案都是真实开发场景。</p></div>
+<div class="chat">
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">一个 HTTP 请求从 DispatcherServlet 到最终返回结果，经过了哪些组件？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">Filter 链 → DispatcherServlet.doDispatch() →<br>
-<b>① HandlerMapping：</b>根据 URL 找 Handler，返回 HandlerExecutionChain（Handler + Interceptors）<br>
-<b>② HandlerAdapter：</b>适配不同 Handler 类型，反射调用 Controller<br>
-<b>③ 参数解析：</b>HandlerMethodArgumentResolver 处理 @RequestParam/@RequestBody/@PathVariable<br>
-<b>④ 返回值处理：</b>@ResponseBody → HttpMessageConverter 序列化；String → ViewResolver 渲染<br><br>
-<b>为什么需要 HandlerAdapter？</b>适配器模式。早期 Controller 要实现 Controller 接口，后来引入 @RequestMapping 注解驱动——两种 Handler 调用方式不同。Adapter 让 DispatcherServlet 不需要知道这些差异。</div></div>
+<!-- ═══════ 1 ═══════ -->
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你遇到过 @RequestBody 突然读不到数据的情况吗？是什么原因？怎么查出来的？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">
+遇到过。那是一个请求日志 Filter 引发的。<br><br>
+<div class="scene"><b>🛑 场景还原：</b>运维要求把所有请求的 body 记到日志里。我写了一个 Filter，在 doFilter 里调 request.getReader().lines().collect() 拿到 body 内容，打了一行 log，然后 chain.doFilter 放行。日志是有了——但后面所有 Controller 的 @RequestBody 全部拿到 null。</div>
 
-<div class="follow"><strong>追问：</strong>"HandlerMapping 怎么找到 Controller 的？"<br><strong>答：</strong>RequestMappingHandlerMapping 启动时扫描所有 @Controller 类的 @RequestMapping 注解，建立 URL→HandlerMethod 的映射表。请求来了直接查表——不是每次请求都扫描。</div>
-<div class="reflect"><strong>❓ 自问：</strong>DispatcherServlet 的本质是什么？<br><strong>答：</strong>一个策略模式大集合——HandlerMapping、HandlerAdapter、ViewResolver、HandlerExceptionResolver 全部是策略接口。它只负责组装和调度，不负责具体实现。</div>
+<div class="fix"><b>✅ 排查和修复：</b>打断点发现在 Filter 之后的 HttpMessageConverter 里，request.getInputStream().read() 直接返回 -1。原因是 HttpServletRequest 的 InputStream <b>只能读一次</b>——Filter 读完了，流到了末尾，Spring 再读就是空的。<br><br>
+修复很简单：把 request 用 <code>new ContentCachingRequestWrapper(request)</code> 包一层，这个包装类把 body 缓存到内部 byte[]。但这有个代价——它会先把整个 body 读进内存。如果上传的是大文件，内存直接炸。所以最后改成只对 Content-Type 是 application/json 且 Content-Length &lt; 4KB 的请求才记录 body，其余的只记录 Content-Length。</div>
 
-</div><div class="back"><a href="/q17.html">下一题 → Q17 · 参数绑定</a></div></div></body></html>
+如果面试官追问"为什么不用 Interceptor 而要写在 Filter 里"，答案也很直接——Interceptor 在 DispatcherServlet 之后才执行。那时候如果 body 已经被某个 ArgumentResolver 或者 Converter 消费了，Interceptor 同样读不到。拿到最原始的请求数据<b>必须</b>在 Filter 层。
+</div></div>
+
+<!-- ═══════ 2 ═══════ -->
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你写了一个 @ControllerAdvice 做全局异常处理，但发现有几种异常就是捕获不到。是哪几种？为什么捕获不到？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">
+<div class="scene"><b>🛑 两种捕获不到的情况：</b><br><br>
+<b>第一种：</b>异常在进入 DispatcherServlet 之前就抛了。比如 Filter 里抛了异常——这时候请求还没到 DispatcherServlet，@ControllerAdvice 的 ExceptionHandler 根本不会被触发。返回的是一个 Tomcat 默认的 500 错误页。解决方案是在 Filter 里自己 try-catch，手动写 response。<br><br>
+<b>第二种：</b>响应已经 commit 了才抛异常。比如 Controller 方法返回了一个大文件，OutputStream 写了一半，磁盘满了抛 IOException。但此时 HTTP 响应头已经发出去了（状态码 200 已经在网络上了），你没法再把 200 改成 500。@ControllerAdvice 能捕获异常，但修改响应状态码的代码会抛另一个异常——因为 response 已经 committed。这种情况只能靠日志告警，没法给客户端返回正确的错误码。</div>
+
+<div class="fix"><b>✅ 实际项目里我是这样做的：</b>Filter 层的异常直接用 Filter 内部的 try-catch 处理，返回统一 JSON 格式的错误。Controller 层的异常靠 @ControllerAdvice。响应已 commit 的情况——加监控，日志里搜 "response committed" + IOException，靠告警而不是靠代码。</div>
+</div></div>
+
+<!-- ═══════ 3 ═══════ -->
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你做了前后端分离，Controller 全部返回 JSON。但有一天前端突然说某个接口返回了 XML。怎么排查？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">
+<div class="scene"><b>🛑 场景：</b>前端 fetch('/users/1') 突然收到 &lt;xml&gt; 而不是 JSON。排查发现前端新来的同事在请求里加了一个 header：<code>Accept: application/xml</code>。浏览器默认的 Accept 是 <code>*/*</code>，但加了之后就明确告诉服务端"我想要 XML"。</div>
+
+Spring MVC 有个机制叫<b>内容协商（Content Negotiation）</b>——在 ReturnValueHandler 选 HttpMessageConverter 时，不仅看返回值类型，还看请求的 Accept header。如果 MappingJackson2HttpMessageConverter 发现 Accept 里没有 <code>application/json</code> 但 MappingJackson2XmlHttpMessageConverter 发现 Accept 里有 <code>application/xml</code>——后者就胜出了。如果 classpath 里恰好有 jackson-dataformat-xml 的 jar（可能是一个不相关的依赖带进来的），就会自动注册一个 XML Converter。
+
+<div class="fix"><b>✅ 修复：</b>两种方式。治本的方式——在 Spring Boot 配置里关掉内容协商：<code>spring.mvc.contentnegotiation.favor-parameter=false</code>。治标的方式——Controller 方法上加 <code>@RequestMapping(produces = "application/json")</code>，明确告诉 Spring"这个方法只产 JSON"。实际项目我两个都加了：全局关掉内容协商避免意外，关键接口加 produces 做防御。</div>
+</div></div>
+
+<!-- ═══════ 4 ═══════ -->
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你做了一个全局的 ResponseBodyAdvice 把返回值包成 {code, message, data}。但后来有个接口需要返回原始格式——比如要给第三方回调，他们要求固定的格式。你怎么让这个接口跳过包装？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">
+ResponseBodyAdvice 有一个 <code>supports()</code> 方法——它在每次写响应之前被调用，返回 true 才会执行 <code>beforeBodyWrite()</code>。这个 supports 方法可以拿到 <code>MethodParameter</code>——也就是 Controller 方法的反射信息。<br><br>
+
+<div class="fix"><b>✅ 做法：</b>自定义一个注解 <code>@NoWrapper</code>，标在不需要包装的 Controller 方法上。然后在 <code>supports()</code> 里检查方法有没有这个注解：<br>
+<code>return !returnType.hasMethodAnnotation(NoWrapper.class);</code><br><br>
+有 @NoWrapper → supports 返回 false → beforeBodyWrite 不执行 → 返回原始数据。没有 @NoWrapper → supports 返回 true → 走包装逻辑。<br><br>
+<b>比写死 URL 白名单好。</b>用注解的方式，加新接口的人自己决定要不要包装——不用每次都来改全局配置。</div>
+</div></div>
+
+<!-- ═══════ 5 ═══════ -->
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你的 Controller 接收 @RequestBody User user。但有一天前端传的 JSON 里多了一个字段 "extraField"，后端直接报 400 了。为什么会报 400？你倾向怎么处理——拒绝还是忽略？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">
+<div class="scene"><b>🛑 原因：</b>Jackson 默认配置里 <code>FAIL_ON_UNKNOWN_PROPERTIES</code> 是 true——JSON 里出现了 Java 类里没有的字段，Jackson 抛 UnrecognizedPropertyException，Spring 的 HttpMessageConverter 把这个异常往上抛，最终变成 400。</div>
+
+<div class="fix"><b>✅ 我倾向全局关掉——忽略未知字段：</b><br>
+<code>spring.jackson.deserialization.fail-on-unknown-properties=false</code><br><br>
+<b>为什么选忽略而不是拒绝？</b>前后端版本不一致是常态。后端先上线，加了新字段 extraField；前端还没更新，多传了这个字段。如果拒绝，旧版本前端直接全线 400——这是不可接受的。忽略未知字段让 API 向后兼容——前端加字段不影响后端，后端加字段不影响前端。这就是<b>鲁棒性原则</b>："对自己发送的东西要严格，对接收的东西要宽容。"</div>
+</div></div>
+
+<!-- ═══════ 6 ═══════ -->
+<div class="msg left"><div class="avatar">面</div><div class="bubble">你有没有遇到过"加了 @ResponseBody 但返回值还是被 ViewResolver 处理了"的情况？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">
+遇到过。那次是 Controller 类上写了 <code>@Controller</code>，方法上写了 <code>@ResponseBody</code>，返回了一个 String。<br><br>
+代码是这样：<code>@ResponseBody public String hello() { return "hello"; }</code><br>
+期望返回纯文本 <code>hello</code>。但实际上 Spring 完美地返回了 <code>hello</code> 纯文本——没有走 ViewResolver。因为 <code>RequestResponseBodyMethodProcessor</code> 检测到了 <code>@ResponseBody</code> 注解，它处理完后标记了 <code>mavContainer.setRequestHandled(true)</code>，后面的 ViewNameMethodReturnValueHandler 看到标记直接跳过。<br><br>
+<b>真正出问题的是另一种情况：</b>方法上没写 @ResponseBody，返回 String。<code>public String hello() { return "hello"; }</code>——Spring 把 <code>"hello"</code> 当成了<b>视图名</b>，交给 ViewResolver，去找 <code>/WEB-INF/views/hello.jsp</code>。找不到 → 404。<br><br>
+这就是 @RestController 的价值——整个类的所有方法默认都是 @ResponseBody。不会出现"忘了加注解，返回值被当成视图名"的低级错误。
+</div></div>
+
+</div></div>
+<div class="back"><a href="/q17.html">下一题 → Q17 · 参数绑定</a> · <a href="/q16-deep.html">📖 30年演化史</a></div>
+</div></body></html>

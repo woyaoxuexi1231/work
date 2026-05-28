@@ -35,11 +35,12 @@
             <artifactId>dubbo-spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- ======= Nacos 注册中心（客户端 + Dubbo 适配器） ======= -->
-        <dependency>
-            <groupId>com.alibaba.nacos</groupId>
-            <artifactId>nacos-client</artifactId>
-        </dependency>
+        <!-- ======= Nacos 注册中心（Dubbo 适配器，自动引入兼容的 nacos-client） ======= -->
+        <!--
+            注意：不要显式声明 nacos-client！
+            dubbo-registry-nacos 内部已依赖兼容版本的 nacos-client，
+            显式声明可能引入版本冲突导致无法连接或认证失败。
+        -->
         <dependency>
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo-registry-nacos</artifactId>

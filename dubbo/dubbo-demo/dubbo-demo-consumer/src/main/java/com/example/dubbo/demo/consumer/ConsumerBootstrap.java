@@ -3,6 +3,7 @@ package com.example.dubbo.demo.consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
+import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
@@ -39,6 +40,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * @version 1.0.0
  */
 @SpringBootApplication
+@EnableDubbo(scanBasePackages = "com.example.dubbo.demo.consumer")
 public class ConsumerBootstrap {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumerBootstrap.class);

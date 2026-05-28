@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q16 · MVC 请求处理全史</title>
+<style>
+:root{--bg:#090c10;--card:#11161e;--text:#c9d1d9;--sub:#6e7781;--accent:#58a6ff;--green:#3fb950;--orange:#d2991d;--pink:#f778ba;--red:#f85149;--border:#21262d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:14px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+h1{font-size:28px;margin:36px 0 6px;text-align:center}h1 span{color:var(--accent)}
+.sub{text-align:center;color:var(--sub);margin-bottom:32px;font-size:14px}
+
+.era{border-left:5px solid var(--accent);padding-left:20px;margin:44px 0 24px}
+.era h2{font-size:22px;margin:0}.era .time{color:var(--sub);font-size:13px;margin-top:2px}
+
+.problem{background:#1a1111;border-left:4px solid var(--red);padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0;font-size:13px}
+.problem strong{color:var(--red)}
+.solution{background:#111a1a;border-left:4px solid var(--green);padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0;font-size:13px}
+.solution strong{color:var(--green)}
+
+.code{background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:10px 0}
+.code .bar{background:#161b22;padding:6px 14px;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.code .bar .file{color:var(--accent)}.code .bar .era-tag{font-size:10px;padding:1px 8px;border-radius:6px;font-weight:600}.era-90{background:#3d2f1f;color:var(--orange)}.era-98{background:#1f3a5f;color:var(--accent)}.era-00{background:#2d1f3f;color:var(--pink)}.era-10{background:#1f3d2f;color:var(--green)}.era-14{background:#1f3d3d;color:#56d4dd}
+.code .ct{font-family:"JetBrains Mono",Consolas,monospace;font-size:11px;line-height:1.7;padding:14px 18px;overflow-x:auto;white-space:pre;color:#c9d1d9}
+.code .ct .k{color:#ff7b72}.code .ct .t{color:#ffa657}.code .ct .f{color:#d2a8ff}.code .ct .s{color:#a5d6ff}.code .ct .c{color:#8b949e}.code .ct .a{color:#ffa657}.code .ct .n{color:#7ee787}.code .ct .v{color:#79c0ff}
+
+.pain{color:var(--red);font-weight:700}
+.gain{color:var(--green);font-weight:700}
+
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.compare .side{background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.compare .side h4{font-size:13px;margin-bottom:8px}.compare .side.old h4{color:var(--red)}.compare .side.new h4{color:var(--green)}
+
+.summary{background:linear-gradient(135deg,#0d1117,#11161e);border:2px solid var(--green);border-radius:14px;padding:24px 28px;margin:32px 0}
+.summary h3{color:var(--green);font-size:18px;margin-bottom:12px}
+.summary .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.summary .col{padding:12px;background:#090c10;border-radius:8px}
+.summary .col h4{font-size:14px;margin-bottom:6px;color:var(--accent)}.summary .col p{font-size:12px;color:var(--sub);line-height:1.7}
+
+.back{text-align:center;padding:40px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Spring MVC 请求处理：<span>一段 30 年的演化史</span></h1>
+<p class="sub">当你理解了前一代的代码有多痛苦，你才能理解后一代的设计为什么是"必然"。</p>
+
+<!-- ═══════════════ ERA 1: CGI ═══════════════ -->
+<div class="era"><h2>第一代：CGI（1993）</h2><div class="time">一个 HTTP 请求 = 一个操作系统进程。100 并发 = 100 个进程。</div></div>
+
+<div class="code"><div class="bar"><span class="file">hello.pl</span><span class="era-tag era-90">Perl CGI</span></div><div class="ct"><span class="c">#!/usr/bin/perl</span>
+<span class="c"># 每次请求，Web Server（Apache/Nginx）fork 一个新进程执行这个脚本</span>
+<span class="c"># 进程执行完就销毁——下一次请求再来，重新 fork，重新执行</span>
+
+<span class="k">use</span> CGI;
+<span class="k">my</span> <span class="v">$q</span> = CGI-&gt;<span class="f">new</span>;
+
+<span class="c"># 手写 HTML，没有任何模板引擎</span>
+<span class="k">print</span> <span class="v">$q</span>-&gt;<span class="f">header</span>(<span class="s">'text/html; charset=UTF-8'</span>);
+<span class="k">print</span> <span class="s">"&lt;html&gt;&lt;body&gt;"</span>;
+<span class="k">print</span> <span class="s">"&lt;h1&gt;Hello, "</span> . <span class="v">$q</span>-&gt;<span class="f">param</span>(<span class="s">'name'</span>) . <span class="s">"&lt;/h1&gt;"</span>;
+<span class="k">print</span> <span class="s">"&lt;/body&gt;&lt;/html&gt;"</span>;
+
+<span class="c"># 如果要连数据库呢？</span>
+<span class="c"># 每个请求都要：connect → query → disconnect</span>
+<span class="c"># 没有连接池——每个进程一条独立连接</span></div></div>
+
+<div class="problem"><strong>❌ 致命缺陷：</strong>每个请求 fork 一个进程。进程创建/销毁的开销在并发场景下是灾难性的。100 个并发 = 100 个进程 = 内存爆炸。而且进程之间完全隔离——无法共享数据库连接、无法共享缓存。</div>
+
+<!-- ═══════════════ ERA 2: Servlet ═══════════════ -->
+<div class="era"><h2>第二代：Servlet（1998）</h2><div class="time">进程 → 线程。一个 Servlet 实例被所有请求共享，每个请求分配一个线程。</div></div>
+
+<div class="code"><div class="bar"><span class="file">UserServlet.java</span><span class="era-tag era-98">Java Servlet 2.0</span></div><div class="ct"><span class="c">// Servlet 不再为每个请求创建进程——一个 Servlet 实例常驻内存</span>
+<span class="c">// 每个请求分配一个线程调用 service() 方法</span>
+
+<span class="k">public class</span> <span class="t">UserServlet</span> <span class="k">extends</span> <span class="t">HttpServlet</span> {
+
+    <span class="c">// ★ 第一个请求过来时，容器调用 init()——只调一次</span>
+    <span class="k">public void</span> <span class="f">init</span>() {
+        <span class="c">// 这里可以初始化一次：连数据库、加载配置</span>
+        <span class="c">// 所有请求共享这个初始化结果——比 CGI 进步太多了</span>
+    }
+
+    <span class="c">// ★ 每个请求调这个方法——多线程并发调用同一个实例！</span>
+    <span class="k">protected void</span> <span class="f">doGet</span>(<span class="t">HttpServletRequest</span> req, <span class="t">HttpServletResponse</span> resp) {
+
+        <span class="c">// ── 问题 1：参数解析全靠手写 ──</span>
+        <span class="t">String</span> idStr = req.getParameter(<span class="s">"id"</span>);         <span class="c">// 拿到的永远是 String</span>
+        <span class="t">Long</span> id = <span class="t">Long</span>.parseLong(idStr);                <span class="c">// 自己转类型</span>
+        <span class="k">if</span> (idStr == <span class="k">null</span> || idStr.isEmpty()) {        <span class="c">// 自己校验</span>
+            resp.sendError(<span class="s">400</span>, <span class="s">"id is required"</span>);   <span class="c">// 自己写错误响应</span>
+            <span class="k">return</span>;
+        }
+
+        <span class="c">// ── 问题 2：业务逻辑和 HTTP 细节混在一起 ──</span>
+        <span class="t">User</span> user = userService.findById(id);
+        <span class="k">if</span> (user == <span class="k">null</span>) {
+            resp.sendError(<span class="s">404</span>, <span class="s">"User not found"</span>);
+            <span class="k">return</span>;
+        }
+
+        <span class="c">// ── 问题 3：响应全靠手拼 ──</span>
+        resp.setContentType(<span class="s">"text/html;charset=UTF-8"</span>);
+        <span class="t">PrintWriter</span> out = resp.getWriter();
+        out.println(<span class="s">"&lt;html&gt;&lt;body&gt;"</span>);
+        out.println(<span class="s">"&lt;h1&gt;User: "</span> + user.getName() + <span class="s">"&lt;/h1&gt;"</span>);
+        out.println(<span class="s">"&lt;p&gt;Email: "</span> + user.getEmail() + <span class="s">"&lt;/p&gt;"</span>);
+        out.println(<span class="s">"&lt;/body&gt;&lt;/html&gt;"</span>);
+    }
+
+    <span class="c">// ★ 容器关闭时调用 destroy()——清理资源</span>
+    <span class="k">public void</span> <span class="f">destroy</span>() {
+        <span class="c">// 关闭数据库连接池</span>
+    }
+}</div></div>
+
+<div class="code"><div class="bar"><span class="file">web.xml</span><span class="era-tag era-98">Servlet 2.0 配置</span></div><div class="ct"><span class="c">&lt;!-- 每个 Servlet 都要在 XML 里声明 —— 一个项目几十个 Servlet → XML 爆炸 --&gt;</span>
+<span class="a">&lt;servlet&gt;</span>
+    <span class="a">&lt;servlet-name&gt;</span>userServlet<span class="a">&lt;/servlet-name&gt;</span>
+    <span class="a">&lt;servlet-class&gt;</span>com.example.UserServlet<span class="a">&lt;/servlet-class&gt;</span>
+    <span class="a">&lt;load-on-startup&gt;</span>1<span class="a">&lt;/load-on-startup&gt;</span>
+<span class="a">&lt;/servlet&gt;</span>
+<span class="a">&lt;servlet-mapping&gt;</span>
+    <span class="a">&lt;servlet-name&gt;</span>userServlet<span class="a">&lt;/servlet-name&gt;</span>
+    <span class="a">&lt;url-pattern&gt;</span>/user<span class="a">&lt;/url-pattern&gt;</span>
+<span class="a">&lt;/servlet-mapping&gt;</span>
+<span class="c">&lt;!-- 再加一个 OrderServlet → 又是一个 &lt;servlet&gt; + &lt;servlet-mapping&gt; --&gt;</span>
+<span class="c">&lt;!-- 再加 20 个...你懂的 --&gt;</span></div></div>
+
+<p style="color:var(--orange);font-size:12px;margin-top:6px">💡 进步：进程→线程，共享实例。但产生了新问题：<span class="pain">乱码处理、参数解析、类型转换、校验、XML 膨胀——每个 Servlet 都要写一遍。</span></p>
+
+<div class="compare">
+<div class="side old"><h4>❌ Servlet 时代没解决的</h4>
+· 每个 URL 需要一个 Servlet → 类爆炸<br>· 参数永远是 String → 手动 parseLong<br>· 校验全靠 if-else → 大量重复代码<br>· 响应全靠 out.println → 维护噩梦<br>· URL 映射写在 XML → 修改要重启<br>· 业务代码和 HttpServletRequest 强耦合</div>
+<div class="side new"><h4>✅ Servlet 已经解决的</h4>
+· 进程→线程 → 内存效率大幅提升<br>· init() 一次初始化 → 共享资源<br>· destroy() 优雅关闭 → 资源释放<br>· Filter 链 → 统一的横切处理</div>
+</div></div>
+
+<!-- ═══════════════ ERA 3: Spring MVC 早期 ═══════════════ -->
+<div class="era"><h2>第三代：Spring MVC 早期（2004-2009）</h2><div class="time">Controller 不再继承 HttpServlet——但还是要实现 Spring 的 Controller 接口。</div></div>
+
+<div class="code"><div class="bar"><span class="file">UserController.java</span><span class="era-tag era-00">Spring MVC 2.x</span></div><div class="ct"><span class="c">// Spring MVC 最早的设计：Controller 必须实现 Controller 接口</span>
+<span class="c">// 好处：不再需要继承 HttpServlet——你的类只是一个普通 Bean</span>
+<span class="c">// 坏处：一个 Controller 只能处理一个 URL（和 Servlet 一样的问题！）</span>
+
+<span class="k">public class</span> <span class="t">UserController</span> <span class="k">implements</span> <span class="t">Controller</span> {
+
+    <span class="k">public</span> <span class="t">ModelAndView</span> <span class="f">handleRequest</span>(<span class="t">HttpServletRequest</span> req,
+                                      <span class="t">HttpServletResponse</span> resp) {
+
+        <span class="c">// 参数还是手动解析——但有了数据绑定工具</span>
+        <span class="t">String</span> id = req.getParameter(<span class="s">"id"</span>);
+
+        <span class="c">// 调 Service</span>
+        <span class="t">User</span> user = userService.findById(<span class="t">Long</span>.parseLong(id));
+
+        <span class="c">// 返回 ModelAndView——比直接 out.println 好一些，但还是很原始</span>
+        <span class="t">ModelAndView</span> mv = <span class="k">new</span> <span class="t">ModelAndView</span>(<span class="s">"userView"</span>); <span class="c">// 视图名</span>
+        mv.addObject(<span class="s">"user"</span>, user);                     <span class="c">// 数据</span>
+        <span class="k">return</span> mv;
+    }
+}</div></div>
+
+<div class="code"><div class="bar"><span class="file">dispatcher-servlet.xml</span><span class="era-tag era-00">Spring MVC 2.x 配置</span></div><div class="ct"><span class="c">&lt;!-- 虽然 Controller 变成了 Bean，但 URL 映射还是在 XML 里 --&gt;</span>
+<span class="a">&lt;bean</span> <span class="v">name</span>=<span class="s">"/user"</span> <span class="v">class</span>=<span class="s">"com.example.UserController"</span><span class="a">/&gt;</span>
+<span class="a">&lt;bean</span> <span class="v">name</span>=<span class="s">"/order"</span> <span class="v">class</span>=<span class="s">"com.example.OrderController"</span><span class="a">/&gt;</span>
+<span class="c">&lt;!-- 好了一点：不想写 Servlet 了。但一个 URL 还是一个 Bean → 还是爆炸 --&gt;</span></div></div>
+
+<div class="problem"><strong>❌ 还是没解决：</strong>一个 Controller 处理一个 URL——和 Servlet 一样的问题。只是从"继承 HttpServlet"变成了"实现 Controller 接口"。XML 地狱依旧——URL 映射还是在配置文件里。</div>
+
+<!-- ═══════════════ ERA 4: Spring MVC 注解驱动 ═══════════════ -->
+<div class="era"><h2>第四代：@RequestMapping 注解驱动（2009）</h2><div class="time">一个 Controller 可以处理多个 URL。@RequestParam 自动类型转换。</div></div>
+
+<div class="code"><div class="bar"><span class="file">UserController.java</span><span class="era-tag era-10">Spring MVC 3.0</span></div><div class="ct"><span class="c">// ★ 革命性变化：@Controller + @RequestMapping</span>
+<span class="c">// 一个类可以处理多个 URL，不再需要为每个 URL 写一个类！</span>
+
+<span class="a">@Controller</span>
+<span class="k">public class</span> <span class="t">UserController</span> {
+
+    <span class="c">// URL "/users/1" 自动映射到这个方法</span>
+    <span class="a">@RequestMapping</span>(<span class="v">value</span> = <span class="s">"/users/{id}"</span>, <span class="v">method</span> = <span class="t">RequestMethod</span>.GET)
+    <span class="k">public</span> <span class="t">String</span> <span class="f">getUser</span>(<span class="a">@PathVariable</span> <span class="t">Long</span> id, <span class="t">Model</span> model) {
+        <span class="c">// ★ @PathVariable 自动从 URL 提取 "1"，自动转成 Long！</span>
+        <span class="c">// 再也不用 req.getParameter() + Long.parseLong() 了！</span>
+
+        <span class="t">User</span> user = userService.findById(id);
+        model.addAttribute(<span class="s">"user"</span>, user);
+        <span class="k">return</span> <span class="s">"userDetail"</span>;  <span class="c">// 返回视图名，不是 HTML 字符串</span>
+    }
+
+    <span class="c">// 同一个 Controller 里还可以有 POST 方法</span>
+    <span class="a">@RequestMapping</span>(<span class="v">value</span> = <span class="s">"/users"</span>, <span class="v">method</span> = <span class="t">RequestMethod</span>.POST)
+    <span class="k">public</span> <span class="t">String</span> <span class="f">createUser</span>(<span class="a">@RequestParam</span> <span class="t">String</span> name,
+                              <span class="a">@RequestParam</span> <span class="t">Integer</span> age,  <span class="c">// ★ 自动类型转换！</span>
+                              <span class="t">Model</span> model) {
+        <span class="t">User</span> user = userService.create(name, age);
+        model.addAttribute(<span class="s">"user"</span>, user);
+        <span class="k">return</span> <span class="s">"redirect:/users/"</span> + user.getId();  <span class="c">// 重定向也很简单</span>
+    }
+}</div></div>
+
+<div class="compare">
+<div class="side old"><h4>❌ Spring MVC 3.0 还是没解决的</h4>
+· 返回的是 JSP 视图名 → 还要写 JSP 模板<br>· 前后端不分离 → 改 UI 要改后端<br>· 配置还是在 XML 里（DispatcherServlet 等）<br>· 要手动配 ViewResolver、Converter</div>
+<div class="side new"><h4>✅ Spring MVC 3.0 已经解决的</h4>
+· 一个 Controller 处理多个 URL → 类爆炸终结<br>· @RequestParam 自动类型转换 → 告别 parseLong<br>· @PathVariable 从 URL 提取参数 → 告别 getParameter<br>· 不再需要实现任何接口 → 纯 POJO</div>
+</div></div>
+
+<!-- ═══════════════ ERA 5: Spring Boot REST ═══════════════ -->
+<div class="era"><h2>第五代：Spring Boot + @RestController（2014-至今）</h2><div class="time">零 XML、零 JSP、自动配置。后端只返回 JSON——前端完全独立。</div></div>
+
+<div class="code"><div class="bar"><span class="file">UserController.java</span><span class="era-tag era-14">Spring Boot 3.x</span></div><div class="ct"><span class="c">// ★ 最终形态：Controller 就像一个普通的 Java 类</span>
+<span class="c">// HTTP 的一切细节全部被框架屏蔽</span>
+
+<span class="a">@RestController</span>           <span class="c">// = @Controller + @ResponseBody——所有方法返回 JSON</span>
+<span class="a">@RequestMapping</span>(<span class="s">"/users"</span>)
+<span class="k">public class</span> <span class="t">UserController</span> {
+
+    <span class="c">// GET /users/1 → {"id":1,"name":"Alice","email":"alice@example.com"}</span>
+    <span class="a">@GetMapping</span>(<span class="s">"/{id}"</span>)
+    <span class="k">public</span> <span class="t">User</span> <span class="f">getUser</span>(<span class="a">@PathVariable</span> <span class="t">Long</span> id) {
+        <span class="k">return</span> userService.findById(id);
+        <span class="c">// 返回 User 对象 → Spring 自动序列化为 JSON → 写进 response body</span>
+        <span class="c">// 不需要 Model、不需要 ModelAndView、不需要视图名</span>
+    }
+
+    <span class="c">// POST /users + JSON body → 201 Created</span>
+    <span class="a">@PostMapping</span>
+    <span class="k">public</span> <span class="t">ResponseEntity</span>&lt;<span class="t">User</span>&gt; <span class="f">createUser</span>(
+            <span class="a">@Valid</span> <span class="a">@RequestBody</span> <span class="t">CreateUserRequest</span> req) {  <span class="c">// ★ JSON → Java 对象自动转换</span>
+        <span class="c">// @Valid: 自动校验 @NotNull/@Size → 不合法抛异常 → @ControllerAdvice 处理</span>
+        <span class="t">User</span> user = userService.create(req);
+        <span class="k">return</span> <span class="t">ResponseEntity</span>.created(...).body(user);  <span class="c">// 精确控制 HTTP 状态码</span>
+    }
+}</div></div>
+
+<div class="code"><div class="bar"><span class="file">application.yml</span><span class="era-tag era-14">Spring Boot</span></div><div class="ct"><span class="c"># 零 XML！一切配置在 yml 里</span>
+<span class="v">server</span>:
+  <span class="v">port</span>: <span class="n">8080</span>
+<span class="v">spring</span>:
+  <span class="v">jackson</span>:
+    <span class="v">default-property-inclusion</span>: <span class="v">non_null</span>  <span class="c"># null 字段不序列化</span></div></div>
+
+<div class="compare">
+<div class="side old"><h4>1998 Servlet vs 2024 Spring Boot</h4>
+<span class="pain">Servlet: 手写 getParameter → 手写 parseLong → 手写 out.println → 手写 XML 映射</span>
+<span class="gain">Spring Boot: @PathVariable 自动提取 → @RequestBody 自动反序列化 → @RestController 自动 JSON → 零配置</span>
+<br><br>同样是 GET /users/1<br>
+Servlet: 30 行代码，其中 25 行和业务无关<br>
+Spring Boot: 3 行代码，全部是业务逻辑</div>
+<div class="side new"><h4>30 年演化，解决了什么？</h4>
+<b>第1代 CGI：</b>进程→线程。解决了并发效率问题。<br>
+<b>第2代 Servlet：</b>引入 Filter、生命周期回调。<br>
+<b>第3代 Spring MVC：</b>Bean 化 Controller。摆脱继承。<br>
+<b>第4代 注解驱动：</b>一个类多 URL。自动类型转换。<br>
+<b>第5代 Spring Boot REST：</b>零 XML。全自动序列化。前后端分离。<br><br>
+每代解决前一代最痛的三个问题，再留给下一代三个新问题。</div>
+</div></div>
+
+<!-- ═══════════════ Summary: The "Why" ═══════════════ -->
+<div class="summary"><h3>🧠 为什么 DispatcherServlet 被设计成这样？</h3>
+<div class="cols">
+<div class="col"><h4>① 策略模式大集合</h4><p>HandlerMapping、HandlerAdapter、ViewResolver、HandlerExceptionResolver——全部是策略接口。因为在 30 年演化中，每种策略都换过至少 3 种实现。如果硬编码，每次换实现都要改框架源码。</p></div>
+<div class="col"><h4>② HandlerAdapter 的适配器模式</h4><p>第3代 Controller 接口和第4代 @RequestMapping 注解——两种 Handler 的调用方式完全不同。没有 Adapter，DispatcherServlet 就得知道每一种 Handler 怎么调用。</p></div>
+<div class="col"><h4>③ HandlerMethodArgumentResolver</h4><p>20+ 个参数解析器，每一个处理一种注解。你要支持新注解？加一个 Resolver 就行。Controller 代码一行不用改。开闭原则的教科书。</p></div>
+<div class="col"><h4>④ HttpMessageConverter 链</h4><p>返回值怎么变成 HTTP Body？不是硬编码 Jackson——而是遍历 Converter 链。今天 JSON，明天 Protobuf——加一个 Converter 就搞定。Controller 完全无感。</p></div>
+</div></div>
+
+<div class="back"><a href="/q16.html">← Q16 答题</a> · <a href="/">返回索引</a></div>
+</div>
+</body>
+</html>

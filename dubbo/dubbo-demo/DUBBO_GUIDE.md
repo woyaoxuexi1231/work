@@ -28,7 +28,7 @@ Dubbo 不是凭空造轮子，它构建在以下成熟技术之上：
 |------|------|------|-----------------|
 | **网络通信** | Netty (NIO) | 高性能异步网络框架，处理 TCP 字节流 | Provider 启动时绑定 20880 端口，底层即 Netty `ServerBootstrap` |
 | **序列化** | Hessian2 | 将 Java 对象转换为二进制流，跨 JVM 传输 | `User` / `Order` 类实现 `Serializable`，由 Hessian2 序列化 |
-| **注册中心** | Nacos | 服务地址的"电话簿"，存储 Provider 的 IP:Port，同时支持动态配置管理 | `application.yml` 中 `address: nacos://192.168.3.100:8848` + `parameters: { username: nacos, password: nacos }` |
+| **注册中心** | Nacos | 服务地址的"电话簿"，存储 Provider 的 IP:Port，同时支持动态配置管理 | `application.yml` 中 `address: nacos://192.168.3.100:8848` + `?username=nacos&password=nacos` 认证参数附在 URL 尾部 |
 | **动态代理** | Javassist / JDK Proxy | 为 Consumer 端的接口生成代理对象，拦截方法调用 | `@DubboReference private UserService userService` — 这个字段被注入的就是动态代理 |
 | **IoC 容器** | Spring Framework | 管理 Bean 生命周期，整合 Dubbo 组件 | `@EnableDubbo` + `@Configuration` 将 Dubbo 融入 Spring 容器 |
 | **SPI** | Dubbo 自定义 SPI | 微内核 + 插件化，所有组件可替换 | `META-INF/dubbo/org.apache.dubbo.rpc.Filter` 文件自动加载自定义 Filter |
@@ -186,10 +186,7 @@ Provider 启动                      Consumer 启动
 # dubbo-demo-provider/src/main/resources/application.yml
 dubbo:
   registry:
-    address: "nacos://192.168.3.100:8848"
-    parameters:
-      username: nacos
-      password: nacos
+    address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
 ```
 
 ```java

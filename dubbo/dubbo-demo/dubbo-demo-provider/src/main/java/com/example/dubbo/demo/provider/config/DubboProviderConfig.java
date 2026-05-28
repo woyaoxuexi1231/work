@@ -1,6 +1,5 @@
 package com.example.dubbo.demo.provider.config;
 
-import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -44,7 +43,7 @@ import org.springframework.context.annotation.Configuration;
  * @see EnableDubbo
  */
 @Configuration
-@EnableDubbo  // 启动 Dubbo 能力（等同于 @EnableDubbo(scanBasePackages = "...")）
+// @EnableDubbo 已移至 ProviderBootstrap 启动类上，以正确控制 Dubbo 扫描基准包
 public class DubboProviderConfig {
 
     /**

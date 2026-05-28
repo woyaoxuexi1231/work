@@ -35,11 +35,7 @@
             <artifactId>dubbo-spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- ======= Nacos 注册中心（客户端 + Dubbo 适配器） ======= -->
-        <dependency>
-            <groupId>com.alibaba.nacos</groupId>
-            <artifactId>nacos-client</artifactId>
-        </dependency>
+        <!-- ======= Nacos 注册中心（Dubbo 适配器，自动引入兼容的 nacos-client） ======= -->
         <dependency>
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo-registry-nacos</artifactId>
