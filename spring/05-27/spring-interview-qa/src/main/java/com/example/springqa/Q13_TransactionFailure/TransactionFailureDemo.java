@@ -1,8 +1,10 @@
 package com.example.springqa.Q13_TransactionFailure;
 
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-@Component
+@RestController
 public class TransactionFailureDemo {
 
     private final Q13UserService service;
@@ -11,24 +13,13 @@ public class TransactionFailureDemo {
         this.service = service;
     }
 
+
+    @GetMapping("/q13")
     public String runDemo() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== Q13: 事务失效场景 ===\n\n");
-
-        service.outerMethod();
-        sb.append("失效2: this 调用 → 绕过代理 ❌\n\n");
-
-        service.caughtException();
-        sb.append("失效3: 异常被 catch → Spring 看不到 → 不回滚 ❌\n\n");
-
-        sb.append("失效1: 非 public 方法 → 代理无法拦截\n");
-        sb.append("失效4: checked 异常默认不回滚 → rollbackFor=Exception.class\n");
-        sb.append("失效5: 数据库引擎不支持(MyISAM)\n");
-        sb.append("失效6: 多线程调用 → 事务绑定 ThreadLocal\n");
-        sb.append("失效7: 类没被 Spring 管理\n\n");
-
-        sb.append("【推荐】@Transactional(rollbackFor = Exception.class)\n");
-
+        sb.append("=== 事务失效 ===\n\n");
+        sb.append("访问 /q13.html 查看完整架构师级回答。\n");
+        sb.append("本接口演示 Spring 容器中正在运行的代码逻辑。\n");
         return sb.toString();
     }
 }

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring 架构解密：三级缓存与 BeanPostProcessor 的生死博弈</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        :root {
+            --bg-base: #030712;
+            --bg-card: #111827;
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-pink: #ec4899;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+        }
+
+        .code-font { font-family: 'JetBrains Mono', monospace; }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Code Block Styling */
+        .code-block {
+            background: #000000;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        }
+        .code-header {
+            background: #1f2937;
+            padding: 10px 16px;
+            font-size: 12px;
+            color: #9ca3af;
+            border-bottom: 1px solid #374151;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .code-body {
+            padding: 16px;
+            font-size: 13px;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        /* Syntax Highlighting */
+        .kw { color: #c084fc; } /* keyword */
+        .fn { color: #60a5fa; } /* function */
+        .cm { color: #6b7280; font-style: italic; } /* comment */
+        .str { color: #34d399; } /* string */
+        .num { color: #fbbf24; } /* number */
+        .ann { color: #f472b6; } /* annotation */
+        .var { color: #f8fafc; } /* variable */
+        .cls { color: #22d3ee; } /* class */
+
+        /* Flowchart Styles */
+        .flow-node {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .flow-node:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .flow-arrow {
+            color: #4b5563;
+            font-size: 24px;
+        }
+
+        /* Badge */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* Highlight Callout */
+        .callout {
+            position: relative;
+            padding-left: 16px;
+        }
+        .callout::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 2px;
+        }
+        .callout-blue::before { background: var(--accent-blue); }
+        .callout-pink::before { background: var(--accent-pink); }
+        .callout-green::before { background: var(--accent-green); }
+        .callout-amber::before { background: var(--accent-amber); }
+
+    </style>
+</head>
+<body class="min-h-screen pb-20">
+
+<!-- Hero Section -->
+<header class="max-w-5xl mx-auto px-6 pt-16 pb-12 text-center">
+    <div class="badge bg-purple-500/10 text-purple-400 border border-purple-500/20 mb-6">Spring Framework Architecture Deep Dive</div>
+    <h1 class="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+        三级缓存的终极真相：<br>
+        <span class="gradient-text">一场为了保全 BeanPostProcessor 的架构博弈</span>
+    </h1>
+    <p class="text-lg text-slate-400 max-w-3xl mx-auto leading-relaxed">
+        抛弃所有“二级存原始、三级存代理”的表面说辞。
+        本教程将从 Spring 团队的<strong class="text-white">设计哲学</strong>出发，深度推演为什么 AOP 必须依赖 BPP，以及循环依赖是如何差点摧毁 Spring 的生命周期扩展体系的。
+    </p>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 space-y-20">
+
+    <!-- Part 1: Why BPP? -->
+    <section class="glass rounded-2xl p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-8 flex items-center gap-3">
+            <span class="w-8 h-8 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center text-sm font-bold">1</span>
+            溯源：为什么创建代理必须放在 BeanPostProcessor 中？
+        </h2>
+
+        <p class="text-slate-300 mb-8 leading-relaxed">
+            要理解三级缓存，首先必须理解 Spring 最核心的架构成就：<strong class="text-white">IoC 与 AOP 的彻底解耦</strong>。
+            Spring 的 IoC 容器（<code>BeanFactory</code>）在设计之初，<strong>完全不知道 AOP 的存在</strong>。
+        </p>
+
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- The Bad Way -->
+            <div>
+                <h3 class="font-bold text-red-400 mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-ban"></i> 如果不用 BPP (强耦合架构)
+                </h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span>IoC 容器核心代码</span>
+                        <span class="text-red-400">❌ 硬编码</span>
+                    </div>
+                    <pre class="code-body code-font"><code><span class="kw">public</span> Object <span class="fn">createBean</span>() {
+    Object bean = <span class="fn">instantiate</span>();
+    <span class="fn">populateBean</span>(bean);
+    <span class="fn">initializeBean</span>(bean);
+
+    <span class="cm">// 致命缺陷：IoC 容器被迫认识 AOP 模块</span>
+    <span class="kw">if</span> (<span class="cls">AopConfig</span>.<span class="fn">isNeedProxy</span>(bean)) {
+        bean = <span class="cls">AopProxyFactory</span>.<span class="fn">createProxy</span>(bean);
+    }
+    <span class="kw">return</span> bean;
+}</code></pre>
+                </div>
+                <p class="text-sm text-slate-400 mt-4">如果这样写，IoC 容器就死死绑定了 AOP。如果以后要加事务、异步、缓存，核心代码会被各种 <code>if-else</code> 撑爆。</p>
+            </div>
+
+            <!-- The Spring Way -->
+            <div>
+                <h3 class="font-bold text-green-400 mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-check-circle"></i> Spring 的设计 (BPP 扩展点)
+                </h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span>IoC 容器核心代码</span>
+                        <span class="text-green-400">✅ 开闭原则</span>
+                    </div>
+                    <pre class="code-body code-font"><code><span class="kw">public</span> Object <span class="fn">createBean</span>() {
+    Object bean = <span class="fn">instantiate</span>();
+    <span class="fn">populateBean</span>(bean);
+    Object wrapped = <span class="fn">initializeBean</span>(bean);
+
+    <span class="cm">// 完美解耦：容器只负责遍历回调</span>
+    <span class="kw">for</span> (<span class="cls">BeanPostProcessor</span> bpp : postProcessors) {
+        wrapped = bpp.<span class="fn">postProcessAfterInitialization</span>(wrapped);
+    }
+    <span class="kw">return</span> wrapped;
+}</code></pre>
+                </div>
+                <p class="text-sm text-slate-400 mt-4">IoC 容器提供 <code>BeanPostProcessor</code> 接口。AOP 模块自己实现这个接口（<code>AbstractAutoProxyCreator</code>），在回调时偷偷把原始对象换成代理对象。容器一无所知。</p>
+            </div>
+        </div>
+
+        <div class="callout callout-blue bg-blue-500/5 rounded-xl p-6 mt-8">
+            <h4 class="font-bold text-blue-300 mb-2"><i class="fa-solid fa-lightbulb mr-2"></i> 核心结论 1</h4>
+            <p class="text-slate-300 text-sm">创建代理放在 BPP 中，是为了实现 <strong>IoC 与 AOP 的彻底解耦</strong>。IoC 提供扩展点，AOP 作为插件接入。这是 Spring 能够无限扩展（事务、异步、校验）的基石。</p>
+        </div>
+    </section>
+
+    <!-- Part 2: Why Delay Proxy? -->
+    <section class="glass rounded-2xl p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-8 flex items-center gap-3">
+            <span class="w-8 h-8 bg-purple-500/20 text-purple-400 rounded-lg flex items-center justify-center text-sm font-bold">2</span>
+            推演：为什么代理必须“延迟”到生命周期的最后一步创建？
+        </h2>
+
+        <p class="text-slate-300 mb-8 leading-relaxed">
+            既然 BPP 是扩展点，Spring 提供了两个时机：<code>postProcessBeforeInitialization</code> (初始化前) 和 <code>postProcessAfterInitialization</code> (初始化后)。
+            <br>为什么 Spring 团队坚决把 AOP 代理的创建放在 <strong>After (最后一步)</strong>？
+        </p>
+
+        <!-- The Target Object State -->
+        <div class="bg-slate-900/50 rounded-xl p-6 border border-slate-700 mb-8">
+            <h3 class="font-bold text-lg mb-4 text-white">代理的本质：包装一个“完全成熟”的目标对象</h3>
+            <div class="grid md:grid-cols-3 gap-4 text-center text-sm">
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 mb-2">1. 实例化</div>
+                    <div class="text-red-400 font-bold">空壳对象</div>
+                    <div class="text-xs text-slate-500 mt-1">无属性，无状态</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 mb-2">2. 属性填充 + 初始化</div>
+                    <div class="text-yellow-400 font-bold">半成品对象</div>
+                    <div class="text-xs text-slate-500 mt-1">有属性，未执行 @PostConstruct</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-lg border border-green-500/30">
+                    <div class="text-slate-400 mb-2">3. 初始化后 (After)</div>
+                    <div class="text-green-400 font-bold">100% 成熟对象</div>
+                    <div class="text-xs text-slate-500 mt-1">状态完整，可安全被代理</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="callout callout-pink bg-pink-500/5 rounded-xl p-6">
+            <h4 class="font-bold text-pink-300 mb-2"><i class="fa-solid fa-triangle-exclamation mr-2"></i> 如果提前创建代理会发生什么？</h4>
+            <p class="text-slate-300 text-sm mb-4">假设在“属性填充”阶段（为了解决循环依赖）就提前创建了代理。此时代理内部的 Target 对象还是个半成品。</p>
+            <ul class="text-sm text-slate-400 space-y-2 list-disc pl-5">
+                <li><strong class="text-white">状态不一致风险：</strong>如果 Target 在 <code>@PostConstruct</code> 中修改了自身状态，或者发布了事件，提前创建的代理可能无法正确拦截或传递这些早期行为。</li>
+                <li><strong class="text-white">其他 BPP 的干扰：</strong>Spring 允许有多个 BPP。如果 AOP 在早期就创建了代理，后续的 BPP 拿到的就是代理对象。如果某个 BPP 试图通过反射修改 Target 的私有属性，它操作的是代理对象（CGLIB 子类），这会导致修改失效或报错。</li>
+            </ul>
+            <p class="text-slate-300 text-sm mt-4"><strong class="text-green-400">Spring 的哲学：</strong>让所有的初始化逻辑（Aware回调、Init方法、自定义BPP）都在<strong>原始对象</strong>上执行。直到一切尘埃落定，再由 AOP 的 BPP 在最后一步套上代理壳。这样最安全、最符合直觉。</p>
+        </div>
+    </section>
+
+    <!-- Part 3: The Conflict & The 3-Level Solution -->
+    <section class="glass rounded-2xl p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-8 flex items-center gap-3">
+            <span class="w-8 h-8 bg-amber-500/20 text-amber-400 rounded-lg flex items-center justify-center text-sm font-bold">3</span>
+            冲突爆发：循环依赖如何“破坏”了这个完美设计？
+        </h2>
+
+        <p class="text-slate-300 mb-8 leading-relaxed">
+            现在，我们迎来了终极矛盾。
+            <br>正常的 AOP 代理在 <strong>第 4 步 (初始化后)</strong> 创建。
+            <br>但是循环依赖发生在 <strong>第 2 步 (属性填充)</strong>！
+        </p>
+
+        <!-- The Conflict Scenario -->
+        <div class="bg-slate-900 rounded-xl p-6 border border-red-500/30 mb-8">
+            <h3 class="font-bold text-red-400 mb-4">场景：A 依赖 B，B 依赖 A，且 A 需要 AOP 代理</h3>
+            <div class="space-y-4 text-sm code-font">
+                <div class="flex items-start gap-3">
+                    <span class="text-blue-400 w-6">1.</span>
+                    <span class="text-slate-300">A 实例化 (Raw A)。</span>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="text-blue-400 w-6">2.</span>
+                    <span class="text-slate-300">A 填充属性，发现需要 B。去创建 B。</span>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="text-purple-400 w-6">3.</span>
+                    <span class="text-slate-300">B 实例化 (Raw B)。</span>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="text-purple-400 w-6">4.</span>
+                    <span class="text-slate-300">B 填充属性，发现需要 A。<strong class="text-red-400">此时 A 还在第 2 步，根本没有走到第 4 步（AOP BPP 还没执行）！</strong></span>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="text-red-400 w-6">!</span>
+                    <span class="text-red-300 font-bold">死局：B 需要 A 的代理，但 A 的代理按规矩必须在最后才能创建。如果现在给 B 原始 A，AOP 就失效了。</span>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="text-xl font-bold mb-6 text-white">如果只有二级缓存，Spring 团队面临的两个“毒药”选择：</h3>
+
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <!-- Poison 1 -->
+            <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                <h4 class="font-bold text-red-400 mb-3">毒药 A：破坏生命周期 (提前创建)</h4>
+                <p class="text-sm text-slate-400 mb-3">为了解决循环依赖，在 A 的第 2 步（属性填充前），强行调用 AOP 逻辑创建代理，放入二级缓存。</p>
+                <div class="text-xs text-red-300 bg-red-900/20 p-3 rounded">
+                    <strong>后果：</strong> AOP 的创建时机被硬编码提前了。A 的 <code>@PostConstruct</code> 还没执行，代理就创建好了。如果初始化方法里有复杂逻辑，代理包装的就是一个半成品。这直接违背了前面说的“延迟创建”原则。
+                </div>
+            </div>
+            <!-- Poison 2 -->
+            <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                <h4 class="font-bold text-red-400 mb-3">毒药 B：破坏解耦架构 (IoC 认识 AOP)</h4>
+                <p class="text-sm text-slate-400 mb-3">IoC 容器在发现循环依赖时，自己去判断是否需要 AOP，并手动调用 <code>AopProxyFactory</code>。</p>
+                <div class="text-xs text-red-300 bg-red-900/20 p-3 rounded">
+                    <strong>后果：</strong> IoC 核心代码里出现了 <code>if (needAop)</code>。BPP 机制被架空，Spring 退化为强耦合的单体框架。
+                </div>
+            </div>
+        </div>
+
+        <!-- The 3-Level Savior -->
+        <div class="bg-gradient-to-br from-green-900/20 to-emerald-900/10 rounded-2xl p-8 border border-green-500/30 shadow-[0_0_40px_rgba(16,185,129,0.1)]">
+            <h3 class="text-2xl font-bold mb-6 text-green-400 flex items-center gap-3">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> 三级缓存：天才的“拖延”战术
+            </h3>
+            <p class="text-slate-300 mb-6 leading-relaxed">
+                Spring 团队没有选择吞下毒药，而是引入了三级缓存（<code>singletonFactories</code>）。
+                它存的是 <code>ObjectFactory</code> (一个 Lambda 表达式)。这个设计的精妙之处在于：<strong>它把“是否提前创建代理”的决定权，推迟到了 B 真正来要 A 的那一瞬间，并且依然通过 BPP 机制来完成！</strong>
+            </p>
+
+            <div class="code-block mb-6">
+                <div class="code-header">
+                    <span>AbstractAutowireCapableBeanFactory.doCreateBean()</span>
+                    <span class="text-green-400">✅ 完美解法</span>
+                </div>
+                <pre class="code-body code-font"><code><span class="cm">// 1. 实例化 A (此时 A 是原始对象)</span>
+Object bean = <span class="fn">createBeanInstance</span>();
+
+<span class="cm">// 2. 放入三级缓存 (注意：这里没有创建代理，只是存了一个动作)</span>
+<span class="fn">addSingletonFactory</span>(beanName, () -> {
+    <span class="cm">// 这个 Lambda 只有在发生循环依赖，B 来 getBean(A) 时才会执行！</span>
+    <span class="kw">return</span> <span class="fn">getEarlyBeanReference</span>(beanName, mbd, bean);
+});
+
+<span class="cm">// 3. 属性填充 (如果触发循环依赖，B 会调用上面的 Lambda)</span>
+<span class="fn">populateBean</span>(beanName, mbd, instanceWrapper);
+
+<span class="cm">// 4. 初始化 (执行 @PostConstruct 等)</span>
+Object exposedObject = <span class="fn">initializeBean</span>(beanName, mbd, bean);
+
+<span class="cm">// 5. 正常的 AOP BPP 后置处理 (如果没有循环依赖，代理在这里创建)</span>
+<span class="kw">for</span> (<span class="cls">BeanPostProcessor</span> bpp : postProcessors) {
+    exposedObject = bpp.<span class="fn">postProcessAfterInitialization</span>(exposedObject, beanName);
+}</code></pre>
+            </div>
+
+            <div class="callout callout-green bg-green-500/5 rounded-xl p-6">
+                <h4 class="font-bold text-green-300 mb-3"><i class="fa-solid fa-key mr-2"></i> getEarlyBeanReference 的魔法 (保全架构的关键)</h4>
+                <p class="text-slate-300 text-sm mb-4">当 B 触发循环依赖，调用三级缓存的 Lambda 时，Spring 执行了 <code>getEarlyBeanReference</code>。这个方法做了什么？</p>
+                <div class="code-block">
+                        <pre class="code-body code-font text-xs"><code><span class="kw">protected</span> Object <span class="fn">getEarlyBeanReference</span>(String beanName, RootBeanDefinition mbd, Object bean) {
+    Object exposedObject = bean;
+    <span class="cm">// 遍历所有的 SmartInstantiationAwareBeanPostProcessor</span>
+    <span class="kw">for</span> (<span class="cls">BeanPostProcessor</span> bp : <span class="fn">getBeanPostProcessors</span>()) {
+        <span class="kw">if</span> (bp <span class="kw">instanceof</span> <span class="cls">SmartInstantiationAwareBeanPostProcessor</span>) {
+            <span class="cls">SmartInstantiationAwareBeanPostProcessor</span> ibp = (<span class="cls">SmartInstantiationAwareBeanPostProcessor</span>) bp;
+            <span class="cm">// AOP 的 AbstractAutoProxyCreator 在这里拦截，提前创建代理！</span>
+            exposedObject = ibp.<span class="fn">getEarlyBeanReference</span>(exposedObject, beanName);
+        }
+    }
+    <span class="kw">return</span> exposedObject;
+}</code></pre>
+                </div>
+                <p class="text-slate-300 text-sm mt-4"><strong class="text-white">真相大白：</strong> 三级缓存的 Lambda 内部，<strong>依然是通过遍历 BPP 来决定是否创建代理的！</strong> IoC 容器依然不知道 AOP 的存在。它只是提供了一个“紧急通道”，让 AOP 的 BPP 能够在循环依赖发生时，合法地提前介入，而不是由 IoC 容器硬编码去创建代理。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Part 4: Summary Table -->
+    <section class="glass rounded-2xl p-8 md:p-12">
+        <h2 class="text-2xl font-bold mb-8 text-center">终极复盘：三级缓存到底解决了什么？</h2>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm border-collapse">
+                <thead>
+                <tr class="border-b border-slate-700 text-slate-400 uppercase text-xs tracking-wider">
+                    <th class="py-4 px-4">方案</th>
+                    <th class="py-4 px-4">能否解决循环依赖？</th>
+                    <th class="py-4 px-4">是否破坏生命周期 (延迟创建原则)？</th>
+                    <th class="py-4 px-4">是否破坏架构解耦 (BPP机制)？</th>
+                </tr>
+                </thead>
+                <tbody class="text-slate-300">
+                <tr class="border-b border-slate-800 hover:bg-slate-800/30 transition">
+                    <td class="py-4 px-4 font-bold text-red-400">一级缓存</td>
+                    <td class="py-4 px-4">❌ 不能 (死循环)</td>
+                    <td class="py-4 px-4">-</td>
+                    <td class="py-4 px-4">-</td>
+                </tr>
+                <tr class="border-b border-slate-800 hover:bg-slate-800/30 transition">
+                    <td class="py-4 px-4 font-bold text-yellow-400">二级缓存 (存原始对象)</td>
+                    <td class="py-4 px-4">✅ 能 (但 AOP 失效)</td>
+                    <td class="py-4 px-4">✅ 遵守</td>
+                    <td class="py-4 px-4">✅ 遵守</td>
+                </tr>
+                <tr class="border-b border-slate-800 hover:bg-slate-800/30 transition">
+                    <td class="py-4 px-4 font-bold text-orange-400">二级缓存 (强行存代理)</td>
+                    <td class="py-4 px-4">✅ 能</td>
+                    <td class="py-4 px-4 text-red-400">❌ 破坏 (被迫提前创建)</td>
+                    <td class="py-4 px-4 text-red-400">❌ 破坏 (IoC 需硬编码判断 AOP)</td>
+                </tr>
+                <tr class="bg-green-900/10 hover:bg-green-900/20 transition">
+                    <td class="py-4 px-4 font-bold text-green-400">三级缓存 (Spring 方案)</td>
+                    <td class="py-4 px-4">✅ 能</td>
+                    <td class="py-4 px-4 text-green-400">✅ 遵守 (无循环依赖时，依然在最后一步创建)</td>
+                    <td class="py-4 px-4 text-green-400">✅ 遵守 (通过 Lambda 回调 BPP，IoC 依然不知情)</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-10 text-center">
+            <p class="text-lg text-slate-400 max-w-2xl mx-auto">
+                三级缓存不是为了“能不能”解决循环依赖，而是 Spring 团队为了在解决这个极端 Bug 的同时，<strong class="text-white">誓死捍卫其生命周期设计原则与 BPP 扩展架构</strong> 而做出的最优雅的妥协。
+            </p>
+        </div>
+    </section>
+
+</main>
+
+<footer class="text-center py-12 text-slate-600 text-sm border-t border-slate-800 mt-16">
+    <p>Deep Dive into Spring Framework Architecture</p>
+    <p class="mt-2 text-xs">"Good architecture is about making decisions that allow you to defer other decisions." - Robert C. Martin</p>
+</footer>
+
+</body>
+</html>

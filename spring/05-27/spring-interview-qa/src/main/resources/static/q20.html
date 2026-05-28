@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q20 · 异步请求</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 20 · MVC</div><h1>异步请求</h1><div class="q-sub">DeferredResult 和 Callable 的处理流程？如何释放容器线程？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Callable 返回异步任务给 TaskExecutor 执行，DeferredResult 可以在任意线程 setResult。SSE 通过 SseEmitter 实现服务器推送。核心价值是释放 Tomcat 线程提高吞吐。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"同步模型的瓶颈不是 CPU 是线程——200 个 Tomcat 线程全部阻塞在等待外部 API 响应上，第 201 个请求排队。Callable 的方案：Controller 返回 Callable → Spring 提交给 TaskExecutor → Tomcat 线程立即释放 → Callable 执行完 → 新 Tomcat 线程写响应。DeferredResult 更灵活——它不依赖 TaskExecutor，你可以在 MQ 消费者的回调中 setResult()，实现真正的'等待事件驱动'。两者都基于 Servlet 3.0 的 request.startAsync()。SSE 通过 Content-Type: text/event-stream 实现长连接推送——比 WebSocket 更轻量（单方向，HTTP 协议，自动重连）。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>线程模型：</b>Callable → 业务线程池。DeferredResult → 任意线程。都通过 AsyncContext 与 Servlet 容器交互。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"异步请求的设计解决了 Web 容器的根本矛盾：'线程是昂贵的，但连接是廉价的'。200 个线程阻塞 5 秒等外部 API——这就是 200 × 5s = 1000 秒的线程时间被浪费在等待上。Callable 和 DeferredResult 把'等待'从容器线程中剥离开——让容器线程只做'接收请求'和'返回响应'这两件必须由容器做的事情，而'等待外部服务'这个最耗时的部分交给业务线程池。这本质上是一种资源分层管理：IO 线程负责调度，Worker 线程负责执行。Netty 的 EventLoop 模型、Node.js 的事件循环、Go 的 Goroutine 调度——全部是这个思想的变体。Spring MVC 没有重新发明它，而是在 Servlet 3.0 的 AsyncContext 基础上提供了更友好的编程接口。认识到这是'资源分层管理'而非'异步语法糖'，你就能理解什么时候该用异步、什么时候同步就够了。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"资源分层管理"——把异步请求和 Netty/Node.js/Go 的调度模型联系起来，证明你有跨技术栈的视野。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q20 · 异步请求 · <a href="/q21.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

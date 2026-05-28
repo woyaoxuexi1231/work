@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q18 · 拦截器 vs 过滤器</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 18 · MVC</div><h1>拦截器 vs 过滤器</h1><div class="q-sub">HandlerInterceptor 和 Filter 的区别？Token 校验用哪个？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Filter 是 Servlet 规范，拦截所有请求。HandlerInterceptor 是 Spring MVC 的，只拦截进入 DispatcherServlet 的请求，可以注入 Spring Bean。Token 校验推荐用 Interceptor。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Token 校验用 Interceptor 的原因：可以注入 TokenService（Filter 需要 DelegatingFilterProxy 桥接）、知道是哪个 HandlerMethod 被调用（可以做 @NoAuth 注解排除）、校验失败可以直接写 JSON。但 Filter 也有不可替代的场景——CORS 头需要在最外层设置、编码过滤器需要在 Spring 解析参数之前执行、XSS 过滤需要最原始的 request body。所以不是二选一，是分层：Filter 做基础设施（编码、安全头、CORS），Interceptor 做业务逻辑（认证、权限、日志）。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>执行顺序：</b>Filter → DispatcherServlet → Interceptor.preHandle → Controller → Interceptor.postHandle → View → Interceptor.afterCompletion → Filter 返回。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"Filter 和 Interceptor 不是竞争对手——它们是关注点分离在 Web 层的物理体现。Filter 属于 Servlet 容器层——它的存在不依赖 Spring，所以它只能做与框架无关的事情（编码、安全头、请求包装）。Interceptor 属于 Spring MVC 层——它享受 Spring 的全部能力（DI、AOP、注解），但也因此只能在 Spring 管辖范围内工作。这个分层设计回答了一个根本问题：一个 Web 框架应该管多宽？Spring 的回答是：管到 DispatcherServlet 为止。之外的事情交给 Servlet 容器。这种'尊重下层抽象'的态度让 Spring MVC 可以在任何 Servlet 容器（Tomcat/Jetty/Undertow）上运行——因为它没有试图取代 Servlet，而是在它之上构建。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"尊重下层抽象"——这解释了为什么 Spring 不去造一个自己的 Web Server，而是在 Servlet 之上构建。架构格局的问题。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q18 · 拦截器 vs 过滤器 · <a href="/q19.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

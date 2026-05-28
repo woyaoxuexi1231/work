@@ -1,0 +1,274 @@
+/* Spring 面试 24 问 — 全局样式 */
+
+:root {
+    --bg: #f8f9fa;
+    --card-bg: #ffffff;
+    --text: #1a1a2e;
+    --text-secondary: #495057;
+    --border: #dee2e6;
+    --accent: #6db33f;
+    --accent-dark: #5a9a2f;
+    --code-bg: #f1f3f5;
+    --warn-bg: #fff3cd;
+    --warn-border: #ffc107;
+    --info-bg: #d1ecf1;
+    --info-border: #17a2b8;
+    --tip-bg: #d4edda;
+    --tip-border: #28a745;
+    --tag-spring: #6db33f;
+    --tag-boot: #6db33f;
+    --tag-design: #e83e8c;
+    --tag-source: #6f42c1;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    font-size: 15px;
+}
+
+/* ── 导航栏 ── */
+.topbar {
+    background: var(--text);
+    color: #fff;
+    padding: 14px 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+
+.topbar .wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.topbar .logo {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -.5px;
+}
+
+.topbar .logo span { color: var(--accent); }
+
+.topbar nav a {
+    color: #adb5bd;
+    text-decoration: none;
+    margin-left: 16px;
+    font-size: 13px;
+    transition: color .2s;
+}
+
+.topbar nav a:hover { color: #fff; }
+
+/* ── 内容容器 ── */
+.wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* ── 问题标题 ── */
+.q-header {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 40px 0 32px;
+    margin-bottom: 28px;
+}
+
+.q-header .q-num {
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.q-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 8px;
+}
+
+.q-header .q-sub {
+    color: var(--text-secondary);
+    font-size: 15px;
+}
+
+/* ── 卡片 ── */
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+}
+
+.card h2 {
+    font-size: 20px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+}
+
+.card h3 {
+    font-size: 16px;
+    margin: 20px 0 10px;
+    color: var(--text);
+}
+
+.card p, .card li { color: var(--text-secondary); margin-bottom: 8px; }
+.card ul, .card ol { padding-left: 20px; margin-bottom: 12px; }
+
+/* ── 标签 ── */
+.tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.tag-design { background: #fce4ec; color: #c2185b; }
+.tag-source { background: #ede7f6; color: #512da8; }
+.tag-spring { background: #e8f5e9; color: #2e7d32; }
+
+/* ── 代码块 ── */
+pre {
+    background: #212529;
+    color: #e9ecef;
+    padding: 18px 22px;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.7;
+    margin: 14px 0;
+}
+
+code {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+}
+
+:not(pre) > code {
+    background: var(--code-bg);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: .9em;
+    color: #c7254e;
+}
+
+/* ── 提示框 ── */
+.callout {
+    border-left: 4px solid;
+    padding: 14px 18px;
+    margin: 16px 0;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 14px;
+}
+
+.callout.tip {
+    background: var(--tip-bg);
+    border-color: var(--tip-border);
+    color: #155724;
+}
+
+.callout.warn {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+    color: #856404;
+}
+
+.callout.info {
+    background: var(--info-bg);
+    border-color: var(--info-border);
+    color: #0c5460;
+}
+
+/* ── 表格 ── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 14px;
+}
+
+th {
+    background: #f1f3f5;
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+}
+
+td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+
+tr:hover td { background: #f8f9fa; }
+
+/* ── 索引页卡片网格 ── */
+.idx-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    padding: 28px 0;
+}
+
+.idx-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    text-decoration: none;
+    color: var(--text);
+    transition: box-shadow .2s, transform .2s;
+}
+
+.idx-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,.1);
+    transform: translateY(-2px);
+}
+
+.idx-card .idx-num {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+}
+
+.idx-card .idx-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 6px 0 4px;
+}
+
+.idx-card .idx-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* ── 响应式 ── */
+@media (max-width: 700px) {
+    .wrap { padding: 0 14px; }
+    .card { padding: 18px 16px; }
+    .q-header h1 { font-size: 22px; }
+    .idx-grid { grid-template-columns: 1fr; }
+}

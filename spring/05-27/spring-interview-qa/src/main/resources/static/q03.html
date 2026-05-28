@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q03 · 依赖注入</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 03 · IOC 容器</div><h1>依赖注入</h1><div class="q-sub">@Autowired 和 @Resource 的查找逻辑有何不同？字段注入的致命缺陷？为什么官方推荐构造器注入？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"@Autowired 默认按类型注入，@Resource 默认按名称注入。构造器注入比字段注入好，因为依赖可以是 final，而且不会出现 NPE。@Qualifier 优先级比 @Primary 高。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"@Autowired 和 @Resource 本质上是两套不同的注入体系。@Autowired 由 AutowiredAnnotationBeanPostProcessor 处理，在 populateBean() 中通过 field.set(bean, dependency) 注入——它走的是 Spring 自己的候选解析链：先按类型找所有匹配 → 多个候选时按 @Primary → @Qualifier → 字段名逐级筛选。@Resource 由 CommonAnnotationBeanPostProcessor 处理，是 JSR-250 标准，先按 name 属性找（如果没有指定 name 就用字段名），找不到再降级为 byType。两者的优先级规则也体现了不同的设计哲学：@Qualifier > @Primary——因为 @Qualifier 是调用方明确指定的意图，应覆盖提供方的声明。字段注入最大的问题不是'不好看'，而是它让依赖关系变成隐式的——你 new 一个对象时编译器不会告诉你漏了依赖，只有在运行时才炸 NPE。构造器注入强制你在编译期就面对所有依赖。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>team 推行：</b>SonarQube 规则 spring:S6813 禁止字段注入；Checkstyle + IDE 模板强制 private final + 构造器；CR 时字段上有 @Autowired 直接打回。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"三种注入方式对应三种对象状态保证。字段/setter 注入的问题是对象存在一个'不完整窗口期'——构造器执行完毕后、注入完成前，对象处于非法状态。这违反了 OOP 最基本的约束：构造器应该返回一个可用的对象。构造器注入消除了这个窗口——对象诞生的那一刻就完整可用。这才是 Spring 推荐构造器注入的根本原因，不是'方便测试'这种表面理由。更深一层看，@Autowired 和 @Resource 的分歧反映的是 Java 生态的标准之争：Spring 选择 byType 优先是因为类型是编译期可追踪的（重构安全），而 @Resource 的 byName 优先继承自 EJB 时代的 JNDI 查找惯例——在 EJB 中，每个资源都有全局唯一的 JNDI 名称。今天我们在 Spring 中用 @Resource，实际上是在为一个已经死去的架构惯例买单。认识到这一点，你就能理解为什么 Spring 虽然支持 @Resource，但所有新特性（@Autowired、构造器注入）全部默认 byType。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>你说出"不完整窗口期"和"为已死去的架构惯例买单"时，面试官知道你的思考深度远超五年平均水准。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q03 · 依赖注入 · <a href="/q04.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

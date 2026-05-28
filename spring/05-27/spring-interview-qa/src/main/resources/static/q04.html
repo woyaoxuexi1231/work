@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q04 · FactoryBean</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 04 · IOC 容器</div><h1>FactoryBean</h1><div class="q-sub">FactoryBean 和 BeanFactory 是一回事吗？MyBatis 的 Mapper 接口如何通过 FactoryBean 生成代理？getObject() 返回的对象能否被 AOP 增强？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"FactoryBean 是一个特殊的 Bean，getBean('xxx') 返回的是 getObject() 的产物而不是 FactoryBean 本身。BeanFactory 是 Spring IOC 容器的顶层接口。MyBatis 的 Mapper 接口通过 MapperFactoryBean 生成 JDK 动态代理。getObject() 的产物可以被 AOP 增强。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"注意区别：getBean('myFactoryBean') 和 getBean('&myFactoryBean')。带 & 前缀返回 FactoryBean 自身，不带返回 getObject() 的产物。Spring 对这个设计很讲究——AbstractBeanFactory.getObjectForBeanInstance() 中专门有一段 if (beanInstance instanceof FactoryBean) 的判断，从一级缓存取出后还要再解一层。产物之所以能被 AOP 增强，是因为 getObject() 返回后仍然经过完整的 BeanPostProcessor 链。MyBatis 的 MapperFactoryBean 用 JDK 代理而不用 CGLIB 的原因很简单——Mapper 是接口，没有实现类，JDK 代理天然适合接口代理。但更妙的是 Mapper 的单例设计：代理对象本身无状态，真正的数据库连接由 SqlSessionTemplate 通过 ThreadLocal 管理，所以一个 Mapper 代理可以安全地被所有线程共享。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>关键源码：</b>AbstractBeanFactory.doGetBean() → getObjectForBeanInstance() → 检测 FactoryBean → getObjectFromFactoryBean() → doGetObjectFromFactoryBean() → factory.getObject()。产物返回后仍走 BPP 链。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"FactoryBean 是 Spring 对'创建逻辑复杂化'问题的终极答案。在 1.0 时代，Bean 的创建就是构造器 + setter——足够简单。但后来出现了越来越多的复杂场景：连接池需要从配置生成、Mapper 需要动态代理、SessionFactory 需要读取 Hibernate 配置——这些对象的创建逻辑根本无法用构造器表达。FactoryBean 的设计精髓在于：它把'如何创建'和'返回什么'封装在一个类里，但对外暴露的接口仍然是 getBean(name)——调用方完全不知道背后的创建逻辑有多复杂。这其实就是工厂模式在容器级别的系统化应用。& 前缀的设计也很有意思：它不是 bug，是一个精心设计的逃生舱——框架默认给你 getObject() 的产物（99% 的场景），但保留了直接操作 FactoryBean 本身的通道（需要刷新缓存、强制重建时用）。这种'默认行为 + 逃生舱'的设计模式在 Spring 中反复出现：allow-bean-definition-overriding、exposeProxy、lazy-init 都是同样的思路。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"默认行为 + 逃生舱"这个概括会让面试官觉得你对 Spring 的设计模式有体系化的理解，而不是零散的知识点。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q04 · FactoryBean · <a href="/q05.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>

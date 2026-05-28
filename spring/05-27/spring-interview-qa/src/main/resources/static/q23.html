@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q23 · 启动流程</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
+<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 23 · 自动装配</div><h1>启动流程</h1><div class="q-sub">SpringApplication.run() 内部做了哪些核心工作？</div></div></div>
+<div class="wrap">
+
+<div class="card"><h2>面试时你可以这样回答</h2>
+
+<h3>🥉 青铜</h3>
+<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"8 个阶段：创建实例 → 准备 Environment → 创建 ApplicationContext → 准备上下文 → 加载 BeanDefinition → refresh → 回调 Runner → 发布 ReadyEvent。"
+</blockquote>
+
+<h3>🥈 白银</h3>
+<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"最关键的阶段是 refresh()——这是整个 Spring IOC 的核心。其中 invokeBeanFactoryPostProcessors() 解析 @Configuration、registerBeanPostProcessors() 注册 BPP、finishBeanFactoryInitialization() 实例化所有单例 Bean、onRefresh() 在 Web 环境下创建内嵌 Tomcat。在此之前，SpringApplication 先推断应用类型（SERVLET/REACTIVE/NONE），然后从 spring.factories 加载 ApplicationContextInitializer 和 ApplicationListener——这些是启动过程的扩展点。CommandLineRunner 和 ApplicationRunner 的区别：后者参数已解析（getOptionNames/getOptionValues），前者是原始 String[]。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>模板方法：</b>整个 run() 方法是模板方法模式的经典应用——骨架固定，每个阶段都是扩展点。
+</div>
+</blockquote>
+
+<h3>🥇 王者</h3>
+<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
+"SpringApplication.run() 的设计本质上是一个'启动生命周期的标准化'。和 Bean 生命周期一样，启动过程也被分解为一系列有序的阶段——每个阶段前后都有事件发布，每个阶段都支持 Initializer/Listener 扩展。这种设计让 Spring Boot 的启动过程不是一段无法定制的代码，而是一条可以插入自定义逻辑的流水线。Spring Cloud 的 Bootstrap 上下文、配置中心的配置拉取、链路追踪的 Agent 注入——所有这些都在 SpringApplication 的扩展点上实现，而不是修改 Spring 源码。这就是平台思维：提供的不只是功能，而是让生态在标准化的生命周期上构建自己的能力。"
+
+<div style="margin-top:10px;font-size:13px;color:#666">
+<b>面试官心理：</b>"启动生命周期的标准化"——和 Bean 生命周期做了呼应，体现了系统化的理解。
+</div>
+</blockquote>
+</div>
+
+<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q23 · 启动流程 · <a href="/q24.html" style="color:var(--accent)">下一题 →</a></footer>
+</div></body></html>
