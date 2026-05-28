@@ -28,6 +28,7 @@ public class MyLogFilter2 implements Filter {
             System.out.println("[MylogFilter] 拦截到请求：" + req.getRequestURI());
         } else {
             chain.doFilter(request, response);
+            return;
         }
 
         // 只拦截 Content-Type 为 application/json 的请求
@@ -35,6 +36,7 @@ public class MyLogFilter2 implements Filter {
             System.out.println("[MylogFilter] 拦截到请求：" + req.getRequestURI());
         } else {
             chain.doFilter(request, response);
+            return;
         }
 
         // 拿取结果
