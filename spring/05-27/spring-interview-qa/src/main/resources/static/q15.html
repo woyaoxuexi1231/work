@@ -1,37 +1,15 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q15 · 分布式事务</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q15 · 分布式事务</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 15 · 事务</div><h1>分布式事务</h1><div class="q-sub">只用 Spring 框架，不引入 Seata，你能怎么实现简单的分布式事务？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q15 · 分布式事务</b> — 不用 Seata，Spring 怎么搞分布式事务？</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">只用 Spring 框架，不引入 Seata，你能怎么实现简单的分布式事务？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">三种方案——<br><br>
+<b>1. TCC 手动实现：</b>Try 冻结资源 → Confirm 真正扣减 → Cancel 释放冻结。挑战：空回滚（Cancel 时 Try 可能没执行）、悬挂（Cancel 比 Try 先到）、幂等（可能重复调用）。都需要事务 ID 去重。<br>
+<b>2. 本地消息表：</b>业务 + 消息写入同一本地事务 → 定时任务扫描发送 → 消费方幂等。最终一致性方案，不需要全局事务管理器。<br>
+<b>3. JTA：</b>配置 Atomikos + XA 数据源，用现有 @Transactional。但 XA 协议同步阻塞不适合高并发。<br><br>
+<b>Spring 为什么没内置？</b>分布式事务是一个问题空间而非解决方案——CAP 约束下没有银弹。Spring 的选择是提供 PlatformTransactionManager SPI，让 JTA/Seata 等作为插件接入。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"三种方案：TCC（Try-Confirm-Cancel）手动实现、本地消息表 + 定时任务 + 幂等、JTA（Atomikos/Bitronix 配置 XA 数据源）。本地消息表最常用。"
-</blockquote>
+<div class="reflect"><strong>❓ 自问：</strong>什么时候用 TCC vs 本地消息表？<br><strong>答：</strong>需要强一致性 + 实时扣减（如库存）→ TCC；能接受短暂延迟 → 本地消息表更简单。</div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"TCC 的核心是把一个操作拆成 Try（预留资源）、Confirm（真正执行）、Cancel（释放资源）三步。挑战是空回滚（Cancel 时 Try 可能没执行）、悬挂（Cancel 比 Try 先到）、幂等（Confirm/Cancel 可能重复调用）——都需要事务 ID 去重。本地消息表的精髓在于把'业务操作 + 写消息'放在同一个本地事务中，利用本地事务的原子性保证消息一定写入，然后用定时任务异步投递，消费方幂等。JTA 最简单但 XA 协议的同步阻塞特性不适合高并发——prepare/commit 两个阶段都要等所有参与者确认。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>CAP 权衡：</b>JTA 追求强一致性（牺牲可用性），本地消息表追求最终一致性（牺牲实时性）。没有银弹。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Spring 没有内置分布式事务方案，这个'缺失'恰恰是 Spring 最深刻的设计选择。分布式事务是一个问题空间，不是一个解决方案——CAP 理论约束下，任何方案都是在一致性、可用性、分区容错性之间的取舍。如果 Spring 内置了一种方案（比如 JTA），它就在替所有用户做取舍——这对于一个声称'不绑定方案'的框架来说是不可接受的。Spring 选择了提供 PlatformTransactionManager 这个 SPI——JTA 可以实现它、Seata 可以实现它、你写的 TCC 框架也可以实现它。这才是 Spring 作为平台的本分：定义接口标准，让生态竞争出最好的实现。面试时如果有人问'Spring 怎么解决分布式事务'，最好的回答不是列方案，而是解释为什么 Spring 不解决这个问题——以及这个'不解决'背后的架构智慧。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"为什么 Spring 不解决"比"怎么解决"更能体现架构思维。这题答对了，面试官会开始跟你讨论 CAP 理论。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q15 · 分布式事务 · <a href="/q16.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q16.html">下一题 → Q16 · MVC 流程</a></div></div></body></html>

@@ -1,37 +1,15 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q19 · 异常处理</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q19 · 异常处理</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 19 · MVC</div><h1>统一异常处理</h1><div class="q-sub">@ControllerAdvice + @ExceptionHandler 的原理？ResponseBodyAdvice 能做什么？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q19 · 统一异常处理</b> — @ControllerAdvice 原理 + ResponseBodyAdvice。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">@ControllerAdvice + @ExceptionHandler 的实现原理？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">DispatcherServlet 在 Controller 抛异常时调用 processHandlerException()，遍历 HandlerExceptionResolvers。ExceptionHandlerExceptionResolver 是核心——它扫描所有 @ControllerAdvice Bean，把 @ExceptionHandler 方法建立异常类型→处理方法的映射。匹配成功后反射调用，返回值通过 HttpMessageConverter 序列化为 JSON 返回。<br><br>
+@RestControllerAdvice = @ControllerAdvice + @ResponseBody——直接返回 JSON 而不是视图。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@ControllerAdvice 全局捕获 Controller 异常，@ExceptionHandler 指定处理哪种异常。异常以 JSON 格式返回。ResponseBodyAdvice 可以在 @ResponseBody 序列化前统一包装返回值。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">ResponseBodyAdvice 能做什么？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">在 @ResponseBody 序列化前拦截返回值，统一包装成 ApiResponse{code, message, data}。Controller 只返回 User，前端永远收到统一格式。搭配 @ControllerAdvice 的异常处理，异常路径和正常路径的返回格式完全一致。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"DispatcherServlet 在 Controller 抛异常时调用 processHandlerException()，遍历 HandlerExceptionResolvers。ExceptionHandlerExceptionResolver 是核心——它扫描所有 @ControllerAdvice Bean，把 @ExceptionHandler 方法建立异常类型→处理方法的映射缓存。匹配成功后反射调用，返回值通过 HttpMessageConverter 序列化。ResponseBodyAdvice 是另一个维度：正常返回时，在 @ResponseBody 序列化前拦截，统一包装成 ApiResponse{code, message, data}——Controller 只返回 User，前端始终收到统一格式。"
+<div class="reflect"><strong>❓ 自问：</strong>ResponseBodyAdvice 和 AOP 环绕通知有什么区别？<br><strong>答：</strong>ResponseBodyAdvice 专门针对 HTTP 响应体，只在返回值序列化之前执行。AOP 环绕通知更通用，可以拦截任何 Spring Bean 的方法。Web 层的统一包装应该用 ResponseBodyAdvice——语义更明确。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>注意：</b>@ExceptionHandler 方法的优先级：子类异常 > 父类异常。如果同时匹配，Spring 选最精确的。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@ControllerAdvice 是 Spring AOP 思想在 Web 层的完美移植。AOP 解决的是'横切关注点如何在 Bean 层集中管理'的问题——@ControllerAdvice 解决的是'横切关注点如何在 Controller 层集中管理'的问题。ExceptionHandler 对应 AOP 的 AfterThrowing，ResponseBodyAdvice 对应 AOP 的 Around。Controller 本身只处理正常路径——异常路径和返回值包装全部由 Advice 完成。这个对称性不是巧合：Rod Johnson 在实现 Spring MVC 时明显沿用了 AOP 的设计语言。认识到这一点，你就能理解为什么 Spring 的 WebFlux 用了完全不同的实现（WebFilter、WebExceptionHandler）却保持了同样的设计模式——因为模式是跨技术栈的。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"AOP 在 Web 层的移植"、"模式是跨技术栈的"——视角从 MVC 细节上升到设计模式层面。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q19 · 异常处理 · <a href="/q20.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q20.html">下一题 → Q20 · 异步请求</a></div></div></body></html>

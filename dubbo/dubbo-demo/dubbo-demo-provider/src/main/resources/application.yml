@@ -5,7 +5,7 @@
 # Dubbo Spring Boot Starter 自动映射 dubbo.* 到对应的 Config 对象。
 #
 # 配置优先级（从高到低）：
-#   JVM 参数 (-Ddubbo.xxx) > XML > YAML > 注解/API 默认值
+#   JVM 参数 (-Ddubbo.xxx) > YAML > 注解/API 默认值
 
 # ==================== Spring Boot 基础 ====================
 spring:
@@ -25,13 +25,18 @@ dubbo:
 
   # ---------- 注册中心配置（RegistryConfig） ----------
   registry:
-    # Nacos 注册中心地址
-    # 用户名密码通过 URL 参数传递：?username=xxx&password=xxx
-    address: nacos://192.168.3.100:8848?username=nacos&password=nacos
+    # Nacos 注册中心地址（基础 URL，不含认证信息）
+    address: "nacos://192.168.3.100:8848"
     # 超时时间（毫秒）
     timeout: 10000
     # 启动时不检查注册中心是否可用（false = 不阻塞启动）
     check: false
+    # Nacos 认证信息通过 parameters 传递（dubbo-registry-nacos 标准方式）
+    # 不要放在 URL query 中（?username=xxx&password=xxx），
+    # 因为 YAML 中 & 可能被误解析，且 dubbo-registry-nacos 2.7.x 对 URL 参数解析不完整
+    parameters:
+      username: nacos
+      password: nacos
 
   # ---------- 协议配置（ProtocolConfig） ----------
   protocol:
@@ -61,3 +66,12 @@ dubbo:
     # 派发策略：all / direct / message / execution / connection
     # all = 所有消息都派发到线程池（默认，最常用）
     dispatcher: all
+
+# ==================== 日志配置 ====================
+logging:
+  level:
+    root: INFO
+    # Dubbo 框架日志
+    org.apache.dubbo: INFO
+    # 自定义业务日志（ProviderLogFilter 等）
+    com.example.dubbo.demo: DEBUG

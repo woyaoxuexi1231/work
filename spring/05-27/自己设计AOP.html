@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自研 AOP 引擎核心设计 - 架构师视角</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+        code, pre { font-family: 'JetBrains Mono', monospace; }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .code-block {
+            background: #1e1e1e;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+
+        /* Syntax Highlighting Simulation */
+        .kwd { color: #c678dd; } /* Keyword */
+        .typ { color: #e5c07b; } /* Type */
+        .str { color: #98c379; } /* String */
+        .com { color: #5c6370; font-style: italic; } /* Comment */
+        .fun { color: #61afef; } /* Function */
+        .ann { color: #d19a66; } /* Annotation */
+
+        .flow-node { transition: all 0.3s ease; }
+        .flow-node.active { transform: scale(1.05); box-shadow: 0 0 15px rgba(56, 189, 248, 0.5); border-color: #38bdf8; }
+
+        .tab-btn.active { border-bottom: 2px solid #38bdf8; color: #38bdf8; background: rgba(56, 189, 248, 0.1); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- Header -->
+<header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">A</div>
+            <div>
+                <h1 class="text-xl font-bold text-white tracking-tight">LiteAOP Engine Design</h1>
+                <p class="text-xs text-slate-400">20年架构师 · 核心接口与实现原理演示</p>
+            </div>
+        </div>
+        <nav class="hidden md:flex gap-6 text-sm font-medium text-slate-400">
+            <a href="#philosophy" class="hover:text-white transition">设计哲学</a>
+            <a href="#interfaces" class="hover:text-white transition">核心接口</a>
+            <a href="#implementation" class="hover:text-white transition">内部实现</a>
+            <a href="#simulation" class="hover:text-white transition">运行模拟</a>
+        </nav>
+    </div>
+</header>
+
+<main class="flex-grow max-w-7xl mx-auto px-6 py-12 w-full space-y-20">
+
+    <!-- Section 1: Philosophy -->
+    <section id="philosophy" class="grid md:grid-cols-2 gap-12 items-center">
+        <div class="space-y-6">
+            <span class="text-blue-400 font-mono text-sm tracking-wider uppercase">Core Philosophy</span>
+            <h2 class="text-4xl font-bold text-white leading-tight">AOP 不是魔法，<br>是<span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">责任链模式</span>的极致应用</h2>
+            <p class="text-slate-400 text-lg leading-relaxed">
+                很多初学者认为 AOP 就是动态代理。错！动态代理只是手段，AOP 的灵魂在于 <strong>MethodInterceptor Chain</strong>。
+                如果你要自研 AOP，不要一上来就写 CGLIB 或 JDK Proxy，先设计好这条“链”。
+            </p>
+            <div class="grid grid-cols-2 gap-4 pt-4">
+                <div class="glass-panel p-4 rounded-xl">
+                    <i class="fa-solid fa-layer-group text-blue-400 mb-2 text-xl"></i>
+                    <h3 class="font-bold text-white">解耦</h3>
+                    <p class="text-xs text-slate-400 mt-1">业务逻辑与横切关注点完全分离</p>
+                </div>
+                <div class="glass-panel p-4 rounded-xl">
+                    <i class="fa-solid fa-link text-purple-400 mb-2 text-xl"></i>
+                    <h3 class="font-bold text-white">编排</h3>
+                    <p class="text-xs text-slate-400 mt-1">通过 Invocation 递归调用实现切面嵌套</p>
+                </div>
+            </div>
+        </div>
+        <div class="relative group">
+            <div class="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+            <div class="glass-panel relative p-8 rounded-2xl border border-slate-700">
+                    <pre class="text-sm"><code><span class="com">// AOP 的本质伪代码</span>
+<span class="kwd">public</span> Object <span class="fun">invoke</span>(target, args) {
+    List&lt;Advice&gt; chain = getAdvices(target);
+
+    <span class="com">// 将目标方法包装成最后一个拦截器</span>
+    chain.add(<span class="kwd">new</span> TargetInvoker(target));
+
+    <span class="com">// 启动链条</span>
+    <span class="kwd">return new</span> <span class="typ">Invocation</span>(chain, 0).proceed();
+}</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 2: Core Interfaces -->
+    <section id="interfaces">
+        <div class="mb-10">
+            <h2 class="text-3xl font-bold text-white mb-4">四大核心接口</h2>
+            <p class="text-slate-400">这是构建任何 AOP 框架的最小完备集。</p>
+        </div>
+
+        <div class="grid lg:grid-cols-4 gap-6">
+            <!-- Card 1 -->
+            <div class="glass-panel p-6 rounded-2xl hover:border-blue-500/50 transition duration-300 flex flex-col">
+                <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 mb-4 text-xl">1</div>
+                <h3 class="text-xl font-bold text-white mb-2">JoinPoint</h3>
+                <p class="text-sm text-slate-400 mb-4 flex-grow">连接点。封装了被拦截方法的上下文信息：谁调用的？参数是什么？方法签名是什么？</p>
+                <code class="text-xs bg-slate-900 p-2 rounded text-slate-300 block">getTarget()<br>getMethod()<br>getArgs()</code>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="glass-panel p-6 rounded-2xl hover:border-purple-500/50 transition duration-300 flex flex-col">
+                <div class="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 mb-4 text-xl">2</div>
+                <h3 class="text-xl font-bold text-white mb-2">Advice</h3>
+                <p class="text-sm text-slate-400 mb-4 flex-grow">通知/增强逻辑。比如日志、事务。它是你要插入的代码载体。</p>
+                <code class="text-xs bg-slate-900 p-2 rounded text-slate-300 block">@FunctionalInterface<br>before() / after()<br>around(invocation)</code>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="glass-panel p-6 rounded-2xl hover:border-green-500/50 transition duration-300 flex flex-col border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
+                <div class="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 mb-4 text-xl">3</div>
+                <h3 class="text-xl font-bold text-white mb-2">Invocation</h3>
+                <p class="text-sm text-slate-400 mb-4 flex-grow"><span class="text-green-400 font-bold">核心中的核心</span>。代表一次调用链的执行过程。它持有当前执行到的索引位置。</p>
+                <code class="text-xs bg-slate-900 p-2 rounded text-slate-300 block">proceed() <span class="com">// 触发下一个节点</span></code>
+            </div>
+
+            <!-- Card 4 -->
+            <div class="glass-panel p-6 rounded-2xl hover:border-orange-500/50 transition duration-300 flex flex-col">
+                <div class="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 mb-4 text-xl">4</div>
+                <h3 class="text-xl font-bold text-white mb-2">Advisor</h3>
+                <p class="text-sm text-slate-400 mb-4 flex-grow">顾问。将 Advice (做什么) 和 Pointcut (在哪做) 绑定在一起的容器。</p>
+                <code class="text-xs bg-slate-900 p-2 rounded text-slate-300 block">matches(method)<br>getAdvice()</code>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3: Implementation Details with Tabs -->
+    <section id="implementation" class="glass-panel rounded-3xl overflow-hidden border border-slate-700">
+        <div class="flex border-b border-slate-700 overflow-x-auto">
+            <button onclick="switchTab('invocation')" class="tab-btn active px-8 py-4 text-sm font-medium text-slate-400 hover:text-white transition whitespace-nowrap" id="btn-invocation">
+                <i class="fa-solid fa-code mr-2"></i>Invocation (引擎心脏)
+            </button>
+            <button onclick="switchTab('proxy')" class="tab-btn px-8 py-4 text-sm font-medium text-slate-400 hover:text-white transition whitespace-nowrap" id="btn-proxy">
+                <i class="fa-solid fa-mask mr-2"></i>JdkDynamicProxy (代理生成)
+            </button>
+            <button onclick="switchTab('usage')" class="tab-btn px-8 py-4 text-sm font-medium text-slate-400 hover:text-white transition whitespace-nowrap" id="btn-usage">
+                <i class="fa-solid fa-flask mr-2"></i>用户侧使用示例
+            </button>
+        </div>
+
+        <div class="p-8 min-h-[400px]">
+            <!-- Tab Content: Invocation -->
+            <div id="content-invocation" class="tab-content block animate-fadeIn">
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="md:col-span-1 space-y-4">
+                        <h3 class="text-xl font-bold text-white">设计解析</h3>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                            <code>Invocation</code> 对象是一个<strong>有状态的迭代器</strong>。
+                            每次调用 <code>proceed()</code>，它就将内部指针 +1，并执行对应的拦截器。
+                            当指针越界时，说明所有前置/后置处理都做完了，此时反射调用真实的目标方法。
+                        </p>
+                        <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-800/50">
+                            <p class="text-xs text-blue-300 font-mono">Professor's Note:</p>
+                            <p class="text-xs text-blue-200 mt-1">这就是为什么 Around 通知可以控制目标方法是否执行。如果不调用 proceed()，链条就断了，目标方法永远不会被触发。</p>
+                        </div>
+                    </div>
+                    <div class="md:col-span-2 code-block p-6 text-sm border border-slate-700">
+<pre><code><span class="kwd">public class</span> <span class="typ">ReflectiveMethodInvocation</span> <span class="kwd">implements</span> <span class="typ">Invocation</span> {
+
+    <span class="kwd">private final</span> Object target;
+    <span class="kwd">private final</span> Method method;
+    <span class="kwd">private final</span> Object[] args;
+    <span class="kwd">private final</span> List&lt;<span class="typ">MethodInterceptor</span>&gt; interceptors;
+
+    <span class="com">// 游标：当前执行到第几个拦截器</span>
+    <span class="kwd">private int</span> currentIndex = -1;
+
+    <span class="kwd">public</span> <span class="fun">ReflectiveMethodInvocation</span>(Object target, Method method, Object[] args,
+                                 List&lt;<span class="typ">MethodInterceptor</span>&gt; interceptors) {
+        <span class="kwd">this</span>.target = target;
+        <span class="kwd">this</span>.method = method;
+        <span class="kwd">this</span>.args = args;
+        <span class="kwd">this</span>.interceptors = interceptors;
+    }
+
+    <span class="ann">@Override</span>
+    <span class="kwd">public</span> Object <span class="fun">proceed</span>() <span class="kwd">throws</span> Throwable {
+        <span class="com">// 1. 游标后移</span>
+        <span class="kwd">this</span>.currentIndex++;
+
+        <span class="com">// 2. 判断是否还有拦截器</span>
+        <span class="kwd">if</span> (<span class="kwd">this</span>.currentIndex &lt; <span class="kwd">this</span>.interceptors.size()) {
+            <span class="typ">MethodInterceptor</span> interceptor = <span class="kwd">this</span>.interceptors.get(<span class="kwd">this</span>.currentIndex);
+            <span class="com">// 3. 执行拦截器，并将自身(this)传入，以便拦截器回调 proceed()</span>
+            <span class="kwd">return</span> interceptor.<span class="fun">invoke</span>(<span class="kwd">this</span>);
+        } <span class="kwd">else</span> {
+            <span class="com">// 4. 链条走完，反射调用真实目标方法</span>
+            <span class="kwd">return</span> method.<span class="fun">invoke</span>(target, args);
+        }
+    }
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content: Proxy -->
+            <div id="content-proxy" class="tab-content hidden animate-fadeIn">
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="md:col-span-1 space-y-4">
+                        <h3 class="text-xl font-bold text-white">代理工厂</h3>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                            这里展示 JDK 动态代理的实现。它负责创建外壳。
+                            关键在于 <code>invoke</code> 方法内部，我们不再直接调用 target，而是创建了一个 <code>Invocation</code> 对象并启动它。
+                        </p>
+                    </div>
+                    <div class="md:col-span-2 code-block p-6 text-sm border border-slate-700">
+<pre><code><span class="kwd">public class</span> <span class="typ">JdkDynamicAopProxy</span> <span class="kwd">implements</span> <span class="typ">InvocationHandler</span> {
+
+    <span class="kwd">private final</span> <span class="typ">AdvisedSupport</span> config; <span class="com">// 保存目标对象、拦截器列表等配置</span>
+
+    <span class="kwd">public</span> Object <span class="fun">getProxy</span>() {
+        <span class="kwd">return</span> Proxy.<span class="fun">newProxyInstance</span>(
+            getClass().getClassLoader(),
+            config.getTargetClass().getInterfaces(),
+            <span class="kwd">this</span>
+        );
+    }
+
+    <span class="ann">@Override</span>
+    <span class="kwd">public</span> Object <span class="fun">invoke</span>(Object proxy, Method method, Object[] args) <span class="kwd">throws</span> Throwable {
+        <span class="com">// 获取该方法匹配的拦截器链</span>
+        List&lt;<span class="typ">MethodInterceptor</span>&gt; chain = config.getInterceptors(method);
+
+        <span class="com">// 如果没有拦截器，直接反射调用（优化性能）</span>
+        <span class="kwd">if</span> (chain.isEmpty()) {
+            <span class="kwd">return</span> method.<span class="fun">invoke</span>(config.getTarget(), args);
+        }
+
+        <span class="com">// 核心：创建调用链对象并启动</span>
+        <span class="typ">Invocation</span> invocation = <span class="kwd">new</span> <span class="typ">ReflectiveMethodInvocation</span>(
+            config.getTarget(), method, args, chain
+        );
+
+        <span class="kwd">return</span> invocation.<span class="fun">proceed</span>();
+    }
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content: Usage -->
+            <div id="content-usage" class="tab-content hidden animate-fadeIn">
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="md:col-span-1 space-y-4">
+                        <h3 class="text-xl font-bold text-white">优雅的API</h3>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                            底层再复杂，给用户暴露的必须简单。
+                            通过 Builder 模式或者注解驱动，让使用者无感知地织入逻辑。
+                        </p>
+                    </div>
+                    <div class="md:col-span-2 code-block p-6 text-sm border border-slate-700">
+<pre><code><span class="com">// 1. 定义业务服务</span>
+<span class="kwd">public interface</span> <span class="typ">UserService</span> {
+    <span class="kwd">void</span> <span class="fun">createUser</span>(String name);
+}
+
+<span class="com">// 2. 手动组装 AOP (演示原理)</span>
+<span class="typ">AdvisedSupport</span> config = <span class="kwd">new</span> <span class="typ">AdvisedSupport</span>();
+config.setTarget(<span class="kwd">new</span> <span class="typ">UserServiceImpl</span>());
+
+<span class="com">// 添加一个日志拦截器</span>
+config.addInterceptor(<span class="kwd">new</span> <span class="typ">MethodInterceptor</span>() {
+    <span class="kwd">public</span> Object <span class="fun">invoke</span>(<span class="typ">Invocation</span> inv) <span class="kwd">throws</span> Throwable {
+        System.out.println(<span class="str">"[Log] Start..."</span>);
+        Object ret = inv.proceed(); <span class="com">// 执行业务及后续链条</span>
+        System.out.println(<span class="str">"[Log] End..."</span>);
+        <span class="kwd">return</span> ret;
+    }
+});
+
+<span class="com">// 3. 获取代理对象并使用</span>
+<span class="typ">UserService</span> proxy = (<span class="typ">UserService</span>) <span class="kwd">new</span> <span class="typ">JdkDynamicAopProxy</span>(config).getProxy();
+proxy.createUser(<span class="str">"Alice"</span>);</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 4: Interactive Simulation -->
+    <section id="simulation" class="space-y-8">
+        <div class="flex justify-between items-end">
+            <div>
+                <h2 class="text-3xl font-bold text-white mb-2">运行时序模拟</h2>
+                <p class="text-slate-400">点击按钮，观察 Invocation.proceed() 如何像穿针引线一样串联起各个切面。</p>
+            </div>
+            <button onclick="runSimulation()" id="simBtn" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-medium transition flex items-center gap-2 shadow-lg shadow-blue-900/20">
+                <i class="fa-solid fa-play"></i> 执行 proxy.method()
+            </button>
+        </div>
+
+        <div class="glass-panel p-8 rounded-3xl border border-slate-700 relative overflow-hidden">
+            <!-- Background Grid -->
+            <div class="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+
+            <!-- Flow Chart -->
+            <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8">
+
+                <!-- Client -->
+                <div class="flow-node glass-panel p-4 rounded-xl border-slate-600 w-full md:w-40 text-center" id="node-client">
+                    <i class="fa-solid fa-user text-slate-400 text-2xl mb-2"></i>
+                    <div class="font-bold text-sm">Client</div>
+                    <div class="text-xs text-slate-500">proxy.doWork()</div>
+                </div>
+
+                <div class="hidden md:block h-0.5 w-12 bg-slate-700"></div>
+                <div class="md:hidden w-0.5 h-8 bg-slate-700"></div>
+
+                <!-- Interceptor 1 (Transaction) -->
+                <div class="flow-node glass-panel p-4 rounded-xl border-slate-600 w-full md:w-48 text-center relative" id="node-int1">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-900 text-purple-200 text-[10px] px-2 py-0.5 rounded-full border border-purple-700">Around</div>
+                    <i class="fa-solid fa-database text-purple-400 text-2xl mb-2"></i>
+                    <div class="font-bold text-sm">TxInterceptor</div>
+                    <div class="text-xs text-slate-500 mt-1">conn.begin()</div>
+                    <div class="text-xs text-slate-500">inv.proceed()</div>
+                    <div class="text-xs text-slate-500 mt-1">conn.commit()</div>
+                </div>
+
+                <div class="hidden md:block h-0.5 w-12 bg-slate-700"></div>
+                <div class="md:hidden w-0.5 h-8 bg-slate-700"></div>
+
+                <!-- Interceptor 2 (Log) -->
+                <div class="flow-node glass-panel p-4 rounded-xl border-slate-600 w-full md:w-48 text-center relative" id="node-int2">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-900 text-blue-200 text-[10px] px-2 py-0.5 rounded-full border border-blue-700">Around</div>
+                    <i class="fa-solid fa-file-lines text-blue-400 text-2xl mb-2"></i>
+                    <div class="font-bold text-sm">LogInterceptor</div>
+                    <div class="text-xs text-slate-500 mt-1">log.info("start")</div>
+                    <div class="text-xs text-slate-500">inv.proceed()</div>
+                    <div class="text-xs text-slate-500 mt-1">log.info("end")</div>
+                </div>
+
+                <div class="hidden md:block h-0.5 w-12 bg-slate-700"></div>
+                <div class="md:hidden w-0.5 h-8 bg-slate-700"></div>
+
+                <!-- Target -->
+                <div class="flow-node glass-panel p-4 rounded-xl border-slate-600 w-full md:w-40 text-center" id="node-target">
+                    <i class="fa-solid fa-bullseye text-green-400 text-2xl mb-2"></i>
+                    <div class="font-bold text-sm">Real Target</div>
+                    <div class="text-xs text-slate-500">doRealWork()</div>
+                </div>
+            </div>
+
+            <!-- Console Output -->
+            <div class="mt-10 bg-black/50 rounded-lg p-4 font-mono text-xs md:text-sm h-48 overflow-y-auto border border-slate-800 shadow-inner" id="console-output">
+                <div class="text-slate-500">// Ready to execute...</div>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-slate-800 bg-slate-900 py-8 mt-12">
+    <div class="max-w-7xl mx-auto px-6 text-center text-slate-500 text-sm">
+        <p>&copy; 2026 Senior Architect Demo. Designed for Deep Understanding of AOP Internals.</p>
+    </div>
+</footer>
+
+<script>
+  // Tab Switching Logic
+  function switchTab(tabId) {
+    // Hide all contents
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('block'));
+
+    // Deactivate buttons
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+    // Show selected
+    document.getElementById(`content-${tabId}`).classList.remove('hidden');
+    document.getElementById(`content-${tabId}`).classList.add('block');
+    document.getElementById(`btn-${tabId}`).classList.add('active');
+  }
+
+  // Simulation Logic
+  const consoleEl = document.getElementById('console-output');
+  const nodes = ['node-client', 'node-int1', 'node-int2', 'node-target'];
+  let isRunning = false;
+
+  function log(msg, color = 'text-slate-300') {
+    const line = document.createElement('div');
+    line.className = `mt-1 ${color}`;
+    line.innerHTML = `> ${msg}`;
+    consoleEl.appendChild(line);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  function highlightNode(id) {
+    document.getElementById(id).classList.add('active');
+  }
+
+  function removeHighlight(id) {
+    document.getElementById(id).classList.remove('active');
+  }
+
+  async function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function runSimulation() {
+    if (isRunning) return;
+    isRunning = true;
+    const btn = document.getElementById('simBtn');
+    btn.disabled = true;
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    consoleEl.innerHTML = '';
+    log('--- AOP Invocation Started ---', 'text-blue-400 font-bold');
+
+    try {
+      // Step 1: Client -> Proxy
+      highlightNode('node-client');
+      await sleep(600);
+      log('Client calls proxy.doWork()', 'text-slate-400');
+      removeHighlight('node-client');
+
+      // Step 2: Enter TxInterceptor (Before)
+      highlightNode('node-int1');
+      await sleep(600);
+      log('TxInterceptor: Connection BEGIN', 'text-purple-400');
+
+      // Step 3: Proceed to LogInterceptor
+      // (Keep Int1 highlighted visually to show stack depth, or toggle based on preference. Here we move focus)
+      // removeHighlight('node-int1');
+      highlightNode('node-int2');
+      await sleep(600);
+      log('LogInterceptor: [INFO] Method start', 'text-blue-400');
+
+      // Step 4: Proceed to Target
+      // removeHighlight('node-int2');
+      highlightNode('node-target');
+      await sleep(800);
+      log('Target: Executing business logic...', 'text-green-400 font-bold');
+      log('Target: Return result "OK"', 'text-green-400');
+      removeHighlight('node-target');
+
+      // Step 5: Back to LogInterceptor (After)
+      highlightNode('node-int2');
+      await sleep(600);
+      log('LogInterceptor: [INFO] Method end (cost: 20ms)', 'text-blue-400');
+      removeHighlight('node-int2');
+
+      // Step 6: Back to TxInterceptor (After)
+      highlightNode('node-int1');
+      await sleep(600);
+      log('TxInterceptor: Connection COMMIT', 'text-purple-400');
+      removeHighlight('node-int1');
+
+      log('--- Invocation Finished ---', 'text-blue-400 font-bold');
+
+    } catch (e) {
+      log('Error occurred', 'text-red-500');
+    } finally {
+      isRunning = false;
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+  }
+</script>
+</body>
+</html>

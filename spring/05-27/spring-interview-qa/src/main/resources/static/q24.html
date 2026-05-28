@@ -1,37 +1,25 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q24 · 配置优先级</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q24 · 配置优先级</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 24 · 自动装配</div><h1>配置优先级</h1><div class="q-sub">外部化配置的加载顺序？多环境如何组织？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q24 · 配置优先级</b> — 外部化配置加载顺序 + 多环境组织。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">外部化配置的加载顺序？命令行参数、环境变量、application.yml 谁先谁后？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">从高到低——<br>
+1. 命令行参数（--server.port=9090）<br>
+2. 环境变量（export SERVER_PORT=9090）<br>
+3. 系统属性（-Dserver.port=9090）<br>
+4. application-{profile}.yml（外部 config/）<br>
+5. application-{profile}.yml（classpath）<br>
+6. application.yml（外部）<br>
+7. application.yml（classpath）<br>
+8. @PropertySource<br>
+9. 默认值<br><br>
+<b>核心原则：越靠近部署环境，优先级越高。</b>同一个 jar 从开发到生产不用重新打包——开发用 application-dev.yml 的 8081，上线用命令行 --server.port=80 覆盖。Environment 的 PropertySource 是一个有序列表——遍历时第一个非 null 返回的就是最终值。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"命令行参数最高优先级，然后是环境变量、系统属性、application-{profile}.yml、application.yml、@PropertySource、默认值。多环境用 spring.profiles.active 切换。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">多环境配置如何组织？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">application.yml 放公共配置，application-{profile}.yml 放环境差异。激活：spring.profiles.active=prod。分组：spring.profiles.group.prod=prod-db,prod-mq。<br><br>
+bootstrap.yml 是 Spring Cloud Config 的概念，Spring Boot 3.x / Cloud 2022+ 已移除，改用 spring.config.import。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"12 级顺序中，核心原则是'越靠近部署环境，优先级越高'。同一个 jar 包从开发到生产，不用重新打包——开发用 application-dev.yml 的 8081 端口，上线时用命令行 --server.port=80 覆盖。Environment 中的 PropertySource 是一个有序列表——env.getProperty('server.port') 遍历它，第一个非 null 返回的就是最终值。这正是'列表实现覆盖'的设计——Map 不支持同名 key 的多值语义，列表天然支持。bootstrap.yml 是 Spring Cloud Config 的概念，在 Spring Boot 3.x 中已移除，改用 spring.config.import。"
+<div class="reflect"><strong>❓ 自问：</strong>为什么用列表而不是 Map 存储 PropertySource？<br><strong>答：</strong>Map 不支持同名 key 的多值语义——后者会覆盖前者。列表天然支持"遍历取第一个非 null"的覆盖语义。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>多环境组织：</b>application.yml（公共）+ application-{profile}.yml（环境专属）+ spring.profiles.group（分组）+ spring.profiles.include（组合）。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Spring 的配置优先级体系本质上是 Twelve-Factor App 原则中'配置与代码分离'的系统化实现。它回答了一个根本问题：一个构建产物如何在开发、测试、预发布、生产四个环境运行而无需任何修改？答案是：代码中只有默认值——打包成 jar 后，所有差异化的配置从外部注入。命令行参数覆盖环境变量、环境变量覆盖配置文件——这个优先级体系的设计不是随意的：命令行是运维人员在部署瞬间决定的（最靠近部署环境），环境变量是容器/K8s 注入的，配置文件是应用自带的（最靠近代码）。每一层的优先级都反映了'谁在做决定'以及'决定离部署有多近'。profile 机制则把环境差异建模为一组命名空间——dev/staging/prod 各有一套配置，同一个 jar 包只需要一个 --spring.profiles.active=prod。这个设计让 Spring Boot 的部署从'打包不同环境的 WAR'变成了'同一个 JAR + 不同的环境变量'——这是 DevOps 时代的基础设施。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"同一个 JAR + 不同的环境变量"——这句话概括了 Spring Boot 配置体系的最终价值。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q24 · 配置优先级 · <a href="/" style="color:var(--accent)">← 返回索引</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/">← 返回索引</a></div></div></body></html>

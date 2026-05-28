@@ -1,37 +1,21 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q05 · 作用域</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q05 · 作用域</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.qinfo h3{font-size:15px;margin-bottom:4px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 05 · IOC 容器</div><h1>作用域</h1><div class="q-sub">singleton / prototype 的原理？singleton 注入 prototype 如何保证每次拿到新实例？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><h3>📋 Q05 · 作用域</h3><p>singleton 注入 prototype 的经典陷阱——面试必问。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">singleton、prototype、request、session 的作用域原理？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>singleton：</b>容器中唯一实例，启动时创建，所有请求共享。Spring 管理完整生命周期包括销毁。<br>
+<b>prototype：</b>每次 getBean() 新建实例。<b>Spring 只负责创建，不负责销毁——@PreDestroy 不会被调用。</b><br>
+<b>request/session：</b>Web 环境专用。request 每个 HTTP 请求一个，session 每个会话一个。<br><br>
+prototype 不管理销毁是设计选择——如果 Spring 持有所有 prototype 实例引用，会导致内存泄漏。谁创建谁负责清理。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"singleton 是容器中唯一实例，prototype 每次 getBean() 创建新实例。singleton 注入 prototype 时只注入一次，后续拿到的是同一个引用。解决方式有 @Lookup、ObjectFactory、ApplicationContext.getBean()。prototype 的 @PreDestroy 不会被 Spring 调用。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">如果 singleton Bean 里注入 prototype Bean，如何保证每次拿到新实例？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">直接 @Autowired 不行——singleton 只创建一次，依赖也只在创建时注入一次，prototype 被注入后就永远被 singleton 持有同一个引用。<br><br>三种解法：<br>
+<b>1. ObjectProvider（推荐）：</b>注入 ObjectProvider&lt;PrototypeBean&gt;，需要时 provider.getObject()。Spring 4.3 引入，支持 getIfAvailable() 和 stream()。<br>
+<b>2. @Lookup：</b>标注一个返回 PrototypeBean 的抽象方法，Spring 通过 CGLIB 生成子类重写它，每次调用执行 getBean()。但类不能是 final。<br>
+<b>3. ApplicationContext.getBean()：</b>最直接，但耦合了 Spring 容器。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"singleton 注入 prototype 之所以'失效'，不是 Spring 的 bug——是 Java 引用的基本特性：singleton 只创建一次，依赖注入也只执行一次，prototype 在注入那一刻被创建后，引用就被 singleton 永久持有。@Lookup 通过 CGLIB 生成子类重写方法——每次调用执行 getBean()，这是最透明的方案但依赖 CGLIB。ObjectProvider 是 Spring 4.3 引入的，实际上就是一个懒加载的 getBean() 包装，但比 @Lookup 更灵活——支持 getIfAvailable、getIfUnique、stream。prototype 不管理销毁是职责分离的设计：Spring 是'容器'不是'GC'，如果持有所有 prototype 引用会导致内存泄漏。"
+<div class="follow"><strong>追问：</strong>"@Lookup 有什么限制？"<br><strong>答：</strong>类不能是 final，方法不能是 private。而且如果你的类实现了接口，CGLIB 子类和 JDK 接口代理同时存在时可能有类型转换问题。</div>
+<div class="reflect"><strong>❓ 自问：</strong>什么时候该用 prototype？<br><strong>答：</strong>很少。大多数时候 singleton + 无状态设计就够了。prototype 主要用于有状态的 Bean（比如一个 Bean 持有请求级别的数据）——但这类数据更应该放在 request scope 或方法参数里传递。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>源码：</b>AbstractBeanFactory.doGetBean() 中，scope=prototype 时每次 new 一个 → 不走缓存。singleton 走 getSingleton() → 从 singletonObjects 取。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"singleton 注入 prototype 的'失效'本质上暴露了 DI 容器的根本性局限：声明式注入是静态的、一次性的，而某些依赖关系天然是动态的、多次的。Spring 提供的三种解法（@Lookup、ObjectProvider、getBean）本质上都是在声明式注入的框架上撕开一个'命令式逃生口'。ObjectProvider 是三者中最优雅的——它把'懒加载'这个概念从框架内部机制（三级缓存的 ObjectFactory）推广到了应用层。你会发现 ObjectProvider 的接口签名和 ObjectFactory 几乎一样——这不是巧合，Spring 在 4.3 引入它时就是在说：'懒加载不仅是框架内部需要的，应用层也有同样的需求'。prototype 不管理销毁则揭示了另一个哲学：框架不应该替你做你不需要的事情。管理 prototype 的生命周期意味着 Spring 要维护一个对所有实例的引用表——这在大多数场景下是一种无谓的内存开销。Spring 的选择是：默认不做，你需要时自己管理。这其实是'约定优于配置'的反面——'不约定也是一种约定'。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"声明式注入上撕开命令式逃生口"——这句话把你和其他候选人瞬间拉开差距。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q05 · 作用域 · <a href="/q06.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q06.html">下一题 → Q06 · Bean 覆盖</a></div></div></body></html>

@@ -1,48 +1,48 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q02 · 循环依赖</title><link rel="stylesheet" href="/css/style.css"></head>
+<title>Q02 · 循环依赖</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}
+.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}
+.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}
+.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}
+.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}
+.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}
+.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:"JetBrains Mono",Consolas,monospace}
+.bubble pre{background:#1a1a2e;color:#e0e0e0;padding:10px 14px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.6;margin:6px 0}
+.bubble pre code{background:none;padding:0;color:inherit}
+.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.qinfo h3{font-size:15px;margin-bottom:4px}.qinfo p{color:var(--sub);font-size:13px}
+.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}
+.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}
+.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style></head>
 <body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 02 · IOC 容器</div><h1>循环依赖</h1><div class="q-sub">Spring 如何解决单例 Bean 的循环依赖？三级缓存分别存什么？为什么必须三级缓存？构造器注入为什么无法解决？</div></div></div>
 <div class="wrap">
+<div class="qinfo"><h3>📋 Q02 · 循环依赖</h3><p>三级缓存是 Spring 面试的必考题。关键是讲清楚"为什么必须三级"。</p></div>
+<div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">Spring 如何解决单例 Bean 的循环依赖？三级缓存分别存什么？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">三级缓存解决。先说三个缓存放什么——<br><br>
+<b>一级 singletonObjects：</b>完全初始化好的成品 Bean<br>
+<b>二级 earlySingletonObjects：</b>已实例化但未初始化的半成品<br>
+<b>三级 singletonFactories：</b>一个 ObjectFactory，能生成半成品<br><br>
+流程：A 和 B 互相依赖。A 实例化 → 三级缓存放入 ObjectFactory → A 填充属性时发现需要 B → 创建 B → B 实例化 → B 填充属性时发现需要 A → 从三级缓存取 ObjectFactory → getObject() 拿到 A 的引用 → B 完成 → A 继续填充 → A 完成。</div></div>
 
-<h3>🥉 青铜（背答案）</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"三级缓存是 singletonObjects、earlySingletonObjects 和 singletonFactories。一级存放完全初始化的 Bean，二级存放早期暴露的 Bean，三级存放 ObjectFactory 用于生成代理对象。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">为什么必须三级缓存，只用二级行不行？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">不行。原因两个字：<b>AOP 代理</b>。<br><br>
+AOP 代理在初始化末尾（BPP.after）才生成。但循环依赖发生在属性填充时——比代理生成早。如果只有二级缓存，A 实例化后直接放二级缓存（原始 A）。B 拿到的是原始 A。之后 A 初始化完毕、生成代理——一级缓存放代理 A。同一个 Bean 两个版本，B 手上的原始 A 和一级缓存里的代理 A 不是同一个对象。<br><br>
+三级缓存的 ObjectFactory 解决了这个时间差：getObject() 被调用时判断"需要代理吗？"需要就提前生成，不需要就返回原始对象。无论谁、什么时候拿，拿到的都是同一个版本。</div></div>
 
-<h3>🥈 白银（讲来源）</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"二级缓存通过分离实例化和初始化解决了纯 POJO 的循环依赖。但 AOP 代理在初始化末尾才创建，循环依赖发生在属性填充阶段——时间上冲突了。三级缓存的 ObjectFactory 是一个 lazy evaluation：只有真的发生循环依赖时才提前创建代理，否则 lambda 永远不会被调用，代理仍然在正常时机创建。"
+<div class="follow"><strong>追问：</strong>"那构造器注入为什么解决不了循环依赖？"<br>
+<strong>答：</strong>循环依赖的前提是 Bean 能先实例化再放入缓存。构造器注入时，A 的构造器需要 B、B 的构造器需要 A——双方连实例化都完成不了，根本没机会进缓存。setter/字段注入先实例化（进缓存），再注入依赖（从缓存取）。</div>
+<div class="reflect"><strong>❓ 自问：</strong>prototype 的循环依赖 Spring 能解决吗？<br>
+<strong>答：</strong>不能。prototype 每次 getBean() 都新建，没有缓存这个概念。循环依赖变成无限递归，直接抛 BeanCurrentlyInCreationException。遇到 prototype 循环依赖，说明你的设计有问题——该重构了。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>流程推演：</b><br>
-1. 创建 A → 实例化 → 三级缓存放入 ObjectFactory(lambda: getEarlyBeanReference)<br>
-2. 填充 A → 需要 B → 创建 B<br>
-3. B 实例化 → 填充 B → 需要 A → 从三级缓存取 ObjectFactory → getObject()<br>
-4. getEarlyBeanReference 内部判断：A 需要代理吗？<br>
-&nbsp;&nbsp; 需要 → 提前创建代理 → 放入二级缓存 → 返回代理<br>
-&nbsp;&nbsp; 不需要 → 返回原始 A → 放入二级缓存<br>
-5. B 完成 → A 继续填充 → AOP 在 after 阶段再次检查：<br>
-&nbsp;&nbsp; 代理已在二级缓存？→ 直接取出，不再重复生成
-</div>
-</blockquote>
-
-<h3>🥇 王者（讲设计哲学）</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"三级缓存本质上是 Spring 面对两个正交设计——分步创建和延迟代理——在循环依赖这一边界条件下产生冲突时，做出的最小侵入性修复。它没有选择让 IoC 硬编码 AOP（破坏解耦），也没有选择无条件提前代理（破坏生命周期），而是引入了一个 lambda 工厂作为'承诺'，把'是否提前创建代理'的决定推迟到真正需要的时刻。getEarlyBeanReference 内部通过 SmartInstantiationAwareBeanPostProcessor 仍然走的是 BPP 扩展机制，IoC 容器一行 AOP 代码都不需要知道。这其实就是延迟计算 + 开闭原则的教科书级应用。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>你说出"lambda 工厂作为承诺"、"最小侵入性修复"、"IoC 容器一行 AOP 代码都不需要知道"这三句话时，面试官脑子里只有一个念头：这个人真的读过源码。
-</div>
-</blockquote>
-</div>
-
-<div class="card"><h2>追问：构造器注入为什么无法解决？</h2>
-<p>循环依赖的前提是 Bean 能先实例化再放入缓存。构造器注入的问题在于——A 的构造器需要 B，B 的构造器需要 A，<strong>双方都无法完成实例化</strong>，根本没有机会进入缓存。setter/字段注入先实例化（放入缓存），再注入依赖（从缓存获取）。</p></div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q02 · 循环依赖 · <a href="/q03.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q03.html">下一题 → Q03 · 依赖注入</a></div></div></body></html>

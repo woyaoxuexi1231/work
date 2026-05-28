@@ -1,37 +1,17 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q12 · 事务传播</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q12 · 事务传播</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 12 · 事务</div><h1>事务传播行为</h1><div class="q-sub">REQUIRED / REQUIRES_NEW / NESTED 的区别？REQUIRES_NEW 挂起如何实现？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q12 · 事务传播行为</b> — REQUIRED / REQUIRES_NEW / NESTED。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">说出 REQUIRED、REQUIRES_NEW、NESTED 的区别和适用场景？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">区别在于对"已有事务"的处理：<br><br>
+<b>REQUIRED（默认）：</b>有事务就加入，没有就新建。内外层共享同一个事务——任何地方抛异常全部回滚。大部分业务用这个就够了。<br>
+<b>REQUIRES_NEW：</b>挂起当前事务，新建独立事务。内外互不影响——内层回滚不影响外层提交。<b>典型场景：日志和审计。</b>不管业务成功失败，日志必须独立写入。<br>
+<b>NESTED：</b>嵌套子事务，通过 JDBC Savepoint 实现。子事务回滚到 savepoint 不影响外层，但外层回滚会连子事务一起回滚。<b>依赖数据库支持 Savepoint</b>（H2/MySQL InnoDB/PG 支持）。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"REQUIRED 加入当前事务或新建；REQUIRES_NEW 挂起当前事务，新建独立事务；NESTED 嵌套子事务，依赖数据库 Savepoint。REQUIRES_NEW 通过 TransactionSynchronizationManager 的 unbindResource 挂起。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">REQUIRES_NEW 挂起当前事务是怎么实现的？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">通过 TransactionSynchronizationManager。unbindResource(dataSource) 解绑当前连接 → 保存到 SuspendedResourcesHolder → 获取新连接开启新事务 → 内层结束 → 恢复 Holder。全过程基于 ThreadLocal——这也是 @Transactional 不能跨线程的根本原因。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"三种传播行为的本质区别在于对'事务资源'（主要是数据库连接）的处理方式。REQUIRED 最直接——有就用，没有就建。REQUIRES_NEW 需要挂起：TransactionSynchronizationManager.unbindResource(dataSource) 解绑当前连接 → 保存到 SuspendedResourcesHolder → 获取新连接开启新事务 → 内层结束 → 恢复 Holder。这整个过程全部基于 ThreadLocal——这也是 @Transactional 不能跨线程的根本原因。NESTED 的实现不同：它不走挂起/恢复，而是用 JDBC 的 Savepoint——conn.setSavepoint() + conn.rollback(savepoint)。所以 NESTED 的回滚是'子事务内局部回滚'，外层事务继续；而 REQUIRES_NEW 的两个事务完全独立。"
+<div class="reflect"><strong>❓ 自问：</strong>@Async + @Transactional 为什么不能共享事务？<br><strong>答：</strong>因为 @Async 用线程池执行，新线程有自己独立的 ThreadLocal，拿不到原线程的事务上下文。异步方法上的 @Transactional 是新事务，和外层无关。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>数据源要求：</b>NESTED → JDBC 3.0 Savepoint (H2/MySQL InnoDB/PG/Oracle)。不支持 Savepoint 会降级为 REQUIRED。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"事务传播行为的 7 种取值本质上是 Spring 对'事务边界管理'这个复杂问题的穷举式建模。它把'调用方有事务/无事务'和'被调用方需要事务/不需要/必须独立'做了笛卡尔积——每一种传播行为都是这两个维度上的一个坐标点。REQUIRED 代表'信任调用方'，REQUIRES_NEW 代表'不信任调用方'——后者常用于日志写入（无论如何都要记录）和审计（独立提交、不能因业务回滚而丢失）。挂起机制的设计也有哲学：它没有选择'嵌套连接'（一个事务里开两个连接），因为那会导致死锁和资源耗尽；它选择了'连接切换'——先解绑旧的、绑定新的、用完恢复旧的。这本质上是一种资源池化的思想，ThreadLocal 就是那个'线程本地的资源槽'。理解了这个，你就理解了为什么 Spring 选择 ThreadLocal 管理事务——不是因为简单，而是因为在一个线程一个数据库连接的前提下，ThreadLocal 是最精确的资源映射。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"穷举式建模"、"资源池化思想"、"ThreadLocal 是资源槽"——三个概念证明你从第一性原理推导出设计。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q12 · 事务传播 · <a href="/q13.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q13.html">下一题 → Q13 · 事务失效</a></div></div></body></html>

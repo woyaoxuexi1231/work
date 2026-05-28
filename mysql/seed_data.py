@@ -530,7 +530,7 @@ class DataSeeder:
 
 def parse_args():
     p = argparse.ArgumentParser(description="MySQL 测试数据生成器")
-    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--host", default="192.168.3.100")
     p.add_argument("--port", type=int, default=3306)
     p.add_argument("--user", default="root")
     p.add_argument("--password", default="123456")

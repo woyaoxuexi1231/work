@@ -1,63 +1,192 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q01 · Bean 生命周期</title><link rel="stylesheet" href="/css/style.css"></head>
+<title>Q01 · Bean 生命周期</title>
+<style>
+:root{--bg:#ededed;--card:#fff;--text:#111;--sub:#666;--accent:#6db33f;--bubble-l:#fff;--bubble-r:#95ec69;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:16px}
+.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+
+.chat{padding:20px 0}
+.msg{display:flex;margin-bottom:16px}
+.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}
+.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}
+.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}
+.msg .bubble{max-width:82%;padding:10px 14px;border-radius:var(--radius);font-size:14px;line-height:1.7;position:relative}
+.msg.left .bubble{background:var(--bubble-l);border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.msg.right .bubble{background:var(--bubble-r);border-top-right-radius:2px}
+.msg.right .text{text-align:left}.msg.left .text{text-align:left}
+.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:"JetBrains Mono",Consolas,monospace}
+.bubble pre{background:#1a1a2e;color:#e0e0e0;padding:10px 14px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.6;margin:6px 0}
+.bubble pre code{background:none;padding:0;color:inherit}
+
+.qinfo{background:var(--card);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.qinfo h3{font-size:15px;margin-bottom:4px}.qinfo p{color:var(--sub);font-size:13px}
+
+.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 var(--radius) var(--radius) 0;font-size:13px}
+.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 var(--radius) var(--radius) 0;font-size:13px}
+.follow strong{color:#b8860b}.reflect strong{color:#2a6496}
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
 <body>
+
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 01 · IOC 容器</div><h1>Bean 生命周期</h1><div class="q-sub">BeanFactory 和 ApplicationContext 加载 Bean 的区别？从实例化到销毁经历哪些阶段？BeanPostProcessor 的 before/after 分别在什么时候触发？想在属性设置前修改属性值用哪个扩展点？</div></div></div>
+
 <div class="wrap">
 
-<div class="card">
-<h2>面试时你可以这样回答</h2>
-
-<h3>🥉 青铜（背答案——你现在的水平）</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Spring Bean 生命周期包括：实例化 → 属性填充 → Aware 回调 → BeanPostProcessor.before → 初始化（@PostConstruct / InitializingBean / init-method）→ BeanPostProcessor.after → 就绪 → 销毁时 @PreDestroy / DisposableBean / destroy-method。BeanFactory 是懒加载，ApplicationContext 是预加载并自动注册 BPP。想在属性设置前修改属性值用 BeanFactoryPostProcessor。"
-</blockquote>
-
-<h3>🥈 白银（讲来源——读源码后的水平）</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"生命周期不是你背的那些阶段的简单排列——它分了两条线。一条是 BFPP 线：AbstractApplicationContext.refresh() 中 invokeBeanFactoryPostProcessors()，在所有 Bean 创建之前运行，操作 BeanDefinition。另一条是 BPP 线：每个 Bean 在 doCreateBean() → initializeBean() 中被调用两次——before 时属性已填但 init 未执行，after 时 Bean 已经是个成品。ApplicationContextAware 不在 invokeAwareMethods() 中回调，它在 ApplicationContextAwareProcessor 这个 BPP 的 before 阶段回调——因为它依赖的 ApplicationContext 在 BeanFactory 准备好之后才存在。为什么三层初始化？@PostConstruct 最高优先级，因为 JSR-250 标准与框架解耦；InitializingBean 次之，Spring 原生接口但侵入性强；init-method 最低，给第三方类用的无侵入方式。BeanFactory 只做纯 DI，ApplicationContext 额外提供事件/国际化/资源——所以后者需要额外的 BPP 来处理 Context 级别的 Aware。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>源码调用链：</b><br>
-<code>AbstractApplicationContext.refresh()</code><br>
-&nbsp;&nbsp;→ <code>invokeBeanFactoryPostProcessors()</code> &nbsp;← [0] BFPP<br>
-&nbsp;&nbsp;→ <code>finishBeanFactoryInitialization()</code><br>
-&nbsp;&nbsp;&nbsp;&nbsp;→ <code>doCreateBean()</code><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>createBeanInstance()</code> &nbsp;← [1] 构造器<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>populateBean()</code> &nbsp;← [2] 属性填充<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>initializeBean()</code><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>invokeAwareMethods()</code> &nbsp;← [3][4] BF 级 Aware<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>applyBPPsBeforeInit()</code> &nbsp;← [5] Context 级 Aware 在此！<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>invokeInitMethods()</code> &nbsp;← [7a][7b][7c]<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <code>applyBPPsAfterInit()</code> &nbsp;← [8] AOP 代理！<br>
-<code>close()</code><br>
-&nbsp;&nbsp;→ <code>destroySingletons() → DisposableBeanAdapter.destroy()</code> &nbsp;← [10]
-</div>
-</blockquote>
-
-<h3>🥇 王者（讲设计哲学——面试官会记住你）</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"Bean 生命周期本质上是 Spring 面对一个核心矛盾——'如何让框架在完全不修改用户代码的前提下，对 Bean 做任意处理'——在 10 年间逐步演化出的解。前三代（构造器/setter、InitializingBean、DisposableBean）是侵入式的：你要扩展就得实现我的接口。第四代 Aware 接口族开始松动：Bean 可以感知容器了，但也得实现接口。真正的转折在第五、六代——BFPP 和 BPP 把扩展从'Bean 内部'抽离到'Bean 外部'，这是一个哥白尼式的翻转。你不再需要修改 Bean 的源码——写一个 BPP，它能拦截所有 Bean。这就是为什么 @Autowired、@Transactional、@Async、@Cacheable 全部基于 BPP 实现——不是碰巧，而是因为只有 BPP 提供了'零侵入 + 全量覆盖'这两个看似矛盾的能力。BPP.before 和 after 的分工也不是随意划分的：before 是'半成品阶段'，适合校验和容器引用注入；after 是'成品阶段'，是生成代理的唯一正确时机——如果在 before 就代理，@PostConstruct 的状态变更根本进不了代理对象。BFPP 则更进一步：它连 Bean 都不需要，直接操作元数据。这两层抽象让 Spring 从'一个 DI 容器'变成了'一个可无限扩展的平台'。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>当你能说出"BFPP 和 BPP 把扩展从 Bean 内部抽离到外部"时，面试官知道你不是在背题——你理解了 Spring 为什么是一个平台而不仅仅是一个框架。
-</div>
-</blockquote>
+<div class="qinfo">
+<h3>📋 Q01 · Bean 生命周期</h3>
+<p>面试官从简历「熟练使用 Spring」开始深挖，4 个问题逐层递进。</p>
 </div>
 
-<div class="card"><h2>追问：想在属性设置前修改属性值？</h2>
-<p><strong>BeanFactoryPostProcessor。</strong>不是 BeanPostProcessor——BPP 触发时 Bean 已经实例化且属性已填充完毕。BFPP 操作的是 BeanDefinition（蓝图），此时任何 Bean 都还没创建。<code>PropertySourcesPlaceholderConfigurer</code> 就是一个 BFPP——在所有人之前把 ${server.port} 替换成 8080。</p></div>
+<div class="chat">
 
-<div class="card"><h2>BeanFactory vs ApplicationContext</h2>
-<table>
-<tr><th></th><th>BeanFactory</th><th>ApplicationContext</th></tr>
-<tr><td>加载时机</td><td>懒加载：getBean() 时才创建</td><td>预加载：启动时创建所有单例</td></tr>
-<tr><td>BPP 注册</td><td>手动</td><td>自动检测并注册</td></tr>
-<tr><td>额外能力</td><td>纯 DI</td><td>事件、国际化、资源、Environment</td></tr>
-</table>
-<p>设计意图：BeanFactory 是"基础款"，给资源受限环境；ApplicationContext 是"旗舰款"，启动时多做一点保证运行时零延迟。你永远在用 ApplicationContext。</p></div>
+<!-- ═══════ 问题1 ═══════ -->
+<div class="msg left">
+  <div class="avatar">面</div>
+  <div class="bubble">BeanFactory 和 ApplicationContext 在加载 Bean 时有什么区别？</div>
+</div>
+<div class="msg right">
+  <div class="avatar">我</div>
+  <div class="bubble"><div class="text">
+    ApplicationContext 是 BeanFactory 的超集。核心区别三个：<br><br>
+    <b>① 加载时机：</b>BeanFactory 懒加载——getBean() 时才创建；ApplicationContext 预加载——启动时就创建所有单例 Bean。<br>
+    <b>② BPP 注册：</b>BeanFactory 需要手动注册 BeanPostProcessor；ApplicationContext 自动检测并注册。<br>
+    <b>③ 额外能力：</b>ApplicationContext 多了事件发布、国际化消息、资源加载、Environment 抽象。BeanFactory 就是纯 DI。<br><br>
+    实际项目里你用的都是 ApplicationContext。如果用 BeanFactory，你的 @Autowired 和 @Transactional 全部不会生效——因为处理这些注解的 BPP 没有被自动注册。
+  </div></div>
+</div>
 
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q01 · Bean 生命周期 · <a href="/q02.html" style="color:var(--accent)">下一题 →</a></footer>
+<div class="follow">
+<strong>追问：</strong>"为什么 ApplicationContext 要预加载所有单例？这样启动不是很慢吗？"<br>
+<strong>答：</strong>确实慢，但值得。如果懒加载，第一个请求过来时才开始创建 Bean——用户会感受到明显的延迟。预加载把所有创建开销集中在启动阶段，运行时零延迟。而且启动时如果配置有问题，立刻报错 fail-fast——懒加载可能跑了一天才发现某个 Bean 创建失败。
+</div>
+<div class="reflect">
+<strong>❓ 自问：</strong>什么场景下应该用懒加载？<br>
+<strong>答：</strong>开发时为了更快启动可以用 @Lazy；微服务里某些不常用的功能模块也可以延迟加载。但生产环境的核心 Bean 应该默认预加载。
+</div>
+
+
+<!-- ═══════ 问题2 ═══════ -->
+<div class="msg left">
+  <div class="avatar">面</div>
+  <div class="bubble">从实例化到销毁，Bean 经历哪些阶段？</div>
+</div>
+<div class="msg right">
+  <div class="avatar">我</div>
+  <div class="bubble"><div class="text">
+    分三部分说：<b>创建、初始化、销毁</b>。<br><br>
+    <b>创建阶段：</b><br>
+    ① BeanFactoryPostProcessor 修改 BeanDefinition<br>
+    ② 构造器实例化<br>
+    ③ 属性填充（@Autowired 注入就发生在这里）<br>
+    ④ BeanNameAware → BeanFactoryAware → ApplicationContextAware<br><br>
+    <b>初始化阶段：</b><br>
+    ⑤ BeanPostProcessor.before<br>
+    ⑥ @PostConstruct → InitializingBean → init-method<br>
+    ⑦ BeanPostProcessor.after（<b>AOP 代理在这里生成</b>）<br>
+    ⑧ 就绪 → 放入 singletonObjects<br><br>
+    <b>销毁阶段：</b><br>
+    ⑨ @PreDestroy → DisposableBean → destroy-method<br><br>
+    记忆技巧：BFPP 在最前面（改蓝图），BPP 把初始化前后包起来（before 在 init 前，after 在 init 后），Aware 在属性填充和 BPP.before 之间。
+  </div></div>
+</div>
+
+<div class="follow">
+<strong>追问：</strong>"三种初始化方式为什么有优先级？我随便选一个不行吗？"<br>
+<strong>答：</strong>可以随便选，但了解优先级能帮你排查问题。@PostConstruct 最先执行——它是 JSR-250 标准，与 Spring 解耦。InitializingBean 第二——Spring 原生接口。init-method 最后——XML 时代留下的，给第三方类用。如果你的 Bean 同时用了三种，执行顺序就是这个。实际项目中推荐 @PostConstruct——代码不依赖 Spring 的 import。
+</div>
+<div class="reflect">
+<strong>❓ 自问：</strong>构造器里和 @PostConstruct 里做初始化有什么区别？<br>
+<strong>答：</strong>构造器执行时 @Autowired 字段全是 null——所以任何依赖注入字段的操作都必须放在 @PostConstruct 里。如果初始化不需要依赖，放构造器也行。经验法则：构造器只做赋值，@PostConstruct 做需要依赖的初始化。
+</div>
+
+
+<!-- ═══════ 问题3 ═══════ -->
+<div class="msg left">
+  <div class="avatar">面</div>
+  <div class="bubble">BeanPostProcessor 的 before 和 after 分别在什么时候触发？有什么区别？</div>
+</div>
+<div class="msg right">
+  <div class="avatar">我</div>
+  <div class="bubble"><div class="text">
+    两个阶段都在 <code>AbstractAutowireCapableBeanFactory.initializeBean()</code> 里触发，但中间夹着 init 方法，所以 Bean 的状态完全不同——<br><br>
+    <b>┃ before — 半成品阶段</b><br>
+    触发时机：属性填充之后、@PostConstruct 之前。<br>
+    此时状态：@Autowired 字段已就位，但 <b>@PostConstruct 还没执行</b>——Bean 的初始化逻辑还没跑。<br><br>
+    适合做的事情：<b>对注入结果做校验和准备。</b>你可以在 before 里检查注入的值是否合法、给 Bean 注入容器引用（Aware）、或者修改属性值。但不应该调用 Bean 的业务方法——因为 @PostConstruct 的初始化逻辑还没跑，Bean 可能处于不可用状态。<br><br>
+    <b>Spring 在 before 阶段挂了哪些 BPP：</b><br>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;margin:8px 0">
+    <tr style="background:#f8f8f8"><td style="padding:4px 8px;border:1px solid #ddd"><code>AutowiredAnnotationBeanPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">找到 @Autowired 标注的<strong>方法</strong>（构造器和字段在 populateBean 阶段已处理），反射调用注入</td></tr>
+    <tr><td style="padding:4px 8px;border:1px solid #ddd"><code>CommonAnnotationBeanPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">找到 @PostConstruct 和 @PreDestroy 方法（只是标记，不在这里执行）；处理 @Resource 注入</td></tr>
+    <tr style="background:#f8f8f8"><td style="padding:4px 8px;border:1px solid #ddd"><code>ApplicationContextAwareProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">检查 Bean 是否实现了 EnvironmentAware / ApplicationContextAware / MessageSourceAware / ApplicationEventPublisherAware / ResourceLoaderAware / EmbeddedValueResolverAware 六个接口——如果是，逐一回调 setter</td></tr>
+    <tr><td style="padding:4px 8px;border:1px solid #ddd"><code>BeanValidationPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">对 Bean 执行 JSR-303 Bean Validation（@NotNull / @Size / @Valid），不合法直接抛异常阻止创建</td></tr>
+    <tr style="background:#f8f8f8"><td style="padding:4px 8px;border:1px solid #ddd"><code>InitDestroyAnnotationBeanPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">扫描 @PostConstruct / @PreDestroy 注解的<strong>基类</strong>，由 CommonAnnotationBeanPostProcessor 继承</td></tr>
+    </table><br>
+    <b>┃ after — 成品阶段</b><br>
+    触发时机：@PostConstruct → afterPropertiesSet → init-method 全部执行完毕之后。<br>
+    此时状态：Bean <b>已经完全初始化</b>——所有 init 回调跑完，所有状态就绪。是一个"成品 Bean"。<br><br>
+    适合做的事情：<b>生成代理。</b>此时生成的代理对象能完整替代原始 Bean——包括 @PostConstruct 中修改过的所有状态。如果代理在 before 就生成，@PostConstruct 中的状态变更不会被代理对象感知——因为代理包装的是"修改前"的半成品。<br><br>
+    <b>Spring 在 after 阶段挂了哪些 BPP：</b><br>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;margin:8px 0">
+    <tr style="background:#f8f8f8"><td style="padding:4px 8px;border:1px solid #ddd"><code>AbstractAutoProxyCreator</code></td><td style="padding:4px 8px;border:1px solid #ddd"><b>所有 AOP 代理的基类。</b>检查 Bean 是否匹配任何 Advisor → 匹配就创建 JDK/CGLIB 代理 → 返回代理对象替代原始 Bean。子类 <code>AnnotationAwareAspectJAutoProxyCreator</code> 处理 @Aspect 切面，<code>InfrastructureAdvisorAutoProxyCreator</code> 处理 @Transactional 等内置 Advisor</td></tr>
+    <tr><td style="padding:4px 8px;border:1px solid #ddd"><code>AsyncAnnotationBeanPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">检测类/方法上是否有 @Async → 创建代理 → 方法调用时提交给 TaskExecutor 异步执行。注意它<strong>不是</strong> AbstractAutoProxyCreator 的子类——它自己实现了一套代理创建逻辑</td></tr>
+    <tr style="background:#f8f8f8"><td style="padding:4px 8px;border:1px solid #ddd"><code>ScheduledAnnotationBeanPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">检测 @Scheduled 注解 → 解析 cron/fixedRate/fixedDelay 表达式 → 注册对应的定时任务到 TaskScheduler。<strong>不创建代理</strong>——它注册的是 Runnable 任务</td></tr>
+    <tr><td style="padding:4px 8px;border:1px solid #ddd"><code>MethodValidationPostProcessor</code></td><td style="padding:4px 8px;border:1px solid #ddd">检测类上是否有 @Validated → 创建 AOP 代理 → 方法调用时对参数执行 JSR-303 校验（和 BeanValidationPostProcessor 不同——前者校验 Bean 属性，这个校验方法参数）</td></tr>
+    </table><br>
+    <b>┃ 一眼看出 before vs after 的规律</b><br>
+    before 里的 BPP 做的是<b>"检查和准备"</b>——校验注入、补充容器引用、标记初始化方法。它们不替换 Bean 本身，只是修改状态或做验证。<br>
+    after 里的 BPP 做的是<b>"包装和替换"</b>——给 Bean 套上代理、注册到调度器。它们可能完全替换 Bean（返回代理对象而非原始对象）。<br><br>
+    这个分界线是精心设计的：如果 after 的功能在 before 执行，代理会包装一个半成品——@PostConstruct 的初始化逻辑可能在代理毫不知情的情况下修改了原始 Bean 的状态，导致代理看到的是一套状态、代理调用时原始 Bean 是另一套状态。这就是<b>"成品才能包装"原则</b>。
+  </div></div>
+</div>
+
+<div class="follow">
+<strong>追问：</strong>"你刚才说 ApplicationContextAware 在 BPP.before 回调，但 BeanFactoryAware 呢？为什么两者不在同一个阶段？"<br>
+<strong>答：</strong>BeanFactoryAware 不在任何 BPP 里回调——它由 AbstractAutowireCapableBeanFactory.invokeAwareMethods() 直接调用，发生在属性填充之后、BPP.before 之前。而 ApplicationContextAware（以及 EnvironmentAware、MessageSourceAware 等 6 个 Context 级别的 Aware）由 ApplicationContextAwareProcessor 这个 BPP 在 before 阶段回调。<br><br>
+分开的原因很简单：<b>ApplicationContext 在 BeanFactory 准备好之后才存在。</b>BeanFactory 级别的 Aware（BeanNameAware、BeanClassLoaderAware、BeanFactoryAware）可以在 BeanFactory 创建 Bean 的过程中直接回调——因为 BeanFactory 自己就是那个上下文。但 ApplicationContext 是 BeanFactory 的包装——它需要等所有 BeanFactoryPostProcessor 执行完、国际化消息源初始化后、事件广播器就绪后，才是一个"完整的" ApplicationContext。所以它的回调被推迟到了 BPP 阶段。<br><br>
+这个设计导致了一个常见 bug：如果你在 BeanFactoryAware.setBeanFactory() 里把 BeanFactory 强转成 ApplicationContext 来用，某些功能（如国际化、事件发布）可能还没初始化完。
+</div>
+<div class="reflect">
+<strong>❓ 自问：</strong>before 和 after 里如果有多个 BPP，执行顺序怎么保证？<br>
+<strong>答：</strong>通过实现 PriorityOrdered 或 Ordered 接口。Spring 先注册再排序——PriorityOrdered 的优先级最高，然后是 Ordered，最后是普通 BPP。具体顺序：ApplicationContextAwareProcessor 先于 AutowiredAnnotationBeanPostProcessor，因为 Aware 回调应该在注入处理之前完成。如果你的自定义 BPP 需要精确顺序，实现 Ordered 接口并指定合适的 order 值。<br><br>
+<strong>❓ 自问：</strong>如果我把初始化逻辑放在 setter 里行不行？<br>
+<strong>答：</strong>不行。setter 调用时，其他依赖可能还没注入完——此时 this 对象处于不完整状态。@PostConstruct 保证在<b>所有</b>依赖都注入后才执行。</div>
+
+
+<!-- ═══════ 问题4 ═══════ -->
+<div class="msg left">
+  <div class="avatar">面</div>
+  <div class="bubble">如果我想在 Bean 属性设置之前修改某个属性值，应该用哪个扩展点？</div>
+</div>
+<div class="msg right">
+  <div class="avatar">我</div>
+  <div class="bubble"><div class="text">
+    <b>BeanFactoryPostProcessor。</b>不是 BeanPostProcessor。<br><br>
+    BFPP 操作的是 <b>BeanDefinition（元数据/蓝图）</b>——在所有 Bean 实例化之前运行。你可以修改属性的默认值、改 scope、甚至动态注册新的 BeanDefinition。<br><br>
+    BPP 触发时 Bean 已经实例化且属性已填充——你只能修改对象上的值，不能改变"本来会被注入什么"。<br><br>
+    <b>真实案例：</b>PropertySourcesPlaceholderConfigurer 就是一个 BFPP。它在所有 Bean 创建之前，把 ${server.port} 替换成 application.yml 里的 8080。没有它，@Value("${server.port}") 注入的是字符串 "${server.port}"，不是 8080。
+  </div></div>
+</div>
+
+<div class="follow">
+<strong>追问：</strong>"除了替换占位符，BFPP 还能干什么？"<br>
+<strong>答：</strong>最核心的是 ConfigurationClassPostProcessor——它解析所有 @Configuration 类，把 @Bean 方法转成 BeanDefinition 注册到容器。没有它，你的 @Configuration 和 @Bean 全部不会被识别。另外还可以动态注册 BeanDefinition（比如 MyBatis 的 @MapperScan 就是把 Mapper 接口动态注册为 BeanDefinition）。
+</div>
+<div class="reflect">
+<strong>❓ 自问：</strong>BFPP 是单次执行还是每个 Bean 都执行？<br>
+<strong>答：</strong>单次。在 AbstractApplicationContext.refresh() 的 invokeBeanFactoryPostProcessors() 中，所有 BFPP 按顺序执行一次。此时还没有任何 Bean 被创建。
+</div>
+
+</div>
+
+<div class="back"><a href="/q02.html">下一题 → Q02 · 循环依赖</a></div>
+
 </div></body></html>

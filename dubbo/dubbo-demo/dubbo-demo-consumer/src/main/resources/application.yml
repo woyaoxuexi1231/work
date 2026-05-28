@@ -21,11 +21,15 @@ dubbo:
 
   # ---------- 注册中心配置 ----------
   registry:
-    # Nacos 注册中心地址 + 认证信息
-    address: nacos://192.168.3.100:8848?username=nacos&password=nacos
+    # Nacos 注册中心地址
+    address: "nacos://192.168.3.100:8848"
     timeout: 10000
     # 启动时不检查注册中心是否可用
     check: false
+    # Nacos 认证信息（parameters 方式，稳定可靠）
+    parameters:
+      username: nacos
+      password: nacos
 
   # ---------- Consumer 默认配置（ConsumerConfig） ----------
   consumer:
@@ -40,3 +44,10 @@ dubbo:
     # 全局默认负载均衡策略：random / roundrobin / leastactive / consistenthash
     # 可在 @DubboReference 注解上按服务覆盖
     loadbalance: random
+
+# ==================== 日志配置 ====================
+logging:
+  level:
+    root: INFO
+    org.apache.dubbo: INFO
+    com.example.dubbo.demo: DEBUG

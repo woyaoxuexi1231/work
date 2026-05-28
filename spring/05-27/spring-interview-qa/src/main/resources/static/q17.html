@@ -1,37 +1,13 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q17 · 参数绑定</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q17 · 参数绑定</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 17 · MVC</div><h1>参数绑定与转换</h1><div class="q-sub">@RequestParam / @RequestBody / @PathVariable 底层有何不同？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><p>📋 <b>Q17 · 参数绑定与转换</b> — HttpMessageConverter 的设计。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">@RequestParam、@RequestBody、@PathVariable 的底层实现有何不同？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>@RequestParam 和 @PathVariable 不用 HttpMessageConverter。</b>它们直接从 request.getParameter() 或 URL 模板提取字符串，然后用 TypeConverter 做 String→Integer 的简单转换。<br><br>
+<b>只有 @RequestBody 走 HttpMessageConverter。</b>因为它要解析 HTTP Body 的字节流——可能是 JSON、XML、Form 数据。Spring 根据 Content-Type 遍历 Converter 链：第一个 canRead() 返回 true 的就用来反序列化。<br><br>
+FormHttpMessageConverter 处理表单（application/x-www-form-urlencoded），MappingJackson2HttpMessageConverter 处理 JSON。<b>新增格式（如 Protobuf）只需加一个 Converter——Controller 代码不用改。</b></div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@RequestParam 和 @PathVariable 从 URL 获取字符串参数然后 TypeConverter 转换。@RequestBody 走 HttpMessageConverter 根据 Content-Type 解析 HTTP Body。"
-</blockquote>
+<div class="reflect"><strong>❓ 自问：</strong>为什么 URL 参数不用 Converter 链？<br><strong>答：</strong>URL 参数是简单 key-value 字符串——TypeConverter 足够。Body 是结构化数据，需要 Converter 链。不用一种方式处理所有——这是单一职责。</div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"@RequestParam 和 @PathVariable 不用 HttpMessageConverter——它们直接从 request.getParameter() 或 URL 模板提取字符串，然后用 TypeConverter 做 String→Integer 这样的简单类型转换。@RequestBody 则完全不同——HTTP Body 可能是 JSON/XML/Protobuf，Spring 根据 Content-Type 头遍历 HttpMessageConverter 链：第一个 canRead() 返回 true 的就用来反序列化。FormHttpMessageConverter 处理表单（application/x-www-form-urlencoded），MappingJackson2HttpMessageConverter 处理 JSON。新增格式只需加一个 Converter——Controller 代码不用改。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>为什么分层？</b>URL 参数是简单 key-value → TypeConverter 够用。Body 是结构化数据 → 需要 HttpMessageConverter 链。不用一种方式处理所有——单一职责。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"参数绑定和返回值处理的设计体现了 Spring MVC 对'输入输出通道'的抽象。想象一下如果没有 HttpMessageConverter——每个 Controller 都要自己判断 Content-Type、自己调 Jackson 或自己解析 XML。那 Controller 就不是 Controller 了——它是一个 HTTP 协议适配器。Spring 把'怎么读请求'和'怎么处理业务'彻底分离：前者交给参数解析器 + Converter 链，后者交给 Controller。返回值同理——@ResponseBody 走 Converter 链，String 走 ViewResolver。这两个通道的抽象让 Controller 只操心业务——Input 已经是 Java 对象，Output 也是 Java 对象。这就是 MVC 中'Model'的真正含义：不是数据库实体，而是脱离 HTTP 协议的纯 Java 对象。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>"如果没有这套抽象，每个 Controller 都是 HTTP 协议适配器"——这个对比直接点出了设计的价值。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q17 · 参数绑定 · <a href="/q18.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q18.html">下一题 → Q18 · 拦截器 vs 过滤器</a></div></div></body></html>

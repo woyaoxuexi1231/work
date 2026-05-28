@@ -11,7 +11,10 @@
            - dubbo-demo-api      : 共享服务接口 & 领域模型（POJO）
            - dubbo-demo-provider : 服务提供者（Provider）启动与实现
            - dubbo-demo-consumer : 服务消费者（Consumer）启动与调用
-         技术栈：Dubbo 2.7.x + Spring Boot 2.7.x + JDK 17 + Nacos 注册中心
+         技术栈：Dubbo 2.7.x + Spring Boot 2.7.x + JDK 1.8 + Nacos 注册中心
+
+         设计原则：父 POM 仅管理版本，不强制注入依赖。
+         每个子模块显式声明自己所需的依赖，避免"API 模块被迫引入 Web 容器"等问题。
     ================================================================ -->
     <groupId>com.example.dubbo.demo</groupId>
     <artifactId>dubbo-demo-parent</artifactId>
@@ -42,10 +45,10 @@
         <nacos-client.version>1.4.1</nacos-client.version>
     </properties>
 
-    <!-- ==================== 依赖管理（仅声明，子模块按需引入） ==================== -->
+    <!-- ==================== 依赖管理（仅声明版本，子模块按需引入） ==================== -->
     <dependencyManagement>
         <dependencies>
-            <!-- Spring Boot BOM -->
+            <!-- Spring Boot BOM — 统一管理所有 Spring 依赖版本 -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -54,59 +57,43 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- Dubbo Spring Boot Starter — 一站式引入 Dubbo 核心 + Spring 集成 -->
+            <!-- API 模块（子模块间引用） -->
+            <dependency>
+                <groupId>com.example.dubbo.demo</groupId>
+                <artifactId>dubbo-demo-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Dubbo Spring Boot Starter — 核心 RPC + Spring 集成 -->
             <dependency>
                 <groupId>org.apache.dubbo</groupId>
                 <artifactId>dubbo-spring-boot-starter</artifactId>
                 <version>${dubbo.version}</version>
             </dependency>
 
-            <!-- Nacos 注册中心客户端 -->
+            <!-- Nacos 注册中心客户端（底层 HTTP/SDK 通信） -->
             <dependency>
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
             </dependency>
+
+            <!-- Dubbo → Nacos 注册中心适配器 -->
+            <dependency>
+                <groupId>org.apache.dubbo</groupId>
+                <artifactId>dubbo-registry-nacos</artifactId>
+                <version>${dubbo.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
-    <!-- ==================== 所有子模块共享的依赖 ==================== -->
-    <dependencies>
-        <!-- Dubbo + Spring Boot 集成 -->
-        <dependency>
-            <groupId>org.apache.dubbo</groupId>
-            <artifactId>dubbo-spring-boot-starter</artifactId>
-        </dependency>
-
-        <!--
-            Nacos 注册中心适配：
-            Dubbo 通过 dubbo-registry-nacos 模块对接 Nacos 注册中心。
-            Nacos（Dynamic Naming and Configuration Service）是阿里巴巴开源
-            的动态服务发现、配置管理与服务管理平台。
-            相比于 Zookeeper，Nacos 原生支持：
-            - 服务健康检查（TCP / HTTP / MySQL）
-            - 动态配置管理（热生效）
-            - 多数据中心
-            - 控制台可视化操作
-        -->
-        <dependency>
-            <groupId>com.alibaba.nacos</groupId>
-            <artifactId>nacos-client</artifactId>
-        </dependency>
-
-        <!-- Dubbo Nacos 注册中心适配器 -->
-        <dependency>
-            <groupId>org.apache.dubbo</groupId>
-            <artifactId>dubbo-registry-nacos</artifactId>
-            <version>${dubbo.version}</version>
-        </dependency>
-
-        <!-- Spring Boot Web（Consumer 端需要，Provider 端可选） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-    </dependencies>
+    <!--
+        注意：父 POM 不在 <dependencies> 中声明任何依赖！
+        每个子模块根据自己的角色显式引入所需依赖：
+          - API  模块：无框架依赖，纯 POJO + 接口
+          - Provider 模块：dubbo-starter + nacos-client + nacos-registry + spring-boot-starter（含 logback 日志）
+          - Consumer 模块：dubbo-starter + nacos-client + nacos-registry + spring-boot-starter-web（含 logback 日志 + Spring MVC）
+    -->
 
     <build>
         <plugins>

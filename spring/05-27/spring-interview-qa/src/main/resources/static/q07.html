@@ -1,37 +1,18 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q07 · 代理选择</title><link rel="stylesheet" href="/css/style.css"></head>
-<body>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q07 · 代理选择</title>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06)}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.qinfo h3{font-size:15px;margin-bottom:4px}.qinfo p{color:var(--sub);font-size:13px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="q-header"><div class="wrap"><div class="q-num">QUESTION 07 · AOP</div><h1>代理选择：JDK vs CGLIB</h1><div class="q-sub">各自的优缺点？Spring Boot 2.x 为什么默认改为 CGLIB？</div></div></div>
-<div class="wrap">
+<div class="wrap"><div class="qinfo"><h3>📋 Q07 · 代理选择</h3><p>JDK 动态代理 vs CGLIB——Spring Boot 2.x 为什么改默认值。</p></div><div class="chat">
 
-<div class="card"><h2>面试时你可以这样回答</h2>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">JDK 动态代理和 CGLIB 各自的优缺点、适用场景？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>JDK 动态代理：</b>基于接口 + Proxy.newProxyInstance()。优点：JDK 内置零依赖。缺点：<b>必须有接口。</b>代理类实现了接口，但和原始类没有继承关系——不能把代理转型成原始类。<br><br>
+<b>CGLIB：</b>基于继承生成目标类的子类。优点：不需要接口。缺点：<b>类不能是 final，方法不能是 final。</b>代理类是原始类的子类——可以转型。<br><br>
+<b>性能差异在实际项目中可以忽略。</b>JDK 17+ 反射优化后几乎持平。</div></div>
 
-<h3>🥉 青铜</h3>
-<blockquote style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"JDK 动态代理基于接口 + Proxy.newProxyInstance()，CGLIB 基于继承生成子类。Spring Boot 2.x 默认改为 CGLIB 因为很多 Service 没有接口，1.x 的 JDK 代理会导致 @Transactional 静默失效。"
-</blockquote>
+<div class="msg left"><div class="avatar">面</div><div class="bubble">Spring Boot 2.x 为什么默认改为 CGLIB？</div></div>
+<div class="msg right"><div class="avatar">我</div><div class="bubble">因为 1.x 默认 JDK 代理导致太多坑了。开发者在 Service 上加了 @Transactional，但这个 Service 没有实现接口——JDK 代理没法代理它，<b>注解静默失效，没有任何报错。</b>上线后发现事务没生效，排查半天才发现是没接口的问题。<br><br>
+2.x 改为 CGLIB 默认值——不管有没有接口都能代理，加了注解就生效。这是<b>"最小惊讶原则"</b>。</div></div>
 
-<h3>🥈 白银</h3>
-<blockquote style="background:#d1ecf1;border-left:4px solid #17a2b8;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"两种代理的本质区别不在于性能——JDK 17+ 的反射优化已经让性能差距可以忽略。真正的区别在于对代理对象的类型契约的影响。JDK 代理生成的代理类实现了目标接口，但和原始类之间没有继承关系——你不能把代理转型为原始类。CGLIB 代理生成的代理类是原始类的子类——你可以转型，但不能代理 final 类和方法。Spring Boot 2.x 默认改 CGLIB 的核心原因是'最小惊讶原则'——开发者加了 @Transactional 就期望它生效，不在乎底层用的是哪种代理。1.x 时代因为 Service 没接口导致注解静默失效的 bug 太多了。"
+<div class="follow"><strong>追问：</strong>"proxyTargetClass=true 会强制用 CGLIB 吗，接口存在时呢？"<br><strong>答：</strong>会。即使有接口也强制用 CGLIB。但你通过接口类型注入的 Bean 还是能正常工作——因为 CGLIB 子类也实现了那个接口。</div>
+<div class="reflect"><strong>❓ 自问：</strong>CGLIB 代理有什么坑？<br><strong>答：</strong>构造器里调用被代理的方法不会触发拦截——因为子类构造器先调 super()，父类构造器执行时子类还没初始化完。另外 final 类和 final 方法完全没法代理——这是 Spring 社区不推荐随意用 final 的原因。</div>
 
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>关键：</b>AopProxy 接口有两个实现——JdkDynamicAopProxy 和 CglibAopProxy，Spring 通过 DefaultAopProxyFactory.createAopProxy() 根据配置选择。
-</div>
-</blockquote>
-
-<h3>🥇 王者</h3>
-<blockquote style="background:#d4edda;border-left:4px solid #28a745;padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0">
-"代理选择之争本质上不是技术之争，是'显式 vs 隐式'的设计哲学之争。JDK 代理是显式的——你必须定义接口，这强迫你做面向接口编程，但也意味着多写代码。CGLIB 是隐式的——你不需要接口，框架帮你搞定一切，但如果类被标记为 final 就会静默失败。Spring Boot 从 JDK 转向 CGLIB 默认值，表面上是'方便开发者'，深层是对现代 Java 开发模式的适应：微服务时代，一个 Service 往往只有一个实现，定义接口变成了一种形式主义。CGLIB 默认值让 Spring 对齐了这种现实。但代价也存在：final 类和方法无法代理，这迫使 Spring 生态形成了'不要随意 final'的约定——一个框架的设计选择反过来塑造了整个社区的编码习惯。"
-
-<div style="margin-top:10px;font-size:13px;color:#666">
-<b>面试官心理：</b>看透表面性能之争，直指"显式 vs 隐式"的哲学分歧——这才是架构师的视角。
-</div>
-</blockquote>
-</div>
-
-<footer style="text-align:center;padding:48px 0;color:var(--text-secondary);font-size:13px">Q07 · 代理选择 · <a href="/q08.html" style="color:var(--accent)">下一题 →</a></footer>
-</div></body></html>
+</div><div class="back"><a href="/q08.html">下一题 → Q08 · 内部调用失效</a></div></div></body></html>
