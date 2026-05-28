@@ -33,13 +33,17 @@ public class StreamUploadController {
     static { try { Files.createDirectories(SAVE_DIR); } catch (IOException ignored) {} }
 
     @PostMapping("/stream")
-    public String streamUpload(HttpServletRequest request) throws Exception {
+    public String streamUpload(HttpServletRequest request,
+                               @RequestParam(value = "filename", required = false) String filename) throws Exception {
         long start = System.currentTimeMillis();
 
         MonitorUtil.printSeparator("原始 InputStream 模式（直面网络流）");
         MonitorUtil.printMemory("① 进入 Controller（数据还在网络中，尚未读取）");
 
-        Path dest = SAVE_DIR.resolve(System.currentTimeMillis() + ".stream");
+        // 文件名：URL 参数 > 请求头 X-Filename > 默认
+        String name = (filename != null) ? filename : request.getHeader("X-Filename");
+        if (name == null || name.isEmpty()) name = System.currentTimeMillis() + ".bin";
+        Path dest = SAVE_DIR.resolve(name);
         long total = 0;
 
         // ★ 这里：网络 InputStream → 磁盘 OutputStream，边收边写
