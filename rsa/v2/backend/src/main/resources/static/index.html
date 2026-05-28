@@ -16,6 +16,22 @@
 <div class="glass p-8 w-full max-w-xl shadow-2xl text-white">
     <h1 class="text-2xl font-bold mb-4 text-center">v2：RSA(PKCS1) + AES(ECB) + 响应签名</h1>
 
+    <!-- 版本升级说明 -->
+    <div class="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-4 mb-4 text-sm leading-relaxed">
+        <div class="mb-3">
+            <div class="font-bold text-yellow-300 mb-1">⚠️ v1 的问题：响应密文被篡改，前端毫无感知</div>
+            <div class="opacity-90">
+                假设你通过 v1 向服务端发了一条 <code class="bg-white/10 px-1 rounded">"转账给 Alice 100 元"</code>，服务端处理完后把响应 <code class="bg-white/10 px-1 rounded">"转账成功"</code> 用 AES 加密返回。攻击者 Mallory 在链路上截到了这个响应密文——他虽然解不开（没有 AES key），但他可以把密文字节<strong>直接替换</strong>成另一段自己构造的密文，或者把密文中的几个字节翻转。前端收到后照样调用 <code class="bg-white/10 px-1 rounded">decipher.finish()</code> 解密，可能解出乱码，也可能恰好解出 <code class="bg-white/10 px-1 rounded">"转账失败"</code> 之类的误导信息。关键是：<strong>前端没有任何机制来判断这份响应到底是不是服务端原样发出的</strong>。这就是"有加密、无完整性"的后果。
+            </div>
+        </div>
+        <div>
+            <div class="font-bold text-green-300 mb-1">✅ v2 的解决：RSA 签名 + 前端验签</div>
+            <div class="opacity-90">
+                服务端在返回响应密文之前，先用自己的 RSA 私钥对密文字节做一次 SHA256withRSA 签名，把签名 <code class="bg-white/10 px-1 rounded">signature</code> 一起返回。前端收到后，<strong>先用公钥验签，验签通过才解密</strong>。如果 Mallory 在链路上改了一个字节，客户端自己算出的 SHA256 哈希就跟签名里恢复出的哈希对不上，<code class="bg-white/10 px-1 rounded">publicKey.verify()</code> 返回 false，前端直接拒绝，根本不会走到解密那一步。
+            </div>
+        </div>
+    </div>
+
     <div class="bg-white/10 p-4 rounded-lg mb-4">
         <div class="text-sm opacity-90">服务端公钥: <span id="key-status" class="font-mono font-bold">加载中...</span></div>
         <div class="text-xs opacity-70 mt-1">学习点：RSA 只用来“包 AES Key”，业务数据用 AES 来加密。</div>

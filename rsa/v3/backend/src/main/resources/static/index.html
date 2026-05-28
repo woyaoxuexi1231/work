@@ -16,6 +16,25 @@
 <div class="glass p-8 w-full max-w-xl shadow-2xl text-white">
     <h1 class="text-2xl font-bold mb-4 text-center">v3：RSA(PKCS1) + AES(CBC) + 响应签名</h1>
 
+    <!-- 版本升级说明 -->
+    <div class="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-4 mb-4 text-sm leading-relaxed">
+        <div class="mb-3">
+            <div class="font-bold text-yellow-300 mb-1">⚠️ v2 的问题：AES-ECB 是确定性加密——相同明文永远产生相同密文，数据的"形状"藏不住</div>
+            <div class="opacity-90">
+                ECB 模式将数据分成 16 字节的块，然后用<strong>同一把 key 独立加密每个块</strong>。这意味着：<strong>相同的明文块 → 相同的密文块</strong>。这导致两个致命后果：<br><br>
+                ① <strong>加密看上去只是"颜色替换"：</strong>经典的"ECB 企鹅"实验最能说明问题——用 ECB 加密一张企鹅照片，原图中颜色相同的像素区域加密后仍然产生相同的密文块，企鹅的轮廓依旧清晰可见。加密并没有彻底打乱信息，更像是对原图做了一次颜色映射。<br><br>
+                ② <strong>重复操作暴露行为模式：</strong>即使你不是加密图片而是加密文本，同样的明文在相同 key 下每次加密结果都完全一样。假设你连续两次发送 <code class="bg-white/10 px-1 rounded">"转账 100 元"</code>——攻击者虽然解不开密文，但看到两次密文完全相同，就能推断出「这是同一个操作重复了」。如果长期观察，他甚至能从密文重复频率中统计出哪些操作是高频行为。
+            </div>
+        </div>
+        <div>
+            <div class="font-bold text-green-300 mb-1">✅ v3 的解决：升级到 AES-CBC + 随机 IV——每次加密引入随机性，打破确定性</div>
+            <div class="opacity-90">
+                CBC 模式的核心改进：加密每个明文块之前，先把<strong>上一个密文块</strong>跟它做 XOR。第一个明文块没有"上一个"，就用一个<strong>随机生成的 IV（初始化向量）</strong>来 XOR。这意味着：即使同一段明文加密两次，只要 IV 不同，加密结果就<strong>完全不同</strong>——攻击者再也看不到任何重复模式。回到企鹅的例子：CBC 加密后的图片是一片均匀噪声，轮廓完全消失。<br><br>
+                同时，v3 把签名范围从 v2 的"只签密文"升级为<strong>"签 IV + 密文"</strong>——IV 虽然不需要保密，但一旦被篡改（比如翻转一个 bit），解密出的第一个明文块就会面目全非。把 IV 纳入签名保护后，IV 被改 → 验签失败 → 前端拒绝，根本不会走进解密逻辑。
+            </div>
+        </div>
+    </div>
+
     <div class="bg-white/10 p-4 rounded-lg mb-4">
         <div class="text-sm opacity-90">服务端公钥: <span id="key-status" class="font-mono font-bold">加载中...</span></div>
         <div class="text-xs opacity-70 mt-1">学习点：RSA 只用来“包 AES Key”，业务数据用 AES 来加密。</div>

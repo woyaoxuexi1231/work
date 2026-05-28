@@ -1,6 +1,7 @@
 package com.example.rsa.service;
 
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -25,7 +26,7 @@ public class NonceService {
     }
 
     public boolean consumeNonce(String nonce, long nowMs) {
-        if (nonce == null || nonce.isBlank()) {
+        if (StringUtils.hasLength(nonce)) {
             return false;
         }
         cleanup(nowMs);

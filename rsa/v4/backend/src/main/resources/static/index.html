@@ -16,6 +16,22 @@
 <div class="glass p-8 w-full max-w-xl shadow-2xl text-white">
     <h1 class="text-2xl font-bold mb-4 text-center">v4：keyVersion + token（演示）</h1>
 
+    <!-- 版本升级说明 -->
+    <div class="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-4 mb-4 text-sm leading-relaxed">
+        <div class="mb-3">
+            <div class="font-bold text-yellow-300 mb-1">⚠️ v3 的问题：keyVersion 由客户端自报，攻击者可以伪造它实施降级攻击</div>
+            <div class="opacity-90">
+                假设服务端有两套密钥：<code class="bg-white/10 px-1 rounded">keyVersion=1</code>（RSA-1024，因为历史原因还在，已标记废弃）和 <code class="bg-white/10 px-1 rounded">keyVersion=2</code>（RSA-2048，当前推荐）。正常情况下，客户端请求 <code class="bg-white/10 px-1 rounded">GET /api/key</code> 拿到 v2 的强公钥，加密请求时带上 <code class="bg-white/10 px-1 rounded">keyVersion: 2</code>。但攻击者 Mallory 在链路上截获请求后，把 JSON 里的 <code class="bg-white/10 px-1 rounded">"keyVersion": 2</code> 改成 <code class="bg-white/10 px-1 rounded">"keyVersion": 1</code>。服务端收到后，以为客户端在用 v1，于是用 RSA-1024 的私钥去解密——1024 位的 RSA 在现代算力下已经可以被分解，Mallory 事后拿到密文就有能力暴力破解出 AES key，进而解密全部业务数据。<strong>这就是降级攻击（Downgrade Attack）：攻击者不直接攻破强密码，而是把通信双方"拉回"到更弱的旧版本。</strong>类似 TLS 的 POODLE 漏洞（强制降级到 SSL 3.0）和 LOGJAM 漏洞（强制降级到 512-bit DH），都是这一思路。
+            </div>
+        </div>
+        <div>
+            <div class="font-bold text-green-300 mb-1">✅ v4 的解决：服务端签发 token，绑定 keyVersion + 公钥指纹 + 过期时间</div>
+            <div class="opacity-90">
+                现在 <code class="bg-white/10 px-1 rounded">GET /api/key</code> 不仅返回公钥和 keyVersion，还返回一个服务端签发的 <code class="bg-white/10 px-1 rounded">token</code>。这个 token 里用 HMAC 把 <code class="bg-white/10 px-1 rounded">(keyVersion + 公钥指纹 + 过期时间)</code> 绑在一起。客户端请求时必须同时上传 keyVersion 和 token，服务端先验证 token 是否合法、是否过期、里面的 keyVersion 和公钥指纹是否跟请求里的一致——<strong>只要 Mallory 改 keyVersion，token 就对不上，服务端直接拒绝</strong>。客户端"声称"的版本号不再被信任，一切以服务端签发的 token 为准。
+            </div>
+        </div>
+    </div>
+
     <div class="bg-white/10 p-4 rounded-lg mb-4">
         <div class="text-sm opacity-90">服务端公钥: <span id="key-status" class="font-mono font-bold">加载中...</span></div>
         <div class="text-xs opacity-70 mt-1">学习点：RSA 只用来“包 AES Key”，业务数据用 AES 来加密。</div>
