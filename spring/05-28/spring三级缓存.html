@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring 三级缓存深度解析：为什么二级不行？</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        .cache-box {
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .cache-active {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+            border-color: #3b82f6;
+        }
+
+        .bean-node {
+            transition: transform 0.3s ease;
+        }
+        .bean-node:hover {
+            transform: scale(1.05);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- Header -->
+<header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 backdrop-blur-md bg-opacity-80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <i class="fa-brands fa-java text-green-500 text-2xl"></i>
+            <h1 class="text-xl font-bold tracking-tight">Spring IOC <span class="text-slate-500">/</span> 循环依赖与三级缓存</h1>
+        </div>
+        <div class="text-sm text-slate-400 hidden md:block">
+            Interactive Tutorial v1.0
+        </div>
+    </div>
+</header>
+
+<main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+    <!-- Left Column: Theory & Explanation -->
+    <div class="lg:col-span-5 space-y-8 overflow-y-auto pr-2" style="max-height: calc(100vh - 8rem);">
+
+        <!-- Intro Card -->
+        <section class="bg-slate-800 rounded-xl p-6 shadow-lg border border-slate-700">
+            <h2 class="text-2xl font-bold mb-4 gradient-text">什么是循环依赖？</h2>
+            <p class="text-slate-300 mb-4 leading-relaxed">
+                简单来说，就是 <strong>A 依赖 B</strong>，同时 <strong>B 又依赖 A</strong>。
+                当 Spring 创建 A 时，发现需要 B；去创建 B 时，发现又需要 A。这就陷入了死循环。
+            </p>
+            <div class="bg-slate-900 p-4 rounded-lg code-font text-sm text-blue-300 border border-slate-700">
+                public class A {<br>
+                &nbsp;&nbsp;@Autowired<br>
+                &nbsp;&nbsp;private B b;<br>
+                }<br><br>
+                public class B {<br>
+                &nbsp;&nbsp;@Autowired<br>
+                &nbsp;&nbsp;private A a;<br>
+                }
+            </div>
+        </section>
+
+        <!-- The 3 Caches Definition -->
+        <section class="bg-slate-800 rounded-xl p-6 shadow-lg border border-slate-700">
+            <h2 class="text-xl font-bold mb-4 text-white"><i class="fa-solid fa-layer-group mr-2 text-purple-400"></i> 三级缓存的定义</h2>
+            <ul class="space-y-4">
+                <li class="flex items-start gap-3">
+                    <span class="bg-green-500/20 text-green-400 px-2 py-1 rounded text-xs font-bold mt-1">一级</span>
+                    <div>
+                        <strong class="text-green-400">singletonObjects (单例池)</strong>
+                        <p class="text-sm text-slate-400">存放完全初始化好、可以直接使用的 Bean。</p>
+                    </div>
+                </li>
+                <li class="flex items-start gap-3">
+                    <span class="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded text-xs font-bold mt-1">二级</span>
+                    <div>
+                        <strong class="text-yellow-400">earlySingletonObjects (早期单例池)</strong>
+                        <p class="text-sm text-slate-400">存放原始的 Bean 对象（尚未填充属性），用于解决循环引用。</p>
+                    </div>
+                </li>
+                <li class="flex items-start gap-3">
+                    <span class="bg-red-500/20 text-red-400 px-2 py-1 rounded text-xs font-bold mt-1">三级</span>
+                    <div>
+                        <strong class="text-red-400">singletonFactories (单例工厂池)</strong>
+                        <p class="text-sm text-slate-400">存放 ObjectFactory，用于在需要时生成早期 Bean 引用（可能是代理对象）。</p>
+                    </div>
+                </li>
+            </ul>
+        </section>
+
+        <!-- The Core Question -->
+        <section class="bg-gradient-to-br from-indigo-900 to-slate-800 rounded-xl p-6 shadow-lg border border-indigo-500/30 relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-4 opacity-10">
+                <i class="fa-solid fa-question text-9xl"></i>
+            </div>
+            <h2 class="text-xl font-bold mb-4 text-white">核心问题：为什么二级缓存不行？</h2>
+            <p class="text-slate-300 mb-4">
+                如果只是简单的循环依赖（没有AOP），其实<strong>二级缓存就够了</strong>。把实例化后的对象扔进二级缓存，B拿到A的引用，完成注入，没问题。
+            </p>
+            <p class="text-slate-300 font-bold text-pink-300">
+                但是！如果 A 需要被 AOP 代理呢？
+            </p>
+            <p class="text-slate-300 mt-2 text-sm leading-relaxed">
+                Spring 的设计原则是：<strong>Bean 的生命周期中，AOP 代理通常在“初始化后”才创建</strong>。
+                <br><br>
+                但在循环依赖场景下，B 需要注入 A。如果 A 有切面，B 必须拿到 A 的<strong>代理对象</strong>，而不是原始对象。
+                <br><br>
+                <span class="text-yellow-300">二级缓存存的是原始对象</span>，它不知道要不要变成代理。
+                <br>
+                <span class="text-green-300">三级缓存存的是工厂(lambda)</span>，这个工厂知道如何判断并提前创建代理对象。
+            </p>
+        </section>
+    </div>
+
+    <!-- Right Column: Interactive Simulation -->
+    <div class="lg:col-span-7 flex flex-col gap-6">
+
+        <!-- Control Panel -->
+        <div class="bg-slate-800 rounded-xl p-4 shadow-lg border border-slate-700 flex flex-wrap gap-4 items-center justify-between">
+            <div class="flex gap-2">
+                <button onclick="resetSim()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition">
+                    <i class="fa-solid fa-rotate-left mr-2"></i>重置
+                </button>
+                <button onclick="nextStep()" id="btn-next" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-blue-500/20 transition">
+                    下一步 <i class="fa-solid fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+            <div class="text-sm text-slate-400">
+                当前步骤: <span id="step-indicator" class="text-white font-mono">0 / 7</span>
+            </div>
+        </div>
+
+        <!-- Visualization Area -->
+        <div class="flex-grow bg-slate-900 rounded-xl border border-slate-700 relative overflow-hidden flex flex-col min-h-[500px]">
+
+            <!-- Status Log -->
+            <div class="bg-black/40 p-4 border-b border-slate-700 h-32 overflow-y-auto code-font text-sm" id="log-container">
+                <div class="text-slate-500">// 点击 "下一步" 开始演示...</div>
+            </div>
+
+            <!-- Main Canvas -->
+            <div class="flex-grow p-8 relative flex justify-around items-center">
+
+                <!-- Cache Columns -->
+                <div class="absolute left-4 top-20 bottom-4 w-24 flex flex-col gap-4 pointer-events-none">
+                    <div class="text-xs text-center text-red-400 font-bold mb-1">三级 (Factory)</div>
+                    <div id="vis-l3" class="flex-grow bg-red-900/10 border border-red-900/30 rounded-lg relative"></div>
+
+                    <div class="text-xs text-center text-yellow-400 font-bold mb-1">二级 (Early)</div>
+                    <div id="vis-l2" class="flex-grow bg-yellow-900/10 border border-yellow-900/30 rounded-lg relative"></div>
+
+                    <div class="text-xs text-center text-green-400 font-bold mb-1">一级 (Final)</div>
+                    <div id="vis-l1" class="flex-grow bg-green-900/10 border border-green-900/30 rounded-lg relative"></div>
+                </div>
+
+                <!-- Bean A -->
+                <div id="bean-a" class="bean-node w-32 h-32 rounded-full bg-slate-800 border-4 border-slate-600 flex flex-col items-center justify-center z-10 absolute left-1/3 transition-all duration-700 opacity-0 translate-y-10">
+                    <span class="font-bold text-xl text-white">Bean A</span>
+                    <span class="text-xs text-slate-400 mt-1" id="status-a">未创建</span>
+                    <div id="proxy-badge-a" class="hidden absolute -top-3 bg-pink-600 text-white text-xs px-2 py-0.5 rounded-full shadow-lg animate-bounce">
+                        AOP Proxy
+                    </div>
+                </div>
+
+                <!-- Bean B -->
+                <div id="bean-b" class="bean-node w-32 h-32 rounded-full bg-slate-800 border-4 border-slate-600 flex flex-col items-center justify-center z-10 absolute right-1/3 transition-all duration-700 opacity-0 translate-y-10">
+                    <span class="font-bold text-xl text-white">Bean B</span>
+                    <span class="text-xs text-slate-400 mt-1" id="status-b">未创建</span>
+                </div>
+
+                <!-- Arrows Container (SVG Overlay) -->
+                <svg class="absolute inset-0 w-full h-full pointer-events-none z-0" id="arrows-svg">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="28" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#60a5fa" />
+                        </marker>
+                    </defs>
+                    <!-- Dynamic lines will go here -->
+                </svg>
+
+            </div>
+        </div>
+
+        <!-- Detailed Explanation for Current Step -->
+        <div class="bg-slate-800 rounded-xl p-6 border-l-4 border-blue-500 shadow-lg">
+            <h3 class="text-lg font-bold text-white mb-2" id="detail-title">准备就绪</h3>
+            <p class="text-slate-300 text-sm leading-relaxed" id="detail-desc">
+                在这个演示中，我们将模拟 <strong>A 依赖 B，B 依赖 A</strong> 的场景。<br>
+                重点注意：<strong>Bean A 开启了 AOP 代理</strong>（比如加了 @Transactional）。<br>
+                请观察三级缓存中的 <code>ObjectFactory</code> 是如何在关键时刻发挥作用的。
+            </p>
+        </div>
+
+    </div>
+</main>
+
+<script>
+  // State Management
+  let currentStep = 0;
+  const totalSteps = 7;
+
+  // DOM Elements
+  const logContainer = document.getElementById('log-container');
+  const beanA = document.getElementById('bean-a');
+  const beanB = document.getElementById('bean-b');
+  const statusA = document.getElementById('status-a');
+  const statusB = document.getElementById('status-b');
+  const proxyBadge = document.getElementById('proxy-badge-a');
+  const visL1 = document.getElementById('vis-l1');
+  const visL2 = document.getElementById('vis-l2');
+  const visL3 = document.getElementById('vis-l3');
+  const detailTitle = document.getElementById('detail-title');
+  const detailDesc = document.getElementById('detail-desc');
+  const stepIndicator = document.getElementById('step-indicator');
+  const svgCanvas = document.getElementById('arrows-svg');
+
+  // Helper: Add Log
+  function addLog(msg, type='info') {
+    const div = document.createElement('div');
+    div.className = `mb-1 ${type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : 'text-blue-200'}`;
+    div.innerHTML = `> ${msg}`;
+    logContainer.appendChild(div);
+    logContainer.scrollTop = logContainer.scrollHeight;
+  }
+
+  // Helper: Draw Arrow
+  function drawArrow(fromId, toId, color='#60a5fa', label='') {
+    // Simple visualization logic: just clear and redraw based on state would be complex
+    // For this demo, we will use CSS classes to position elements mostly,
+    // but let's keep SVG simple or skip complex dynamic SVG for reliability in a single file.
+    // Instead, we will move the Bean Divs visually to represent dependencies.
+  }
+
+  // Steps Configuration
+  const steps = [
+    {
+      title: "1. 实例化 Bean A",
+      desc: "Spring 启动，开始创建 A。调用构造器，生成 A 的原始对象（Raw Object）。此时 A 还没有属性，也没有被代理。",
+      action: () => {
+        beanA.classList.remove('opacity-0', 'translate-y-10');
+        beanA.classList.add('border-blue-500');
+        statusA.innerText = "实例化 (Raw)";
+        addLog("Instantiating Bean A...", "info");
+
+        // Visual: Put Factory in L3
+        const factoryTag = document.createElement('div');
+        factoryTag.id = "tag-a-factory";
+        factoryTag.className = "absolute left-2 top-2 w-20 h-8 bg-red-900/80 border border-red-500 rounded flex items-center justify-center text-xs text-white animate-pulse";
+        factoryTag.innerText = "Factory(A)";
+        visL3.appendChild(factoryTag);
+        addLog("Put ObjectFactory into Level 3 Cache", "info");
+      }
+    },
+    {
+      title: "2. A 填充属性，发现依赖 B",
+      desc: "A 需要注入 B。Spring 去容器找 B，发现没有。于是触发 B 的创建流程。",
+      action: () => {
+        statusA.innerText = "填充属性中...";
+        addLog("Populating A... Needs B.", "info");
+
+        // Visual Link
+        const link = document.createElement('div');
+        link.className = "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono bg-slate-900 px-2";
+        link.innerText = "A needs B";
+        document.querySelector('.flex-grow.p-8').appendChild(link);
+      }
+    },
+    {
+      title: "3. 实例化 Bean B",
+      desc: "开始创建 B。调用构造器，生成 B 的原始对象。同样，把 B 的工厂放入三级缓存。",
+      action: () => {
+        beanB.classList.remove('opacity-0', 'translate-y-10');
+        beanB.classList.add('border-purple-500');
+        statusB.innerText = "实例化 (Raw)";
+        addLog("Instantiating Bean B...", "info");
+
+        const factoryTag = document.createElement('div');
+        factoryTag.id = "tag-b-factory";
+        factoryTag.className = "absolute left-2 top-2 w-20 h-8 bg-red-900/80 border border-red-500 rounded flex items-center justify-center text-xs text-white";
+        factoryTag.innerText = "Factory(B)";
+        visL3.appendChild(factoryTag);
+      }
+    },
+    {
+      title: "4. B 填充属性，发现依赖 A (关键点!)",
+      desc: "B 需要注入 A。去一级缓存找 A -> 没有。去二级缓存找 A -> 没有。去三级缓存找 A -> 找到了 Factory!",
+      action: () => {
+        statusB.innerText = "填充属性中...";
+        addLog("Populating B... Needs A.", "info");
+        addLog("Check L1 Cache for A: Miss", "error");
+        addLog("Check L2 Cache for A: Miss", "error");
+        addLog("Check L3 Cache for A: Hit!", "success");
+
+        // Highlight L3
+        visL3.classList.add('cache-active');
+        setTimeout(() => visL3.classList.remove('cache-active'), 1000);
+      }
+    },
+    {
+      title: "5. 调用 Factory 获取 A (为什么要三级?)",
+      desc: "【核心】B 拿到了 A 的 Factory。调用 factory.getObject()。<br>因为 A 有 AOP，Factory 内部逻辑检测到这一点，<strong>提前创建了 A 的代理对象</strong>。<br>如果是二级缓存，这里只能拿到原始 A，导致 B 注入的不是代理，AOP 失效！",
+      action: () => {
+        // Remove Factory from L3
+        const f = document.getElementById('tag-a-factory');
+        if(f) f.remove();
+
+        // Create Proxy Badge
+        proxyBadge.classList.remove('hidden');
+        beanA.classList.add('border-pink-500', 'shadow-[0_0_20px_rgba(236,72,153,0.5)]');
+        statusA.innerText = "早期引用 (Proxy)";
+
+        addLog("Executing Factory: Detected AOP. Creating Proxy.", "success");
+
+        // Move to L2
+        const earlyTag = document.createElement('div');
+        earlyTag.id = "tag-a-early";
+        earlyTag.className = "absolute left-2 top-2 w-20 h-8 bg-yellow-900/80 border border-yellow-500 rounded flex items-center justify-center text-xs text-white font-bold";
+        earlyTag.innerText = "A (Proxy)";
+        visL2.appendChild(earlyTag);
+
+        addLog("Moved A (Proxy) to Level 2 Cache.", "info");
+      }
+    },
+    {
+      title: "6. B 完成创建",
+      desc: "B 成功注入了 A 的代理对象。B 初始化完成。B 从三级/二级缓存移除，进入一级缓存。",
+      action: () => {
+        // B finishes
+        statusB.innerText = "初始化完成";
+        beanB.classList.remove('border-purple-500');
+        beanB.classList.add('border-green-500', 'bg-green-900/20');
+
+        // Remove B factory
+        const fb = document.getElementById('tag-b-factory');
+        if(fb) fb.remove();
+
+        // Add B to L1
+        const finalB = document.createElement('div');
+        finalB.className = "absolute left-2 bottom-2 w-20 h-8 bg-green-900/80 border border-green-500 rounded flex items-center justify-center text-xs text-white font-bold";
+        finalB.innerText = "B (Final)";
+        visL1.appendChild(finalB);
+
+        addLog("Bean B Initialization Complete.", "success");
+        addLog("Bean B moved to Level 1 Cache.", "success");
+      }
+    },
+    {
+      title: "7. A 完成创建",
+      desc: "流程回到 A。A 拿到了 B（从一级缓存）。A 初始化完成。<br>检查二级缓存，发现自己已经在里面了（之前的代理对象），直接使用。A 进入一级缓存。",
+      action: () => {
+        statusA.innerText = "初始化完成";
+        beanA.classList.remove('border-pink-500'); // Keep pink glow maybe?
+        beanA.classList.add('border-green-500', 'bg-green-900/20');
+
+        // Remove A from L2
+        const ea = document.getElementById('tag-a-early');
+        if(ea) ea.remove();
+
+        // Add A to L1
+        const finalA = document.createElement('div');
+        finalA.className = "absolute left-2 bottom-12 w-20 h-8 bg-green-900/80 border border-green-500 rounded flex items-center justify-center text-xs text-white font-bold";
+        finalA.innerText = "A (Proxy)";
+        visL1.appendChild(finalA);
+
+        addLog("Bean A injected with B.", "success");
+        addLog("Bean A Initialization Complete.", "success");
+        addLog("Bean A moved to Level 1 Cache.", "success");
+
+        document.getElementById('btn-next').disabled = true;
+        document.getElementById('btn-next').classList.add('opacity-50', 'cursor-not-allowed');
+      }
+    }
+  ];
+
+  function nextStep() {
+    if (currentStep >= totalSteps) return;
+
+    const step = steps[currentStep];
+
+    // Update UI Text
+    detailTitle.innerText = step.title;
+    detailDesc.innerHTML = step.desc;
+    stepIndicator.innerText = `${currentStep + 1} / ${totalSteps}`;
+
+    // Execute Logic
+    step.action();
+
+    currentStep++;
+  }
+
+  function resetSim() {
+    currentStep = 0;
+    logContainer.innerHTML = '<div class="text-slate-500">// 重置完成，点击 "下一步" 开始...</div>';
+
+    // Reset Visuals
+    beanA.className = "bean-node w-32 h-32 rounded-full bg-slate-800 border-4 border-slate-600 flex flex-col items-center justify-center z-10 absolute left-1/3 transition-all duration-700 opacity-0 translate-y-10";
+    beanB.className = "bean-node w-32 h-32 rounded-full bg-slate-800 border-4 border-slate-600 flex flex-col items-center justify-center z-10 absolute right-1/3 transition-all duration-700 opacity-0 translate-y-10";
+
+    statusA.innerText = "未创建";
+    statusB.innerText = "未创建";
+    proxyBadge.classList.add('hidden');
+
+    visL1.innerHTML = "";
+    visL2.innerHTML = "";
+    visL3.innerHTML = "";
+
+    // Remove extra labels
+    const extras = document.querySelectorAll('.absolute.top-1\\/2');
+    extras.forEach(e => e.remove());
+
+    detailTitle.innerText = "准备就绪";
+    detailDesc.innerHTML = "在这个演示中，我们将模拟 <strong>A 依赖 B，B 依赖 A</strong> 的场景。<br>重点注意：<strong>Bean A 开启了 AOP 代理</strong>。<br>请观察三级缓存中的 <code>ObjectFactory</code> 是如何在关键时刻发挥作用的。";
+    stepIndicator.innerText = "0 / 7";
+
+    const btn = document.getElementById('btn-next');
+    btn.disabled = false;
+    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+  }
+</script>
+</body>
+</html>
