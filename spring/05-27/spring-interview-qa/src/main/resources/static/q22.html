@@ -1,15 +1,41 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q22 · 自定义 Starter</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--red:#e53e3e}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:800px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}h1{font-size:26px;margin:36px 0 8px;text-align:center}.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}.stage h2{font-size:17px;margin-bottom:10px}.stage h2 .badge{font-size:11px;padding:2px 8px;border-radius:8px;color:#fff;background:var(--accent);margin-right:6px}.pain{background:#fff5f5;border-left:3px solid var(--red);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.pain strong{color:var(--red)}.gain{background:#f0fff4;border-left:3px solid var(--accent);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.gain strong{color:#2e7d32}.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin:8px 0;white-space:pre}.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .s{color:#a5d6ff}.code .t{color:#ffa657}table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}th{background:#f5f5f5;text-align:left;padding:8px 12px;border-bottom:2px solid #ddd}td{padding:8px 12px;border-bottom:1px solid #eee;color:var(--sub)}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q22 · 自定义 Starter</b> — 双模块结构。</p></div><div class="chat">
+<div class="wrap"><h1>自定义 Starter · 演化史</h1>
+<p class="sub">从"copy-paste 配置类"到"一个依赖搞定"</p>
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">如果让你写一个 my-starter，需要哪些模块？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">双模块——<br><br>
-<b>starter 模块：</b>空壳 POM，只做依赖聚合。用户引入 my-starter 时自动带来自动配置 + 所有传递依赖。<br>
-<b>autoconfigure 模块：</b>包含 @ConfigurationProperties（配置属性类）、自动配置类（@Configuration + @Conditional）、业务 Service 类、以及 META-INF/spring.factories（注册自动配置类）。<br><br>
-<b>为什么分开？</b>用户可以只引入 autoconfigure 而不引入 starter——如果他只想用配置模型但自己做依赖管理。<br><br>
-spring-configuration-metadata.json <b>不是手写的。</b>spring-boot-configuration-processor 编译时扫描 @ConfigurationProperties，提取 prefix、字段名、Javadoc、默认值，自动生成。IDE 读取它提供自动补全。</div></div>
+<div class="stage"><h2><span class="badge">2004</span> 第0代：手动 copy-paste 配置</h2>
+<div class="code"><span class="c">// 公司内部有个公共的短信 SDK。接入方式：</span>
+<span class="c">// ① 复制 SmsConfig.java 到你的项目</span>
+<span class="c">// ② 复制 SmsProperties.java 到你的项目</span>
+<span class="c">// ③ 在 application.yml 里加 sms.apiKey=xxx</span>
+<span class="c">// ④ 自己写 @Bean 注册 SmsClient</span></div>
+<div class="pain"><strong>❌ 5 个项目用了短信 SDK → 5 份相同的 SmsConfig 代码。</strong>SDK 升级了？5 个项目分别改。配置项变了？5 个项目分别改。</div>
+</div>
 
-<div class="reflect"><strong>❓ 自问：</strong>写 Starter 最需要注意什么？<br><strong>答：</strong>条件注解的使用——你的自动配置应该尽可能"温和"。用 @ConditionalOnMissingBean 让用户能覆盖；用 @ConditionalOnProperty 提供开关；不要假设用户的环境一定满足你的条件。</div>
+<div class="stage"><h2><span class="badge">2015</span> 第1代：双模块 Starter —— "引入即用"</h2>
+<p>把配置代码也打成 jar，做到"引入一个依赖 = 自动配置完成"。</p>
+<div class="code"><span class="c">// 双模块结构：</span>
+my-spring-boot-starter/          <span class="c">← 空壳 POM，只做依赖聚合</span>
+  pom.xml                        <span class="c">   （引入 autoconfigure + 必要的第三方依赖）</span>
 
-</div><div class="back"><a href="/q23.html">下一题 → Q23 · 启动流程</a></div></div></body></html>
+my-spring-boot-autoconfigure/    <span class="c">← 核心：自动配置</span>
+  <span class="t">SmsProperties</span>.java            <span class="a">@ConfigurationProperties</span>(<span class="s">"sms"</span>)
+  <span class="t">SmsAutoConfiguration</span>.java    <span class="a">@Configuration</span> + <span class="a">@ConditionalOnProperty</span>
+  <span class="t">SmsClient</span>.java
+  META-INF/spring.factories     <span class="c">org...EnableAutoConfiguration=...SmsAutoConfiguration</span></div>
+<div class="gain"><strong>✅ 为什么双模块？</strong>starter 只管依赖（用户引入就是全套），autoconfigure 只管配置。用户也可以只引入 autoconfigure 然后手动做依赖管理。spring-configuration-metadata.json 不是手写的——spring-boot-configuration-processor 编译时扫描 @ConfigurationProperties 自动生成，IDE 读它实现自动补全。</div>
+</div>
+
+<div class="stage"><h2>对比</h2>
+<table>
+<tr><th></th><th>copy-paste</th><th>Starter</th></tr>
+<tr><td>接入方式</td><td>复制 4 个 Java 文件</td><td style="color:#2e7d32">1 个 Maven 依赖</td></tr>
+<tr><td>升级 SDK</td><td>每个项目改</td><td style="color:#2e7d32">改版本号</td></tr>
+<tr><td>IDE 配置提示</td><td>没有</td><td style="color:#2e7d32">自动（metadata.json）</td></tr>
+<tr><td>用户覆盖配置</td><td>直接改代码</td><td style="color:#2e7d32">@ConditionalOnMissingBean 自动退让</td></tr>
+</table>
+</div>
+
+<div class="back"><a href="/q23.html">下一题 → Q23 · 启动流程</a></div>
+</div></body></html>

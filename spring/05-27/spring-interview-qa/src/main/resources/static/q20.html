@@ -1,14 +1,105 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q20 · 异步请求</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q20 · 异步请求演化史</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--red:#e53e3e}
+*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:800px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+h1{font-size:26px;margin:36px 0 8px;text-align:center}.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}
+.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}
+.stage h2{font-size:17px;margin-bottom:10px}.stage h2 .badge{font-size:11px;padding:2px 8px;border-radius:8px;color:#fff;background:var(--accent);margin-right:6px}
+.pain{background:#fff5f5;border-left:3px solid var(--red);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.pain strong{color:var(--red)}
+.gain{background:#f0fff4;border-left:3px solid var(--accent);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.gain strong{color:#2e7d32}
+.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin:8px 0;white-space:pre}
+.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .s{color:#a5d6ff}.code .t{color:#ffa657}.code .a{color:#ffa657}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th{background:#f5f5f5;text-align:left;padding:8px 12px;border-bottom:2px solid #ddd}td{padding:8px 12px;border-bottom:1px solid #eee;color:var(--sub)}
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q20 · 异步请求</b> — DeferredResult / Callable / SSE。</p></div><div class="chat">
+<div class="wrap">
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">DeferredResult 和 Callable 的处理流程？如何释放容器线程？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">同步模型：每个请求占用一个 Tomcat 线程直到响应返回——200 个线程全阻塞，第 201 个排队。<br><br>
-<b>Callable：</b>Controller 返回 Callable → Spring 提交给 TaskExecutor → Tomcat 线程立即释放 → Callable 执行完 → 新 Tomcat 线程写响应。适合简单异步。<br>
-<b>DeferredResult：</b>更灵活——你可以在任意线程（MQ 消费者、定时任务）中调用 setResult()。适合事件驱动和长轮询。<br><br>
-两者都基于 Servlet 3.0 的 request.startAsync()。SSE 通过 SseEmitter 实现服务器单向推送——比 WebSocket 更轻量（HTTP 协议，自动重连）。</div></div>
+<h1>异步请求 · 演化史</h1>
+<p class="sub">从"一个请求占一个线程"到"200 个线程能接 10000 个请求"</p>
 
-<div class="reflect"><strong>❓ 自问：</strong>什么时候同步就够了？<br><strong>答：</strong>大部分业务同步足够。只有当你需要调用外部 API、等待 MQ 消息、或者处理长时间计算时才需要异步。不要为了异步而异步——增加复杂度。</div>
+<!-- ═══════ 第0代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">1998</span> 第0代：同步阻塞——一个请求占一个线程</h2>
+<div class="code"><span class="c">// Servlet 默认模型：每个请求分配一个 Tomcat 线程直到响应返回</span>
+<span class="k">protected void</span> <span class="t">doGet</span>(req, resp) {
+    <span class="t">User</span> user = userService.findById(id);           <span class="c">// 查 DB — 线程在等 DB</span>
+    <span class="t">String</span> info = httpClient.get(<span class="s">"http://other-api"</span>); <span class="c">// 调外部 API — 线程在等网络</span>
+    resp.getWriter().write(user.getName() + info);      <span class="c">// 返回</span>
+    <span class="c">// 线程全程被占用——即使大部分时间在"等待"</span>
+}</div>
+<div class="pain"><strong>❌ 瓶颈不是 CPU，是线程数。</strong>Tomcat 默认 200 个线程。如果所有请求都在等外部 API（5 秒响应）——200 个线程全阻塞，第 201 个请求排队。线程绝大多数时间在<b>等待</b>，不是在<b>工作</b>。</div>
+</div>
 
-</div><div class="back"><a href="/q21.html">下一题 → Q21 · 自动装配</a></div></div></body></html>
+<!-- ═══════ 第1代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2009</span> 第1代：Servlet 3.0 startAsync —— 释放容器线程</h2>
+<p>Servlet 3.0 引入了 <code>request.startAsync()</code>——容器线程可以提前释放，后台线程处理完后再写响应。</p>
+<div class="code"><span class="t">AsyncContext</span> ctx = request.startAsync();
+<span class="t">Executors</span>.newCachedThreadPool().submit(() -> {
+    <span class="t">User</span> user = userService.findById(id);  <span class="c">// 业务线程执行——Tomcat 线程已释放</span>
+    ctx.getResponse().getWriter().write(user.getName());
+    ctx.complete();  <span class="c">// 通知容器：响应写完了，可以发给客户端了</span>
+});
+<span class="c">// Tomcat 线程在这里已经释放了——可以去接下一个请求</span></div>
+<div class="gain"><strong>✅ 容器线程释放了——Tomcat 线程只负责"接客"，业务线程池负责"干活"。</strong></div>
+<div class="pain"><strong>⚠️ 问题：</strong>代码太啰嗦。要手动管理 AsyncContext、线程池、超时、异常处理。每个 Controller 都是这 10 行样板。</div>
+</div>
+
+<!-- ═══════ 第2代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2012</span> 第2代：Callable —— Spring 帮你管理线程</h2>
+<p>Spring MVC 3.2：Controller 返回 <code>Callable&lt;T&gt;</code>——Spring 自动把 Callable 提交给 TaskExecutor，自动管理 AsyncContext。</p>
+<div class="code"><span class="a">@GetMapping</span>(<span class="s">"/async"</span>)
+<span class="k">public</span> <span class="t">Callable</span>&lt;<span class="t">String</span>&gt; <span class="t">async</span>() {
+    <span class="k">return</span> () -> {
+        <span class="t">Thread</span>.sleep(3000);  <span class="c">// 模拟耗时操作——在 TaskExecutor 线程中执行</span>
+        <span class="k">return</span> <span class="s">"OK"</span>;
+    };
+    <span class="c">// ★ Tomcat 线程在这之后立即释放！去接下一个请求</span>
+}</div>
+<div class="gain"><strong>✅ 消灭了样板代码。</strong>不再手动调 startAsync()、管理线程池、管理 AsyncContext。</div>
+</div>
+
+<!-- ═══════ 第3代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2014</span> 第3代：DeferredResult —— 等待外部事件</h2>
+<p>Callable 只能在"返回一个线程去执行"的场景用。如果你在等 MQ 消息、等另一个用户的 WebSocket 回应——Callable 不行。你需要 <code>DeferredResult</code>。</p>
+<div class="code"><span class="a">@GetMapping</span>(<span class="s">"/deferred"</span>)
+<span class="k">public</span> <span class="t">DeferredResult</span>&lt;<span class="t">String</span>&gt; <span class="t">deferred</span>() {
+    <span class="t">DeferredResult</span>&lt;<span class="t">String</span>&gt; result = <span class="k">new</span> <span class="t">DeferredResult</span>&lt;&gt;(30000L, <span class="s">"timeout"</span>);
+
+    <span class="c">// 在 MQ 消费者里——不用管线程！不用管 AsyncContext！</span>
+    messageQueue.registerCallback(msg -> {
+        result.setResult(msg);  <span class="c">// ← 任意线程、任意时间调 setResult——响应立刻返回</span>
+    });
+
+    <span class="k">return</span> result;  <span class="c">// Tomcat 线程立即释放</span>
+}</div>
+<div class="gain"><strong>✅ 适用场景：</strong>长轮询、MQ 回调、多个外部服务并发调用等待最后一个结果。</div>
+</div>
+
+<!-- ═══════ 对比 ═══════ -->
+<div class="stage">
+<h2>四代对比</h2>
+<table>
+<tr><th></th><th>第0代 · 同步</th><th>startAsync</th><th>Callable</th><th>DeferredResult</th></tr>
+<tr><td>Tomcat 线程释放</td><td>❌ 全程占用</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>样板代码</td><td>0（但阻塞）</td><td style="color:var(--red)">~10 行</td><td style="color:#2e7d32">1 行</td><td style="color:#2e7d32">3 行</td></tr>
+<tr><td>适用场景</td><td>不需要异步时</td><td>需要完全控制时</td><td>耗时计算</td><td>事件驱动、MQ 回调</td></tr>
+<tr><td>200 线程能处理多少请求</td><td style="color:var(--red)">~200</td><td>取决于业务线程池</td><td>取决于业务线程池</td><td>取决于业务线程池</td></tr>
+</table>
+<div class="gain"><strong>核心洞察：</strong>异步不是为了"快"——是为了<b>用更少的容器线程处理更多的请求</b>。容器线程只做"接客"和"送客"，耗时操作交给业务线程池——200 个 Tomcat 线程可以支撑上万个并发。</div>
+</div>
+
+<div class="back"><a href="/q21.html">下一题 → Q21 · 自动装配原理</a></div>
+</div></body></html>

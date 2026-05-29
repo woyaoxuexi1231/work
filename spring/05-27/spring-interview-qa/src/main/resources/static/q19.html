@@ -1,15 +1,141 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q19 · 异常处理</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q19 · 统一异常处理演化史</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--red:#e53e3e}
+*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:800px;margin:0 auto;padding:0 16px}
+.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+h1{font-size:26px;margin:36px 0 8px;text-align:center}.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}
+.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}
+.stage h2{font-size:17px;margin-bottom:10px}.stage h2 .badge{font-size:11px;padding:2px 8px;border-radius:8px;color:#fff;background:var(--accent);margin-right:6px;vertical-align:middle}
+.pain{background:#fff5f5;border-left:3px solid var(--red);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.pain strong{color:var(--red)}
+.gain{background:#f0fff4;border-left:3px solid var(--accent);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.gain strong{color:#2e7d32}
+.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin:8px 0;white-space:pre}
+.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .s{color:#a5d6ff}.code .t{color:#ffa657}.code .a{color:#ffa657}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th{background:#f5f5f5;text-align:left;padding:8px 12px;border-bottom:2px solid #ddd}td{padding:8px 12px;border-bottom:1px solid #eee;color:var(--sub);vertical-align:top}
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q19 · 统一异常处理</b> — @ControllerAdvice 原理 + ResponseBodyAdvice。</p></div><div class="chat">
+<div class="wrap">
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">@ControllerAdvice + @ExceptionHandler 的实现原理？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">DispatcherServlet 在 Controller 抛异常时调用 processHandlerException()，遍历 HandlerExceptionResolvers。ExceptionHandlerExceptionResolver 是核心——它扫描所有 @ControllerAdvice Bean，把 @ExceptionHandler 方法建立异常类型→处理方法的映射。匹配成功后反射调用，返回值通过 HttpMessageConverter 序列化为 JSON 返回。<br><br>
-@RestControllerAdvice = @ControllerAdvice + @ResponseBody——直接返回 JSON 而不是视图。</div></div>
+<h1>统一异常处理 · 演化史</h1>
+<p class="sub">从每个 Controller 里写 15 行 try-catch，到 @ControllerAdvice 一行搞定</p>
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">ResponseBodyAdvice 能做什么？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">在 @ResponseBody 序列化前拦截返回值，统一包装成 ApiResponse{code, message, data}。Controller 只返回 User，前端永远收到统一格式。搭配 @ControllerAdvice 的异常处理，异常路径和正常路径的返回格式完全一致。</div></div>
+<!-- ═══════ 第0代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">1998</span> 第0代：纯 Servlet——每处手写 try-catch</h2>
+<div class="code"><span class="k">protected void</span> <span class="t">doGet</span>(req, resp) {
+    <span class="k">try</span> {
+        <span class="t">User</span> user = userService.findById(id);
+        <span class="c">// 手拼 JSON 返回……</span>
+    } <span class="k">catch</span> (<span class="t">IllegalArgumentException</span> e) {
+        resp.setStatus(400);
+        resp.getWriter().write(<span class="s">"{\"error\":\""</span> + e.getMessage() + <span class="s">"\"}"</span>);
+    } <span class="k">catch</span> (<span class="t">Exception</span> e) {
+        resp.setStatus(500);
+        resp.getWriter().write(<span class="s">"{\"error\":\"server error\"}"</span>);
+    }
+}</div>
+<div class="pain"><strong>❌ 每个方法都要写 15 行 try-catch。</strong>20 个 Controller 方法 = 20 × 15 = 300 行重复样板。改一下错误格式？全部改一遍。</div>
+</div>
 
-<div class="reflect"><strong>❓ 自问：</strong>ResponseBodyAdvice 和 AOP 环绕通知有什么区别？<br><strong>答：</strong>ResponseBodyAdvice 专门针对 HTTP 响应体，只在返回值序列化之前执行。AOP 环绕通知更通用，可以拦截任何 Spring Bean 的方法。Web 层的统一包装应该用 ResponseBodyAdvice——语义更明确。</div>
+<!-- ═══════ 第1代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2004</span> 第1代：@ExceptionHandler —— 一个 Controller 里的异常收敛</h2>
+<p>Spring 2.x 引入了 <code>@ExceptionHandler</code>。一个 Controller 里的所有异常处理收敛到几个方法。</p>
+<div class="code"><span class="a">@Controller</span>
+<span class="k">public class</span> <span class="t">UserController</span> {
 
-</div><div class="back"><a href="/q20.html">下一题 → Q20 · 异步请求</a></div></div></body></html>
+    <span class="a">@ExceptionHandler</span>(<span class="t">IllegalArgumentException</span>.class)
+    <span class="k">public</span> <span class="t">ResponseEntity</span> <span class="t">handleBadArg</span>(<span class="t">IllegalArgumentException</span> e) {
+        <span class="k">return</span> <span class="t">ResponseEntity</span>.badRequest().body(e.getMessage());
+    }
+
+    <span class="c">// Controller 方法不用写 try-catch 了！</span>
+    <span class="a">@GetMapping</span>(<span class="s">"/users/{id}"</span>)
+    <span class="k">public</span> <span class="t">User</span> <span class="t">getUser</span>(<span class="a">@PathVariable</span> <span class="t">Long</span> id) {
+        <span class="k">return</span> userService.findById(id); <span class="c">// 抛异常自动被 @ExceptionHandler 捕获</span>
+    }
+}</div>
+<div class="gain"><strong>✅ 进步：</strong>一个 Controller 的异常处理收敛了。业务方法不再写 try-catch。</div>
+<div class="pain"><strong>⚠️ 还没解决的：</strong>如果 UserController 和 OrderController 都要处理 IllegalArgumentException？你要在两个 Controller 里写两遍一模一样的 @ExceptionHandler。还是重复。</div>
+</div>
+
+<!-- ═══════ 第2代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2009</span> 第2代：@ControllerAdvice —— 全局异常处理</h2>
+<p>Spring 3.0 引入了 <code>@ControllerAdvice</code>——它的作用范围不是"一个 Controller"，而是<b>所有 Controller</b>。</p>
+<div class="code"><span class="a">@ControllerAdvice</span>             <span class="c">// ← 对全局所有 @Controller 生效</span>
+<span class="k">public class</span> <span class="t">GlobalExceptionHandler</span> {
+
+    <span class="a">@ExceptionHandler</span>(<span class="t">IllegalArgumentException</span>.class)
+    <span class="k">public</span> <span class="t">ResponseEntity</span> <span class="t">handleBadArg</span>(<span class="t">IllegalArgumentException</span> e) {
+        <span class="k">return</span> <span class="t">ResponseEntity</span>.badRequest().body(e.getMessage());
+    }
+
+    <span class="a">@ExceptionHandler</span>(<span class="t">Exception</span>.class)
+    <span class="k">public</span> <span class="t">ResponseEntity</span> <span class="t">handleAll</span>(<span class="t">Exception</span> e) {
+        <span class="k">return</span> <span class="t">ResponseEntity</span>.status(500).body(<span class="s">"server error"</span>);
+    }
+}
+<span class="c">// UserController、OrderController、ProductController……全部不用写异常处理了！</span></div>
+<div class="gain"><strong>✅ 核心洞察：</strong>@ControllerAdvice 就是"Web 层的 AOP"。AOP 解决了 Bean 层的横切关注点（事务、日志），@ControllerAdvice 解决了 Controller 层的横切关注点（异常处理、返回值包装）。同一个设计思想，换了一个层面。</div>
+</div>
+
+<!-- ═══════ 第3代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2014</span> 第3代：ResponseBodyAdvice —— 正常路径也统一</h2>
+<p>异常统一了。正常返回呢？每个 Controller 还是返回各自的格式——有的返回 User，有的返回 String。前端收到的格式不一致。</p>
+<div class="code"><span class="a">@ControllerAdvice</span>
+<span class="k">public class</span> <span class="t">ResponseWrapper</span> <span class="k">implements</span> <span class="t">ResponseBodyAdvice</span>&lt;<span class="t">Object</span>&gt; {
+
+    <span class="k">public boolean</span> <span class="t">supports</span>(...) {
+        <span class="k">return true</span>;
+    }
+
+    <span class="c">// ★ 在 @ResponseBody 序列化前拦截——所有正常返回值经过这里</span>
+    <span class="k">public</span> <span class="t">Object</span> <span class="t">beforeBodyWrite</span>(<span class="t">Object</span> body, ...) {
+        <span class="t">ApiResponse</span> r = <span class="k">new</span> <span class="t">ApiResponse</span>();
+        r.setCode(200);
+        r.setMessage(<span class="s">"success"</span>);
+        r.setData(body);
+        <span class="k">return</span> r; <span class="c">// Controller 返回 User → 前端收到 {code:200, data:User}</span>
+    }
+}</div>
+<div class="gain"><strong>✅ 正常路径 + 异常路径全部统一了。</strong>Controller 只返回业务对象，前端收到的永远是 {code, message, data} 的三段式格式。</div>
+</div>
+
+<!-- ═══════ 异常处理流程 ═══════ -->
+<div class="stage">
+<h2><span class="badge">★</span> 异常处理流程（DispatcherServlet 内部）</h2>
+<div class="code"><span class="c">Controller 抛异常</span>
+  → <span class="t">DispatcherServlet</span>.processHandlerException()
+  → 遍历 <span class="t">HandlerExceptionResolver</span> 链：
+    ① <span class="t">ExceptionHandlerExceptionResolver</span>  ← 扫描所有 @ControllerAdvice，找匹配的 @ExceptionHandler
+    ② <span class="t">ResponseStatusExceptionResolver</span>    ← 处理 @ResponseStatus 注解的异常
+    ③ <span class="t">DefaultHandlerExceptionResolver</span>   ← 兜底（404/405/415 → 对应的 HTTP 状态码）
+  → 找到匹配 → 反射调用 → 返回值走 HttpMessageConverter → JSON</div>
+</div>
+
+<!-- ═══════ 对比 ═══════ -->
+<div class="stage">
+<h2>四代对比</h2>
+<table>
+<tr><th></th><th>第0代 · try-catch</th><th>第1代 · @ExcHandler</th><th>第2代 · @CtrlAdvice</th><th>第3代 · RespBodyAdvice</th></tr>
+<tr><td>异常处理范围</td><td>每个方法</td><td>一个 Controller</td><td style="color:#2e7d32"><b>全局</b></td><td style="color:#2e7d32"><b>全局</b></td></tr>
+<tr><td>正常返回格式</td><td>各自为政</td><td>各自为政</td><td>各自为政</td><td style="color:#2e7d32"><b>统一包装</b></td></tr>
+<tr><td>加一个异常类型</td><td>每个方法改</td><td>每个 Controller 改</td><td style="color:#2e7d32">改一处</td><td style="color:#2e7d32">改一处</td></tr>
+<tr><td>设计思想</td><td>无</td><td>方法级收敛</td><td>Web 层的 AOP</td><td>正常+异常全收敛</td></tr>
+</table>
+</div>
+
+<div class="back"><a href="/q20.html">下一题 → Q20 · 异步请求</a></div>
+</div></body></html>
