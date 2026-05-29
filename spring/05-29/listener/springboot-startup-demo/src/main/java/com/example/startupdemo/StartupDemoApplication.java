@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class StartupDemoApplication {
 
     public static void main(String[] args) {
+        args = new String[]{"--spring.profiles.active=dev"};
         SpringApplication.run(StartupDemoApplication.class, args);
     }
 }
