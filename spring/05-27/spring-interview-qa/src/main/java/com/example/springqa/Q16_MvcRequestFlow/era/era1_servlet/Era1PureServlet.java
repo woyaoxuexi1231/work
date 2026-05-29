@@ -1,9 +1,5 @@
 package com.example.springqa.Q16_MvcRequestFlow.era.era1_servlet;
 
-import org.springframework.boot.web.servlet.ServletRegistrationBean;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -51,14 +47,5 @@ public class Era1PureServlet extends HttpServlet {
         out.println("</body></html>");
     }
 
-    @Configuration
-    public static class Config {
-        @Bean
-        public ServletRegistrationBean<Era1PureServlet> era1Servlet() {
-            ServletRegistrationBean<Era1PureServlet> bean =
-                    new ServletRegistrationBean<>(new Era1PureServlet(), "/era1/user");
-            bean.setLoadOnStartup(1);
-            return bean;
-        }
-    }
+
 }
