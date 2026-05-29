@@ -1,76 +1,19 @@
-# ============================================================
-# Dubbo Provider 配置 — application.yml
-# ============================================================
-# YAML 格式天然支持中文注释，无需 Unicode 转义。
-# Dubbo Spring Boot Starter 自动映射 dubbo.* 到对应的 Config 对象。
-#
-# 配置优先级（从高到低）：
-#   JVM 参数 (-Ddubbo.xxx) > YAML > 注解/API 默认值
-
-# ==================== Spring Boot 基础 ====================
 spring:
   application:
     name: dubbo-demo-provider
 
-server:
-  port: 8080
-
-# ==================== Dubbo 完整配置 ====================
 dubbo:
-  # ---------- 服务扫描（显式指定，防止 @EnableDubbo 默认包路径不对） ----------
   scan:
     base-packages: com.example.dubbo.demo.provider.service.impl
-
-  # ---------- 应用配置（ApplicationConfig） ----------
   application:
     name: dubbo-demo-provider
-    # 应用负责人（用于监控中心展示）
-    owner: demo-team
-
-  # ---------- 注册中心配置（RegistryConfig） ----------
   registry:
-    # Nacos 注册中心地址（含认证参数）
-    # 注意：YAML 中 ? 和 & 必须用双引号包裹整个字符串，否则 & 可能被误解析为 YAML 锚点
     address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
-    # 超时时间（毫秒）
-    timeout: 10000
-    # 启动时不检查注册中心是否可用（false = 不阻塞启动）
     check: false
-
-  # ---------- 协议配置（ProtocolConfig） ----------
   protocol:
-    # 协议类型：dubbo（默认，TCP 长连接 + Hessian2）
     name: dubbo
-    # 监听端口（-1 = 自动分配）
     port: 20880
-    # 线程池类型：fixed / cached / limited / eager
-    threadpool: fixed
-    # 核心工作线程数
-    threads: 200
-    # 最大请求 payload 大小（字节，默认 8MB）
-    payload: 8388608
-    # 序列化方式：hessian2 / kryo / fastjson / protobuf
-    serialization: hessian2
 
-  # ---------- Provider 默认配置（ProviderConfig） ----------
-  provider:
-    # 默认超时（毫秒）
-    timeout: 3000
-    # 失败重试次数
-    retries: 2
-    # -1 = Spring 容器初始化完成后再暴露服务
-    delay: -1
-    # 负载均衡权重
-    weight: 100
-    # 派发策略：all / direct / message / execution / connection
-    # all = 所有消息都派发到线程池（默认，最常用）
-    dispatcher: all
-
-# ==================== 日志配置 ====================
 logging:
   level:
-    root: INFO
-    # Dubbo 框架日志
-    org.apache.dubbo: INFO
-    # 自定义业务日志（ProviderLogFilter 等）
     com.example.dubbo.demo: DEBUG
