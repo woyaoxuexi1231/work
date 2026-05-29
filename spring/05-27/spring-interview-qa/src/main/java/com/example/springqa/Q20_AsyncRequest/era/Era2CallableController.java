@@ -24,15 +24,17 @@ public class Era2CallableController {
 
     @GetMapping("/callable")
     public Callable<String> asyncCallable() {
-        System.out.println("  [Era2] Tomcat 线程进入 Controller → 立刻返回 Callable → Tomcat 线程释放");
+        String submitThread = Thread.currentThread().getName();
+        System.out.println("[Era2-Callable] >>> Tomcat 线程 [" + submitThread + "] 接到请求 → 返回 Callable → 线程立刻释放！");
 
         // ★ 返回 Callable —— Spring 自动提交给 TaskExecutor 执行
         //     方法返回的那一刻，Tomcat 线程就释放了！
         return () -> {
-            System.out.println("  [Era2] TaskExecutor 线程开始执行…");
-            Thread.sleep(3000); // 模拟耗时操作（在 TaskExecutor 线程里执行）
-            System.out.println("  [Era2] TaskExecutor 线程执行完毕 → Spring 取 Tomcat 线程写响应");
-            return "Era2 Callable：耗时 3s，但 Tomcat 线程在 0ms 时就释放了";
+            String workThread = Thread.currentThread().getName();
+            System.out.println("[Era2-Callable] ★★★ 业务线程 [" + workThread + "] 开始执行耗时操作（不是 Tomcat 线程！）");
+            Thread.sleep(3000);
+            System.out.println("[Era2-Callable] <<< 业务线程 [" + workThread + "] 执行完毕，Spring 取 Tomcat 线程写响应");
+            return "Era2 Callable：提交线程 [" + submitThread + "] → 执行线程 [" + workThread + "]（两个不同线程！）";
         };
     }
 }
