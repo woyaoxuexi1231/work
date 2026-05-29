@@ -1,5 +1,6 @@
 package com.example.springqa.Q20_AsyncRequest.era;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,6 +19,8 @@ import java.util.concurrent.Callable;
  *
  * <p>访问: http://localhost:8080/q20-era2/callable</p>
  */
+
+@Slf4j
 @RestController
 @RequestMapping("/q20-era2")
 public class Era2CallableController {
@@ -25,15 +28,13 @@ public class Era2CallableController {
     @GetMapping("/callable")
     public Callable<String> asyncCallable() {
         String submitThread = Thread.currentThread().getName();
-        System.out.println("[Era2-Callable] >>> Tomcat 线程 [" + submitThread + "] 接到请求 → 返回 Callable → 线程立刻释放！");
+        log.info(">>> Tomcat线程 [{}] 接到请求 → 返回 Callable → 线程立刻释放！", submitThread);
 
-        // ★ 返回 Callable —— Spring 自动提交给 TaskExecutor 执行
-        //     方法返回的那一刻，Tomcat 线程就释放了！
         return () -> {
             String workThread = Thread.currentThread().getName();
-            System.out.println("[Era2-Callable] ★★★ 业务线程 [" + workThread + "] 开始执行耗时操作（不是 Tomcat 线程！）");
+            log.info("★★★ 业务线程 [{}] 开始执行耗时操作（不是 Tomcat 线程！）", workThread);
             Thread.sleep(3000);
-            System.out.println("[Era2-Callable] <<< 业务线程 [" + workThread + "] 执行完毕，Spring 取 Tomcat 线程写响应");
+            log.info("<<< 业务线程 [{}] 执行完毕", workThread);
             return "Era2 Callable：提交线程 [" + submitThread + "] → 执行线程 [" + workThread + "]（两个不同线程！）";
         };
     }
