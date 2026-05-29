@@ -48,34 +48,37 @@ public class KeyOpsDemo {
     public String basicKeyOps() {
         ValueOperations<String, String> ops = redisTemplate.opsForValue();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 准备测试数据
+            ops.set("key:str", "hello");
+            redisTemplate.opsForHash().put("key:hash", "f1", "v1");
 
-        // 准备测试数据
-        ops.set("key:str", "hello");
-        redisTemplate.opsForHash().put("key:hash", "f1", "v1");
+            // EXISTS: 检查键是否存在
+            Boolean exists1 = redisTemplate.hasKey("key:str");
+            Boolean exists2 = redisTemplate.hasKey("key:not_exist");
+            log.info("[EXISTS] key:str={}, key:not_exist={}", exists1, exists2);
 
-        // EXISTS: 检查键是否存在
-        Boolean exists1 = redisTemplate.hasKey("key:str");
-        Boolean exists2 = redisTemplate.hasKey("key:not_exist");
-        log.info("[EXISTS] key:str={}, key:not_exist={}", exists1, exists2);
+            // EXISTS 批量检查：返回存在的数量
+            Long existCount = redisTemplate.countExistingKeys(Arrays.asList("key:str", "key:hash", "key:none"));
+            log.info("[EXISTS] 批量检查3个键，存在数量={}", existCount);
 
-        // EXISTS 批量检查：返回存在的数量
-        Long existCount = redisTemplate.countExistingKeys(Arrays.asList("key:str", "key:hash", "key:none"));
-        log.info("[EXISTS] 批量检查3个键，存在数量={}", existCount);
+            // TYPE: 查看键的类型
+            DataType type = redisTemplate.type("key:str");
+            log.info("[TYPE] key:str → {}", type);
 
-        // TYPE: 查看键的类型
-        DataType type = redisTemplate.type("key:str");
-        log.info("[TYPE] key:str → {}", type);
+            // DEL vs UNLINK
+            // DEL 是同步删除，大键（如百万元素的 set）会阻塞
+            // UNLINK 是异步删除，立即返回，后台线程负责释放内存
+            redisTemplate.delete("key:str");
 
-        // DEL vs UNLINK
-        // DEL 是同步删除，大键（如百万元素的 set）会阻塞
-        // UNLINK 是异步删除，立即返回，后台线程负责释放内存
-        redisTemplate.delete("key:str");
+            // UNLINK 需要通过底层连接调用
+            conn.unlink("key:hash".getBytes());
+            log.info("[DEL/UNLINK] 已删除 key:str 和 key:hash");
 
-        // UNLINK 需要通过底层连接调用
-        conn.unlink("key:hash".getBytes());
-        log.info("[DEL/UNLINK] 已删除 key:str 和 key:hash");
-
-        return "EXISTS: " + exists1 + ", TYPE: " + type;
+            return "EXISTS: " + exists1 + ", TYPE: " + type;
+        } finally {
+            conn.close();
+        }
     }
 
     /**
@@ -185,13 +188,15 @@ public class KeyOpsDemo {
 
         // COPY: 复制（Redis 6.2+）
         // copy(key, newKey, replace) — replace=false 时若目标已存在则失败
+        RedisConnection conn2 = redisTemplate.getConnectionFactory().getConnection();
         try {
-            redisTemplate.getConnectionFactory().getConnection()
-                    .copy("rename:dst".getBytes(), "rename:copy".getBytes(), false);
+            conn2.copy("rename:dst".getBytes(), "rename:copy".getBytes(), false);
             String copyValue = ops.get("rename:copy");
             log.info("[COPY] rename:dst → rename:copy, 值={}", copyValue);
         } catch (Exception e) {
             log.warn("[COPY] 当前 Redis 版本可能不支持 COPY 命令: {}", e.getMessage());
+        } finally {
+            conn2.close();
         }
 
         redisTemplate.delete("rename:dst");
@@ -211,23 +216,26 @@ public class KeyOpsDemo {
     public String objectInfoDemo() {
         ValueOperations<String, String> ops = redisTemplate.opsForValue();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            ops.set("obj:test", "hello-world");
 
-        ops.set("obj:test", "hello-world");
+            // 使用 execute 调用底层 OBJECT 命令
+            byte[] encBytes = (byte[]) conn.execute("OBJECT", "ENCODING".getBytes(), "obj:test".getBytes());
+            String encoding = encBytes != null ? new String(encBytes) : "nil";
 
-        // 使用 execute 调用底层 OBJECT 命令
-        byte[] encBytes = (byte[]) conn.execute("OBJECT", "ENCODING".getBytes(), "obj:test".getBytes());
-        String encoding = encBytes != null ? new String(encBytes) : "nil";
+            byte[] idleBytes = (byte[]) conn.execute("OBJECT", "IDLETIME".getBytes(), "obj:test".getBytes());
+            String idletime = idleBytes != null ? new String(idleBytes) : "0";
 
-        byte[] idleBytes = (byte[]) conn.execute("OBJECT", "IDLETIME".getBytes(), "obj:test".getBytes());
-        String idletime = idleBytes != null ? new String(idleBytes) : "0";
+            byte[] refBytes = (byte[]) conn.execute("OBJECT", "REFCOUNT".getBytes(), "obj:test".getBytes());
+            String refcount = refBytes != null ? new String(refBytes) : "0";
 
-        byte[] refBytes = (byte[]) conn.execute("OBJECT", "REFCOUNT".getBytes(), "obj:test".getBytes());
-        String refcount = refBytes != null ? new String(refBytes) : "0";
+            log.info("[OBJECT] encoding={}, idletime={}s, refcount={}", encoding, idletime, refcount);
 
-        log.info("[OBJECT] encoding={}, idletime={}s, refcount={}", encoding, idletime, refcount);
-
-        redisTemplate.delete("obj:test");
-        return String.format("encoding=%s, idletime=%ss, refcount=%s", encoding, idletime, refcount);
+            redisTemplate.delete("obj:test");
+            return String.format("encoding=%s, idletime=%ss, refcount=%s", encoding, idletime, refcount);
+        } finally {
+            conn.close();
+        }
     }
 
     /**
@@ -241,21 +249,24 @@ public class KeyOpsDemo {
      */
     public String flushDbDemo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 查看当前库的键数量
+            conn.select(15); // 切换到 db15 做测试，避免影响主库
+            conn.stringCommands().set("flush:test1".getBytes(), "v1".getBytes());
+            conn.stringCommands().set("flush:test2".getBytes(), "v2".getBytes());
 
-        // 查看当前库的键数量
-        conn.select(15); // 切换到 db15 做测试，避免影响主库
-        conn.stringCommands().set("flush:test1".getBytes(), "v1".getBytes());
-        conn.stringCommands().set("flush:test2".getBytes(), "v2".getBytes());
+            // FLUSHDB（不真正执行，仅演示命令用法）
+            log.info("[FLUSHDB] 演示命令: FLUSHDB / FLUSHDB ASYNC");
+            log.info("[FLUSHDB] 生产环境应通过 rename-command 禁用此命令");
 
-        // FLUSHDB（不真正执行，仅演示命令用法）
-        log.info("[FLUSHDB] 演示命令: FLUSHDB / FLUSHDB ASYNC");
-        log.info("[FLUSHDB] 生产环境应通过 rename-command 禁用此命令");
+            // 手动清理测试数据
+            conn.keyCommands().del("flush:test1".getBytes());
+            conn.keyCommands().del("flush:test2".getBytes());
+            conn.select(0);
 
-        // 手动清理测试数据
-        conn.keyCommands().del("flush:test1".getBytes());
-        conn.keyCommands().del("flush:test2".getBytes());
-        conn.select(0);
-
-        return "FLUSHDB 演示完成（未实际执行清空）";
+            return "FLUSHDB 演示完成（未实际执行清空）";
+        } finally {
+            conn.close();
+        }
     }
 }

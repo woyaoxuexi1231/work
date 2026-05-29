@@ -60,30 +60,34 @@ public class MemoryDemo {
      */
     public String memoryInfo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-        Properties info = conn.info("memory");
+        try {
+            Properties info = conn.info("memory");
 
-        String result = String.format(
-                "used=%s, rss=%s, fragmentation_ratio=%s, peak=%s",
-                info.getProperty("used_memory_human"),
-                info.getProperty("used_memory_rss_human"),
-                info.getProperty("mem_fragmentation_ratio"),
-                info.getProperty("used_memory_peak_human")
-        );
+            String result = String.format(
+                    "used=%s, rss=%s, fragmentation_ratio=%s, peak=%s",
+                    info.getProperty("used_memory_human"),
+                    info.getProperty("used_memory_rss_human"),
+                    info.getProperty("mem_fragmentation_ratio"),
+                    info.getProperty("used_memory_peak_human")
+            );
 
-        log.info("[内存信息] {}", result);
+            log.info("[内存信息] {}", result);
 
-        // 碎片率说明
-        String fragRatio = info.getProperty("mem_fragmentation_ratio");
-        if (fragRatio != null) {
-            double ratio = Double.parseDouble(fragRatio);
-            if (ratio > 1.5) {
-                log.warn("[内存碎片] 碎片率过高({})，建议开启 activedefrag", fragRatio);
-            } else if (ratio < 1.0) {
-                log.warn("[内存碎片] 碎片率过低({})，可能使用了 swap", fragRatio);
+            // 碎片率说明
+            String fragRatio = info.getProperty("mem_fragmentation_ratio");
+            if (fragRatio != null) {
+                double ratio = Double.parseDouble(fragRatio);
+                if (ratio > 1.5) {
+                    log.warn("[内存碎片] 碎片率过高({})，建议开启 activedefrag", fragRatio);
+                } else if (ratio < 1.0) {
+                    log.warn("[内存碎片] 碎片率过低({})，可能使用了 swap", fragRatio);
+                }
             }
-        }
 
-        return result;
+            return result;
+        } finally {
+            conn.close();
+        }
     }
 
     /**
@@ -96,22 +100,22 @@ public class MemoryDemo {
      */
     public String memoryCommands() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 准备测试数据
+            redisTemplate.opsForValue().set("mem:test", "hello world");
+            redisTemplate.opsForHash().put("mem:hash", "field1", "value1");
+            redisTemplate.opsForHash().put("mem:hash", "field2", "value2");
 
-        // 准备测试数据
-        redisTemplate.opsForValue().set("mem:test", "hello world");
-        redisTemplate.opsForHash().put("mem:hash", "field1", "value1");
-        redisTemplate.opsForHash().put("mem:hash", "field2", "value2");
+            // MEMORY USAGE: 估算键内存
+            log.info("[MEMORY USAGE] 请通过 redis-cli 执行 MEMORY USAGE 命令查看键内存占用");
 
-        // MEMORY USAGE: 估算键内存
-        // 可通过 redis-cli 执行：
-        // redis-cli -h 192.168.3.100 -a 123456 MEMORY USAGE mem:test
-        // redis-cli -h 192.168.3.100 -a 123456 MEMORY USAGE mem:hash
-        log.info("[MEMORY USAGE] 请通过 redis-cli 执行 MEMORY USAGE 命令查看键内存占用");
+            redisTemplate.delete("mem:test");
+            redisTemplate.delete("mem:hash");
 
-        redisTemplate.delete("mem:test");
-        redisTemplate.delete("mem:hash");
-
-        return "请通过 redis-cli 执行 MEMORY USAGE 命令";
+            return "请通过 redis-cli 执行 MEMORY USAGE 命令";
+        } finally {
+            conn.close();
+        }
     }
 
     /**

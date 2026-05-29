@@ -59,37 +59,40 @@ public class MonitorDemo {
      */
     public String infoCommand() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            Properties serverInfo = conn.info("server");
+            Properties clientsInfo = conn.info("clients");
+            Properties statsInfo = conn.info("stats");
 
-        Properties serverInfo = conn.info("server");
-        Properties clientsInfo = conn.info("clients");
-        Properties statsInfo = conn.info("stats");
+            String result = String.format(
+                    "version=%s, uptime=%ss, clients=%s, blocked=%s, " +
+                            "total_commands=%s, instantaneous_ops=%s, keyspace_hits=%s, keyspace_misses=%s",
+                    serverInfo.getProperty("redis_version"),
+                    serverInfo.getProperty("uptime_in_seconds"),
+                    clientsInfo.getProperty("connected_clients"),
+                    clientsInfo.getProperty("blocked_clients"),
+                    statsInfo.getProperty("total_commands_processed"),
+                    statsInfo.getProperty("instantaneous_ops_per_sec"),
+                    statsInfo.getProperty("keyspace_hits"),
+                    statsInfo.getProperty("keyspace_misses")
+            );
 
-        String result = String.format(
-                "version=%s, uptime=%ss, clients=%s, blocked=%s, " +
-                        "total_commands=%s, instantaneous_ops=%s, keyspace_hits=%s, keyspace_misses=%s",
-                serverInfo.getProperty("redis_version"),
-                serverInfo.getProperty("uptime_in_seconds"),
-                clientsInfo.getProperty("connected_clients"),
-                clientsInfo.getProperty("blocked_clients"),
-                statsInfo.getProperty("total_commands_processed"),
-                statsInfo.getProperty("instantaneous_ops_per_sec"),
-                statsInfo.getProperty("keyspace_hits"),
-                statsInfo.getProperty("keyspace_misses")
-        );
+            log.info("[INFO] {}", result);
 
-        log.info("[INFO] {}", result);
+            // 命中率计算
+            String hits = statsInfo.getProperty("keyspace_hits");
+            String misses = statsInfo.getProperty("keyspace_misses");
+            if (hits != null && misses != null) {
+                long h = Long.parseLong(hits);
+                long m = Long.parseLong(misses);
+                double hitRate = (h + m) > 0 ? (double) h / (h + m) * 100 : 0;
+                log.info("[缓存命中率] {}%", String.format("%.2f", hitRate));
+            }
 
-        // 命中率计算
-        String hits = statsInfo.getProperty("keyspace_hits");
-        String misses = statsInfo.getProperty("keyspace_misses");
-        if (hits != null && misses != null) {
-            long h = Long.parseLong(hits);
-            long m = Long.parseLong(misses);
-            double hitRate = (h + m) > 0 ? (double) h / (h + m) * 100 : 0;
-            log.info("[缓存命中率] {:.2f}%", hitRate);
+            return result;
+        } finally {
+            conn.close();
         }
-
-        return result;
     }
 
     /**
@@ -133,14 +136,17 @@ public class MonitorDemo {
      */
     public String clientInfo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // CLIENT LIST
+            List<org.springframework.data.redis.core.types.RedisClientInfo> clients = conn.getClientList();
+            log.info("[CLIENT LIST] 当前连接数: {}", clients.size());
+            for (org.springframework.data.redis.core.types.RedisClientInfo client : clients) {
+                log.info("  {}", client);
+            }
 
-        // CLIENT LIST
-        List<org.springframework.data.redis.core.types.RedisClientInfo> clients = conn.getClientList();
-        log.info("[CLIENT LIST] 当前连接数: {}", clients.size());
-        for (org.springframework.data.redis.core.types.RedisClientInfo client : clients) {
-            log.info("  {}", client);
+            return "连接数=" + clients.size();
+        } finally {
+            conn.close();
         }
-
-        return "连接数=" + clients.size();
     }
 }

@@ -48,29 +48,32 @@ public class DataTypeDemo {
     public String stringEncoding() {
         ValueOperations<String, String> ops = redisTemplate.opsForValue();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            ops.set("str:int", "12345");
+            ops.set("str:embstr", "hello");
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 100; i++) {
+                sb.append("a");
+            }
+            ops.set("str:raw", sb.toString());
 
-        ops.set("str:int", "12345");
-        ops.set("str:embstr", "hello");
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 100; i++) {
-            sb.append("a");
+            String encInt = objectEncoding(conn, "str:int");
+            String encEmbstr = objectEncoding(conn, "str:embstr");
+            String encRaw = objectEncoding(conn, "str:raw");
+
+            log.info("[String 编码] int值='12345' → {}", encInt);
+            log.info("[String 编码] 短字符串='hello' → {}", encEmbstr);
+            log.info("[String 编码] 长字符串(100字节) → {}", encRaw);
+
+            // 清理
+            redisTemplate.delete("str:int");
+            redisTemplate.delete("str:embstr");
+            redisTemplate.delete("str:raw");
+
+            return String.format("int=%s, embstr=%s, raw=%s", encInt, encEmbstr, encRaw);
+        } finally {
+            conn.close();
         }
-        ops.set("str:raw", sb.toString());
-
-        String encInt = objectEncoding(conn, "str:int");
-        String encEmbstr = objectEncoding(conn, "str:embstr");
-        String encRaw = objectEncoding(conn, "str:raw");
-
-        log.info("[String 编码] int值='12345' → {}", encInt);
-        log.info("[String 编码] 短字符串='hello' → {}", encEmbstr);
-        log.info("[String 编码] 长字符串(100字节) → {}", encRaw);
-
-        // 清理
-        redisTemplate.delete("str:int");
-        redisTemplate.delete("str:embstr");
-        redisTemplate.delete("str:raw");
-
-        return String.format("int=%s, embstr=%s, raw=%s", encInt, encEmbstr, encRaw);
     }
 
     /**
@@ -83,25 +86,28 @@ public class DataTypeDemo {
     public String hashEncoding() {
         HashOperations<String, Object, Object> ops = redisTemplate.opsForHash();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 小 hash → listpack 编码
+            ops.put("hash:small", "name", "张三");
+            ops.put("hash:small", "age", "25");
+            String smallEnc = objectEncoding(conn, "hash:small");
 
-        // 小 hash → listpack 编码
-        ops.put("hash:small", "name", "张三");
-        ops.put("hash:small", "age", "25");
-        String smallEnc = objectEncoding(conn, "hash:small");
+            // 大 hash → hashtable 编码（超过 128 个字段）
+            for (int i = 0; i < 200; i++) {
+                ops.put("hash:large", "field:" + i, "value:" + i);
+            }
+            String largeEnc = objectEncoding(conn, "hash:large");
 
-        // 大 hash → hashtable 编码（超过 128 个字段）
-        for (int i = 0; i < 200; i++) {
-            ops.put("hash:large", "field:" + i, "value:" + i);
+            log.info("[Hash 编码] 小hash(2字段) → {}", smallEnc);
+            log.info("[Hash 编码] 大hash(200字段) → {}", largeEnc);
+
+            redisTemplate.delete("hash:small");
+            redisTemplate.delete("hash:large");
+
+            return String.format("小hash=%s, 大hash=%s", smallEnc, largeEnc);
+        } finally {
+            conn.close();
         }
-        String largeEnc = objectEncoding(conn, "hash:large");
-
-        log.info("[Hash 编码] 小hash(2字段) → {}", smallEnc);
-        log.info("[Hash 编码] 大hash(200字段) → {}", largeEnc);
-
-        redisTemplate.delete("hash:small");
-        redisTemplate.delete("hash:large");
-
-        return String.format("小hash=%s, 大hash=%s", smallEnc, largeEnc);
     }
 
     /**
@@ -113,24 +119,27 @@ public class DataTypeDemo {
     public String setEncoding() {
         SetOperations<String, String> ops = redisTemplate.opsForSet();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 全整数小集合 → intset
+            for (int i = 0; i < 10; i++) {
+                ops.add("set:intset", String.valueOf(i));
+            }
+            String intsetEnc = objectEncoding(conn, "set:intset");
 
-        // 全整数小集合 → intset
-        for (int i = 0; i < 10; i++) {
-            ops.add("set:intset", String.valueOf(i));
+            // 包含字符串 → hashtable
+            ops.add("set:hash", "hello", "world", "redis");
+            String hashEnc = objectEncoding(conn, "set:hash");
+
+            log.info("[Set 编码] 全整数小集合 → {}", intsetEnc);
+            log.info("[Set 编码] 含字符串集合 → {}", hashEnc);
+
+            redisTemplate.delete("set:intset");
+            redisTemplate.delete("set:hash");
+
+            return String.format("intset=%s, hashtable=%s", intsetEnc, hashEnc);
+        } finally {
+            conn.close();
         }
-        String intsetEnc = objectEncoding(conn, "set:intset");
-
-        // 包含字符串 → hashtable
-        ops.add("set:hash", "hello", "world", "redis");
-        String hashEnc = objectEncoding(conn, "set:hash");
-
-        log.info("[Set 编码] 全整数小集合 → {}", intsetEnc);
-        log.info("[Set 编码] 含字符串集合 → {}", hashEnc);
-
-        redisTemplate.delete("set:intset");
-        redisTemplate.delete("set:hash");
-
-        return String.format("intset=%s, hashtable=%s", intsetEnc, hashEnc);
     }
 
     /**
@@ -142,26 +151,29 @@ public class DataTypeDemo {
     public String zsetEncoding() {
         ZSetOperations<String, String> ops = redisTemplate.opsForZSet();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 小 zset → listpack
+            ops.add("zset:small", "a", 1.0);
+            ops.add("zset:small", "b", 2.0);
+            ops.add("zset:small", "c", 3.0);
+            String smallEnc = objectEncoding(conn, "zset:small");
 
-        // 小 zset → listpack
-        ops.add("zset:small", "a", 1.0);
-        ops.add("zset:small", "b", 2.0);
-        ops.add("zset:small", "c", 3.0);
-        String smallEnc = objectEncoding(conn, "zset:small");
+            // 大 zset → skiplist
+            for (int i = 0; i < 200; i++) {
+                ops.add("zset:large", "member:" + i, i);
+            }
+            String largeEnc = objectEncoding(conn, "zset:large");
 
-        // 大 zset → skiplist
-        for (int i = 0; i < 200; i++) {
-            ops.add("zset:large", "member:" + i, i);
+            log.info("[ZSet 编码] 小集合(3元素) → {}", smallEnc);
+            log.info("[ZSet 编码] 大集合(200元素) → {}", largeEnc);
+
+            redisTemplate.delete("zset:small");
+            redisTemplate.delete("zset:large");
+
+            return String.format("小zset=%s, 大zset=%s", smallEnc, largeEnc);
+        } finally {
+            conn.close();
         }
-        String largeEnc = objectEncoding(conn, "zset:large");
-
-        log.info("[ZSet 编码] 小集合(3元素) → {}", smallEnc);
-        log.info("[ZSet 编码] 大集合(200元素) → {}", largeEnc);
-
-        redisTemplate.delete("zset:small");
-        redisTemplate.delete("zset:large");
-
-        return String.format("小zset=%s, 大zset=%s", smallEnc, largeEnc);
     }
 
     /**
@@ -175,14 +187,17 @@ public class DataTypeDemo {
     public String listEncoding() {
         ListOperations<String, String> ops = redisTemplate.opsForList();
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            ops.rightPushAll("list:demo", Arrays.asList("a", "b", "c", "d", "e"));
+            String enc = objectEncoding(conn, "list:demo");
 
-        ops.rightPushAll("list:demo", Arrays.asList("a", "b", "c", "d", "e"));
-        String enc = objectEncoding(conn, "list:demo");
+            log.info("[List 编码] 5元素列表 → {}", enc);
 
-        log.info("[List 编码] 5元素列表 → {}", enc);
-
-        redisTemplate.delete("list:demo");
-        return "quicklist=" + enc;
+            redisTemplate.delete("list:demo");
+            return "quicklist=" + enc;
+        } finally {
+            conn.close();
+        }
     }
 
     /**

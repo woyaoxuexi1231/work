@@ -58,17 +58,18 @@ public class ClusterDemo {
      */
     public String clusterInfo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-        Properties info = conn.info("cluster");
+        try {
+            Properties info = conn.info("cluster");
 
-        String result = String.format(
-                "cluster_enabled=%s",
-                info.getProperty("cluster_enabled")
-        );
+            String result = String.format(
+                    "cluster_enabled=%s",
+                    info.getProperty("cluster_enabled")
+            );
 
-        log.info("[集群信息] {}", result);
+            log.info("[集群信息] {}", result);
 
-        // 集群配置说明
-        String clusterConfig =
+            // 集群配置说明
+            String clusterConfig =
                 "Redis Cluster 关键配置：\n\n"
                 + "cluster-enabled yes\n"
                 + "cluster-config-file nodes.conf\n"
@@ -87,6 +88,9 @@ public class ClusterDemo {
 
         log.info("[集群配置]\n{}", clusterConfig);
         return result;
+        } finally {
+            conn.close();
+        }
     }
 
     /**

@@ -55,84 +55,71 @@ public class PersistenceDemo {
      */
     public String persistenceInfo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-        Properties info = conn.info("persistence");
+        try {
+            Properties info = conn.info("persistence");
 
-        String result = String.format(
-                "RDB: last_save=%s, bgsave_status=%s | AOF: enabled=%s, rewrite=%s",
-                info.getProperty("rdb_last_save_time"),
-                info.getProperty("rdb_last_bgsave_status"),
-                info.getProperty("aof_enabled"),
-                info.getProperty("aof_rewrite_in_progress")
-        );
+            String result = String.format(
+                    "RDB: last_save=%s, bgsave_status=%s | AOF: enabled=%s, rewrite=%s",
+                    info.getProperty("rdb_last_save_time"),
+                    info.getProperty("rdb_last_bgsave_status"),
+                    info.getProperty("aof_enabled"),
+                    info.getProperty("aof_rewrite_in_progress")
+            );
 
-        log.info("[持久化信息] {}", result);
-        return result;
+            log.info("[持久化信息] {}", result);
+            return result;
+        } finally {
+            conn.close();
+        }
     }
 
-    /**
-     * RDB 手动触发
-     * <p>
-     * BGSAVE: 后台异步生成 RDB 快照
-     * - 使用 fork() 创建子进程
-     * - 子进程负责写入 RDB 文件
-     * - 主进程继续处理命令
-     * - Copy-On-Write 机制减少内存开销
-     * <p>
-     * 注意：fork 大内存实例时可能短暂阻塞（页表复制）
-     */
     public String triggerRdb() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-
-        // BGSAVE: 后台保存
-        conn.bgSave();
-        log.info("[RDB] BGSAVE 已触发");
-
-        // 等待并检查状态
         try {
-            Thread.sleep(1000);
-        } catch (InterruptedException ignored) {
+            // BGSAVE: 后台保存
+            conn.bgSave();
+            log.info("[RDB] BGSAVE 已触发");
+
+            // 等待并检查状态
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ignored) {
+            }
+
+            Properties info = conn.info("persistence");
+            String status = info.getProperty("rdb_last_bgsave_status");
+            log.info("[RDB] BGSAVE 状态: {}", status);
+
+            return "BGSAVE 状态=" + status;
+        } finally {
+            conn.close();
         }
-
-        Properties info = conn.info("persistence");
-        String status = info.getProperty("rdb_last_bgsave_status");
-        log.info("[RDB] BGSAVE 状态: {}", status);
-
-        return "BGSAVE 状态=" + status;
     }
 
-    /**
-     * AOF 相关操作演示
-     * <p>
-     * BGREWRITEAOF: 触发 AOF 重写
-     * AOF 重写会合并冗余命令，压缩 AOF 文件体积
-     * <p>
-     * 配置说明：
-     * - appendonly yes: 开启 AOF
-     * - appendfsync everysec: 每秒刷盘（推荐）
-     * - auto-aof-rewrite-percentage 100: AOF 文件增长 100% 时触发重写
-     * - auto-aof-rewrite-min-size 64mb: AOF 文件最小 64MB 才触发重写
-     */
     public String aofOperations() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-
-        // BGREWRITEAOF: 触发 AOF 重写
-        conn.bgWriteAof();
-        log.info("[AOF] BGREWRITEAOF 已触发");
-
         try {
-            Thread.sleep(1000);
-        } catch (InterruptedException ignored) {
+            // BGREWRITEAOF: 触发 AOF 重写
+            conn.bgWriteAof();
+            log.info("[AOF] BGREWRITEAOF 已触发");
+
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ignored) {
+            }
+
+            Properties info = conn.info("persistence");
+            String result = String.format(
+                    "aof_enabled=%s, aof_rewrite_in_progress=%s, aof_size=%s",
+                    info.getProperty("aof_enabled"),
+                    info.getProperty("aof_rewrite_in_progress"),
+                    info.getProperty("aof_current_size")
+            );
+
+            log.info("[AOF] {}", result);
+            return result;
+        } finally {
+            conn.close();
         }
-
-        Properties info = conn.info("persistence");
-        String result = String.format(
-                "aof_enabled=%s, aof_rewrite_in_progress=%s, aof_size=%s",
-                info.getProperty("aof_enabled"),
-                info.getProperty("aof_rewrite_in_progress"),
-                info.getProperty("aof_current_size")
-        );
-
-        log.info("[AOF] {}", result);
-        return result;
     }
 }

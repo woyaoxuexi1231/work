@@ -6,8 +6,10 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -89,6 +91,7 @@ public class CacheDemo {
     public String cacheBreakdown() {
         String cacheKey = "cache:hot:product:1001";
         String lockKey = "cache:lock:product:1001";
+        String lockValue = java.util.UUID.randomUUID().toString();
 
         // 查缓存
         String cached = redisTemplate.opsForValue().get(cacheKey);
@@ -98,7 +101,7 @@ public class CacheDemo {
 
         // 缓存未命中，尝试获取锁
         Boolean locked = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "1", 10, TimeUnit.SECONDS);
+                .setIfAbsent(lockKey, lockValue, 10, TimeUnit.SECONDS);
 
         if (Boolean.TRUE.equals(locked)) {
             try {
@@ -108,7 +111,14 @@ public class CacheDemo {
                 log.info("[击穿防护] 获得锁, 从DB加载数据");
                 return "从DB加载: " + dbResult;
             } finally {
-                redisTemplate.delete(lockKey);
+                // 释放锁：仅当 value 匹配时才删除（防止误删其他线程的锁）
+                String unlockScript = "if redis.call('get', KEYS[1]) == ARGV[1] then\n"
+                        + "    return redis.call('del', KEYS[1])\n"
+                        + "else\n"
+                        + "    return 0\n"
+                        + "end";
+                redisTemplate.execute(new DefaultRedisScript<>(unlockScript, Long.class),
+                        Collections.singletonList(lockKey), lockValue);
             }
         } else {
             // 未获得锁，短暂等待后重试

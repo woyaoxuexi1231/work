@@ -69,7 +69,8 @@ public class PipelineDemo {
         log.info("[Pipeline 性能对比] 写入{}条:", count);
         log.info("  逐条写入: {} ms", singleTime);
         log.info("  Pipeline: {} ms", pipelineTime);
-        log.info("  性能提升: {}x", singleTime == 0 ? "N/A" : String.format("%.1f", (double) singleTime / pipelineTime));
+        String ratio = (pipelineTime > 0) ? String.format("%.1f", (double) singleTime / pipelineTime) : "N/A";
+        log.info("  性能提升: {}x", ratio);
 
         // 清理
         for (int i = 0; i < count; i++) {

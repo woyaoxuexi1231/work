@@ -60,17 +60,21 @@ public class ReplicationDemo {
      */
     public String replicationInfo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-        Properties info = conn.info("replication");
+        try {
+            Properties info = conn.info("replication");
 
-        String result = String.format(
-                "role=%s, connected_slaves=%s, repl_backlog_size=%s",
-                info.getProperty("role"),
-                info.getProperty("connected_slaves"),
-                info.getProperty("repl_backlog_size")
-        );
+            String result = String.format(
+                    "role=%s, connected_slaves=%s, repl_backlog_size=%s",
+                    info.getProperty("role"),
+                    info.getProperty("connected_slaves"),
+                    info.getProperty("repl_backlog_size")
+            );
 
-        log.info("[复制信息] {}", result);
-        return result;
+            log.info("[复制信息] {}", result);
+            return result;
+        } finally {
+            conn.close();
+        }
     }
 
     /**

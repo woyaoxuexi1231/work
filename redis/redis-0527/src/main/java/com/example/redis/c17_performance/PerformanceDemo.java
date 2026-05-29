@@ -52,30 +52,29 @@ public class PerformanceDemo {
      */
     public String bigKeyDetection() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 创建测试大键
+            StringBuilder bigValue = new StringBuilder();
+            for (int i = 0; i < 10000; i++) {
+                bigValue.append("x");
+            }
+            redisTemplate.opsForValue().set("perf:bigkey", bigValue.toString());
 
-        // 创建测试大键
-        StringBuilder bigValue = new StringBuilder();
-        for (int i = 0; i < 10000; i++) {
-            bigValue.append("x");
+            // STRLEN: 字符串长度
+            Long len = conn.stringCommands().strLen("perf:bigkey".getBytes());
+            log.info("[大键检测] perf:bigkey 字符串长度: {} bytes", len);
+
+            // 大键处理建议
+            if (len != null && len > 10240) { // > 10KB
+                log.warn("[大键警告] perf:bigkey 是大键，建议拆分或压缩");
+            }
+
+            redisTemplate.delete("perf:bigkey");
+
+            return "长度=" + len + "B";
+        } finally {
+            conn.close();
         }
-        redisTemplate.opsForValue().set("perf:bigkey", bigValue.toString());
-
-        // MEMORY USAGE: 估算键内存
-        // 可通过 redis-cli 执行：redis-cli -h 192.168.3.100 -a 123456 MEMORY USAGE perf:bigkey
-        log.info("[大键检测] 请通过 redis-cli 执行 MEMORY USAGE perf:bigkey 查看内存占用");
-
-        // STRLEN: 字符串长度
-        Long len = conn.stringCommands().strLen("perf:bigkey".getBytes());
-        log.info("[大键检测] perf:bigkey 字符串长度: {} bytes", len);
-
-        // 大键处理建议
-        if (len != null && len > 10240) { // > 10KB
-            log.warn("[大键警告] perf:bigkey 是大键，建议拆分或压缩");
-        }
-
-        redisTemplate.delete("perf:bigkey");
-
-        return "长度=" + len + "B";
     }
 
     /**

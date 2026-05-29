@@ -82,14 +82,15 @@ public class StreamDemo {
 
         // 5. 查看未确认消息（应为 0，因为全部 ACK 了）
         PendingMessagesSummary pendingSummary = ops.pending("stream:orders", "order-group");
-        log.info("[Stream] 未确认消息: {}", pendingSummary.getTotalPendingMessages());
+        long pendingCount = pendingSummary != null ? pendingSummary.getTotalPendingMessages() : 0;
+        log.info("[Stream] 未确认消息: {}", pendingCount);
 
         // 6. 流信息
         StreamInfo.XInfoStream info = ops.info("stream:orders");
         log.info("[Stream] 流长度: {}", info.streamLength());
 
         redisTemplate.delete("stream:orders");
-        return "消费 " + records.size() + " 条, 未确认 " + pendingSummary.getTotalPendingMessages();
+        return "消费 " + records.size() + " 条, 未确认 " + pendingCount;
     }
 
     /**
@@ -125,7 +126,8 @@ public class StreamDemo {
 
         // 查看未确认消息
         PendingMessagesSummary pendingSummary2 = ops2.pending("stream:pending", "my-group");
-        log.info("[重投递] 未确认消息数: {}", pendingSummary2.getTotalPendingMessages());
+        long pendingCount2 = pendingSummary2 != null ? pendingSummary2.getTotalPendingMessages() : 0;
+        log.info("[重投递] 未确认消息数: {}", pendingCount2);
 
         // 注意：XCLAIM 需要知道具体的消息 ID
         // 在实际场景中，可以通过 PendingMessages 获取未确认消息列表

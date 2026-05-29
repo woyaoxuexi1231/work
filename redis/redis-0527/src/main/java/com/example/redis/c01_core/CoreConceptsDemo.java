@@ -32,20 +32,20 @@ public class CoreConceptsDemo {
      * INFO 命令返回服务器的详细信息，是运维排查的第一入口。
      */
     public String ping() {
-        // PING 命令：测试连通性
-        String pong = redisTemplate.getConnectionFactory()
-                .getConnection()
-                .ping();
-        log.info("[PING] → {}", pong);
+        RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // PING 命令：测试连通性
+            String pong = conn.ping();
+            log.info("[PING] → {}", pong);
 
-        // INFO server：获取服务器基本信息
-        String info = redisTemplate.getConnectionFactory()
-                .getConnection()
-                .info("server")
-                .getProperty("redis_version");
-        log.info("[INFO] Redis 版本: {}", info);
+            // INFO server：获取服务器基本信息
+            String info = conn.info("server").getProperty("redis_version");
+            log.info("[INFO] Redis 版本: {}", info);
 
-        return "PING → " + pong + " | 版本: " + info;
+            return "PING → " + pong + " | 版本: " + info;
+        } finally {
+            conn.close();
+        }
     }
 
     /**
@@ -60,33 +60,36 @@ public class CoreConceptsDemo {
      */
     public String databaseSelect() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 写入 db0
+            conn.select(0);
+            conn.stringCommands().set("db:test".getBytes(), "db0-value".getBytes());
+            log.info("[DB0] 写入 db:test = db0-value");
 
-        // 写入 db0
-        conn.select(0);
-        conn.stringCommands().set("db:test".getBytes(), "db0-value".getBytes());
-        log.info("[DB0] 写入 db:test = db0-value");
+            // 切换到 db1
+            conn.select(1);
+            conn.stringCommands().set("db:test".getBytes(), "db1-value".getBytes());
+            log.info("[DB1] 写入 db:test = db1-value");
 
-        // 切换到 db1
-        conn.select(1);
-        conn.stringCommands().set("db:test".getBytes(), "db1-value".getBytes());
-        log.info("[DB1] 写入 db:test = db1-value");
+            // 验证隔离性
+            conn.select(0);
+            byte[] val0 = conn.stringCommands().get("db:test".getBytes());
+            conn.select(1);
+            byte[] val1 = conn.stringCommands().get("db:test".getBytes());
 
-        // 验证隔离性
-        conn.select(0);
-        byte[] val0 = conn.stringCommands().get("db:test".getBytes());
-        conn.select(1);
-        byte[] val1 = conn.stringCommands().get("db:test".getBytes());
+            // 清理测试数据
+            conn.select(0);
+            conn.keyCommands().del("db:test".getBytes());
+            conn.select(1);
+            conn.keyCommands().del("db:test".getBytes());
+            conn.select(0);
 
-        // 清理测试数据
-        conn.select(0);
-        conn.keyCommands().del("db:test".getBytes());
-        conn.select(1);
-        conn.keyCommands().del("db:test".getBytes());
-        conn.select(0);
-
-        String result = String.format("db0=%s, db1=%s (互不干扰)", new String(val0), new String(val1));
-        log.info("[DB 隔离] {}", result);
-        return result;
+            String result = String.format("db0=%s, db1=%s (互不干扰)", new String(val0), new String(val1));
+            log.info("[DB 隔离] {}", result);
+            return result;
+        } finally {
+            conn.close();
+        }
     }
 
     /**
@@ -104,19 +107,22 @@ public class CoreConceptsDemo {
      */
     public String serverInfo() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            Properties serverInfo = conn.info("server");
+            Properties memoryInfo = conn.info("memory");
+            Properties statsInfo = conn.info("stats");
 
-        Properties serverInfo = conn.info("server");
-        Properties memoryInfo = conn.info("memory");
-        Properties statsInfo = conn.info("stats");
-
-        String result = String.format(
-                "版本=%s, 运行时间=%s秒, 内存使用=%s, 命令执行次数=%s",
-                serverInfo.getProperty("redis_version"),
-                serverInfo.getProperty("uptime_in_seconds"),
-                memoryInfo.getProperty("used_memory_human"),
-                statsInfo.getProperty("total_commands_processed")
-        );
-        log.info("[INFO] {}", result);
-        return result;
+            String result = String.format(
+                    "版本=%s, 运行时间=%s秒, 内存使用=%s, 命令执行次数=%s",
+                    serverInfo.getProperty("redis_version"),
+                    serverInfo.getProperty("uptime_in_seconds"),
+                    memoryInfo.getProperty("used_memory_human"),
+                    statsInfo.getProperty("total_commands_processed")
+            );
+            log.info("[INFO] {}", result);
+            return result;
+        } finally {
+            conn.close();
+        }
     }
 }

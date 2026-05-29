@@ -42,34 +42,38 @@ public class BitCmdDemo {
      */
     public String basicOps() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-        byte[] key = "bitmap:demo".getBytes();
+        try {
+            byte[] key = "bitmap:demo".getBytes();
 
-        // 清空
-        conn.keyCommands().del(key);
+            // 清空
+            conn.keyCommands().del(key);
 
-        // SETBIT: 设置位
-        // 设置 offset 0, 3, 5, 7 为 1
-        conn.stringCommands().setBit(key, 0, true);
-        conn.stringCommands().setBit(key, 3, true);
-        conn.stringCommands().setBit(key, 5, true);
-        conn.stringCommands().setBit(key, 7, true);
+            // SETBIT: 设置位
+            // 设置 offset 0, 3, 5, 7 为 1
+            conn.stringCommands().setBit(key, 0, true);
+            conn.stringCommands().setBit(key, 3, true);
+            conn.stringCommands().setBit(key, 5, true);
+            conn.stringCommands().setBit(key, 7, true);
 
-        // GETBIT: 读取位
-        Boolean bit0 = conn.stringCommands().getBit(key, 0);
-        Boolean bit1 = conn.stringCommands().getBit(key, 1);
-        Boolean bit3 = conn.stringCommands().getBit(key, 3);
-        log.info("[GETBIT] bit0={}, bit1={}, bit3={}", bit0, bit1, bit3);
+            // GETBIT: 读取位
+            Boolean bit0 = conn.stringCommands().getBit(key, 0);
+            Boolean bit1 = conn.stringCommands().getBit(key, 1);
+            Boolean bit3 = conn.stringCommands().getBit(key, 3);
+            log.info("[GETBIT] bit0={}, bit1={}, bit3={}", bit0, bit1, bit3);
 
-        // BITCOUNT: 统计 1 的个数
-        Long count = conn.bitCount(key);
-        log.info("[BITCOUNT] 1的个数: {}", count);
+            // BITCOUNT: 统计 1 的个数
+            Long count = conn.bitCount(key);
+            log.info("[BITCOUNT] 1的个数: {}", count);
 
-        // BITPOS: 查找第一个 1
-        Long pos = conn.bitPos(key, true);
-        log.info("[BITPOS] 第一个1的位置: {}", pos);
+            // BITPOS: 查找第一个 1
+            Long pos = conn.bitPos(key, true);
+            log.info("[BITPOS] 第一个1的位置: {}", pos);
 
-        conn.keyCommands().del(key);
-        return "bit0=" + bit0 + ", count=" + count + ", firstPos=" + pos;
+            conn.keyCommands().del(key);
+            return "bit0=" + bit0 + ", count=" + count + ", firstPos=" + pos;
+        } finally {
+            conn.close();
+        }
     }
 
     /**
@@ -87,27 +91,31 @@ public class BitCmdDemo {
      */
     public String userSignIn() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
-        byte[] key = "bitmap:sign:user:1001:2024".getBytes();
+        try {
+            byte[] key = "bitmap:sign:user:1001:2024".getBytes();
 
-        conn.keyCommands().del(key);
+            conn.keyCommands().del(key);
 
-        // 模拟签到：第 1、2、5、10、30 天签到
-        int[] signDays = {1, 2, 5, 10, 30};
-        for (int day : signDays) {
-            conn.stringCommands().setBit(key, day, true);
+            // 模拟签到：第 1、2、5、10、30 天签到
+            int[] signDays = {1, 2, 5, 10, 30};
+            for (int day : signDays) {
+                conn.stringCommands().setBit(key, day, true);
+            }
+
+            // 查询第 5 天是否签到
+            boolean day5Signed = conn.stringCommands().getBit(key, 5);
+            boolean day3Signed = conn.stringCommands().getBit(key, 3);
+            log.info("[签到查询] 第5天={}, 第3天={}", day5Signed, day3Signed);
+
+            // 统计本月签到天数
+            Long totalDays = conn.bitCount(key);
+            log.info("[签到统计] 总签到天数: {}", totalDays);
+
+            conn.keyCommands().del(key);
+            return "第5天=" + day5Signed + ", 总签到=" + totalDays;
+        } finally {
+            conn.close();
         }
-
-        // 查询第 5 天是否签到
-        boolean day5Signed = conn.stringCommands().getBit(key, 5);
-        boolean day3Signed = conn.stringCommands().getBit(key, 3);
-        log.info("[签到查询] 第5天={}, 第3天={}", day5Signed, day3Signed);
-
-        // 统计本月签到天数
-        Long totalDays = conn.bitCount(key);
-        log.info("[签到统计] 总签到天数: {}", totalDays);
-
-        conn.keyCommands().del(key);
-        return "第5天=" + day5Signed + ", 总签到=" + totalDays;
     }
 
     /**
@@ -123,40 +131,40 @@ public class BitCmdDemo {
      */
     public String activeUserStats() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 清空测试数据
+            conn.keyCommands().del("bitmap:active:day1".getBytes());
+            conn.keyCommands().del("bitmap:active:day2".getBytes());
+            conn.keyCommands().del("bitmap:active:merged".getBytes());
 
-        // 清空测试数据
-        conn.keyCommands().del("bitmap:active:day1".getBytes());
-        conn.keyCommands().del("bitmap:active:day2".getBytes());
-        conn.keyCommands().del("bitmap:active:merged".getBytes());
+            // Day1: 用户 1,2,3,5,8 活跃
+            long[] day1Users = {1, 2, 3, 5, 8};
+            for (long uid : day1Users) {
+                conn.stringCommands().setBit("bitmap:active:day1".getBytes(), uid, true);
+            }
 
-        // Day1: 用户 1,2,3,5,8 活跃
-        long[] day1Users = {1, 2, 3, 5, 8};
-        for (long uid : day1Users) {
-            conn.stringCommands().setBit("bitmap:active:day1".getBytes(), uid, true);
-        }
+            // Day2: 用户 2,3,6,7,8 活跃
+            long[] day2Users = {2, 3, 6, 7, 8};
+            for (long uid : day2Users) {
+                conn.stringCommands().setBit("bitmap:active:day2".getBytes(), uid, true);
+            }
 
-        // Day2: 用户 2,3,6,7,8 活跃
-        long[] day2Users = {2, 3, 6, 7, 8};
-        for (long uid : day2Users) {
-            conn.stringCommands().setBit("bitmap:active:day2".getBytes(), uid, true);
-        }
+            // BITCOUNT: 每天活跃用户数
+            Long dau1 = conn.bitCount("bitmap:active:day1".getBytes());
+            Long dau2 = conn.bitCount("bitmap:active:day2".getBytes());
+            log.info("[DAU] Day1 活跃用户: {}, Day2 活跃用户: {}", dau1, dau2);
 
-        // BITCOUNT: 每天活跃用户数
-        Long dau1 = conn.bitCount("bitmap:active:day1".getBytes());
-        Long dau2 = conn.bitCount("bitmap:active:day2".getBytes());
-        log.info("[DAU] Day1 活跃用户: {}, Day2 活跃用户: {}", dau1, dau2);
+            // BITOP OR: 合并两天 → 两天内活跃的用户（去重）
+            conn.bitOp(
+                    org.springframework.data.redis.connection.RedisStringCommands.BitOperation.OR,
+                    "bitmap:active:merged".getBytes(),
+                    "bitmap:active:day1".getBytes(),
+                    "bitmap:active:day2".getBytes()
+            );
+            Long wau = conn.bitCount("bitmap:active:merged".getBytes());
+            log.info("[WAU] 两天内活跃用户（去重）: {}", wau);
 
-        // BITOP OR: 合并两天 → 两天内活跃的用户（去重）
-        conn.bitOp(
-                org.springframework.data.redis.connection.RedisStringCommands.BitOperation.OR,
-                "bitmap:active:merged".getBytes(),
-                "bitmap:active:day1".getBytes(),
-                "bitmap:active:day2".getBytes()
-        );
-        Long wau = conn.bitCount("bitmap:active:merged".getBytes());
-        log.info("[WAU] 两天内活跃用户（去重）: {}", wau);
-
-        // BITOP AND: 两天都活跃的用户
+            // BITOP AND: 两天都活跃的用户
         conn.bitOp(
                 org.springframework.data.redis.connection.RedisStringCommands.BitOperation.AND,
                 "bitmap:active:merged".getBytes(),
@@ -171,5 +179,8 @@ public class BitCmdDemo {
         conn.keyCommands().del("bitmap:active:merged".getBytes());
 
         return String.format("DAU1=%d, DAU2=%d, WAU=%d, 连续=%d", dau1, dau2, wau, bothDays);
+        } finally {
+            conn.close();
+        }
     }
 }

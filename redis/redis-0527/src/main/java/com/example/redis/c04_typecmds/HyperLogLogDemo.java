@@ -48,32 +48,35 @@ public class HyperLogLogDemo {
      */
     public String basicOps() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            // 清空
+            conn.keyCommands().del("hll:demo".getBytes());
 
-        // 清空
-        conn.keyCommands().del("hll:demo".getBytes());
+            // PFADD: 添加元素
+            // 添加 1000 个唯一元素
+            for (int i = 0; i < 1000; i++) {
+                conn.hyperLogLogCommands().pfAdd("hll:demo".getBytes(),
+                        ("element:" + i).getBytes());
+            }
 
-        // PFADD: 添加元素
-        // 添加 1000 个唯一元素
-        for (int i = 0; i < 1000; i++) {
-            conn.hyperLogLogCommands().pfAdd("hll:demo".getBytes(),
-                    ("element:" + i).getBytes());
+            // PFCOUNT: 获取基数估计值
+            Long count = conn.hyperLogLogCommands().pfCount("hll:demo".getBytes());
+            log.info("[PFCOUNT] 添加 1000 个唯一元素, 估计值: {}", count);
+
+            // 添加重复元素（不会增加基数）
+            for (int i = 0; i < 100; i++) {
+                conn.hyperLogLogCommands().pfAdd("hll:demo".getBytes(),
+                        ("element:" + i).getBytes());
+            }
+
+            count = conn.hyperLogLogCommands().pfCount("hll:demo".getBytes());
+            log.info("[PFCOUNT] 再添加 100 个重复元素, 估计值: {}", count);
+
+            conn.keyCommands().del("hll:demo".getBytes());
+            return "基数估计=" + count;
+        } finally {
+            conn.close();
         }
-
-        // PFCOUNT: 获取基数估计值
-        Long count = conn.hyperLogLogCommands().pfCount("hll:demo".getBytes());
-        log.info("[PFCOUNT] 添加 1000 个唯一元素, 估计值: {}", count);
-
-        // 添加重复元素（不会增加基数）
-        for (int i = 0; i < 100; i++) {
-            conn.hyperLogLogCommands().pfAdd("hll:demo".getBytes(),
-                    ("element:" + i).getBytes());
-        }
-
-        count = conn.hyperLogLogCommands().pfCount("hll:demo".getBytes());
-        log.info("[PFCOUNT] 再添加 100 个重复元素, 估计值: {}", count);
-
-        conn.keyCommands().del("hll:demo".getBytes());
-        return "基数估计=" + count;
     }
 
     /**
@@ -88,45 +91,48 @@ public class HyperLogLogDemo {
      */
     public String uvStats() {
         RedisConnection conn = redisTemplate.getConnectionFactory().getConnection();
+        try {
+            conn.keyCommands().del("hll:uv:page:home".getBytes());
 
-        conn.keyCommands().del("hll:uv:page:home".getBytes());
+            // 模拟用户访问首页
+            // 1000 个独立用户访问
+            for (int i = 1; i <= 1000; i++) {
+                conn.hyperLogLogCommands().pfAdd("hll:uv:page:home".getBytes(),
+                        ("user:" + i).getBytes());
+            }
 
-        // 模拟用户访问首页
-        // 1000 个独立用户访问
-        for (int i = 1; i <= 1000; i++) {
-            conn.hyperLogLogCommands().pfAdd("hll:uv:page:home".getBytes(),
-                    ("user:" + i).getBytes());
+            // 部分用户重复访问
+            for (int i = 1; i <= 100; i++) {
+                conn.hyperLogLogCommands().pfAdd("hll:uv:page:home".getBytes(),
+                        ("user:" + i).getBytes());
+            }
+
+            Long uv = conn.hyperLogLogCommands().pfCount("hll:uv:page:home".getBytes());
+            log.info("[UV统计] 首页独立访客: {} (实际 1000)", uv);
+
+            // PFMERGE: 合并多天 UV
+            conn.hyperLogLogCommands().pfAdd("hll:uv:page:home:day1".getBytes(),
+                    "user:1".getBytes(), "user:2".getBytes(), "user:3".getBytes());
+            conn.hyperLogLogCommands().pfAdd("hll:uv:page:home:day2".getBytes(),
+                    "user:2".getBytes(), "user:3".getBytes(), "user:4".getBytes());
+
+            conn.hyperLogLogCommands().pfMerge("hll:uv:page:home:merged".getBytes(),
+                    "hll:uv:page:home:day1".getBytes(),
+                    "hll:uv:page:home:day2".getBytes());
+
+            Long mergedUv = conn.hyperLogLogCommands().pfCount("hll:uv:page:home:merged".getBytes());
+            log.info("[PFMERGE] 两天合并 UV: {} (实际 4)", mergedUv);
+
+            conn.keyCommands().del(
+                    "hll:uv:page:home".getBytes(),
+                    "hll:uv:page:home:day1".getBytes(),
+                    "hll:uv:page:home:day2".getBytes(),
+                    "hll:uv:page:home:merged".getBytes()
+            );
+
+            return "UV=" + uv + ", 合并UV=" + mergedUv;
+        } finally {
+            conn.close();
         }
-
-        // 部分用户重复访问
-        for (int i = 1; i <= 100; i++) {
-            conn.hyperLogLogCommands().pfAdd("hll:uv:page:home".getBytes(),
-                    ("user:" + i).getBytes());
-        }
-
-        Long uv = conn.hyperLogLogCommands().pfCount("hll:uv:page:home".getBytes());
-        log.info("[UV统计] 首页独立访客: {} (实际 1000)", uv);
-
-        // PFMERGE: 合并多天 UV
-        conn.hyperLogLogCommands().pfAdd("hll:uv:page:home:day1".getBytes(),
-                "user:1".getBytes(), "user:2".getBytes(), "user:3".getBytes());
-        conn.hyperLogLogCommands().pfAdd("hll:uv:page:home:day2".getBytes(),
-                "user:2".getBytes(), "user:3".getBytes(), "user:4".getBytes());
-
-        conn.hyperLogLogCommands().pfMerge("hll:uv:page:home:merged".getBytes(),
-                "hll:uv:page:home:day1".getBytes(),
-                "hll:uv:page:home:day2".getBytes());
-
-        Long mergedUv = conn.hyperLogLogCommands().pfCount("hll:uv:page:home:merged".getBytes());
-        log.info("[PFMERGE] 两天合并 UV: {} (实际 4)", mergedUv);
-
-        conn.keyCommands().del(
-                "hll:uv:page:home".getBytes(),
-                "hll:uv:page:home:day1".getBytes(),
-                "hll:uv:page:home:day2".getBytes(),
-                "hll:uv:page:home:merged".getBytes()
-        );
-
-        return "UV=" + uv + ", 合并UV=" + mergedUv;
     }
 }
