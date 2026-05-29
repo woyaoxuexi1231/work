@@ -37,37 +37,28 @@ public class Era3DeferredResultController {
     @GetMapping("/submit")
     public DeferredResult<String> submit() {
         String requestId = String.valueOf(System.currentTimeMillis());
+        String submitThread = Thread.currentThread().getName();
+        System.out.println("[Era3-Deferred] >>> Tomcat 线程 [" + submitThread + "] 接到请求 → 返回 DeferredResult → 线程立刻释放！");
 
-        // ★ 30 秒超时，超时返回 timeout
         DeferredResult<String> result = new DeferredResult<>(30000L, "请求超时");
-
-        result.onTimeout(() -> System.out.println("  [Era3] requestId=" + requestId + " 超时"));
+        result.onTimeout(() -> System.out.println("[Era3-Deferred] requestId=" + requestId + " 超时"));
         result.onCompletion(() -> pending.remove(requestId));
-
-        // 把这个 DeferredResult 存起来——等外部事件触发它
         pending.put(requestId, result);
 
-        System.out.println("  [Era3] 请求挂起。requestId=" + requestId + "。Tomcat 线程已释放！");
-
-        // ★ Tomcat 线程在这里就释放了——不会等！
-        //   什么时候有人调 /complete?requestId=xxx，什么时候响应才返回
+        System.out.println("[Era3-Deferred] ○○○ 请求挂起 requestId=" + requestId + "。它不会占用任何线程在等——真的挂了！");
         return result;
     }
 
-    /**
-     * 模拟"外部事件"触发——完成之前挂起的请求。
-     * 访问: /q20-era3/complete?requestId=刚才拿到的ID
-     */
     @GetMapping("/complete")
     public String complete(String requestId) {
+        String triggerThread = Thread.currentThread().getName();
         DeferredResult<String> result = pending.remove(requestId);
         if (result == null) {
-            return "没找到 requestId=" + requestId + " 的等待请求（可能已超时）";
+            return "没找到 requestId=" + requestId + " 的等待请求";
         }
-        // ★ 在任意线程、任意时机调用 setResult → 挂起的请求立刻返回！
-        result.setResult("DeferredResult 完成！requestId=" + requestId + " ← 这个响应是外部事件触发的，不是线程计算出来的");
 
-        System.out.println("  [Era3] 外部事件触发 setResult → 挂起的请求得到响应！");
-        return "OK——等待中的请求已收到响应";
+        System.out.println("[Era3-Deferred] ★★★ 线程 [" + triggerThread + "] 触发了 setResult → 挂起的请求收到响应！");
+        result.setResult("DeferredResult 完成——线程 [" + triggerThread + "] 触发了响应");
+        return "已触发——等待中的请求收到响应了";
     }
 }

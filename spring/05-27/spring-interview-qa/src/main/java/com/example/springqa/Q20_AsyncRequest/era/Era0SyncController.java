@@ -27,13 +27,15 @@ public class Era0SyncController {
 
     @GetMapping("/sync")
     public String sync() throws Exception {
-        long start = System.currentTimeMillis();
+        String threadName = Thread.currentThread().getName();
+        System.out.println("[Era0-同步] >>> 线程 [" + threadName + "] 开始处理请求（Tomcat 线程）");
 
-        // 模拟耗时操作（查数据库 / 调外部 API）
-        // ★ 这 3 秒钟，Tomcat 线程什么也不干——就在这等着
+        // ★ 这 3 秒——Tomcat 线程被阻塞在这里！
+        //    如果此时收到新请求，Tomcat 必须从线程池里拿另一个线程
+        //    如果线程池满了（默认 200），新请求排队
         Thread.sleep(3000);
 
-        long ms = System.currentTimeMillis() - start;
-        return "Era0 同步阻塞：耗时 " + ms + "ms —— 这 3 秒 Tomcat 线程被白白占用";
+        System.out.println("[Era0-同步] <<< 线程 [" + threadName + "] 处理完成（阻塞结束）");
+        return "Era0 同步：线程 [" + threadName + "] 被阻塞了 3 秒";
     }
 }

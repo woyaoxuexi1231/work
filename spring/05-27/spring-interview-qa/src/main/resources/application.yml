@@ -27,7 +27,13 @@ spring:
 
 server:
   port: 8080
-
+#  jetty:
+#    threads:
+#      max: 8
+#      min: 8
+  tomcat:
+    threads:
+      max: 8
 
 # ===== Q24: 外部化配置优先级 Demo =====
 # 加载顺序（从高到低）：
