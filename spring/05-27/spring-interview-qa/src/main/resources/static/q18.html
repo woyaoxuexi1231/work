@@ -1,13 +1,149 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q18 · 拦截器 vs 过滤器</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q18 · 拦截器 vs 过滤器</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--red:#e53e3e}
+*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:800px;margin:0 auto;padding:0 16px}
+.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+h1{font-size:26px;margin:36px 0 8px;text-align:center}.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}
+.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}
+.stage h2{font-size:17px;margin-bottom:10px}.stage h2 .badge{font-size:11px;padding:2px 8px;border-radius:8px;color:#fff;background:var(--accent);margin-right:6px;vertical-align:middle}
+.pain{background:#fff5f5;border-left:3px solid var(--red);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.pain strong{color:var(--red)}
+.gain{background:#f0fff4;border-left:3px solid var(--accent);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.gain strong{color:#2e7d32}
+.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin:8px 0;white-space:pre}
+.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .s{color:#a5d6ff}.code .t{color:#ffa657}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th{background:#f5f5f5;text-align:left;padding:8px 12px;border-bottom:2px solid #ddd}td{padding:8px 12px;border-bottom:1px solid #eee;color:var(--sub);vertical-align:top}td code{color:var(--accent);font-size:12px}
+.flow{text-align:center;padding:10px;background:#f8f8f8;border-radius:8px;margin:10px 0;font-family:monospace;font-size:12px;line-height:2;color:var(--sub)}
+.note{background:#fffbe6;border-left:3px solid #d2991d;padding:10px 14px;margin:10px 0;font-size:13px;border-radius:0 6px 6px 0}.note strong{color:#d2991d}
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q18 · 拦截器 vs 过滤器</b> — Token 校验用哪个？</p></div><div class="chat">
+<div class="wrap">
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">HandlerInterceptor 和 Filter 的区别？Token 校验用哪个？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">Filter 是 Servlet 规范——拦截所有请求，不依赖 Spring，可以注入 Spring Bean 但需要额外配置。Interceptor 是 Spring MVC 的——只拦截进入 DispatcherServlet 的请求，天然支持 @Autowired。<br><br>
-<b>Token 校验推荐 Interceptor。</b>三个原因：可以注入 TokenService；知道是哪个 Controller 方法被调用（可以做 @NoAuth 注解排除）；校验失败可以直接写 JSON。<br><br>
-<b>不是二选一，是分层。</b>Filter 做基础设施（编码、CORS、安全头），Interceptor 做业务逻辑（认证、权限、日志）。执行顺序：Filter → DispatcherServlet → Interceptor.preHandle → Controller。</div></div>
+<h1>拦截器 vs 过滤器 · 演化史</h1>
+<p class="sub">Filter 是 Servlet 规范级别的能力，Interceptor 是 Spring MVC 级别的能力。它们不是在竞争——是不同层次解决不同问题。</p>
 
-<div class="reflect"><strong>❓ 自问：</strong>什么时候必须用 Filter？<br><strong>答：</strong>需要在 Spring 解析参数之前做的事情——比如 body 加密解密、XSS 过滤、请求日志记录原始 body。这些必须在 Filter 层做，因为到 Interceptor 时 body 已经被 Spring 消费了。</div>
+<!-- ═══════ 第0代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">1998</span> 第0代：没有 Filter——每个 Servlet 自己干</h2>
 
-</div><div class="back"><a href="/q19.html">下一题 → Q19 · 异常处理</a></div></div></body></html>
+<div class="code"><span class="c">// 每个 Servlet 都要自己处理编码、自己写日志、自己检查权限</span>
+<span class="k">public class</span> <span class="t">UserServlet</span> <span class="k">extends</span> <span class="t">HttpServlet</span> {
+    <span class="k">protected void</span> <span class="f">doGet</span>(req, resp) {
+        req.setCharacterEncoding(<span class="s">"UTF-8"</span>);  <span class="c">// ← 每个 Servlet 都写一遍！</span>
+        resp.setContentType(<span class="s">"text/html;charset=UTF-8"</span>);
+        System.out.println(<span class="s">"收到请求："</span> + req.getRequestURI()); <span class="c">// ← 日志也每个写一遍</span>
+        String token = req.getHeader(<span class="s">"Authorization"</span>);
+        <span class="k">if</span> (token == <span class="k">null</span>) { resp.sendError(401); <span class="k">return</span>; } <span class="c">// ← 权限还是每个写一遍</span>
+        <span class="c">// ... 业务逻辑</span>
+    }
+}</div>
+
+<div class="pain"><strong>❌ 痛点：</strong>编码设置、日志记录、权限校验——这些横切逻辑在每个 Servlet 里重复了 N 遍。你改了编码配置，要改所有 Servlet。加一个日志，要改所有 Servlet。如果忘记给新的 Servlet 加编码，乱码了查不出来。</div>
+</div>
+
+<!-- ═══════ Filter ═══════ -->
+<div class="stage">
+<h2><span class="badge">2000</span> Filter 出现——Servlet 2.3 规范</h2>
+
+<p><b>核心思想：</b>在 Servlet 之前加一道拦截链——只需要写一个 Filter 类，配置一次，所有请求自动经过它。</p>
+
+<div class="code"><span class="c">// Filter：一个类处理所有请求的横切逻辑</span>
+<span class="k">public class</span> <span class="t">CharsetFilter</span> <span class="k">implements</span> <span class="t">Filter</span> {
+    <span class="k">public void</span> <span class="f">doFilter</span>(req, resp, chain) {
+        req.setCharacterEncoding(<span class="s">"UTF-8"</span>);           <span class="c">// ← 只写一次，所有 Servlet 生效！</span>
+        chain.doFilter(req, resp);                    <span class="c">// ← 放行</span>
+    }
+}</div>
+
+<div class="gain"><strong>✅ Filter 解决的：</strong>横切逻辑从 N 个 Servlet 中抽离到 1 个 Filter 里。编码、日志、CORS、XSS 过滤——这些"基础设施"层面的事情，Filter 统一处理。</div>
+
+<div class="pain"><strong>⚠️ Filter 的局限：</strong></div>
+<ul style="font-size:13px;color:var(--sub);padding-left:18px;line-height:2">
+<li><b>不能注入 Spring Bean：</b>Filter 是 Servlet 容器管理的，不是 Spring 管理的。想用 TokenService？要绕 DelegatingFilterProxy 桥接</li>
+<li><b>精度低：</b>只能按 URL 模式匹配——不能根据 <b>哪个 Controller 方法</b> 决定要不要放行</li>
+<li><b>没有方法级别的后置回调：</b>Filter 只有 doFilter 一个方法，没有 afterCompletion 这种 finally 回调</li>
+<li><b>Filter 是"全或无"：</b>不像 Interceptor 有个 preHandle/postHandle/afterCompletion 三个阶段的精细控制</li>
+</ul>
+</div>
+
+<!-- ═══════ Interceptor ═══════ -->
+<div class="stage">
+<h2><span class="badge">2004</span> HandlerInterceptor 出现——Spring MVC</h2>
+
+<p><b>核心思想：</b>在 DispatcherServlet 内部（Filter 之后），提供更精细的拦截能力。</p>
+
+<div class="code"><span class="c">// Interceptor：可以注入 Spring Bean，知道 HandlerMethod，三段式回调</span>
+<span class="k">public class</span> <span class="t">TokenInterceptor</span> <span class="k">implements</span> <span class="t">HandlerInterceptor</span> {
+
+    <span class="k">boolean</span> <span class="f">preHandle</span>(req, resp, handler) {            <span class="c">// ① 前置（类似 Filter）</span>
+        <span class="k">if</span> (!(handler <span class="k">instanceof</span> <span class="t">HandlerMethod</span>)) <span class="k">return true</span>;
+        <span class="c">// 可以注入 TokenService，可以做注解排除</span>
+        <span class="c">// false → 请求被拦截，Controller 不会执行</span>
+    }
+
+    <span class="k">void</span> <span class="f">postHandle</span>(req, resp, handler, mav) {           <span class="c">// ② 后置（Controller 之后，View 之前）</span>
+        <span class="c">// 可以修改 ModelAndView</span>
+    }
+
+    <span class="k">void</span> <span class="f">afterCompletion</span>(req, resp, handler, ex) {      <span class="c">// ③ 最终（类似 finally）</span>
+        <span class="c">// 清理 ThreadLocal 之类的</span>
+    }
+}</div>
+
+<div class="gain"><strong>✅ Interceptor 解决 Filter 解决不了的：</strong></div>
+<ul style="font-size:13px;color:var(--sub);padding-left:18px;line-height:2">
+<li><b>可以 @Autowired：</b>Interceptor 是 Spring 管理的 Bean，直接注入 TokenService</li>
+<li><b>知道是哪个 Controller：</b>handler 参数就是 HandlerMethod——可以做 @NoAuth 注解排除</li>
+<li><b>三段式回调：</b>preHandle（前置）、postHandle（后置，可改 ModelAndView）、afterCompletion（finally）</li>
+<li><b>排除路径精确：</b>registry.addInterceptor().excludePathPatterns("/login")</li>
+</ul>
+
+<div class="pain"><strong>⚠️ Interceptor 的局限：</strong>它运行在 DispatcherServlet 内部——请求已经经过了 Filter，body 可能已经被消费了。你读不到最原始的请求数据（Filter 可以）。</div>
+</div>
+
+<!-- ═══════ 执行顺序 ═══════ -->
+<div class="stage">
+<h2><span class="badge">★</span> 执行顺序：Filter → Interceptor → Controller</h2>
+
+<div class="flow">
+<span class="t">Filter.doFilter()</span> 前置<br>
+&nbsp;&nbsp;→ <span class="t">DispatcherServlet.doDispatch()</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ <span class="t">HandlerMapping</span> 找到 HandlerExecutionChain（Handler + Interceptors）<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ <span class="t">Interceptor.preHandle()</span>  ← 可以注入 Spring Bean<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ <span class="t">Controller</span> 方法执行<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ <span class="t">Interceptor.postHandle()</span>  ← 可以改 ModelAndView<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ <span class="t">ViewResolver</span> 解析视图<br>
+&nbsp;&nbsp;&nbsp;&nbsp;→ <span class="t">Interceptor.afterCompletion()</span>  ← 类似 finally<br>
+<span class="t">Filter.doFilter()</span> 后置
+</div>
+</div>
+
+<!-- ═══════ 实际选型 ═══════ -->
+<div class="stage">
+<h2><span class="badge">★</span> 实际项目中用 Filter 还是 Interceptor？</h2>
+
+<table>
+<tr><th>场景</th><th>选哪个</th><th>为什么</th></tr>
+<tr><td>编码设置 (CharacterEncodingFilter)</td><td><b>Filter</b></td><td>需要在 Spring 解析参数之前就设好编码。Interceptor 太晚了</td></tr>
+<tr><td>CORS (CrossOriginFilter)</td><td><b>Filter</b></td><td>跨域头必须在最外层设置——浏览器/网关层就应该看到的配置</td></tr>
+<tr><td>Token 鉴权</td><td><b>Interceptor</b></td><td>需要注入 TokenService、需要排除登录接口、需要按 HandlerMethod 控制</td></tr>
+<tr><td>请求日志（记 URL/参数/耗时）</td><td><b>Filter</b> 或 <b>Interceptor</b></td><td>Filter 能记原始 body，Interceptor 能记更多上下文</td></tr>
+<tr><td>XSS / SQL 注入过滤</td><td><b>Filter</b></td><td>必须拿到最原始的 request body，Interceptor 拿不到</td></tr>
+<tr><td>加密/解密请求体</td><td><b>Filter</b></td><td>需要在 Spring 解析 body 之前就解密，Interceptor 太晚</td></tr>
+<tr><td>权限校验（基于方法注解）</td><td><b>Interceptor</b></td><td>能通过 HandlerMethod 获取方法上的 @RequiresRole 注解</td></tr>
+</table>
+
+<div class="note"><strong>💡 经验法则：</strong>Filter 做"进门前"的事——基础设施，不用 Spring 的能力。Interceptor 做"进门后"的事——业务逻辑，需要 Spring 的能力。</div>
+</div>
+
+<div class="back"><a href="/q19.html">下一题 → Q19 · 统一异常处理</a></div>
+</div></body></html>
