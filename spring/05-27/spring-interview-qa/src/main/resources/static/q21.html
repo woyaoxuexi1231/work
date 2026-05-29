@@ -1,14 +1,55 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q21 · 自动装配</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q21 · 自动装配演化史</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--red:#e53e3e}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:800px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}h1{font-size:26px;margin:36px 0 8px;text-align:center}.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}.stage h2{font-size:17px;margin-bottom:10px}.stage h2 .badge{font-size:11px;padding:2px 8px;border-radius:8px;color:#fff;background:var(--accent);margin-right:6px}.pain{background:#fff5f5;border-left:3px solid var(--red);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.pain strong{color:var(--red)}.gain{background:#f0fff4;border-left:3px solid var(--accent);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.gain strong{color:#2e7d32}.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin:8px 0;white-space:pre}.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .s{color:#a5d6ff}.code .t{color:#ffa657}table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}th{background:#f5f5f5;text-align:left;padding:8px 12px;border-bottom:2px solid #ddd}td{padding:8px 12px;border-bottom:1px solid #eee;color:var(--sub)}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style></head><body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q21 · 自动装配原理</b> — spring.factories + 条件注解。</p></div><div class="chat">
+<div class="wrap">
+<h1>自动装配 · 演化史</h1>
+<p class="sub">从"引入一个依赖要写 50 行 XML"，到"引入即用"</p>
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">@SpringBootApplication 包含哪三个注解？@EnableAutoConfiguration 如何加载自动配置类？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">@SpringBootApplication = @SpringBootConfiguration（本质 @Configuration）+ @EnableAutoConfiguration（触发自动装配）+ @ComponentScan（扫描组件）。<br><br>
-自动装配核心流程：@EnableAutoConfiguration → @Import(AutoConfigurationImportSelector) → selectImports() → 从所有 jar 的 spring.factories 读取 ~180 个候选配置类 → 逐个检查 @Conditional → 不满足的跳过 → 剩下的生效。<br><br>
-条件注解：@ConditionalOnClass 通过 classLoader.loadClass() 判断类路径；@ConditionalOnMissingBean 通过 beanFactory 判断容器中是否已有；@ConditionalOnProperty 通过 environment 判断配置值。<b>@ConditionalOnMissingBean 是用户能覆盖自动配置的关键。</b></div></div>
+<div class="stage"><h2><span class="badge">2004</span> 第0代：Spring Framework —— 全手动</h2>
+<div class="code"><span class="c">&lt;!-- 引入 HikariCP，你需要手动配 4 个 Bean --&gt;</span>
+<span class="t">&lt;bean</span> id=<span class="s">"dataSource"</span> class=<span class="s">"com.zaxxer.hikari.HikariDataSource"</span><span class="t">&gt;</span>
+    <span class="t">&lt;property</span> name=<span class="s">"jdbcUrl"</span> value=<span class="s">"jdbc:mysql://..."</span><span class="t">/&gt;</span>
+<span class="t">&lt;/bean&gt;</span>
+<span class="t">&lt;bean</span> id=<span class="s">"txManager"</span> class=<span class="s">"DataSourceTransactionManager"</span><span class="t">&gt;</span>
+    <span class="t">&lt;constructor-arg</span> ref=<span class="s">"dataSource"</span><span class="t">/&gt;</span>
+<span class="t">&lt;/bean&gt;</span>
+<span class="t">&lt;bean</span> id=<span class="s">"jdbcTemplate"</span> class=<span class="s">"JdbcTemplate"</span><span class="t">&gt;</span>
+    <span class="t">&lt;constructor-arg</span> ref=<span class="s">"dataSource"</span><span class="t">/&gt;</span>
+<span class="t">&lt;/bean&gt;</span></div>
+<div class="pain"><strong>❌ 引入一个依赖 = 写一堆配置。</strong>DataSource、TransactionManager、JdbcTemplate——三个 Bean，缺一个都不行。新手引入 HikariCP 之后不知道怎么配，项目起不来。</div>
+</div>
 
-<div class="follow"><strong>追问：</strong>"--debug 启动有什么用？"<br><strong>答：</strong>打印完整的自动配置报告——Positive matches（哪些配置生效了）、Negative matches（哪些被条件注解跳过了、为什么跳过）。排查"为什么我的 Bean 没被创建"的第一步就是看这个报告。</div>
-<div class="reflect"><strong>❓ 自问：</strong>Spring Boot 3.x 在自动装配上有什么变化？<br><strong>答：</strong>从 spring.factories 改为 META-INF/spring/...AutoConfiguration.imports——一个文件一个目的，语义更清晰。同时为 GraalVM native image 做准备。</div>
+<div class="stage"><h2><span class="badge">2014</span> 第1代：spring.factories + @Conditional —— "引入即用"</h2>
+<p>Spring Boot 的核心创新：你引入一个 starter，框架自己知道怎么配置。</p>
+<div class="code"><span class="c">// spring-boot-autoconfigure.jar 里的 spring.factories：</span>
+org.springframework.boot.autoconfigure.<span class="t">EnableAutoConfiguration</span>=\
+  org...<span class="t">DataSourceAutoConfiguration</span>,\
+  org...<span class="t">DataSourceTransactionManagerAutoConfiguration</span>,\
+  org...<span class="t">JdbcTemplateAutoConfiguration</span>
 
-</div><div class="back"><a href="/q22.html">下一题 → Q22 · 自定义 Starter</a></div></div></body></html>
+<span class="c">// 每个自动配置类都有条件注解：</span>
+<span class="a">@Configuration</span>
+<span class="a">@ConditionalOnClass</span>(<span class="t">DataSource</span>.<span class="k">class</span>)           <span class="c">// 类路径有 DataSource 才加载</span>
+<span class="a">@ConditionalOnMissingBean</span>(<span class="t">DataSource</span>.<span class="k">class</span>)   <span class="c">// 用户没手动定义才自动创建</span>
+<span class="k">public class</span> <span class="t">DataSourceAutoConfiguration</span> { ... }</div>
+<div class="gain"><strong>✅ 核心机制：</strong>引入 HikariCP → AutoConfigurationImportSelector 从 spring.factories 拿到 180 个候选配置类 → 逐个检查 @Conditional → DataSourceAutoConfiguration 的 @ConditionalOnClass 满足 → DataSource 自动创建。用户可以随时用 @Bean 覆盖——@ConditionalOnMissingBean 会让自动配置自动退让。</div>
+</div>
+
+<div class="stage"><h2>对比</h2>
+<table>
+<tr><th></th><th>第0代 · XML</th><th>第1代 · 自动装配</th></tr>
+<tr><td>引入 HikariCP 后</td><td>手动写 3 个 Bean 配置</td><td style="color:#2e7d32">自动</td></tr>
+<tr><td>换 MySQL 驱动</td><td>改 XML</td><td style="color:#2e7d32">自动</td></tr>
+<tr><td>用户自定义 DataSource</td><td>直接写</td><td style="color:#2e7d32">@Bean — @ConditionalOnMissingBean 自动退让</td></tr>
+<tr><td>配置出问题</td><td>启动报错（不明确）</td><td style="color:#2e7d32">--debug → 看 Positive/Negative matches</td></tr>
+</table>
+<div class="gain"><strong>核心洞察：</strong>自动装配的本质是<b>"推断"</b>——根据类路径、已有 Bean、配置项、应用类型，推断出用户大概率需要什么。它不是 AI，是一套规则引擎。条件注解就是规则。</div>
+</div>
+
+<div class="back"><a href="/q22.html">下一题 → Q22 · 自定义 Starter</a></div>
+</div></body></html>

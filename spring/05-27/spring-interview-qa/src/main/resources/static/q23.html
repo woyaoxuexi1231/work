@@ -1,20 +1,182 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q23 · 启动流程</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q23 · refresh() 源码级详解</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--orange:#d2991d;--red:#e53e3e}
+*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:900px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}h1{font-size:26px;margin:36px 0 8px;text-align:center}.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}
+.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}
+.stage h2{font-size:17px;margin-bottom:6px}.stage h2 .n{font-size:12px;background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-right:6px;vertical-align:middle}
+.stage .why{background:#fffbe6;border-left:3px solid var(--orange);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}.stage .why strong{color:var(--orange)}
+.stage .what{color:var(--sub);font-size:13px;margin-bottom:6px}
+.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:monospace;font-size:12px;line-height:1.65;overflow-x:auto;margin:8px 0;white-space:pre}
+.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .t{color:#ffa657}.code .f{color:#d2a8ff}.code .s{color:#a5d6ff}.code .n{color:#7ee787}
+.flow{background:#f0f0f0;border-radius:8px;padding:14px 18px;margin:10px 0;font-family:monospace;font-size:12px;line-height:2;text-align:center}
+.flow .hl{color:var(--accent);font-weight:700}
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q23 · 启动流程</b> — SpringApplication.run() 的核心工作。</p></div><div class="chat">
+<div class="wrap">
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">SpringApplication.run() 内部做了哪些核心工作？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble">8 个阶段——<br><br>
-① 创建 SpringApplication → 推断应用类型（SERVLET/REACTIVE/NONE）<br>
-② 准备 Environment → 加载配置源<br>
-③ 创建 ApplicationContext<br>
-④ 准备上下文 → 执行 Initializer<br>
-⑤ 加载 BeanDefinition → 解析 @Configuration<br>
-<b>⑥ refresh() ← Spring IOC 核心：</b>invokeBeanFactoryPostProcessors（解析 @Configuration）→ registerBeanPostProcessors → onRefresh（创建内嵌 Tomcat）→ finishBeanFactoryInitialization（实例化所有单例 Bean）→ finishRefresh<br>
-⑦ 回调 ApplicationRunner / CommandLineRunner<br>
-⑧ 发布 StartedEvent / ReadyEvent<br><br>
-整个 run() 是模板方法模式——骨架固定，每个阶段都可扩展。</div></div>
+<h1>ApplicationContext.refresh() · 源码级详解</h1>
+<p class="sub">12 个步骤，每一步做什么、为什么这么设计、跳过它会出什么问题</p>
 
-<div class="reflect"><strong>❓ 自问：</strong>CommandLineRunner 和 ApplicationRunner 的区别？<br><strong>答：</strong>ApplicationRunner 参数已解析（getOptionNames/getOptionValues），CommandLineRunner 是原始 String[]。需要解析命令行参数的用前者，简单场景用后者。</div>
+<!-- ═══════ 全景 ═══════ -->
+<div class="stage">
+<h2>refresh() 全景——12 步一览</h2>
+<div class="flow">
+<span class="hl">① prepareRefresh()</span>           → 准备：校验配置、初始化 PropertySource<br>
+<span class="hl">② obtainFreshBeanFactory()</span>    → 创建/刷新 BeanFactory<br>
+<span class="hl">③ prepareBeanFactory()</span>        → 给 BeanFactory 塞工具（ClassLoader、SpEL 解析器、Aware 处理器）<br>
+<span class="hl">④ postProcessBeanFactory()</span>    → 留给子类定制的空方法<br>
+<span class="hl">⑤ invokeBeanFactoryPostProcessors()</span> → ★ 调用所有 BFPP — 解析 @Configuration/@Bean<br>
+<span class="hl">⑥ registerBeanPostProcessors()</span> → 注册所有 BPP（此时只是注册，还没调用）<br>
+<span class="hl">⑦ initMessageSource()</span>         → 国际化消息源<br>
+<span class="hl">⑧ initApplicationEventMulticaster()</span> → 事件广播器<br>
+<span class="hl">⑨ onRefresh()</span>                 → Spring Boot 在这里创建内嵌 Tomcat<br>
+<span class="hl">⑩ registerListeners()</span>         → 注册事件监听器<br>
+<span class="hl">⑪ finishBeanFactoryInitialization()</span> → ★ 实例化所有单例 Bean<br>
+<span class="hl">⑫ finishRefresh()</span>             → 启动 WebServer + 发布 ReadyEvent<br>
+</div>
+</div>
 
-</div><div class="back"><a href="/q24.html">下一题 → Q24 · 配置优先级</a></div></div></body></html>
+<!-- ═══════ ① ═══════ -->
+<div class="stage">
+<h2><span class="n">①</span> prepareRefresh() — 开工前检查</h2>
+<div class="what"><b>做什么：</b>设置启动时间、标记 active=true、初始化 PropertySource、校验 required 属性。</div>
+<div class="code"><span class="k">protected void</span> <span class="f">prepareRefresh</span>() {
+    <span class="k">this</span>.startupDate = <span class="t">System</span>.currentTimeMillis();
+    <span class="k">this</span>.closed.set(<span class="k">false</span>);
+    <span class="k">this</span>.active.set(<span class="k">true</span>);
+    initPropertySources();         <span class="c">// 留给子类——比如 Web 环境初始化 ServletContext 属性</span>
+    getEnvironment().validateRequiredProperties(); <span class="c">// 校验 spring.profiles.active 等必须的属性</span>
+}</div>
+<div class="why"><strong>为什么这样设计：</strong>如果连 application.yml 里的必须属性都没配（比如数据库 URL），后面的所有步骤都是白费——Bean 创建到一半发现缺配置再报错，浪费了前面所有的初始化时间。这里做的是 <b>fast-fail</b>——开工前把能检查的都查了。</div>
+</div>
+
+<!-- ═══════ ② ═══════ -->
+<div class="stage">
+<h2><span class="n">②</span> obtainFreshBeanFactory() — 获取/刷新 BeanFactory</h2>
+<div class="what"><b>做什么：</b>如果已有 BeanFactory 就销毁重建；新建一个 DefaultListableBeanFactory；加载所有 BeanDefinition。</div>
+<div class="code"><span class="t">DefaultListableBeanFactory</span> beanFactory = createBeanFactory();
+loadBeanDefinitions(beanFactory);  <span class="c">// 扫描 @Component、解析 @Bean 等 → 注册 BeanDefinition</span></div>
+<div class="why"><strong>为什么这样设计：</strong>BeanFactory 不只是一个 Map——它是整个 IOC 的核心引擎。这一步创建的是一个"空的工厂"——有了骨架，但还没有任何 Bean。加载的 BeanDefinition 只是"蓝图"，不是"成品"。把创建工厂和加载蓝图分开，是为了让后面的步骤可以修改蓝图（BFPP）。</div>
+</div>
+
+<!-- ═══════ ③ ═══════ -->
+<div class="stage">
+<h2><span class="n">③</span> prepareBeanFactory() — 给工厂装工具</h2>
+<div class="what"><b>做什么：</b>设置 ClassLoader、注册 SpEL 解析器、注册 ApplicationContextAwareProcessor（一个 BPP）、忽略一些不应自动注入的接口。</div>
+<div class="code"><span class="c">// 注册 ApplicationContextAwareProcessor —— Context 级别的 Aware 回调全靠它</span>
+beanFactory.addBeanPostProcessor(<span class="k">new</span> <span class="t">ApplicationContextAwareProcessor</span>(<span class="k">this</span>));
+<span class="c">// 告诉 BeanFactory：这些接口不应该被自动注入（它们是容器回调，不是业务依赖）</span>
+beanFactory.ignoreDependencyInterface(<span class="t">ResourceLoaderAware</span>.<span class="k">class</span>);
+<span class="c">// 注册一些常用 Bean 的"现成实例"——比如 applicationContext 本身、environment</span>
+beanFactory.registerResolvableDependency(<span class="t">ApplicationContext</span>.<span class="k">class</span>, <span class="k">this</span>);</div>
+<div class="why"><strong>为什么这样设计：</strong>这些不是"某个特定项目需要的"——是<b>所有 Spring 项目都需要的</b>。ClassLoader、SpEL 解析器、Aware 回调——没有它们，Bean 连最基本的 Spring 能力都用不了。放在 refresh() 的统一流程里，而不是让每个项目自己配，是"约定优于配置"的体现。</div>
+</div>
+
+<!-- ═══════ ④ ═══════ -->
+<div class="stage">
+<h2><span class="n">④</span> postProcessBeanFactory() — 空方法，留给子类</h2>
+<div class="what"><b>做什么：</b>什么都不做。这是一个模板方法——子类（如 Web 环境的 AnnotationConfigServletWebServerApplicationContext）可以覆盖它来添加 Web 特有的配置。</div>
+<div class="why"><strong>为什么这样设计：</strong>模板方法模式。不是所有 ApplicationContext 都一样——Web 环境要注册 ServletContext、Reactive 环境要注册 ReactiveAdapterRegistry。这个空方法让每种 Context 可以插入自己的逻辑，而不影响主流程。</div>
+</div>
+
+<!-- ═══════ ⑤ ═══════ -->
+<div class="stage">
+<h2><span class="n">⑤</span> invokeBeanFactoryPostProcessors() — ★ 解析 @Configuration</h2>
+<div class="what"><b>做什么：</b>调用所有 BeanFactoryPostProcessor。最核心的：ConfigurationClassPostProcessor 解析 @Configuration 类，把 @Bean 方法注册为 BeanDefinition。</div>
+<div class="code"><span class="c">// ★ 核心中的核心：ConfigurationClassPostProcessor.postProcessBeanDefinitionRegistry()</span>
+<span class="c">// 遍历所有 @Configuration 类 → 解析 @Bean、@ComponentScan、@Import、@PropertySource</span>
+<span class="c">// → 为每个 @Bean 方法注册一个 BeanDefinition</span>
+<span class="c">// → 此时，你写的所有 @Bean 才真正被容器"认识"</span>
+
+<span class="c">// 同时还调用 PropertySourcesPlaceholderConfigurer——替换 ${server.port} → 8080</span></div>
+<div class="why"><strong>为什么设计在⑤而不是①：</strong>BFPP 需要操作 BeanFactory（修改 BeanDefinition）。BeanFactory 在②才创建、在③才配置好——所以 BFPP 必须在这之后执行。但必须在⑥之前——因为⑥注册的 BPP 要在 Bean 创建时使用，而 Bean 创建时 BFPP 必须已经完成了所有的 BeanDefinition 修改。</div>
+</div>
+
+<!-- ═══════ ⑥ ═══════ -->
+<div class="stage">
+<h2><span class="n">⑥</span> registerBeanPostProcessors() — 注册 BPP</h2>
+<div class="what"><b>做什么：</b>扫描所有 BeanPostProcessor 类型的 Bean，按 PriorityOrdered → Ordered → 普通 排序，注册到 BeanFactory。但<b>此时只是注册，还没调用</b>——调用发生在⑪每个 Bean 创建时。</div>
+<div class="code"><span class="c">// 注册顺序决定了调用顺序——先注册的先调用</span>
+<span class="c">// PriorityOrdered: ApplicationContextAwareProcessor 等</span>
+<span class="c">// Ordered:       AutowiredAnnotationBeanPostProcessor 等</span>
+<span class="c">// 普通:          AnnotationAwareAspectJAutoProxyCreator 等</span></div>
+<div class="why"><strong>为什么设计在⑥：</strong>BPP 要在 Bean 创建时使用——所以必须在 Bean 创建之前注册好。但必须在 BFPP 之后——因为有些 BPP 本身也需要 BFPP 来注册（比如 @EnableAspectJAutoProxy 注册的 AnnotationAwareAspectJAutoProxyCreator，它的 BeanDefinition 是在⑤里由 ConfigurationClassPostProcessor 解析出来的）。</div>
+</div>
+
+<!-- ═══════ ⑦～⑩ ═══════ -->
+<div class="stage">
+<h2><span class="n">⑦</span>initMessageSource — 国际化</h2>
+<div class="what">如果没有自定义的 MessageSource Bean，就注册一个默认的（读 messages.properties）。国际化消息的解析全靠它。</div>
+<div class="why"><strong>为什么这时候初始化：</strong>后面的 Bean 创建可能需要国际化消息（比如校验错误信息）。必须赶在⑪ Bean 创建之前准备好。</div>
+</div>
+
+<div class="stage">
+<h2><span class="n">⑧</span>initApplicationEventMulticaster — 事件广播器</h2>
+<div class="what">如果没有自定义的，就创建一个 SimpleApplicationEventMulticaster。后面所有的 ApplicationEvent 都通过它广播。</div>
+</div>
+
+<div class="stage">
+<h2><span class="n">⑨</span>onRefresh() — ★ Spring Boot 在这里创建内嵌 Tomcat</h2>
+<div class="what">又是一个模板方法——空的。ServletWebServerApplicationContext 覆盖了它：<b>在这里创建内嵌的 Tomcat/Jetty/Undertow 并启动</b>。</div>
+<div class="code"><span class="c">// ServletWebServerApplicationContext.onRefresh()：</span>
+createWebServer();  <span class="c">// → new Tomcat() → 配置端口、Servlet → tomcat.start()</span></div>
+<div class="why"><strong>为什么这时候创建：</strong>Tomcat 需要访问 Spring 的 Bean（DispatcherServlet 就是一个 Bean）。如果 Bean 还没创建完就启动 Tomcat——请求进来了但 Controller 还没实例化 → 404。所以 Tomcat 的创建在⑨，但<b>真正接收请求是在⑫的 finishRefresh()</b>——那时所有 Bean 都就绪了。</div>
+</div>
+
+<div class="stage">
+<h2><span class="n">⑩</span>registerListeners() — 注册事件监听器</h2>
+<div class="what">扫描所有 ApplicationListener Bean，注册到事件广播器。同时把之前积累的 earlyApplicationEvents 全部广播出去。</div>
+</div>
+
+<!-- ═══════ ⑪ ═══════ -->
+<div class="stage">
+<h2><span class="n">⑪</span> finishBeanFactoryInitialization() — ★ 实例化所有单例 Bean</h2>
+<div class="what">这是整个 refresh() 中最重的一步。调用 <code>beanFactory.preInstantiateSingletons()</code>——遍历所有非懒加载的单例 BeanDefinition，逐个调用 getBean() → createBean() → doCreateBean()。</div>
+<div class="code"><span class="c">// 对每个单例 Bean：</span>
+createBeanInstance()       <span class="c">→ 构造器反射 newInstance()</span>
+populateBean()             <span class="c">→ @Autowired 字段注入</span>
+initializeBean()           <span class="c">→ Aware 回调 → BPP.before → @PostConstruct → BPP.after → AOP 代理</span>
+<span class="c">// 这就是 Q01 讲的完整生命周期</span></div>
+<div class="why"><strong>为什么设计在最后几步：</strong>到这一步时，BFPP 已经完成了 BeanDefinition 的修改（⑤），BPP 已经注册好了（⑥），消息源和事件广播器就绪了（⑦⑧⑩）——<b>创建 Bean 所需的一切基础设施都准备好了。</b>这就是为什么 refresh() 的顺序如此严格——每一步都在为后面铺路。</div>
+</div>
+
+<!-- ═══════ ⑫ ═══════ -->
+<div class="stage">
+<h2><span class="n">⑫</span> finishRefresh() — 收尾：启动 WebServer + 发布事件</h2>
+<div class="what">清除上下文缓存、初始化 LifecycleProcessor、<b>启动 WebServer（开始接收请求）</b>、发布 ContextRefreshedEvent。</div>
+<div class="code"><span class="c">// ServletWebServerApplicationContext.finishRefresh()：</span>
+<span class="k">super</span>.finishRefresh();  <span class="c">// 发布 ContextRefreshedEvent</span>
+<span class="t">WebServer</span> webServer = startWebServer();  <span class="c">// ★ 真正开始监听端口、接收请求</span></div>
+<div class="why"><strong>为什么 WebServer 在⑨创建但在⑫才启动：</strong>⑨创建时 Bean 还没实例化完——Controller 还不存在。⑫启动时所有单例 Bean 都已就绪——DispatcherServlet 可以正常分发请求了。把创建和启动分开，是一种常见的"初始化分离"模式。</div>
+</div>
+
+<!-- ═══════ 为什么是这个顺序 ═══════ -->
+<div class="stage">
+<h2><span class="n">★</span> 为什么是 1→2→3→…→12 这个顺序？</h2>
+<div class="flow" style="line-height:1.8">
+①②③④  <span class="hl">准备工作</span>：环境初始化 → 创建空 BeanFactory → 装工具<br>
+&nbsp;&nbsp;  ↓<br>
+&nbsp; ⑤  <span class="hl">★ 修改蓝图</span>：BFPP 解析 @Configuration，注册 BeanDefinition<br>
+&nbsp;&nbsp;  ↓<br>
+&nbsp; ⑥  <span class="hl">★ 注册拦截器</span>：BPP 就位（但还没调用）<br>
+&nbsp;&nbsp;  ↓<br>
+⑦⑧⑨⑩ <span class="hl">补充设施</span>：国际化、事件广播、WebServer 创建<br>
+&nbsp;&nbsp;  ↓<br>
+&nbsp; ⑪  <span class="hl">★ 创建成品</span>：实例化所有单例 Bean（调用 BPP）<br>
+&nbsp;&nbsp;  ↓<br>
+&nbsp; ⑫  <span class="hl">启动服务</span>：WebServer 开始接收请求<br>
+</div>
+<div class="why" style="margin-top:8px"><strong>核心原则：每一步都在为后面的步骤铺设前提条件。</strong>⑤ 修改 BeanDefinition 必须在 ⑪ 创建 Bean 之前。⑥ 注册 BPP 必须在 ⑪ 使用 BPP 之前。⑨ 创建 Tomcat 必须在 ⑪ Controller Bean 就绪之前（否则启动时没 Controller）。⑫ 启动 Tomcat 必须在 ⑪ 之后（否则请求进来 Controller 还没实例化）。</div>
+</div>
+
+<div class="back"><a href="/q24.html">下一题 → Q24 · 配置优先级</a></div>
+</div></body></html>
