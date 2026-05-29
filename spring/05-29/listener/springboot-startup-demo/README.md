@@ -75,3 +75,81 @@ src/main/java/com/example/startupdemo/
 ```
 
 > 注：8 组内多个 Runner 之间通过 `@Order` 排序；5-8 之间时间差极小（毫秒级），但在面试中应当指出确实存在执行顺序的先后。
+
+---
+
+## 附：自定义 Banner
+
+Spring Boot 启动时那个大号 ASCII 艺术字，有 4 种方式自定义。
+
+### 方式一：`banner.txt` 文件（最常用）
+
+把文件放在 `src/main/resources/banner.txt`，Spring Boot 自动加载。
+
+**支持的占位符：**
+
+| 占位符 | 说明 |
+|--------|------|
+| `${spring-boot.version}` | Spring Boot 版本号 |
+| `${application.version}` | 应用版本（取自 MANIFEST.MF） |
+| `${application.title}` | 应用标题 |
+| `${application.formatted-version}` | 格式化版本号 |
+| `${java.version}` | Java 版本 |
+| `${AnsiColor.BRIGHT_YELLOW}` | ANSI 颜色（支持 RED/GREEN/YELLOW/BLUE/...） |
+| `${AnsiBackground.*}` | ANSI 背景色 |
+| `${AnsiStyle.BOLD}` | ANSI 样式（BOLD/ITALIC/...） |
+
+示例：
+
+```text
+${AnsiColor.BRIGHT_GREEN}
+   _____          _   _
+  / ____|        | | (_)
+ | (___     ___  | |  _   _ __
+  \___ \   / _ \ | | | | | '_ \
+  ____) | |  __/ | | | | | | | |
+ |_____/   \___| |_| |_| |_| |_|
+
+${AnsiColor.DEFAULT}
+ :: ${application.title:Demo} :: v${application.version:?}
+```
+
+### 方式二：指定路径
+
+```properties
+# 文本 Banner
+spring.banner.location=classpath:my-banner.txt
+
+# 图片转 ASCII Banner
+spring.banner.image.location=classpath:banner.png
+```
+
+图片 Banner 支持 jpg / png / gif，框架自动转成灰度 ASCII。
+
+### 方式三：程序式 Banner（Java 代码）
+
+```java
+SpringApplication app = new SpringApplication(DemoApplication.class);
+app.setBanner((environment, sourceClass, out) -> {
+    out.println("  ╔══════════════════════╗");
+    out.println("  ║   自定义 Banner     ║");
+    out.println("  ╚══════════════════════╝");
+});
+app.run(args);
+```
+
+**优先级：** 程序式 > `banner.txt` > Spring Boot 默认 Banner
+
+### 方式四：关闭 Banner
+
+```properties
+spring.main.banner-mode=off
+```
+
+或代码：`app.setBannerMode(Banner.Mode.OFF);`
+
+### 面试回答要点
+
+- Banner 本质是在 `SpringApplication.run()` 中、`ApplicationContext` 刷新**之前**打印的——它不属于"启动后执行"，而是"启动时装饰"
+- 文件式自动化（`banner.txt`）基于 `BannerPrinter` 在 `SpringApplication` 启动流程的第 2-3 步触发
+- 如果要动态 Banner（如读取数据库），用程序式方式 + 配置文件中的 `spring.banner.location` 置空
