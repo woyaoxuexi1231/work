@@ -1,13 +1,188 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q17 · 参数绑定</title>
-<style>:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f}*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}.wrap{max-width:720px;margin:0 auto;padding:0 16px}.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}.topbar .wrap{display:flex;align-items:center;justify-content:space-between}.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.chat{padding:20px 0}.msg{display:flex;margin-bottom:14px}.msg.left{justify-content:flex-start}.msg.right{justify-content:flex-end}.msg .avatar{width:36px;height:36px;border-radius:4px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 10px}.msg.left .avatar{background:#dde;color:#555}.msg.right .avatar{background:var(--accent);color:#fff}.msg .bubble{max-width:84%;padding:10px 14px;border-radius:8px;font-size:14px;line-height:1.7}.msg.left .bubble{background:#fff;border-top-left-radius:2px}.msg.right .bubble{background:#95ec69;border-top-right-radius:2px}.bubble code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:3px;font-size:13px;font-family:monospace}.qinfo{background:#fff;border-radius:8px;padding:14px 18px;margin-bottom:20px}.follow{background:#fffbe6;border-left:3px solid #f0c040;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.reflect{background:#f0f7ff;border-left:3px solid #5b9bd5;padding:10px 14px;margin:8px 0;border-radius:0 8px 8px 0;font-size:13px}.follow strong{color:#b8860b}.reflect strong{color:#2a6496}.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}</style></head><body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q17 · 参数绑定演化史</title>
+<style>
+:root{--bg:#ededed;--text:#111;--sub:#666;--accent:#6db33f;--orange:#d2991d;--red:#e53e3e}
+*{margin:0;padding:0}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.wrap{max-width:800px;margin:0 auto;padding:0 16px}
+.topbar{background:#1a1a2e;color:#fff;padding:12px 0;position:sticky;top:0;z-index:10}
+.topbar .wrap{display:flex;align-items:center;justify-content:space-between}
+.topbar .logo{font-weight:700;font-size:16px}.topbar .logo span{color:var(--accent)}
+.topbar a{color:#adb5bd;text-decoration:none;font-size:13px}.topbar a:hover{color:#fff}
+h1{font-size:26px;margin:36px 0 8px;text-align:center}
+.sub{text-align:center;color:var(--sub);margin-bottom:28px;font-size:14px}
+
+.stage{background:#fff;border-radius:12px;padding:22px 26px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:5px solid var(--accent)}
+.stage h2{font-size:17px;margin-bottom:10px}.stage h2 .badge{font-size:11px;padding:2px 8px;border-radius:8px;color:#fff;background:var(--accent);margin-right:6px;vertical-align:middle}
+.pain{background:#fff5f5;border-left:3px solid var(--red);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}
+.gain{background:#f0fff4;border-left:3px solid var(--accent);padding:8px 12px;margin:8px 0;font-size:13px;border-radius:0 6px 6px 0}
+.pain strong{color:var(--red)}.gain strong{color:#2e7d32}
+.code{background:#1a1a2e;color:#e0e0e0;padding:12px 16px;border-radius:6px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin:8px 0;white-space:pre}
+.code .k{color:#ff7b72}.code .c{color:#8b949e}.code .s{color:#a5d6ff}.code .t{color:#ffa657}.code .f{color:#d2a8ff}.code .a{color:#ffa657}
+
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th{background:#f5f5f5;text-align:left;padding:8px 12px;border-bottom:2px solid #ddd;font-weight:600}
+td{padding:8px 12px;border-bottom:1px solid #eee;color:var(--sub);vertical-align:top}td code{color:var(--accent);font-size:12px}
+
+.flow{text-align:center;padding:10px;background:#f8f8f8;border-radius:8px;margin:10px 0;font-family:monospace;font-size:12px;line-height:2.2;color:var(--sub)}
+.flow .hit{color:var(--accent);font-weight:700}.flow .miss{color:var(--red)}.flow .label{color:var(--orange);font-weight:700}
+
+.note{background:#fffbe6;border-left:3px solid var(--orange);padding:10px 14px;margin:10px 0;font-size:13px;border-radius:0 6px 6px 0}.note strong{color:var(--orange)}
+.tip{background:#f0fff4;border-left:3px solid var(--accent);padding:10px 14px;margin:10px 0;font-size:13px;border-radius:0 6px 6px 0}.tip strong{color:#2e7d32}
+
+.back{text-align:center;padding:32px 0;font-size:13px}.back a{color:var(--accent)}
+</style>
+</head>
+<body>
 <header class="topbar"><div class="wrap"><div class="logo"><a href="/" style="color:#fff;text-decoration:none">Spring 面试 <span>24 问</span></a></div><nav><a href="/">← 索引</a></nav></div></header>
-<div class="wrap"><div class="qinfo"><p>📋 <b>Q17 · 参数绑定与转换</b> — HttpMessageConverter 的设计。</p></div><div class="chat">
+<div class="wrap">
 
-<div class="msg left"><div class="avatar">面</div><div class="bubble">@RequestParam、@RequestBody、@PathVariable 的底层实现有何不同？</div></div>
-<div class="msg right"><div class="avatar">我</div><div class="bubble"><b>@RequestParam 和 @PathVariable 不用 HttpMessageConverter。</b>它们直接从 request.getParameter() 或 URL 模板提取字符串，然后用 TypeConverter 做 String→Integer 的简单转换。<br><br>
-<b>只有 @RequestBody 走 HttpMessageConverter。</b>因为它要解析 HTTP Body 的字节流——可能是 JSON、XML、Form 数据。Spring 根据 Content-Type 遍历 Converter 链：第一个 canRead() 返回 true 的就用来反序列化。<br><br>
-FormHttpMessageConverter 处理表单（application/x-www-form-urlencoded），MappingJackson2HttpMessageConverter 处理 JSON。<b>新增格式（如 Protobuf）只需加一个 Converter——Controller 代码不用改。</b></div></div>
+<h1>参数绑定 · 演化史</h1>
+<p class="sub">从手写 getParameter + 手动 JSON 解析，到 @RequestBody 一行搞定</p>
 
-<div class="reflect"><strong>❓ 自问：</strong>为什么 URL 参数不用 Converter 链？<br><strong>答：</strong>URL 参数是简单 key-value 字符串——TypeConverter 足够。Body 是结构化数据，需要 Converter 链。不用一种方式处理所有——这是单一职责。</div>
+<!-- ═══════ 第1代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">1998</span> 第1代：Servlet 手写一切</h2>
 
-</div><div class="back"><a href="/q18.html">下一题 → Q18 · 拦截器 vs 过滤器</a></div></div></body></html>
+<p><b>读取查询参数：</b></p>
+<div class="code"><span class="c">// GET /user?id=1</span>
+<span class="k">String</span> idStr = req.getParameter(<span class="s">"id"</span>);       <span class="c">// 永远是 String</span>
+<span class="k">if</span> (idStr == <span class="k">null</span>) { resp.sendError(400); <span class="k">return</span>; }  <span class="c">// 手动判空</span>
+<span class="k">Long</span> id = <span class="k">Long</span>.parseLong(idStr);              <span class="c">// 手动转类型</span></div>
+
+<p><b>读取请求体（JSON）：</b></p>
+<div class="code"><span class="c">// POST /user   Body: {"id":1,"name":"Alice"}   ← body 一直能用！只是手写很麻烦</span>
+<span class="k">BufferedReader</span> reader = req.getReader();
+<span class="k">StringBuilder</span> body = <span class="k">new StringBuilder</span>();
+<span class="k">String</span> line;
+<span class="k">while</span> ((line = reader.readLine()) != <span class="k">null</span>) { body.append(line); }  <span class="c">// 手动读流</span>
+<span class="k">User</span> user = objectMapper.readValue(body.toString(), <span class="k">User</span>.class);  <span class="c">// 手动调 Jackson</span></div>
+
+<div class="pain"><strong>❌ 痛点：</strong>body 传参一直都能用——<b>问题不在"能不能"，在"每次都要写 10 行"</b>。4 个查询参数 + 1 个 body = 20 行样板代码。Controller 里 80% 的代码和业务无关。</div>
+</div>
+
+<!-- ═══════ 第2代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">2009</span> 第2代：@RequestParam + @PathVariable 注解驱动</h2>
+
+<p><b>Spring MVC 3.0 解决的：</b></p>
+<table>
+<tr><th>原来（Servlet）</th><th>现在（@RequestParam）</th></tr>
+<tr><td><code>String idStr = req.getParameter("id");<br>if (idStr == null) ...<br>Long id = Long.parseLong(idStr);</code></td><td><code>@RequestParam Long id</code></td></tr>
+<tr><td><code>String pageStr = req.getParameter("page");<br>int page = pageStr != null ? Integer.parseInt(pageStr) : 1;</code></td><td><code>@RequestParam(defaultValue = "1") int page</code></td></tr>
+</table>
+
+<div class="gain"><strong>✅ 进步：</strong>查询参数 + URL 路径参数的样板代码被消灭了。自动类型转换（TypeConverter）、自动判空（required=true）、默认值（defaultValue）——原来 12 行变 4 个注解。</div>
+<div class="pain"><strong>⚠️ 还没解决的：</strong>body 还是要手写。@RequestParam 只能读查询参数和表单——读不了 JSON body。</div>
+</div>
+
+<!-- ═══════ 第3代 ═══════ -->
+<div class="stage">
+<h2><span class="badge">现代</span> 第3代：@RequestBody + HttpMessageConverter 链</h2>
+
+<div class="code"><span class="c">// 原来：10 行手动读流 + 调 Jackson</span>
+<span class="c">// 现在：1 行</span>
+<span class="k">public</span> User <span class="f">createUser</span>(<span class="a">@RequestBody</span> User user) { ... }</div>
+
+<div class="gain"><strong>✅ @RequestBody 的核心价值不是"能读 body"——Servlet 一直能读。</strong>它的价值是：策略模式（根据 Content-Type 自动选 Converter，JSON/XML/Protobuf 自动切换），零样板代码，可扩展（加一种新格式只需加一个 Converter——Controller 代码不用改）。</div>
+</div>
+
+<!-- ═══════ 三代对比 ═══════ -->
+<div class="stage">
+<h2>三代对比</h2>
+<table>
+<tr><th></th><th>第1代 · Servlet</th><th>第2代 · @RequestParam</th><th>第3代 · @RequestBody</th></tr>
+<tr><td>GET 查询参数</td><td>getParameter + parseLong 手动</td><td style="color:#2e7d32">✅ 自动</td><td style="color:#2e7d32">✅ 自动</td></tr>
+<tr><td>URL 路径参数</td><td>自己从 URI 手动截取</td><td style="color:#2e7d32">✅ @PathVariable</td><td style="color:#2e7d32">✅ @PathVariable</td></tr>
+<tr><td>POST JSON body</td><td>readLine + 手动调 Jackson</td><td>❌ 不支持</td><td style="color:#2e7d32">✅ @RequestBody 一行</td></tr>
+<tr><td>复杂对象映射</td><td>拆成 N 个 getParameter</td><td>拆成 N 个 @RequestParam</td><td style="color:#2e7d32">✅ 整个 POJO 自动映射</td></tr>
+<tr><td>代码量（4 参数 + 1 body）</td><td style="color:var(--red)">~20 行</td><td style="color:var(--red)">~12 行（body 还是手写）</td><td style="color:#2e7d32">~5 行</td></tr>
+</table>
+</div>
+
+<!-- ═══════ HttpMessageConverter 详解 ═══════ -->
+<div class="stage">
+<h2><span class="badge">★</span> HttpMessageConverter 详解</h2>
+</div>
+
+<div class="stage">
+<h2>它是什么？——一个策略接口</h2>
+<div class="code"><span class="k">public interface</span> <span class="t">HttpMessageConverter</span>&lt;<span class="t">T</span>&gt; {
+    <span class="k">boolean</span> <span class="f">canRead</span>(<span class="t">Class</span>&lt;?&gt; clazz, <span class="t">MediaType</span> mediaType);   <span class="c">// 请求：我能处理吗？</span>
+    <span class="k">boolean</span> <span class="f">canWrite</span>(<span class="t">Class</span>&lt;?&gt; clazz, <span class="t">MediaType</span> mediaType);  <span class="c">// 响应：我能处理吗？</span>
+    <span class="t">T</span> <span class="f">read</span>(...);     <span class="c">// HTTP Body 字节流 → Java 对象（反序列化）</span>
+    <span class="k">void</span> <span class="f">write</span>(...);   <span class="c">// Java 对象 → HTTP Body 字节流（序列化）</span>
+}</div>
+<p style="font-size:13px;color:var(--sub)">它不负责判断<b>什么时候用它</b>——那是 ArgumentResolver 的工作。它只负责：① 告诉上层"我能处理吗"，② 如果能，就把字节流变成对象（或反过来）。</p>
+</div>
+
+<div class="stage">
+<h2>Spring Boot 配了哪些？</h2>
+<table>
+<tr><th>Converter</th><th>支持的 Content-Type</th><th>能读写</th><th>何时工作</th></tr>
+<tr><td>StringHttpMessageConverter</td><td>text/plain, */*</td><td>String</td><td>Content-Type: text/plain 时</td></tr>
+<tr><td><b>FormHttpMessageConverter</b></td><td><b>application/x-www-form-urlencoded</b></td><td><b>MultiValueMap</b></td><td><b>HTML 表单提交（不是 JSON！不是 multipart！）</b></td></tr>
+<tr><td><b>MappingJackson2HttpMessageConverter</b></td><td><b>application/json</b></td><td><b>任意 POJO</b></td><td><b>前后端分离 REST API — 99% 场景</b></td></tr>
+<tr><td>MappingJackson2XmlHttpMessageConverter</td><td>application/xml</td><td>POJO</td><td>有 jackson-dataformat-xml 依赖时</td></tr>
+<tr><td>ByteArrayHttpMessageConverter</td><td>*/*</td><td>byte[]</td><td>文件下载/二进制</td></tr>
+<tr><td>ResourceHttpMessageConverter</td><td>*/*</td><td>Resource</td><td>静态资源返回</td></tr>
+</table>
+<div class="tip"><strong>💡 MultipartFile 不走 HttpMessageConverter。</strong>它走 MultipartResolver——一个完全不同的机制，在 DispatcherServlet 之前就处理了。</div>
+</div>
+
+<div class="stage">
+<h2>Converter 链是怎么选的？——按注册顺序遍历，先到先得</h2>
+<p style="font-size:13px;color:var(--sub);margin-bottom:8px">请求方向（@RequestBody 反序列化）：</p>
+<div class="flow"><span class="label">POST /users  Content-Type: application/json  Body: {"id":1}</span><br><br>
+<span>for (converter : converters)</span><br>
+  ├─ <span class="miss">StringHttpMessageConverter.canRead(User, json)  → ❌ false</span><br>
+  ├─ <span class="miss">FormHttpMessageConverter.canRead(User, json)  → ❌ false</span><br>
+  ├─ <span class="hit">MappingJackson2HttpMessageConverter.canRead(User, json) → ✅ true!</span><br>
+  └─ → <span class="hit">read() → objectMapper.readValue(body, User.class)</span></div>
+
+<p style="font-size:13px;color:var(--sub);margin:8px 0">响应方向（@ResponseBody 序列化）：</p>
+<div class="flow"><span class="label">Controller 返回 User{id:1}  Accept: application/json</span><br><br>
+<span>for (converter : converters)</span><br>
+  ├─ <span class="miss">StringHttpMessageConverter.canWrite(User, json) → ❌ false</span><br>
+  ├─ <span class="hit">MappingJackson2HttpMessageConverter.canWrite(User, json) → ✅ true!</span><br>
+  └─ → <span class="hit">write() → objectMapper.writeValue(out, user) → {"id":1}</span></div>
+</div>
+
+<div class="stage">
+<h2>FormHttpMessageConverter 什么时候工作？</h2>
+<div class="note"><strong>⚠️ 它处理的是老式 HTML 表单（application/x-www-form-urlencoded），不是 multipart/form-data（那个是 MultipartResolver 的活）。</strong></div>
+<div class="code"><span class="c">// 传统 HTML 表单提交（没有文件）：</span>
+<span class="c">// &lt;form action="/login" method="POST"&gt;</span>
+<span class="c">//   &lt;input name="username"&gt; &lt;input name="password"&gt;</span>
+<span class="c">// &lt;/form&gt;</span>
+<span class="c">// → POST /login  Content-Type: application/x-www-form-urlencoded</span>
+<span class="c">// → Body: username=alice&amp;password=123456</span>
+<span class="c">// → canRead(MultiValueMap, "application/x-www-form-urlencoded") → true</span>
+<span class="c">// → 把 key=value&amp;key=value 解析成 MultiValueMap</span></div>
+<p style="font-size:13px;color:var(--sub)">前后端分离项目基本用不到——前端发的是 application/json。</p>
+</div>
+
+<div class="stage">
+<h2>MappingJackson2HttpMessageConverter 什么时候工作？</h2>
+<p>前后端分离 99% 的场景。触发条件——请求 Content-Type = application/json；响应返回 POJO（非 String/byte[]）。</p>
+<div class="code"><span class="a">@PostMapping</span>(<span class="s">"/users"</span>)
+<span class="k">public</span> User <span class="f">createUser</span>(<span class="a">@RequestBody</span> User user) {   <span class="c">// ← MappingJackson2 读 JSON → User</span>
+    <span class="k">return</span> userService.save(user);                  <span class="c">// ← MappingJackson2 写 User → JSON</span>
+}</div>
+</div>
+
+<div class="stage">
+<h2>Converter 链 vs TypeConverter</h2>
+<table>
+<tr><th></th><th>TypeConverter</th><th>HttpMessageConverter</th></tr>
+<tr><td>数据来源</td><td>URL 查询参数 / 路径变量 — 简单字符串</td><td>HTTP Body 字节流 — 结构化数据</td></tr>
+<tr><td>处理什么</td><td>String → Integer/Long/Boolean</td><td>JSON/XML/Protobuf → POJO</td></tr>
+<tr><td>谁用</td><td>@RequestParam / @PathVariable 的 ArgumentResolver</td><td>@RequestBody / @ResponseBody 的 ArgumentResolver / ReturnValueHandler</td></tr>
+<tr><td>举例</td><td>"25" → 25 (Integer)</td><td>{"name":"Alice","age":25} → User{name="Alice", age=25}</td></tr>
+</table>
+<div class="tip"><strong>💡 一句话区分：</strong>TypeConverter 处理"25 转成 int"（值级别）。HttpMessageConverter 处理"一段 JSON 转成一个对象"（结构级别）。各管各的，不是竞争关系。</div>
+</div>
+
+<div class="back"><a href="/q18.html">下一题 → Q18 · 拦截器 vs 过滤器</a></div>
+</div></body></html>
