@@ -154,7 +154,9 @@ public class UserController {
             group = "demo",
             check = false,
             serialization = "kryo",
-            loadbalance = LoadbalanceRules.LEAST_ACTIVE
+            loadbalance = LoadbalanceRules.ROUND_ROBIN,
+            timeout = 4000, // 请求超过3秒进行重试
+            retries = 2 // 重试2次
     )
     private UserService userService;
 

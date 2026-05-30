@@ -148,7 +148,6 @@ import org.springframework.stereotype.Component;
  */
 
 // ========== 注解仅保留最核心参数，完整参数表见上方 Javadoc ==========
-// @DubboService(version = "1.0.0", group = "demo")
 @DubboService(version = "1.0.0", group = "demo")
 @Component
 public class UserServiceImpl implements UserService {
@@ -162,6 +161,7 @@ public class UserServiceImpl implements UserService {
     public User getUserById(Long id) {
         log.info(">>> [Provider] getUserById({})", id);
         User user = new User(id, "用户" + id + "-" + port, "user" + id + "@example.com");
+        // try { Thread.sleep(3100); } catch (InterruptedException e) {}
         log.info("<<< [Provider] 返回: {}", user);
         return user;
     }
