@@ -2,6 +2,7 @@ package com.example.dubbo.demo.consumer.controller;
 
 import com.example.dubbo.demo.api.model.User;
 import com.example.dubbo.demo.api.service.UserService;
+import org.apache.dubbo.common.constants.LoadbalanceRules;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -148,7 +149,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     // ========== 注解仅保留最核心参数，完整参数表见上方 Javadoc ==========
-    @DubboReference(version = "1.0.0", group = "demo", check = false, serialization = "kryo")
+    @DubboReference(
+            version = "1.0.0",
+            group = "demo",
+            check = false,
+            serialization = "kryo",
+            loadbalance = LoadbalanceRules.LEAST_ACTIVE
+    )
     private UserService userService;
 
     @GetMapping("/user/{id}")

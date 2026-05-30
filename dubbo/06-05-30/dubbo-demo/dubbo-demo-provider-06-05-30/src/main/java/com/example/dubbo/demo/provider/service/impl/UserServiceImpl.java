@@ -5,6 +5,7 @@ import com.example.dubbo.demo.api.service.UserService;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -154,10 +155,13 @@ public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
+    @Value("${dubbo.protocols.dubbo.port}")
+    private String port;
+
     @Override
     public User getUserById(Long id) {
         log.info(">>> [Provider] getUserById({})", id);
-        User user = new User(id, "用户" + id, "user" + id + "@example.com");
+        User user = new User(id, "用户" + id + "-" + port, "user" + id + "@example.com");
         log.info("<<< [Provider] 返回: {}", user);
         return user;
     }
