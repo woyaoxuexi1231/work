@@ -77,10 +77,11 @@
 <summary>参考</summary>
 
 ```sql
-SELECT u.name, t.spent,
-    ROW_NUMBER() OVER (ORDER BY t.spent DESC) AS rn,
-    RANK()       OVER (ORDER BY t.spent DESC) AS rk,
-    DENSE_RANK() OVER (ORDER BY t.spent DESC) AS dr
+SELECT u.name                                         AS `用户名`,
+       t.spent                                        AS `消费总额`,
+       ROW_NUMBER() OVER (ORDER BY t.spent DESC)       AS `不重复排名`,
+       RANK()       OVER (ORDER BY t.spent DESC)       AS `并列跳号排名`,
+       DENSE_RANK() OVER (ORDER BY t.spent DESC)       AS `并列不跳号排名`
 FROM (
     SELECT user_id, SUM(pay_amount) AS spent
     FROM orders
@@ -101,13 +102,16 @@ LIMIT 30;
 <summary>参考</summary>
 
 ```sql
-SELECT name, cur, prev, pct
+SELECT name   AS `用户名`,
+       cur    AS `这笔金额`,
+       prev   AS `上一笔金额`,
+       pct    AS `涨幅百分比`
 FROM (
-    SELECT u.name, o.id,
-        o.pay_amount AS cur,
-        LAG(o.pay_amount) OVER (PARTITION BY o.user_id ORDER BY o.created_at) AS prev,
-        ROUND((o.pay_amount - LAG(o.pay_amount) OVER (PARTITION BY o.user_id ORDER BY o.created_at))
-              / NULLIF(LAG(o.pay_amount) OVER (PARTITION BY o.user_id ORDER BY o.created_at), 0) * 100, 1) AS pct
+    SELECT u.name,
+           o.pay_amount AS cur,
+           LAG(o.pay_amount) OVER (PARTITION BY o.user_id ORDER BY o.created_at) AS prev,
+           ROUND((o.pay_amount - LAG(o.pay_amount) OVER (PARTITION BY o.user_id ORDER BY o.created_at))
+                 / NULLIF(LAG(o.pay_amount) OVER (PARTITION BY o.user_id ORDER BY o.created_at), 0) * 100, 1) AS pct
     FROM orders o JOIN users u ON o.user_id = u.id
     WHERE o.status NOT IN ('pending', 'cancelled')
 ) t
