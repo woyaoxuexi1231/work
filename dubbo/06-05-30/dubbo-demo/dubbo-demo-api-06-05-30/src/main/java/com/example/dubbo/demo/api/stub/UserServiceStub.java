@@ -1,4 +1,4 @@
-package com.example.dubbo.demo.consumer.stub;
+package com.example.dubbo.demo.api.stub;
 
 import com.example.dubbo.demo.api.model.User;
 import com.example.dubbo.demo.api.service.UserService;

@@ -2,7 +2,6 @@ package com.example.dubbo.demo.consumer.controller;
 
 import com.example.dubbo.demo.api.model.User;
 import com.example.dubbo.demo.api.service.UserService;
-import com.example.dubbo.demo.consumer.stub.UserServiceStub;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,7 +40,7 @@ public class StubDemoController {
     /**
      * 带本地存根的 Dubbo 引用。
      *
-     * <p>{@code stub = "com.example.dubbo.demo.consumer.stub.UserServiceStub"}
+     * <p>{@code stub = "com.example.dubbo.demo.api.stub.UserServiceStub"}
      * 告诉 Dubbo：在生成 RPC 代理之前，先用 UserServiceStub 包装一层。
      * Consumer 端实际注入的 Bean 是 Stub 实例，不是 RPC 代理。
      * Stub 内部持有 remoteProxy 字段，需要远程调用时再调它。</p>
@@ -50,7 +49,7 @@ public class StubDemoController {
             version = "1.0.0",
             group = "demo",
             check = false,
-            stub = "com.example.dubbo.demo.consumer.stub.UserServiceStub"
+            stub = "com.example.dubbo.demo.api.stub.UserServiceStub"
     )
     private UserService userService;
 
