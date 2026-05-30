@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: dubbo-demo-provider
+
+dubbo:
+  scan:
+    base-packages: com.example.dubbo.demo.provider.service.impl
+  application:
+    name: dubbo-demo-provider
+  registry:
+    address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
+    check: false
+  protocol:
+    name: dubbo
+    port: 20880
+
+logging:
+  level:
+    com.example.dubbo.demo: DEBUG

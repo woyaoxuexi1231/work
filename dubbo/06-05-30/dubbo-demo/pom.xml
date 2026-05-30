@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ================================================================
+         父工程 — Dubbo 核心概念与架构演示项目
+         模块划分：
+           - dubbo-demo-api      : 共享服务接口 & 领域模型（POJO）
+           - dubbo-demo-provider : 服务提供者（Provider）启动与实现
+           - dubbo-demo-consumer : 服务消费者（Consumer）启动与调用
+         技术栈：Dubbo 2.7.x + Spring Boot 2.7.x + JDK 1.8 + Nacos 注册中心
+
+         设计原则：父 POM 仅管理版本，不强制注入依赖。
+         每个子模块显式声明自己所需的依赖，避免"API 模块被迫引入 Web 容器"等问题。
+    ================================================================ -->
+    <groupId>com.example.dubbo.demo</groupId>
+    <artifactId>dubbo-demo-parent-06-05-30</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>Dubbo-06-05-30</name>
+    <description>Apache Dubbo 核心概念与架构演示项目（父工程）</description>
+
+    <modules>
+        <module>dubbo-demo-api-06-05-30</module>
+        <module>dubbo-demo-provider-06-05-30</module>
+        <module>dubbo-demo-consumer-06-05-30</module>
+    </modules>
+
+    <!-- ==================== 统一版本管理 ==================== -->
+    <properties>
+        <java.version>1.8</java.version>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- 框架版本 -->
+        <spring-boot.version>2.7.18</spring-boot.version>
+        <dubbo.version>2.7.23</dubbo.version>
+
+        <!-- 注册中心客户端（Nacos） -->
+        <nacos-client.version>1.4.1</nacos-client.version>
+    </properties>
+
+    <!-- ==================== 依赖管理（仅声明版本，子模块按需引入） ==================== -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM — 统一管理所有 Spring 依赖版本 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- API 模块（子模块间引用） -->
+            <dependency>
+                <groupId>com.example.dubbo.demo</groupId>
+                <artifactId>dubbo-demo-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Dubbo Spring Boot Starter — 核心 RPC + Spring 集成 -->
+            <dependency>
+                <groupId>org.apache.dubbo</groupId>
+                <artifactId>dubbo-spring-boot-starter</artifactId>
+                <version>${dubbo.version}</version>
+            </dependency>
+
+            <!-- Nacos 注册中心客户端（底层 HTTP/SDK 通信） -->
+            <dependency>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-client</artifactId>
+                <version>${nacos-client.version}</version>
+            </dependency>
+
+            <!-- Dubbo → Nacos 注册中心适配器 -->
+            <dependency>
+                <groupId>org.apache.dubbo</groupId>
+                <artifactId>dubbo-registry-nacos</artifactId>
+                <version>${dubbo.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!--
+        注意：父 POM 不在 <dependencies> 中声明任何依赖！
+        每个子模块根据自己的角色显式引入所需依赖：
+          - API  模块：无框架依赖，纯 POJO + 接口
+          - Provider 模块：dubbo-starter + nacos-client + nacos-registry + spring-boot-starter（含 logback 日志）
+          - Consumer 模块：dubbo-starter + nacos-client + nacos-registry + spring-boot-starter-web（含 logback 日志 + Spring MVC）
+    -->
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

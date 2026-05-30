@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Consumer 模块 — 服务消费者
+        职责：从 Nacos 发现 Provider → 生成 RPC 代理 → 通过 Spring MVC 暴露 HTTP 端点
+        对应 Dubbo 五大角色中的 Consumer
+    -->
+    <parent>
+        <groupId>com.example.dubbo.demo</groupId>
+        <artifactId>dubbo-demo-parent-06-05-30</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>dubbo-demo-consumer-06-05-30</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Dubbo Demo Consumer</name>
+    <description>服务消费者 — 引用 UserService / OrderService 并通过 Spring MVC 暴露 HTTP 端点</description>
+
+    <dependencies>
+        <!-- ======= 共享契约 ======= -->
+        <dependency>
+            <groupId>com.example.dubbo.demo</groupId>
+            <artifactId>dubbo-demo-api</artifactId>
+        </dependency>
+
+        <!-- ======= Dubbo RPC 核心（含 Spring 集成） ======= -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- ======= Nacos 注册中心（Dubbo 适配器，自动引入兼容的 nacos-client） ======= -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-registry-nacos</artifactId>
+        </dependency>
+
+        <!-- ======= Spring Boot Web（含 logback 日志 + Spring MVC） ======= -->
+        <!--
+            spring-boot-starter-web 包含:
+            - spring-boot-starter（含 logback-classic + slf4j）
+            - spring-webmvc（REST Controller）
+            - 嵌入式 Tomcat
+            Consumer 需要 Web 容器来接收外部 HTTP 请求并转发到 Dubbo RPC
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+</project>

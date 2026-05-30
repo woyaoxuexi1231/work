@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: dubbo-demo-consumer
+
+server:
+  port: 8090
+
+dubbo:
+  application:
+    name: dubbo-demo-consumer
+  registry:
+    address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
+    check: false
+  consumer:
+    check: false
+
+logging:
+  level:
+    com.example.dubbo.demo: DEBUG

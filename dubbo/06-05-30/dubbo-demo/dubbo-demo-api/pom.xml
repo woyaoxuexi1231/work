@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        API 模块 — 仅包含服务接口与领域模型（POJO）
+        本模块是 Provider 和 Consumer 之间的"契约层"，
+        只定义接口和 POJO，不引入任何框架依赖。
+
+        因为父 POM 不在 <dependencies> 中注入任何依赖，
+        本模块可以保持零外部依赖的纯净状态。
+    -->
+    <parent>
+        <groupId>com.example.dubbo.demo</groupId>
+        <artifactId>dubbo-demo-parent-06-05-30</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>dubbo-demo-api-06-05-30</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Dubbo Demo API</name>
+    <description>共享服务接口 领域模型（纯 POJO，零框架依赖）</description>
+
+    <!--
+        API 模块不需要任何依赖 — 只有接口定义和 Serializable POJO。
+        Dubbo 的 @DubboService / @DubboReference 等注解在 Provider/Consumer 模块中使用，
+        不会出现在这里。
+    -->
+</project>
