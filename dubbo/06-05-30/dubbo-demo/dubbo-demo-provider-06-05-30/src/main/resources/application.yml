@@ -15,9 +15,17 @@ dubbo:
     address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
     check: false
     timeout: 60000
-  protocol:
-    name: dubbo
-    port: 20880
+  protocols:
+    dubbo:
+      name: dubbo
+      port: 20880
+    tri:
+      name: tri
+      port: 50051
+    rest:
+      name: rest
+      port: 8081
+      server: netty
 
 logging:
   level:
