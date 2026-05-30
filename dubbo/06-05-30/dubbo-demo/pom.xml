@@ -41,8 +41,10 @@
         <spring-boot.version>2.7.18</spring-boot.version>
         <dubbo.version>2.7.23</dubbo.version>
 
-        <!-- 注册中心客户端（Nacos） -->
-        <nacos-client.version>1.4.1</nacos-client.version>
+        <!-- 注册中心版本 -->
+        <curator.version>4.3.0</curator.version>
+        <!-- Nacos（学习用，切换注册中心时取消注释） -->
+        <!-- <nacos-client.version>1.4.1</nacos-client.version> -->
     </properties>
 
     <!-- ==================== 依赖管理（仅声明版本，子模块按需引入） ==================== -->
@@ -71,19 +73,46 @@
                 <version>${dubbo.version}</version>
             </dependency>
 
-            <!-- Nacos 注册中心客户端（底层 HTTP/SDK 通信） -->
+            <!-- ════════════════════════════════════════════════════════════
+                 注册中心：Zookeeper（当前默认）
+                 学习切换：将下面 ZK 的注释掉，取消 Nacos 的注释即可。
+                 ════════════════════════════════════════════════════════════ -->
+
+            <!-- Zookeeper 客户端（Curator 实现） -->
+            <dependency>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-recipes</artifactId>
+                <version>${curator.version}</version>
+            </dependency>
+
+            <!-- Dubbo → Zookeeper 注册中心适配器 -->
+            <dependency>
+                <groupId>org.apache.dubbo</groupId>
+                <artifactId>dubbo-registry-zookeeper</artifactId>
+                <version>${dubbo.version}</version>
+            </dependency>
+
+            <!-- ════════════════════════════════════════════════════════════
+                 Nacos（学习用，取消注释即可切换）
+                 ════════════════════════════════════════════════════════════ -->
+
+            <!-- Nacos 客户端 -->
+            <!--
             <dependency>
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
             </dependency>
+            -->
 
             <!-- Dubbo → Nacos 注册中心适配器 -->
+            <!--
             <dependency>
                 <groupId>org.apache.dubbo</groupId>
                 <artifactId>dubbo-registry-nacos</artifactId>
                 <version>${dubbo.version}</version>
             </dependency>
+            -->
         </dependencies>
     </dependencyManagement>
 

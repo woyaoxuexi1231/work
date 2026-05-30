@@ -9,8 +9,14 @@ dubbo:
   application:
     name: dubbo-demo-consumer
   registry:
-#    address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
+    # ════════════════════════════════════════════════════════
+    # 注册中心（切换时注释/取消注释对应行即可）
+    # ════════════════════════════════════════════════════════
+    # Zookeeper（当前默认）
+#    address: "zookeeper://127.0.0.1:2181"
     address: "zookeeper://192.168.3.100:2181"
+    # Nacos（取消下面这行，注释上面那行）
+    # address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
     check: false
   consumer:
     check: false
