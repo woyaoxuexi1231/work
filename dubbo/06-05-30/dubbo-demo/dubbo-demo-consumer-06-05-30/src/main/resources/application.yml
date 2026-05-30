@@ -1,19 +1,215 @@
+# =========================================================================
+# Dubbo Consumer（服务消费者）配置 — 全参版
+# =========================================================================
+# 本文档列出了 Consumer 端所有常用配置参数，
+# 每个参数附带：作用说明 + 适用场景 + 端间优先级规则。
+#
+# ❗ 端间优先级（同参数 Consumer 和 Provider 都设置时）：
+#    Consumer 端值优先覆盖 Provider 端值。
+#    原因：Consumer 是调用发起方，理应决定超时、重试等策略。
+#    但 Provider 端的值会作为"约束上限"——Consumer 超时不能超过 Provider 的
+#    "最大容忍等待时间"（实际由 Provider 端的 executes 等硬限制控制）。
+#
+# 完整优先级链（从高到低）：
+#   方法级注解 → 接口级注解 → Content
+#  dubbo.consumer 全局配置 → dubbo.reference 配置
+
+# ==================== Spring Boot 基础 ====================
 spring:
   application:
     name: dubbo-demo-consumer
 
 server:
+  # Consumer 端使用 8090 端口（暴露 HTTP REST 接口用）
   port: 8090
 
+# ==================== Dubbo 配置全表 ====================
 dubbo:
+
+  # ---------- 服务扫描 ----------
+  scan:
+    # 扫描哪些包下的 @DubboReference（用于自动注入 RPC 代理）
+    # ❗ 注意：即使不配这里，@Controller 中的 @DubboReference 也能通过
+    #    Spring 的 BeanPostProcessor 处理，但显式配出来更稳妥
+    base-packages: com.example.dubbo.demo.consumer.controller
+
+  # ---------- 应用信息 ----------
   application:
+    # 应用名 — 注册到 Nacos 时作为 Consumer 应用标识
     name: dubbo-demo-consumer
+    owner: demo-team
+    organization: example
+    environment: dev
+    version: "1.0.0"
+    # QoS 运维端口
+    qos-enable: true
+    qos-port: 22223
+    qos-accept-foreign-ip: false
+
+  # ---------- 注册中心 ----------
   registry:
+    # 注册中心地址（Consumer 从这订阅 Provider 地址列表）
     address: "nacos://192.168.3.100:8848?username=nacos&password=nacos"
-    check: false
-  consumer:
+    timeout: 10000
+
+    # 启动时是否检查注册中心可用
+    # true:  启动时连不上注册中心则启动失败（推荐生产，快速发现网络问题）
+    # false: 跳过检查，后续异步重连（适合本地开发，允许 Consumer 先启动）
     check: false
 
+    # 是否注册本应用（Consumer 通常不注册服务，设为 false）
+    # 设为 true 时 Nacos 会多一个 consumer 节点，用于统计
+    register: true
+    subscribe: true
+    file-cache: true
+
+  # ---------- 消费者默认配置 ----------
+  consumer:
+    # ===== 调用控制 =====
+
+    # 【核心】服务调用超时（毫秒）
+    # ❗ 端间冲突：Consumer 端 timeout > Provider 端 timeout
+    #    即 Consumer 的 timeout 优先。
+    #    原理：Consumer 是调用方，超时由调用方控制更合理。
+    #         Provider 端的 timeout 可以理解为"服务端建议"。
+    # 适用场景：
+    #   - 快速查询接口（如根据 ID 查一条）：2000~3000
+    #   - 复杂计算/批量查询：5000~10000
+    #   - 第三方集成/慢接口：10000~30000
+    timeout: 5000
+
+    # 【核心】失败重试次数
+    # ❗ 端间冲突：Consumer 端 retries 覆盖 Provider 端
+    # 适用场景：
+    #   - 读接口/幂等接口：retries=2（最多请求 3 次）
+    #   - 写接口（下单/扣款）：retries=0（绝不重试，防止重复操作）
+    #   - 失败后换一台 Provider 重试
+    retries: 1
+
+    # 负载均衡策略
+    # random        = 随机 + 权重（默认，推荐通用场景）
+    # roundrobin    = 轮询 + 权重（请求数均分）
+    # leastactive   = 最少活跃调用数（自动避开慢 Provider）
+    # consistenthash = 一致性哈希（相同参数→同一 Provider，利好缓存）
+    # ❗ 端间冲突：Consumer 端 loadbalance 覆盖 Provider 端
+    # 适用场景：
+    #   - random：通用场景
+    #   - leastactive：Provider 性能差异大时，慢机器自动少接请求
+    #   - consistenthash：需要服务端缓存查询结果的场景
+    loadbalance: random
+
+    # 集群容错策略
+    # failover  = 失败转移重试（默认）
+    # failfast  = 快速失败抛异常
+    # failsafe  = 吞异常返回空
+    # failback  = 后台定时重发
+    # forking   = 并行调多个，1 个成功即返回
+    # broadcast = 广播所有，一失败就报错
+    # available = 只调可用那个
+    # ❗ 端间冲突：Consumer 端 cluster 覆盖 Provider 端
+    cluster: failover
+
+    # 此 Consumer 是否检查对应 Provider 是否可用
+    # true:  启动时必须能找到至少一个 Provider，否则启动失败
+    # false: 启动时不检查，调用时若没有 Provider 则抛异常
+    # ❗ 端间冲突 N/A（Consumer 独有参数）
+    # 适用场景：本地开发时设为 false，方便启动调试
+    check: false
+
+    # ===== 连接控制 =====
+
+    # 每个 Provider 建立的最大连接数（dubbo 协议长连接）
+    # 适用场景：dubbo 协议默认长连接复用，1 就够了
+    #           如果并发极高可调大，但通常没必要
+    connections: 100
+
+    # 每个方法的最大并发调用数
+    # 适用场景：限制 Consumer 端并发，防止突发流量打垮自身或 Provider
+    # actives: 20
+
+    # 是否延迟建立连接（true = 首次调用时才连，false = 启动就连）
+    # 适用场景：Consumer 有很多远程服务但不一定全用到时设 true
+    lazy: false
+
+    # 粘滞连接（true = 优先使用上次调用过的 Provider）
+    # 适用场景：利用 Provider 端的本地缓存，减少数据不一致
+    sticky: false
+
+    # ===== 异步调用 =====
+
+    # 是否异步调用（true = 立即返回 CompletableFuture）
+    #   调用方需通过 future.get() 获取结果
+    # 适用场景：同时调多个远程服务，需要并行等待
+    # async: false
+
+    # ===== Stub / Mock / 代理 =====
+
+    # 本地存根 — 在 Consumer 端执行的本地代理（需实现同一接口）
+    #   调用流程：Consumer → Stub → RPC → Provider
+    # 适用场景：参数提前校验、本地缓存、调用前日志
+    # stub: com.example.dubbo.demo.consumer.stub.UserServiceStub
+
+    # 服务降级 — Provider 不可用或调用失败时返回固定值
+    # format: "return null" / "throw RuntimeException" / "return false"
+    # 适用场景：
+    #   - 依赖的服务挂了，不能让它拖垮自己的业务
+    #   - 非关键服务（如推荐、个性化）可以降级返回空
+    # mock: "return null"
+
+    # 代理类型
+    # jdk        = JDK 动态代理（接口必须 public）
+    # javassist  = Javassist 字节码增强（默认，性能更好）
+    proxy: javassist
+
+    # ===== 过滤器 =====
+
+    # Consumer 端自定义 Filter
+    # filter: consumerLogFilter
+
+    # 监听器
+    # listener: "spring"
+
+    # ===== 缓存 =====
+
+    # 结果缓存
+    # lru         = LRU 缓存
+    # threadlocal = 线程本地缓存
+    # jcache      = JCache
+    # 适用场景：数据不频繁变化、允许短暂不一致的查询
+    # cache: lru
+
+    # ===== 参数验证 =====
+
+    # 是否开启参数验证（依赖 Bean Validation）
+    # 适用场景：Consumer 端提前校验参数，无效参数不发起 RPC
+    # validation: true
+
+    # ===== 初始化 =====
+
+    # 是否在 init 时就生成代理对象
+    # true  = Spring 启动时就初始化代理
+    # false = 首次调用时懒加载初始化
+    init: true
+
+    # 引用的默认 group
+    # group: demo
+
+    # 引用的默认 version
+    # version: "1.0.0"
+
+    # ===== 其他 =====
+
+    # 底层 IO 线程数
+    # iothreads: 16
+
+    # 协议选择（一般不需要，由 Provider 端决定）
+    # protocol: dubbo
+
+    # 是否使用底层 URL
+    # scope: remote
+
+# ==================== 日志 ====================
 logging:
   level:
     com.example.dubbo.demo: DEBUG
+    org.apache.dubbo: INFO
