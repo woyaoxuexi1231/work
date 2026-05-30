@@ -21,7 +21,7 @@
     <version>1.0.0</version>
     <packaging>pom</packaging>
 
-    <name>Dubbo-06-05-30</name>
+    <name>Dubbo Demo Parent</name>
     <description>Apache Dubbo 核心概念与架构演示项目（父工程）</description>
 
     <modules>
@@ -60,7 +60,7 @@
             <!-- API 模块（子模块间引用） -->
             <dependency>
                 <groupId>com.example.dubbo.demo</groupId>
-                <artifactId>dubbo-demo-api</artifactId>
+                <artifactId>dubbo-demo-api-06-05-30</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
