@@ -163,7 +163,7 @@ public class UserServiceImpl implements UserService {
     public User getUserById(Long id) {
         log.info(">>> [Provider] getUserById({})", id);
         User user = new User(id, "用户" + id + "-" + port, "user" + id + "@example.com");
-        // try { Thread.sleep(3100); } catch (InterruptedException e) {}
+        try { Thread.sleep(500); } catch (InterruptedException e) {}
         log.info("<<< [Provider] 返回: {}", user);
         return user;
     }
