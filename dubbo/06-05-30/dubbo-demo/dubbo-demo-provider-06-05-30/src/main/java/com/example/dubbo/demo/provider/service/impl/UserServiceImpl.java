@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * <h3>用户服务实现</h3>
  * <p>通过 {@code @DubboService} 暴露为远程 RPC 服务。</p>
@@ -164,5 +166,13 @@ public class UserServiceImpl implements UserService {
         // try { Thread.sleep(3100); } catch (InterruptedException e) {}
         log.info("<<< [Provider] 返回: {}", user);
         return user;
+    }
+
+    @Override
+    public CompletableFuture<User> getUserByIdAsync(Long id) {
+        return CompletableFuture.supplyAsync(() -> {
+            log.info("getUserByIdAsync");
+            return getUserById(id);
+        });
     }
 }

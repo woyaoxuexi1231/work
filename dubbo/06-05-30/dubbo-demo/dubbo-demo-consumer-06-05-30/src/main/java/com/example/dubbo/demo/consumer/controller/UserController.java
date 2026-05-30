@@ -4,9 +4,13 @@ import com.example.dubbo.demo.api.model.User;
 import com.example.dubbo.demo.api.service.UserService;
 import org.apache.dubbo.common.constants.LoadbalanceRules;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.apache.dubbo.rpc.RpcContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 /**
  * <h3>用户查询 HTTP 接口</h3>
@@ -163,5 +167,11 @@ public class UserController {
     @GetMapping("/user/{id}")
     public User getUser(@PathVariable Long id) {
         return userService.getUserById(id);
+    }
+
+    @lombok.SneakyThrows
+    @GetMapping("/user/async/{id}")
+    public User getUserAsync(@PathVariable Long id) {
+        return userService.getUserByIdAsync(id).get();
     }
 }
