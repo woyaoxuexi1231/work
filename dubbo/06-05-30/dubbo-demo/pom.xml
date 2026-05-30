@@ -44,7 +44,7 @@
         <!-- 注册中心版本 -->
         <curator.version>4.3.0</curator.version>
         <!-- Nacos（学习用，切换注册中心时取消注释） -->
-        <!-- <nacos-client.version>1.4.1</nacos-client.version> -->
+        <nacos-client.version>1.4.1</nacos-client.version>
     </properties>
 
     <!-- ==================== 依赖管理（仅声明版本，子模块按需引入） ==================== -->
@@ -97,22 +97,18 @@
                  ════════════════════════════════════════════════════════════ -->
 
             <!-- Nacos 客户端 -->
-            <!--
             <dependency>
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
             </dependency>
-            -->
 
             <!-- Dubbo → Nacos 注册中心适配器 -->
-            <!--
             <dependency>
                 <groupId>org.apache.dubbo</groupId>
                 <artifactId>dubbo-registry-nacos</artifactId>
                 <version>${dubbo.version}</version>
             </dependency>
-            -->
         </dependencies>
     </dependencyManagement>
 

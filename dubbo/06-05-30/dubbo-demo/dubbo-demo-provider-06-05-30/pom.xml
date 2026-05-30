@@ -36,17 +36,23 @@
         </dependency>
 
         <!-- ======= Zookeeper 注册中心（当前默认） ======= -->
-        <dependency>
+<!--         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-recipes</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo-registry-zookeeper</artifactId>
-        </dependency>
+            <exclusions>
+                &lt;!&ndash; 排除 ZK 自带的 slf4j-reload4j，防止与 Spring Boot 的 logback 冲突 &ndash;&gt;
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency> -->
 
         <!-- ======= Nacos 注册中心（取消注释切换） ======= -->
-        <!--
         <dependency>
             <groupId>com.alibaba.nacos</groupId>
             <artifactId>nacos-client</artifactId>
@@ -55,7 +61,6 @@
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo-registry-nacos</artifactId>
         </dependency>
-        -->
 
         <!-- ======= Spring Boot 基础（含 logback 日志） ======= -->
         <!--
