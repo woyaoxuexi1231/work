@@ -1,0 +1,5 @@
+# Dubbo SPI 扩展点声明 — 自定义 Provider 端 Filter
+# 格式：filterName=全限定类名
+# Dubbo 启动时自动扫描 META-INF/dubbo/ 下所有接口文件并加载
+
+customProviderFilter=com.example.dubbo.demo.provider.filter.CustomProviderFilter
