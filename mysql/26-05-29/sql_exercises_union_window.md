@@ -39,29 +39,120 @@
     └──────────────┘                         └──────────────┘
 ```
 
-| 关系 | 类型 |
-|---|---|
-| users → orders | 1:N |
-| orders → order_items | 1:N |
-| order_items → products | N:1 |
-| products → categories | N:1 |
-| categories → categories | 自引用 (3级树) |
-| orders → payments | 1:1 |
-| orders → order_logs | 1:N |
-| orders → reviews | 1:N |
-| products → inventory | 1:1 |
+## 字段说明
 
-| 表 | 行数 |
-|---|---|
-| users | 10,000 |
-| categories | 50 |
-| products | 1,000 |
-| orders | 50,000 |
-| order_items | ~150,000 |
-| payments | ~45,000 |
-| inventory | 1,000 |
-| order_logs | ~100,000+ (分区表) |
-| reviews | ~30,000 |
+### users — 用户表 (10,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 用户ID | 主键 |
+| name | 姓名 | |
+| email | 邮箱 | 5%为NULL |
+| phone | 手机号 | 3%为NULL |
+| city | 城市 | 部分为NULL |
+| age | 年龄 | 18-70 |
+| gender | 性别 | M/F/部分NULL |
+| vip_level | 会员等级 | 0-5 |
+| balance | 余额 | |
+| created_at | 注册时间 | |
+| status | 状态 | 1正常 0禁用 |
+
+### categories — 分类表 (50行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 分类ID | 主键 |
+| name | 分类名 | 3级树：电子产品→手机→... |
+| parent_id | 父分类ID | NULL=一级分类 |
+| sort_order | 排序 | |
+
+### products — 商品表 (1,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 商品ID | 主键 |
+| name | 商品名 | |
+| category_id | 所属分类 | 关联categories.id |
+| price | 售价 | |
+| cost | 成本价 | 毛利率用 |
+| stock | 库存数量 | 0=缺货 |
+| sales_count | 销量 | 排序用 |
+| rating | 评分 | 1.00-5.00 |
+| description | 描述 | TEXT |
+| is_on_sale | 是否上架 | 1上架 0下架 |
+| created_at | 上架时间 | |
+
+### orders — 订单表 (50,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 订单ID | 主键 |
+| order_no | 订单号 | 唯一 |
+| user_id | 用户ID | 关联users.id |
+| total_amount | 订单总额 | |
+| discount_amount | 优惠金额 | |
+| pay_amount | 实付金额 | total - discount |
+| status | 订单状态 | pending/paid/shipped/completed/cancelled/refunded |
+| created_at | 下单时间 | |
+| updated_at | 更新时间 | |
+
+### order_items — 订单明细表 (~150,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 明细ID | 主键 |
+| order_id | 订单ID | 关联orders.id |
+| product_id | 商品ID | 关联products.id |
+| quantity | 数量 | |
+| unit_price | 单价 | |
+
+### payments — 支付表 (~45,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 支付ID | 主键 |
+| order_id | 订单ID | 唯一 |
+| amount | 支付金额 | |
+| method | 支付方式 | alipay/wechat/credit_card/debit_card |
+| transaction_id | 交易流水号 | |
+| status | 支付状态 | success/failed/refunding/refunded |
+| paid_at | 支付时间 | |
+
+### inventory — 库存表 (1,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| product_id | 商品ID | 主键 |
+| stock_quantity | 可用库存 | |
+| locked_quantity | 锁定库存 | 秒杀预占 |
+| version | 版本号 | 乐观锁 |
+| updated_at | 更新时间 | |
+
+### order_logs — 订单日志表 (~100,000+行, 分区)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 日志ID | 主键 |
+| order_id | 订单ID | |
+| action | 操作 | pay/ship/complete/cancel/refund |
+| old_status | 旧状态 | |
+| new_status | 新状态 | |
+| operator | 操作人 | system/admin/user |
+| remark | 备注 | |
+| created_at | 操作时间 | 按年RANGE分区 |
+
+### reviews — 评价表 (~30,000行)
+
+| 字段 | 中文 | 备注 |
+|---|---|---|
+| id | 评价ID | 主键 |
+| order_id | 订单ID | |
+| product_id | 商品ID | |
+| user_id | 用户ID | |
+| rating | 评分 | 1-5 |
+| content | 评价内容 | 部分为NULL |
+| is_anonymous | 是否匿名 | 0实名 1匿名 |
+| created_at | 评价时间 | |
 
 ---
 
