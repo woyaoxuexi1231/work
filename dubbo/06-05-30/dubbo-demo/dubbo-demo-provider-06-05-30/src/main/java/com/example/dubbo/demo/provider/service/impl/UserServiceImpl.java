@@ -148,7 +148,7 @@ import org.springframework.stereotype.Component;
 
 // ========== 注解仅保留最核心参数，完整参数表见上方 Javadoc ==========
 // @DubboService(version = "1.0.0", group = "demo")
-@DubboService(version = "1.0.0", group = "demo", protocol = "rest")
+@DubboService(version = "1.0.0", group = "demo")
 @Component
 public class UserServiceImpl implements UserService {
 

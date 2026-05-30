@@ -19,13 +19,6 @@ dubbo:
     dubbo:
       name: dubbo
       port: 20880
-    tri:
-      name: tri
-      port: 50051
-    rest:
-      name: rest
-      port: 8081
-      server: netty
 
 logging:
   level:

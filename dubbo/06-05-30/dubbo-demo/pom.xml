@@ -45,6 +45,8 @@
         <curator.version>4.3.0</curator.version>
         <!-- Nacos（学习用，切换注册中心时取消注释） -->
         <nacos-client.version>1.4.1</nacos-client.version>
+        <!-- REST 协议需 JAX-RS API -->
+        <jaxrs.version>2.1.1</jaxrs.version>
     </properties>
 
     <!-- ==================== 依赖管理（仅声明版本，子模块按需引入） ==================== -->
@@ -108,6 +110,19 @@
                 <groupId>org.apache.dubbo</groupId>
                 <artifactId>dubbo-registry-nacos</artifactId>
                 <version>${dubbo.version}</version>
+            </dependency>
+
+            <!-- REST 协议需 JAX-RS API -->
+            <dependency>
+                <groupId>javax.ws.rs</groupId>
+                <artifactId>javax.ws.rs-api</artifactId>
+                <version>${jaxrs.version}</version>
+            </dependency>
+            <!-- REST 协议 Netty 实现（RESTEasy 3.x，兼容 Dubbo 2.7.x） -->
+            <dependency>
+                <groupId>org.jboss.resteasy</groupId>
+                <artifactId>resteasy-netty4</artifactId>
+                <version>3.15.6.Final</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
