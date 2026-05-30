@@ -148,7 +148,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     // ========== 注解仅保留最核心参数，完整参数表见上方 Javadoc ==========
-    @DubboReference(version = "1.0.0", group = "demo", check = false)
+    @DubboReference(version = "1.0.0", group = "demo", check = false, serialization = "kryo")
     private UserService userService;
 
     @GetMapping("/user/{id}")

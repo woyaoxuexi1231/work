@@ -19,6 +19,8 @@ dubbo:
     dubbo:
       name: dubbo
       port: 20880
+#      serialization: hessian2
+      serialization: kryo
 
 logging:
   level:
