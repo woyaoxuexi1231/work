@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: dubbo-learn-provider
+
+dubbo:
+  application:
+    name: ${spring.application.name}
+    logger: slf4j
+
+  # 注册中心 — 组播模式，开箱即用无需 Nacos
+  # 有 Nacos 时改为 nacos://127.0.0.1:8848
+  registry:
+    address: multicast://224.5.6.7:1234
+
+  protocol:
+    name: dubbo
+    port: 20880
+
+  provider:
+    timeout: 3000
+    retries: 0
+    delay: -1
+
+  scan:
+    base-packages: com.example.dubbo.provider.service
+
+logging:
+  level:
+    com.example.dubbo: DEBUG

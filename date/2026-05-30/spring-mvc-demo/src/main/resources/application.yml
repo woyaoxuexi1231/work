@@ -1,0 +1,13 @@
+server:
+  port: 8080
+
+spring:
+  mvc:
+    # 启用内容协商：让客户端可以通过 Accept 头选择响应格式
+    contentnegotiation:
+      favor-parameter: false
+
+logging:
+  level:
+    com.example.demo: DEBUG
+    org.springframework.web.servlet: DEBUG   # 打印 DispatcherServlet 详细日志

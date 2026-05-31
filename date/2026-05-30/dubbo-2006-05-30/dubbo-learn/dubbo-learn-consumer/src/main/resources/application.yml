@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: dubbo-learn-consumer
+
+dubbo:
+  application:
+    name: ${spring.application.name}
+    logger: slf4j
+
+  registry:
+    address: multicast://224.5.6.7:1234    # 组播模式，和 Provider 一致
+    check: false
+    file: ${user.home}/.dubbo/dubbo-learn-consumer.cache
+
+  protocol:
+    name: dubbo
+    port: -1                               # 消费者不暴露端口
+
+  consumer:
+    timeout: 2000
+    retries: 1
+    cluster: failover
+    check: false
+
+  scan:
+    base-packages: com.example.dubbo.consumer.controller
+
+logging:
+  level:
+    com.example.dubbo: DEBUG
