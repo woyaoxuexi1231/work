@@ -10,7 +10,10 @@ dubbo:
   # 注册中心 — 组播模式，开箱即用无需 Nacos
   # 有 Nacos 时改为 nacos://127.0.0.1:8848
   registry:
-    address: multicast://224.5.6.7:1234
+    address: nacos://192.168.3.100:8848
+    password: nacos
+    username: nacos
+  #    address: multicast://224.5.6.7:1234
 
   protocol:
     name: dubbo

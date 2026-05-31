@@ -40,6 +40,11 @@
             <artifactId>dubbo-serialization-hessian2</artifactId>
             <version>${dubbo.version}</version>
         </dependency>
+        <!-- Nacos 注册中心需要 commons-lang3，Dubbo 2.7.8 未传递此依赖 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

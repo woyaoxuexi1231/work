@@ -11,7 +11,9 @@ dubbo:
     logger: slf4j
 
   registry:
-    address: multicast://224.5.6.7:1234    # 组播模式，和 Provider 一致
+    address: nacos://192.168.3.100:8848
+    password: nacos
+    username: nacos
     check: false
     file: ${user.home}/.dubbo/dubbo-learn-consumer.cache
 
