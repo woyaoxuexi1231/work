@@ -15,6 +15,9 @@ REDIS_VERSION="${REDIS_VERSION:-7.2.5}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-123456}"
 DATA_ROOT="${DATA_ROOT:-/root/redis-sentinel-docker}"
 
+# 本机 IP（Sentinel 通过宿主机暴露端口连接，直接用本机 IP 避免容器 DNS 问题）
+HOST_IP="${HOST_IP:-192.168.3.100}"
+
 # 网络名称
 NETWORK_NAME="redis-sentinel-net"
 
@@ -69,9 +72,7 @@ docker network create "${NETWORK_NAME}"
 # 创建目录和配置
 log_info "创建目录结构..."
 
-MASTER_IP="redis-master"
-SLAVE1_IP="redis-slave-1"
-SLAVE2_IP="redis-slave-2"
+MASTER_HOST="redis-master"
 
 # 拉取镜像
 log_info "拉取 Redis 镜像..."
@@ -98,7 +99,7 @@ log_info "生成从库 1 配置..."
 ensure_dir "${DATA_ROOT}/slave-1/data"
 cat > "${DATA_ROOT}/slave-1/redis.conf" << EOF
 port 6379
-replicaof ${MASTER_IP} 6379
+replicaof ${MASTER_HOST} 6379
 masterauth ${REDIS_PASSWORD}
 requirepass ${REDIS_PASSWORD}
 protected-mode no
@@ -113,7 +114,7 @@ log_info "生成从库 2 配置..."
 ensure_dir "${DATA_ROOT}/slave-2/data"
 cat > "${DATA_ROOT}/slave-2/redis.conf" << EOF
 port 6379
-replicaof ${MASTER_IP} 6379
+replicaof ${MASTER_HOST} 6379
 masterauth ${REDIS_PASSWORD}
 requirepass ${REDIS_PASSWORD}
 protected-mode no
@@ -167,7 +168,7 @@ docker run -d \
 log_info "等待 Redis 实例启动..."
 sleep 5
 
-# Sentinel 通用配置
+# Sentinel 配置：通过宿主机暴露端口连接，用本机 IP 避免容器 DNS 校验问题
 for i in 1 2 3; do
   sentinel_name="sentinel-${i}"
   sentinel_port=$((26378 + i))
@@ -175,7 +176,7 @@ for i in 1 2 3; do
 
   cat > "${DATA_ROOT}/${sentinel_name}/sentinel.conf" << EOF
 port 26379
-sentinel monitor mymaster ${MASTER_IP} 6379 2
+sentinel monitor mymaster ${HOST_IP} 6379 2
 sentinel auth-pass mymaster ${REDIS_PASSWORD}
 sentinel down-after-milliseconds mymaster 5000
 sentinel failover-timeout mymaster 10000
