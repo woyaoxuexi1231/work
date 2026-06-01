@@ -826,3 +826,243 @@ docker-desktop-data
 1. 从 Docker Desktop 的 Linux 环境快速生成一个 Ubuntu RootFS；
 2. 在**完全离线**情况下创建多个 Ubuntu（Dev/Test/Prod）实例；
 3. 给每个实例设置不同用户名，而不是默认 root。
+
+
+
+# 另一台 Windows 机器，如何直接登录到当前电脑上的多个 WSL
+
+如果你的意思是：
+
+> 另一台 Windows 机器，如何直接登录到当前电脑上的多个 WSL（Ubuntu-Dev、Ubuntu-Test、Ubuntu-Prod 等）？
+
+答案是：**WSL 本身不提供远程登录功能**，但可以通过 SSH 来实现。
+
+------
+
+## 方案一：给每个 WSL 安装 SSH（推荐）
+
+假设当前机器 IP：
+
+```text
+192.168.3.12
+```
+
+WSL 中安装 SSH 服务：
+
+```bash
+apt update
+apt install -y openssh-server
+```
+
+启动：
+
+```bash
+service ssh start
+```
+
+查看监听：
+
+```bash
+ss -lntp | grep 22
+```
+
+应该看到：
+
+```text
+0.0.0.0:22
+```
+
+------
+
+### 问题来了：多个 WSL 都监听 22 会冲突
+
+例如：
+
+```text
+Ubuntu-Dev    22
+Ubuntu-Test   22
+Ubuntu-Prod   22
+```
+
+因为 Mirrored Networking 下共用网络环境，端口不能重复。
+
+因此改成不同端口：
+
+### Ubuntu-Dev
+
+编辑：
+
+```bash
+/etc/ssh/sshd_config
+Port 2201
+```
+
+------
+
+### Ubuntu-Test
+
+```text
+Port 2202
+```
+
+------
+
+### Ubuntu-Prod
+
+```text
+Port 2203
+```
+
+------
+
+重启 SSH：
+
+```bash
+service ssh restart
+```
+
+------
+
+然后另一台 Windows：
+
+```powershell
+ssh user@192.168.3.12 -p 2201
+```
+
+进入 Dev。
+
+```powershell
+ssh user@192.168.3.12 -p 2202
+```
+
+进入 Test。
+
+```powershell
+ssh user@192.168.3.12 -p 2203
+```
+
+进入 Prod。
+
+------
+
+## 方案二：VS Code Remote SSH
+
+如果主要是开发 Spring Boot、Java、Vue 项目，这个体验最好。
+
+安装：
+
+- Visual Studio Code
+- Remote SSH 插件
+
+然后配置：
+
+```text
+Host ubuntu-dev
+    HostName 192.168.3.12
+    Port 2201
+    User root
+
+Host ubuntu-test
+    HostName 192.168.3.12
+    Port 2202
+    User root
+```
+
+之后 VS Code 直接连接对应 WSL 环境。
+
+------
+
+## 方案三：Windows OpenSSH + `wsl.exe`
+
+还有一种企业常用玩法：
+
+只在 Windows 装 SSH 服务：
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+```
+
+远程登录到 Windows：
+
+```powershell
+ssh administrator@192.168.3.12
+```
+
+然后切换：
+
+```powershell
+wsl -d Ubuntu-Dev
+```
+
+或者：
+
+```powershell
+wsl -d Ubuntu-Test
+```
+
+这种方式只占用一个 SSH 端口（22），管理简单。
+
+------
+
+## 我的建议
+
+如果你的目标是：
+
+- 一台 Windows
+- 多个 WSL
+- 跑多个 Spring Boot
+- 从另一台电脑远程开发
+
+推荐：
+
+```text
+Windows
+ ├─ Ubuntu-Dev
+ ├─ Ubuntu-Test
+ └─ Ubuntu-Prod
+```
+
+每个 WSL：
+
+```text
+SSH:
+2201
+2202
+2203
+```
+
+然后用 SSH 或 VS Code Remote SSH 连接。
+
+这样最接近管理多台 Linux 服务器的体验，而且不需要再额外开 Hyper-V 虚拟机。
+
+
+
+# 关闭windows防火墙
+
+这个报错是因为**你没有以管理员身份运行 PowerShell**。  
+防火墙规则的修改需要管理员权限，普通用户无法执行。
+
+---
+
+### 解决方法（任选其一）
+
+#### 方法一：以管理员身份重新执行（推荐）
+1. 在 Windows 开始菜单搜索 **PowerShell**。
+2. 右键点击它，选择 **以管理员身份运行**。
+3. 在弹出的 UAC 提示中点击“是”。
+4. 把刚才那条命令复制进去，回车：
+   ```powershell
+   New-NetFirewallRule -DisplayName "Allow WSL SSH 2201" -Direction Inbound -LocalPort 2201 -Protocol TCP -Action Allow
+   ```
+   执行后没有任何报错就代表成功。
+
+#### 方法二：用图形界面添加（更直观）
+1. 按 `Win + R`，输入 `wf.msc`，回车打开“高级安全 Windows Defender 防火墙”。
+2. 左侧点击 **入站规则**，右侧点击 **新建规则**。
+3. 选择 **端口** → 下一步。
+4. 选择 **TCP**，并填入 **特定本地端口：2201** → 下一步。
+5. 选择 **允许连接** → 下一步。
+6. 保持三个配置文件都勾选（域、专用、公用）→ 下一步。
+7. 名称填 `Allow WSL SSH 2201`，完成。
+
+两种方法效果完全一样。之后你的远程机器就能通过 `ssh 用户名@Windows主机IP -p 2201` 连接了。

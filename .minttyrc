@@ -1,0 +1,27 @@
+# 字体
+Font=Consolas
+FontHeight=12
+
+# 深灰底、亮白字
+BackgroundColour=17,17,17
+ForegroundColour=240,240,240
+CursorColour=66,165,245
+
+# 高饱和 ANSI 色
+Black=0,0,0
+Red=220,50,50
+Green=50,220,50
+Yellow=220,220,50
+Blue=50,50,220
+Magenta=220,50,220
+Cyan=50,220,220
+White=240,240,240
+
+BoldBlack=80,80,80
+BoldRed=255,80,80
+BoldGreen=80,255,80
+BoldYellow=255,255,80
+BoldBlue=80,80,255
+BoldMagenta=255,80,255
+BoldCyan=80,255,255
+BoldWhite=255,255,255
