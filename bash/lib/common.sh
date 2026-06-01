@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-# lib/common.sh — 公共函数库
-# 被所有组件安装脚本 source 引用，消除重复代码
+# lib/common.sh — 公共函数库 (Docker Desktop / Git Bash 兼容)
+# 所有组件脚本 source 引用
 # =============================================================================
 
 set -euo pipefail
@@ -16,45 +16,19 @@ log_info()  { log "INFO"  "$@"; }
 log_warn()  { log "WARN"  "$@"; }
 log_error() { log "ERROR" "$@"; }
 
-# ---- directory ----
-ensure_dir() {
-  local dir
-  for dir in "$@"; do
-    [[ -z "${dir}" ]] && { log_error "ensure_dir: empty arg"; exit 1; }
-    [[ ! -d "${dir}" ]] && mkdir -p "${dir}"
-  done
-}
-
-# ---- auto sudo re-exec ----
-require_root() {
-  if [[ $EUID -ne 0 ]]; then
-    if command -v sudo >/dev/null 2>&1; then
-      log_warn "非 root，通过 sudo 重新执行..."
-      exec sudo -E bash "$0" "$@"
-    else
-      log_error "需要 root 权限，请用 sudo 运行"
-      exit 1
-    fi
-  fi
-}
-
-# ---- docker environment ----
+# ---- docker check ----
 check_docker() {
   if ! command -v docker >/dev/null 2>&1; then
-    log_error "Docker 未安装，请先安装 Docker"
+    log_error "Docker 未安装，请先安装 Docker Desktop"
     exit 1
   fi
   if ! docker ps >/dev/null 2>&1; then
-    log_warn "Docker 服务未运行，尝试启动..."
-    systemctl start docker || {
-      log_error "无法启动 Docker，systemctl status docker 查看原因"
-      exit 1
-    }
+    log_error "Docker 未运行，请启动 Docker Desktop"
+    exit 1
   fi
 }
 
 # ---- idempotent container check ----
-# 返回 0 表示容器已存在（应跳过安装）
 check_container_exists() {
   local name="$1"
   if docker ps -a --format '{{.Names}}' | grep -qw "${name}"; then
@@ -92,7 +66,7 @@ wait_for_container() {
   return 1
 }
 
-# ---- pull image if needed ----
+# ---- pull image ----
 pull_image() {
   local img="$1"
   if docker image inspect "${img}" >/dev/null 2>&1; then
@@ -103,8 +77,8 @@ pull_image() {
   fi
 }
 
-# ---- show done banner ----
+# ---- done banner ----
 done_banner() {
-  local component="$1"; shift
+  local component="$1"
   log_info "=== ${component} 安装完成 ==="
 }
