@@ -1,6 +1,5 @@
 package com.redis.demo.q1_sentinel_failover;
 
-import com.redis.demo.q1_sentinel_failover.FailoverSimulator;
 import com.redis.demo.q1_sentinel_failover.FailoverSimulator.TimelineEvent;
 import org.springframework.web.bind.annotation.*;
 
@@ -80,22 +79,34 @@ public class SentinelFailoverController {
      */
     @PostMapping("/failover/trigger")
     public Map<String, Object> trigger() {
-        List<TimelineEvent> timeline = simulator.executeFailover();
+        List<TimelineEvent> timeline;
+        try {
+            timeline = simulator.executeFailover();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Map<String, Object> err = new HashMap<>();
+            err.put("error", "模拟被中断");
+            return err;
+        }
 
         Map<String, Object> resp = new HashMap<>();
-        resp.put("title", "Sentinel 故障转移全流程");
+        resp.put("title", "Sentinel 故障转移全流程（多线程真实模拟）");
         resp.put("totalEvents", timeline.size());
         resp.put("timeline", timeline);
 
-        if (simulator.getLeader() != null) {
-            resp.put("leader", simulator.getLeader().getName());
+        String leaderName = simulator.getLeaderName();
+        if (leaderName != null) {
+            resp.put("leader", leaderName);
         }
-        if (simulator.getMaster().getPromotedSlave() != null) {
-            resp.put("promotedSlave",
-                    simulator.getMaster().getPromotedSlave().getName());
+        String promotedName = simulator.getPromotedSlaveName();
+        if (promotedName != null) {
+            resp.put("promotedSlave", promotedName);
         }
         resp.put("watchFor", "观察 phase 字段的递进: "
-                + "SDOWN → ODOWN → LEADER_ELECTION_START → LEADER_ELECTED → PROMOTED");
+                + "SENTINEL_START → PING → MASTER_KILL → PING_FAIL → SDOWN → ODOWN → "
+                + "LEADER_ELECT → LEADER_ELECTED → PROMOTE → SWITCH_MASTER → OLD_MASTER_REVIVE → OLD_MASTER_SLAVEOF → COMPLETE");
+        resp.put("threadModel", "多个 Sentinel 线程各自独立 PING（每 1 秒），"
+                + "通过 CountDownLatch + ConcurrentHashMap 协调 SDOWN/ODOWN/选举");
         return resp;
     }
 
@@ -126,7 +137,15 @@ public class SentinelFailoverController {
     public Map<String, Object> simulateSplitBrain(
             @RequestParam(defaultValue = "false") boolean protection) {
 
-        List<TimelineEvent> timeline = simulator.simulateSplitBrain(protection);
+        List<TimelineEvent> timeline;
+        try {
+            timeline = simulator.simulateSplitBrain(protection);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Map<String, Object> err = new HashMap<>();
+            err.put("error", "模拟被中断");
+            return err;
+        }
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("title", "脑裂模拟" + (protection ? "（有 min-slaves-to-write 防护）"
@@ -153,15 +172,13 @@ public class SentinelFailoverController {
     @GetMapping("/status")
     public Map<String, Object> status() {
         Map<String, Object> resp = new HashMap<>();
-        resp.put("master", simulator.getMaster() != null
-                ? simulator.getMaster().getName() : "none");
-        resp.put("slaveCount", simulator.getSlaves().size());
-        resp.put("sentinelCount", simulator.getSentinels().size());
+        resp.put("leader", simulator.getLeaderName());
+        resp.put("promotedSlave", simulator.getPromotedSlaveName());
         resp.put("quorum", simulator.getQuorum());
-        resp.put("hasLeader", simulator.getLeader() != null);
+        resp.put("note", "使用 POST /api/sentinel/failover/trigger 触发多线程故障转移模拟");
         resp.put("endpoints", new String[]{
                 "POST /api/sentinel/failover/configure  — 配置参数",
-                "POST /api/sentinel/failover/trigger     — 触发故障转移",
+                "POST /api/sentinel/failover/trigger     — 触发故障转移（多线程）",
                 "GET  /api/sentinel/failover/timeline     — 查看时间线",
                 "POST /api/sentinel/split-brain/simulate   — 脑裂模拟",
                 "GET  /api/sentinel/status                  — 当前状态"
