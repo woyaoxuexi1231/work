@@ -1066,3 +1066,217 @@ SSH:
 7. 名称填 `Allow WSL SSH 2201`，完成。
 
 两种方法效果完全一样。之后你的远程机器就能通过 `ssh 用户名@Windows主机IP -p 2201` 连接了。
+
+
+
+
+
+
+
+这其实是 **WSL Mirrored Networking + Windows Defender Firewall** 的典型现象。
+
+因为你已经验证过：
+
+```text
+关闭 Windows 防火墙 → 可以访问
+开启 Windows 防火墙 → 无法访问
+```
+
+那么：
+
+- RabbitMQ 没问题
+- Docker 没问题
+- WSL Mirrored 没问题
+- 路由器没问题
+
+问题 100% 在 Windows 防火墙规则。
+
+------
+
+## 为什么会这样
+
+你的流量路径实际上是：
+
+```text
+另一台电脑
+    ↓
+192.168.3.100:15672
+    ↓
+Windows 网络栈
+    ↓
+WSL Mirrored
+    ↓
+Docker
+    ↓
+RabbitMQ
+```
+
+虽然 RabbitMQ 在 WSL 容器里，但外部流量先进入 Windows 网络栈。
+
+Windows 防火墙会先检查：
+
+```text
+TCP 15672
+TCP 15673
+TCP 15674
+
+TCP 5672
+TCP 5673
+TCP 5674
+```
+
+没有允许规则就直接丢弃。
+
+------
+
+# 方案1：放行 RabbitMQ 端口
+
+管理员 PowerShell：
+
+```powershell
+New-NetFirewallRule `
+  -DisplayName "RabbitMQ Management" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 15672-15674 `
+  -Action Allow
+```
+
+AMQP：
+
+```powershell
+New-NetFirewallRule `
+  -DisplayName "RabbitMQ AMQP" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 5672-5674 `
+  -Action Allow
+```
+
+查看：
+
+```powershell
+Get-NetFirewallRule | findstr RabbitMQ
+```
+
+------
+
+# 方案2：限定局域网
+
+如果不想开放给所有网络：
+
+```powershell
+New-NetFirewallRule `
+  -DisplayName "RabbitMQ LAN" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 15672-15674 `
+  -RemoteAddress 192.168.3.0/24 `
+  -Action Allow
+```
+
+例如只允许：
+
+```text
+192.168.3.*
+```
+
+访问。
+
+------
+
+# 方案3：Hyper-V Firewall（WSL Mirrored 特有）
+
+新版 WSL（你是 2.7.7）还有一层 Hyper-V Firewall。
+
+检查：
+
+```powershell
+Get-NetFirewallHyperVVMSetting
+```
+
+以及：
+
+```powershell
+Get-NetFirewallHyperVRule
+```
+
+很多人只放行 Windows Firewall：
+
+```text
+Windows Firewall √
+Hyper-V Firewall ×
+```
+
+结果还是访问不了。
+
+------
+
+如果发现 Hyper-V 防火墙开启：
+
+查看 WSL VM：
+
+```powershell
+Get-VMNetworkAdapter -VMName "*"
+```
+
+或者：
+
+```powershell
+Get-NetFirewallHyperVVMSetting
+```
+
+然后允许：
+
+```powershell
+Set-NetFirewallHyperVVMSetting `
+  -Name Default `
+  -DefaultInboundAction Allow
+```
+
+测试一下。
+
+------
+
+# 推荐做法
+
+我一般会在开启 Mirrored 的开发机上：
+
+```powershell
+New-NetFirewallRule -DisplayName "WSL RabbitMQ" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 5672-5674,15672-15674 `
+  -Action Allow
+```
+
+然后保留防火墙开启。
+
+这样：
+
+```text
+Windows 防火墙    开启
+WSL Mirrored     开启
+Docker           开启
+RabbitMQ         正常访问
+```
+
+安全性也比直接关闭防火墙高得多。
+
+------
+
+建议你先执行：
+
+```powershell
+Get-NetFirewallHyperVVMSetting
+```
+
+把结果贴出来。
+
+如果结果里看到类似：
+
+```text
+DefaultInboundAction : Block
+```
+
+那我基本可以确定是 **Hyper-V Firewall** 在拦截，而不只是普通 Windows 防火墙。
