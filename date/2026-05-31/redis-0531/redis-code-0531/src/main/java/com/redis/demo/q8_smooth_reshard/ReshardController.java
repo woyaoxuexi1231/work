@@ -1,6 +1,6 @@
-package com.redis.demo.controller;
+package com.redis.demo.q8_smooth_reshard;
 
-import com.redis.demo.ops.ReshardStateMachine;
+import com.redis.demo.q8_smooth_reshard.ReshardStateMachine;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;

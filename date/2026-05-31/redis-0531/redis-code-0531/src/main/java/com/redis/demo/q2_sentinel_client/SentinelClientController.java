@@ -1,6 +1,6 @@
-package com.redis.demo.controller;
+package com.redis.demo.q2_sentinel_client;
 
-import com.redis.demo.sentinel.SentinelClientService;
+import com.redis.demo.q2_sentinel_client.SentinelClientService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;

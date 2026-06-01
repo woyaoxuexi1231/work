@@ -1,5 +1,6 @@
-package com.redis.demo.cluster;
+package com.redis.demo.q5_hotkey_troubleshoot;
 
+import com.redis.demo.q3_cluster_slot.SlotCalculator;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;

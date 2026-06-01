@@ -1,4 +1,4 @@
-package com.redis.demo.cluster;
+package com.redis.demo.q3_cluster_slot;
 
 import org.springframework.stereotype.Service;
 

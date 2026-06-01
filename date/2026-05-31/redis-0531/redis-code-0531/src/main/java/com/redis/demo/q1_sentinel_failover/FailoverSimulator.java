@@ -1,4 +1,4 @@
-package com.redis.demo.sentinel;
+package com.redis.demo.q1_sentinel_failover;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;

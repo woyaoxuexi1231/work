@@ -1,4 +1,4 @@
-package com.redis.demo.factory;
+package com.redis.demo.q7_client_factory;
 
 /**
  * Q7 顶层抽象：Redis 命令执行器.

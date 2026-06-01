@@ -1,6 +1,6 @@
-package com.redis.demo.controller;
+package com.redis.demo.q4_cross_slot_transaction;
 
-import com.redis.demo.cluster.SagaCompensationService;
+import com.redis.demo.q4_cross_slot_transaction.SagaCompensationService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;

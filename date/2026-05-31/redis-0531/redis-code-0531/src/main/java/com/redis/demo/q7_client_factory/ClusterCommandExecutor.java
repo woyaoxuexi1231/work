@@ -1,4 +1,4 @@
-package com.redis.demo.factory;
+package com.redis.demo.q7_client_factory;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

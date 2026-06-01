@@ -1,8 +1,8 @@
-package com.redis.demo.controller;
+package com.redis.demo.q7_client_factory;
 
-import com.redis.demo.factory.RedisClientFactory;
-import com.redis.demo.factory.RedisMode;
-import com.redis.demo.factory.RedisCommandTemplate;
+import com.redis.demo.q7_client_factory.RedisClientFactory;
+import com.redis.demo.q7_client_factory.RedisMode;
+import com.redis.demo.q7_client_factory.RedisCommandTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;

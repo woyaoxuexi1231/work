@@ -1,6 +1,5 @@
-package com.redis.demo.controller;
+package com.redis.demo.q3_cluster_slot;
 
-import com.redis.demo.cluster.SlotCalculator;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;

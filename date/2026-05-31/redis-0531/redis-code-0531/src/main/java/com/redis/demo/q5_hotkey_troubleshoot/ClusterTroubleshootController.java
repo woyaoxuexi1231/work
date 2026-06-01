@@ -1,6 +1,6 @@
-package com.redis.demo.controller;
+package com.redis.demo.q5_hotkey_troubleshoot;
 
-import com.redis.demo.cluster.HotKeyDetector;
+import com.redis.demo.q5_hotkey_troubleshoot.HotKeyDetector;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;

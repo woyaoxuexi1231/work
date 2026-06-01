@@ -1,4 +1,4 @@
-package com.redis.demo.sentinel;
+package com.redis.demo.q2_sentinel_client;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

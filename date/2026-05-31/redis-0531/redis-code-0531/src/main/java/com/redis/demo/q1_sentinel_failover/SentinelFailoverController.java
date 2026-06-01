@@ -1,7 +1,7 @@
-package com.redis.demo.controller;
+package com.redis.demo.q1_sentinel_failover;
 
-import com.redis.demo.sentinel.FailoverSimulator;
-import com.redis.demo.sentinel.FailoverSimulator.TimelineEvent;
+import com.redis.demo.q1_sentinel_failover.FailoverSimulator;
+import com.redis.demo.q1_sentinel_failover.FailoverSimulator.TimelineEvent;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;

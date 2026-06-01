@@ -1,4 +1,4 @@
-package com.redis.demo.factory;
+package com.redis.demo.q7_client_factory;
 
 /**
  * Q7: Redis 运行模式枚举.

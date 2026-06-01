@@ -1,5 +1,6 @@
-package com.redis.demo.cluster;
+package com.redis.demo.q4_cross_slot_transaction;
 
+import com.redis.demo.q3_cluster_slot.SlotCalculator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
