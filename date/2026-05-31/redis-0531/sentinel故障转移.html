@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis Sentinel Failover Log Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Timeline Connector Line */
+        .timeline-line {
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+            opacity: 0.3;
+        }
+
+        /* Node Badges */
+        .node-s1 { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
+        .node-s2 { border-left: 3px solid #10b981; background: rgba(16, 185, 129, 0.05); }
+        .node-s3 { border-left: 3px solid #6366f1; background: rgba(99, 102, 241, 0.05); }
+
+        .tag-error { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .tag-warn { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .tag-info { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .tag-success { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+        /* Animation */
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }
+        @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+<!-- Header -->
+<header class="max-w-6xl mx-auto mb-8 fade-in">
+    <div class="flex items-center gap-3 mb-2">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <i class="fa-solid fa-server text-white"></i>
+        </div>
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Sentinel Failover Analysis</h1>
+            <p class="text-slate-400 text-sm mono">2026-06-01 15:17:57 ~ 15:19:23 | Epoch 2</p>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Failover Status</div>
+            <div class="text-emerald-400 font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-circle-check"></i> Successful
+            </div>
+            <div class="text-xs text-slate-500 mt-1 mono">172.25.0.4 → 172.25.0.3</div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Leader Node</div>
+            <div class="text-indigo-400 font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-crown"></i> Sentinel-3
+            </div>
+            <div class="text-xs text-slate-500 mt-1 mono">Elected at .277ms</div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Total Duration</div>
+            <div class="text-blue-400 font-semibold flex items-center gap-2">
+                <i class="fa-regular fa-clock"></i> 3.15s
+            </div>
+            <div class="text-xs text-slate-500 mt-1 mono">Switch completed at 18:00.361</div>
+        </div>
+        <div class="bg-red-900/20 border border-red-800/50 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-red-300 text-xs uppercase tracking-wider mb-1">Critical Issue</div>
+            <div class="text-red-400 font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation"></i> Disk Write Failed
+            </div>
+            <div class="text-xs text-red-400/70 mt-1 mono">All 3 nodes affected (EBUSY)</div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <!-- Left: Interactive Timeline -->
+    <div class="lg:col-span-2 space-y-0 relative">
+        <div class="timeline-line"></div>
+        <div id="timeline-container" class="space-y-3 pb-10">
+            <!-- Timeline items will be injected here by JS -->
+        </div>
+    </div>
+
+    <!-- Right: Analysis & Insights -->
+    <div class="space-y-6 fade-in" style="animation-delay: 0.2s;">
+
+        <!-- Role Identification -->
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-700 bg-slate-800/80 flex items-center gap-2">
+                <i class="fa-solid fa-network-wired text-blue-400"></i>
+                <h3 class="font-semibold text-sm">Node Role Identification</h3>
+            </div>
+            <div class="p-4 space-y-3 text-sm">
+                <div class="flex items-start gap-3 node-s3 pl-3 py-2 rounded-r-lg">
+                    <span class="mono text-indigo-400 font-bold shrink-0">S-3</span>
+                    <div>
+                        <div class="text-white font-medium">Leader / Executor</div>
+                        <div class="text-slate-400 text-xs mt-0.5">Triggered +odown, elected leader, executed full failover state machine.</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 node-s2 pl-3 py-2 rounded-r-lg">
+                    <span class="mono text-emerald-400 font-bold shrink-0">S-2</span>
+                    <div>
+                        <div class="text-white font-medium">Follower / First Detector</div>
+                        <div class="text-slate-400 text-xs mt-0.5">First to detect +sdown (.088ms). Voted for S-3. Received config update via Pub/Sub.</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 node-s1 pl-3 py-2 rounded-r-lg">
+                    <span class="mono text-amber-400 font-bold shrink-0">S-1</span>
+                    <div>
+                        <div class="text-white font-medium">Follower / Delayed Voter</div>
+                        <div class="text-slate-400 text-xs mt-0.5">Detected +sdown late (.208ms). Reached quorum independently but lost leader election. Set 20s cooldown.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Critical Warning -->
+        <div class="bg-red-950/30 border border-red-800/50 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-red-800/50 bg-red-900/20 flex items-center gap-2">
+                <i class="fa-solid fa-hard-drive text-red-400"></i>
+                <h3 class="font-semibold text-sm text-red-200">Persistence Failure Analysis</h3>
+            </div>
+            <div class="p-4 text-sm text-red-200/80 space-y-3">
+                <p><strong class="text-red-300">Error:</strong> <code class="mono text-xs bg-red-900/40 px-1.5 py-0.5 rounded">Could not rename tmp config file (Device or resource busy)</code></p>
+                <p>This error occurred <strong>12 times</strong> across all 3 nodes during critical state transitions (epoch change, promotion, switch-master).</p>
+                <div class="bg-red-900/20 rounded-lg p-3 mt-2">
+                    <div class="font-semibold text-red-300 mb-1"><i class="fa-solid fa-bolt mr-1"></i> Immediate Risk</div>
+                    <p class="text-xs leading-relaxed">The new topology (Master=172.25.0.3) exists ONLY in memory. If any Sentinel restarts before this is fixed, it will load the stale config (Master=172.25.0.4), potentially causing a split-brain scenario during the next failure.</p>
+                </div>
+                <div class="bg-slate-800/50 rounded-lg p-3 mt-2 border border-slate-700">
+                    <div class="font-semibold text-slate-300 mb-1"><i class="fa-solid fa-wrench mr-1"></i> Recommended Fix</div>
+                    <ol class="text-xs list-decimal list-inside space-y-1 text-slate-400 mt-1">
+                        <li>Check Docker volume mounts & storage driver</li>
+                        <li>Verify disk space: <code class="mono">df -h</code></li>
+                        <li>Check for file locks: <code class="mono">lsof sentinel.conf</code></li>
+                        <li>After fix: <code class="mono text-emerald-400">SENTINEL FLUSHCONFIG</code></li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key Observations -->
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-700 bg-slate-800/80 flex items-center gap-2">
+                <i class="fa-solid fa-magnifying-glass-chart text-purple-400"></i>
+                <h3 class="font-semibold text-sm">Key Observations</h3>
+            </div>
+            <div class="p-4 space-y-3 text-sm text-slate-300">
+                <div class="flex gap-2">
+                    <span class="text-blue-400 mt-0.5"><i class="fa-solid fa-arrow-right"></i></span>
+                    <p><strong>Detection Skew:</strong> S-2 detected failure 120ms before S-1. Network latency or polling interval differences exist between nodes.</p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-blue-400 mt-0.5"><i class="fa-solid fa-arrow-right"></i></span>
+                    <p><strong>Slave Reconf Order:</strong> Leader reconfigured slaves sequentially: .1 → .2 → 192.168.3.100. Each took ~1 second. Total reconf time dominated the failover duration.</p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-blue-400 mt-0.5"><i class="fa-solid fa-arrow-right"></i></span>
+                    <p><strong>Old Master Recovery:</strong> 172.25.0.4 recovered after ~65s. Sentinel waited an additional ~16s before issuing <code class="mono text-xs">+fix-slave-config</code> to ensure stability.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer class="max-w-6xl mx-auto mt-12 pt-6 border-t border-slate-800 text-center text-slate-600 text-xs">
+    Generated by Redis Sentinel Log Analyzer • Timestamps aligned to millisecond precision
+</footer>
+
+<script>
+  // Merged and sorted timeline data based on the three log files
+  const timelineData = [
+    { time: "15:17:57.088", node: "S-2", type: "warn", event: "+sdown master", detail: "First node to detect subjective down on 172.25.0.4", icon: "fa-eye" },
+    { time: "15:17:57.150", node: "S-3", type: "warn", event: "+sdown master", detail: "Sentinel-3 detects subjective down (+62ms after S-2)", icon: "fa-eye" },
+    { time: "15:17:57.208", node: "S-1", type: "warn", event: "+sdown master", detail: "Sentinel-1 detects subjective down last (+120ms after S-2)", icon: "fa-eye" },
+    { time: "15:17:57.213", node: "S-3", type: "info", event: "+odown master #quorum 2/2", detail: "Sentinel-3 reaches quorum first, confirms objective down", icon: "fa-check-double" },
+    { time: "15:17:57.213", node: "S-3", type: "info", event: "+new-epoch 2 / +try-failover", detail: "Sentinel-3 initiates failover for epoch 2", icon: "fa-flag" },
+    { time: "15:17:57.214", node: "S-3", type: "error", event: "⚠️ Config Save Failed (EBUSY)", detail: "Cannot persist new epoch to disk - Device or resource busy", icon: "fa-hard-drive" },
+    { time: "15:17:57.216", node: "S-1", type: "error", event: "⚠️ Config Save Failed (EBUSY)", detail: "Sentinel-1 also fails to persist epoch 2", icon: "fa-hard-drive" },
+    { time: "15:17:57.216", node: "S-2", type: "error", event: "⚠️ Config Save Failed (EBUSY)", detail: "Sentinel-2 also fails to persist epoch 2", icon: "fa-hard-drive" },
+    { time: "15:17:57.217", node: "S-3", type: "success", event: "Received votes from S-1 & S-2", detail: "Leader election complete: 3/3 votes for 4a6b4a... in epoch 2", icon: "fa-crown" },
+    { time: "15:17:57.277", node: "S-3", type: "info", event: "+elected-leader", detail: "Sentinel-3 officially becomes failover leader", icon: "fa-crown" },
+    { time: "15:17:57.310", node: "S-1", type: "warn", event: "+odown #quorum 3/2 + Delay", detail: "S-1 independently confirms odown but sets 20s failover delay (lost election)", icon: "fa-hourglass-half" },
+    { time: "15:17:57.330", node: "S-3", type: "info", event: "+selected-slave 172.25.0.3", detail: "Chose 172.25.0.3 as new master candidate", icon: "fa-arrow-up" },
+    { time: "15:17:57.330", node: "S-3", type: "info", event: "SLAVEOF NO ONE sent", detail: "Instructed 172.25.0.3 to stop replicating and become master", icon: "fa-paper-plane" },
+    { time: "15:17:57.709", node: "S-3", type: "success", event: "+promoted-slave 172.25.0.3", detail: "New master confirmed promotion. ⚠️ Persist failed again.", icon: "fa-star" },
+    { time: "15:17:57.784", node: "S-3", type: "info", event: "+slave-reconf-sent → .1", detail: "Begin reconfiguring slave 172.25.0.1 to replicate new master", icon: "fa-sync" },
+    { time: "15:17:57.784", node: "S-1", type: "info", event: "+config-update-from Leader", detail: "Received new topology via Pub/Sub. Switched master to .3", icon: "fa-download" },
+    { time: "15:17:57.784", node: "S-2", type: "info", event: "+config-update-from Leader", detail: "Received new topology via Pub/Sub. Switched master to .3", icon: "fa-download" },
+    { time: "15:17:57.786", node: "S-1", type: "error", event: "⚠️ Config Save Failed (EBUSY)", detail: "Followers cannot persist the new topology received from leader", icon: "fa-hard-drive" },
+    { time: "15:17:57.786", node: "S-2", type: "error", event: "⚠️ Config Save Failed (EBUSY)", detail: "Followers cannot persist the new topology received from leader", icon: "fa-hard-drive" },
+    { time: "15:17:58.238", node: "S-3", type: "success", event: "+slave-reconf-done → .1", detail: "Slave 172.25.0.1 successfully reconfigured (~454ms)", icon: "fa-check" },
+    { time: "15:17:59.239", node: "S-3", type: "success", event: "+slave-reconf-done → .2", detail: "Slave 172.25.0.2 successfully reconfigured (~1s)", icon: "fa-check" },
+    { time: "15:18:00.271", node: "S-3", type: "success", event: "+slave-reconf-done → 192.168.3.100", detail: "Last slave reconfigured (~948ms). All slaves now point to new master.", icon: "fa-check" },
+    { time: "15:18:00.361", node: "S-3", type: "success", event: "+failover-end / +switch-master", detail: "✅ FAILOVER COMPLETE. Master switched: 172.25.0.4 → 172.25.0.3", icon: "fa-flag-checkered" },
+    { time: "15:18:00.363", node: "S-3", type: "error", event: "⚠️ Final Config Save Failed", detail: "Final topology NOT persisted to disk. Cluster state is memory-only!", icon: "fa-hard-drive" },
+    { time: "15:18:02~05", node: "ALL", type: "warn", event: "+sdown slave 172.25.0.4", detail: "Old master marked as subjectively down in its new slave role", icon: "fa-power-off" },
+    { time: "15:19:07", node: "ALL", type: "success", event: "-sdown slave 172.25.0.4", detail: "Old master recovered and responding as slave (~65s downtime)", icon: "fa-power-off" },
+    { time: "15:19:23.415", node: "S-3", type: "info", event: "+fix-slave-config 172.25.0.4", detail: "Leader corrected old master's replication config to follow new master", icon: "fa-screwdriver-wrench" },
+  ];
+
+  function getNodeColor(node) {
+    if (node === 'S-1') return { badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30', dot: 'bg-amber-500' };
+    if (node === 'S-2') return { badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', dot: 'bg-emerald-500' };
+    if (node === 'S-3') return { badge: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', dot: 'bg-indigo-500' };
+    return { badge: 'bg-slate-500/20 text-slate-400 border-slate-500/30', dot: 'bg-slate-500' };
+  }
+
+  function getTypeTag(type) {
+    const map = {
+      'error': '<span class="tag-error text-[10px] px-1.5 py-0.5 rounded mono font-bold">ERROR</span>',
+      'warn': '<span class="tag-warn text-[10px] px-1.5 py-0.5 rounded mono font-bold">WARN</span>',
+      'info': '<span class="tag-info text-[10px] px-1.5 py-0.5 rounded mono font-bold">INFO</span>',
+      'success': '<span class="tag-success text-[10px] px-1.5 py-0.5 rounded mono font-bold">OK</span>',
+    };
+    return map[type] || '';
+  }
+
+  function renderTimeline() {
+    const container = document.getElementById('timeline-container');
+
+    timelineData.forEach((item, index) => {
+      const colors = getNodeColor(item.node);
+      const delay = index * 0.03;
+
+      const el = document.createElement('div');
+      el.className = `relative pl-12 fade-in`;
+      el.style.animationDelay = `${delay}s`;
+
+      // Dot on timeline
+      const dotSize = item.type === 'error' ? 'w-4 h-4' : 'w-3 h-3';
+      const dotRing = item.type === 'error' ? 'ring-4 ring-red-500/20' : '';
+
+      el.innerHTML = `
+            <div class="absolute left-[18px] top-4 ${dotSize} ${colors.dot} ${dotRing} rounded-full z-10 shadow-lg"></div>
+            <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 hover:bg-slate-800 transition-colors duration-200 group">
+                <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span class="mono text-xs text-slate-500">${item.time}</span>
+                    <span class="${colors.badge} border text-[10px] px-1.5 py-0.5 rounded mono font-bold">${item.node}</span>
+                    ${getTypeTag(item.type)}
+                    <span class="mono text-xs text-slate-300 font-medium group-hover:text-white transition-colors">
+                        <i class="fa-solid ${item.icon} mr-1 text-[10px] opacity-60"></i>${item.event}
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400 leading-relaxed pl-0.5">${item.detail}</p>
+            </div>
+        `;
+
+      container.appendChild(el);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', renderTimeline);
+</script>
+</body>
+</html>

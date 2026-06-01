@@ -132,6 +132,8 @@ docker run -d \
   --restart=always \
   --privileged=true \
   -p 6379:6379 \
+  -v /etc/localtime:/etc/localtime:ro \
+  -e TZ=Asia/Shanghai \
   -v "${DATA_ROOT}/master/redis.conf":/usr/local/etc/redis/redis.conf \
   -v "${DATA_ROOT}/master/data":/data \
   "redis:${REDIS_VERSION}" \
@@ -145,6 +147,8 @@ docker run -d \
   --restart=always \
   --privileged=true \
   -p 6380:6379 \
+  -v /etc/localtime:/etc/localtime:ro \
+  -e TZ=Asia/Shanghai \
   -v "${DATA_ROOT}/slave-1/redis.conf":/usr/local/etc/redis/redis.conf \
   -v "${DATA_ROOT}/slave-1/data":/data \
   "redis:${REDIS_VERSION}" \
@@ -158,6 +162,8 @@ docker run -d \
   --restart=always \
   --privileged=true \
   -p 6381:6379 \
+  -v /etc/localtime:/etc/localtime:ro \
+  -e TZ=Asia/Shanghai \
   -v "${DATA_ROOT}/slave-2/redis.conf":/usr/local/etc/redis/redis.conf \
   -v "${DATA_ROOT}/slave-2/data":/data \
   "redis:${REDIS_VERSION}" \
@@ -194,6 +200,8 @@ EOF
     --restart=always \
     --privileged=true \
     -p "${sentinel_port}:26379" \
+    -v /etc/localtime:/etc/localtime:ro \
+    -e TZ=Asia/Shanghai \
     -v "${DATA_ROOT}/${sentinel_name}/sentinel.conf":/usr/local/etc/redis/sentinel.conf \
     -v "${DATA_ROOT}/${sentinel_name}":/data \
     "redis:${REDIS_VERSION}" \
