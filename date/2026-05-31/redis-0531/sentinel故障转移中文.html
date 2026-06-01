@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis Sentinel 故障转移日志分析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* 时间线连接线 */
+        .timeline-line {
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+            opacity: 0.3;
+        }
+
+        /* 节点标识颜色 */
+        .node-s1 { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
+        .node-s2 { border-left: 3px solid #10b981; background: rgba(16, 185, 129, 0.05); }
+        .node-s3 { border-left: 3px solid #6366f1; background: rgba(99, 102, 241, 0.05); }
+
+        /* 状态标签样式 */
+        .tag-error { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .tag-warn { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .tag-info { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .tag-success { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+        /* 入场动画 */
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }
+        @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+<!-- 顶部标题区 -->
+<header class="max-w-6xl mx-auto mb-8 fade-in">
+    <div class="flex items-center gap-3 mb-2">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <i class="fa-solid fa-server text-white"></i>
+        </div>
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Sentinel 故障转移分析报告</h1>
+            <p class="text-slate-400 text-sm mono">2026-06-01 15:17:57 ~ 15:19:23 | Epoch 2</p>
+        </div>
+    </div>
+
+    <!-- 核心指标卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">转移状态</div>
+            <div class="text-emerald-400 font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-circle-check"></i> 成功完成
+            </div>
+            <div class="text-xs text-slate-500 mt-1 mono">172.25.0.4 → 172.25.0.3</div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">领导者节点</div>
+            <div class="text-indigo-400 font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-crown"></i> Sentinel-3
+            </div>
+            <div class="text-xs text-slate-500 mt-1 mono">当选时间: .277ms</div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">总耗时</div>
+            <div class="text-blue-400 font-semibold flex items-center gap-2">
+                <i class="fa-regular fa-clock"></i> 3.15秒
+            </div>
+            <div class="text-xs text-slate-500 mt-1 mono">切换完成于 18:00.361</div>
+        </div>
+        <div class="bg-red-900/20 border border-red-800/50 rounded-xl p-4 backdrop-blur-sm">
+            <div class="text-red-300 text-xs uppercase tracking-wider mb-1">严重隐患</div>
+            <div class="text-red-400 font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation"></i> 磁盘写入失败
+            </div>
+            <div class="text-xs text-red-400/70 mt-1 mono">全部 3 个节点均受影响 (EBUSY)</div>
+        </div>
+    </div>
+</header>
+
+<!-- 主体内容区 -->
+<main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <!-- 左侧：交互式时间线 -->
+    <div class="lg:col-span-2 space-y-0 relative">
+        <div class="timeline-line"></div>
+        <div id="timeline-container" class="space-y-3 pb-10">
+            <!-- 时间线条目将由 JS 动态生成 -->
+        </div>
+    </div>
+
+    <!-- 右侧：深度分析与洞察 -->
+    <div class="space-y-6 fade-in" style="animation-delay: 0.2s;">
+
+        <!-- 节点角色识别 -->
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-700 bg-slate-800/80 flex items-center gap-2">
+                <i class="fa-solid fa-network-wired text-blue-400"></i>
+                <h3 class="font-semibold text-sm">节点角色识别</h3>
+            </div>
+            <div class="p-4 space-y-3 text-sm">
+                <div class="flex items-start gap-3 node-s3 pl-3 py-2 rounded-r-lg">
+                    <span class="mono text-indigo-400 font-bold shrink-0">S-3</span>
+                    <div>
+                        <div class="text-white font-medium">领导者 / 执行者</div>
+                        <div class="text-slate-400 text-xs mt-0.5">率先触发客观下线 (+odown)，赢得选举并执行了完整的故障转移状态机。</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 node-s2 pl-3 py-2 rounded-r-lg">
+                    <span class="mono text-emerald-400 font-bold shrink-0">S-2</span>
+                    <div>
+                        <div class="text-white font-medium">跟随者 / 首个发现者</div>
+                        <div class="text-slate-400 text-xs mt-0.5">最先检测到主观下线 (.088ms)。投票给 S-3，并通过 Pub/Sub 接收了新配置。</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 node-s1 pl-3 py-2 rounded-r-lg">
+                    <span class="mono text-amber-400 font-bold shrink-0">S-1</span>
+                    <div>
+                        <div class="text-white font-medium">跟随者 / 延迟投票者</div>
+                        <div class="text-slate-400 text-xs mt-0.5">检测下线较晚 (.208ms)。虽独立达到法定人数但输掉选举，设置了 20 秒冷却期。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 严重警告分析 -->
+        <div class="bg-red-950/30 border border-red-800/50 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-red-800/50 bg-red-900/20 flex items-center gap-2">
+                <i class="fa-solid fa-hard-drive text-red-400"></i>
+                <h3 class="font-semibold text-sm text-red-200">持久化失败分析</h3>
+            </div>
+            <div class="p-4 text-sm text-red-200/80 space-y-3">
+                <p><strong class="text-red-300">错误信息:</strong> <code class="mono text-xs bg-red-900/40 px-1.5 py-0.5 rounded">Could not rename tmp config file (Device or resource busy)</code></p>
+                <p>该错误在关键状态转换期间（纪元变更、从库提升、主库切换）在所有 3 个节点上累计出现了 <strong>12 次</strong>。</p>
+                <div class="bg-red-900/20 rounded-lg p-3 mt-2">
+                    <div class="font-semibold text-red-300 mb-1"><i class="fa-solid fa-bolt mr-1"></i> 即时风险</div>
+                    <p class="text-xs leading-relaxed">新的拓扑结构 (Master=172.25.0.3) <strong>仅存在于内存中</strong>。如果任何 Sentinel 在修复前重启，它将加载过时的旧配置 (Master=172.25.0.4)，极有可能在下一次故障时引发脑裂。</p>
+                </div>
+                <div class="bg-slate-800/50 rounded-lg p-3 mt-2 border border-slate-700">
+                    <div class="font-semibold text-slate-300 mb-1"><i class="fa-solid fa-wrench mr-1"></i> 建议修复步骤</div>
+                    <ol class="text-xs list-decimal list-inside space-y-1 text-slate-400 mt-1">
+                        <li>检查 Docker 卷挂载与存储驱动状态</li>
+                        <li>验证磁盘空间: <code class="mono">df -h</code></li>
+                        <li>检查文件锁占用: <code class="mono">lsof sentinel.conf</code></li>
+                        <li>问题解决后执行: <code class="mono text-emerald-400">SENTINEL FLUSHCONFIG</code></li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- 关键观察点 -->
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-700 bg-slate-800/80 flex items-center gap-2">
+                <i class="fa-solid fa-magnifying-glass-chart text-purple-400"></i>
+                <h3 class="font-semibold text-sm">关键观察点</h3>
+            </div>
+            <div class="p-4 space-y-3 text-sm text-slate-300">
+                <div class="flex gap-2">
+                    <span class="text-blue-400 mt-0.5"><i class="fa-solid fa-arrow-right"></i></span>
+                    <p><strong>检测偏差:</strong> S-2 比 S-1 早 120ms 检测到故障。说明节点间存在网络延迟差异或轮询间隔不同步。</p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-blue-400 mt-0.5"><i class="fa-solid fa-arrow-right"></i></span>
+                    <p><strong>从库重配顺序:</strong> Leader 串行重配了从库: .1 → .2 → 192.168.3.100。每个耗时约 1 秒，重配阶段占据了故障转移的大部分时间。</p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-blue-400 mt-0.5"><i class="fa-solid fa-arrow-right"></i></span>
+                    <p><strong>旧主库恢复:</strong> 172.25.0.4 在宕机约 65 秒后恢复。Sentinel 额外等待了约 16 秒才下发 <code class="mono text-xs">+fix-slave-config</code> 以确保其稳定性。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer class="max-w-6xl mx-auto mt-12 pt-6 border-t border-slate-800 text-center text-slate-600 text-xs">
+    由 Redis Sentinel 日志分析器生成 • 时间戳已精确对齐至毫秒级
+</footer>
+
+<script>
+  // 基于三份日志合并并按时间排序的数据集
+  const timelineData = [
+    { time: "15:17:57.088", node: "S-2", type: "warn", event: "+sdown master", detail: "首个检测到 172.25.0.4 主观下线的节点", icon: "fa-eye" },
+    { time: "15:17:57.150", node: "S-3", type: "warn", event: "+sdown master", detail: "Sentinel-3 检测到主观下线（比 S-2 晚 62ms）", icon: "fa-eye" },
+    { time: "15:17:57.208", node: "S-1", type: "warn", event: "+sdown master", detail: "Sentinel-1 最后检测到主观下线（比 S-2 晚 120ms）", icon: "fa-eye" },
+    { time: "15:17:57.213", node: "S-3", type: "info", event: "+odown master #quorum 2/2", detail: "Sentinel-3 率先达到法定人数，确认客观下线", icon: "fa-check-double" },
+    { time: "15:17:57.213", node: "S-3", type: "info", event: "+new-epoch 2 / +try-failover", detail: "Sentinel-3 开启纪元 2 并发起故障转移", icon: "fa-flag" },
+    { time: "15:17:57.214", node: "S-3", type: "error", event: "⚠️ 配置保存失败 (EBUSY)", detail: "无法将新纪元持久化到磁盘 - 设备或资源忙", icon: "fa-hard-drive" },
+    { time: "15:17:57.216", node: "S-1", type: "error", event: "⚠️ 配置保存失败 (EBUSY)", detail: "Sentinel-1 同样无法持久化纪元 2", icon: "fa-hard-drive" },
+    { time: "15:17:57.216", node: "S-2", type: "error", event: "⚠️ 配置保存失败 (EBUSY)", detail: "Sentinel-2 同样无法持久化纪元 2", icon: "fa-hard-drive" },
+    { time: "15:17:57.217", node: "S-3", type: "success", event: "收到 S-1 和 S-2 的投票", detail: "Leader 选举完成：纪元 2 中获得全票 (3/3)", icon: "fa-crown" },
+    { time: "15:17:57.277", node: "S-3", type: "info", event: "+elected-leader", detail: "Sentinel-3 正式成为故障转移领导者", icon: "fa-crown" },
+    { time: "15:17:57.310", node: "S-1", type: "warn", event: "+odown #quorum 3/2 + 延迟", detail: "S-1 独立确认客观下线，但因输掉选举设置 20 秒冷却期", icon: "fa-hourglass-half" },
+    { time: "15:17:57.330", node: "S-3", type: "info", event: "+selected-slave 172.25.0.3", detail: "选中 172.25.0.3 作为新主库候选", icon: "fa-arrow-up" },
+    { time: "15:17:57.330", node: "S-3", type: "info", event: "发送 SLAVEOF NO ONE", detail: "指示 172.25.0.3 停止复制并晋升为主库", icon: "fa-paper-plane" },
+    { time: "15:17:57.709", node: "S-3", type: "success", event: "+promoted-slave 172.25.0.3", detail: "新主库确认晋升成功。⚠️ 再次持久化失败", icon: "fa-star" },
+    { time: "15:17:57.784", node: "S-3", type: "info", event: "+slave-reconf-sent → .1", detail: "开始重配从库 172.25.0.1 指向新主库", icon: "fa-sync" },
+    { time: "15:17:57.784", node: "S-1", type: "info", event: "+config-update-from Leader", detail: "通过 Pub/Sub 收到新拓扑，已将主库切换为 .3", icon: "fa-download" },
+    { time: "15:17:57.784", node: "S-2", type: "info", event: "+config-update-from Leader", detail: "通过 Pub/Sub 收到新拓扑，已将主库切换为 .3", icon: "fa-download" },
+    { time: "15:17:57.786", node: "S-1", type: "error", event: "⚠️ 配置保存失败 (EBUSY)", detail: "跟随者无法持久化从 Leader 接收的新拓扑", icon: "fa-hard-drive" },
+    { time: "15:17:57.786", node: "S-2", type: "error", event: "⚠️ 配置保存失败 (EBUSY)", detail: "跟随者无法持久化从 Leader 接收的新拓扑", icon: "fa-hard-drive" },
+    { time: "15:17:58.238", node: "S-3", type: "success", event: "+slave-reconf-done → .1", detail: "从库 172.25.0.1 重配成功 (~454ms)", icon: "fa-check" },
+    { time: "15:17:59.239", node: "S-3", type: "success", event: "+slave-reconf-done → .2", detail: "从库 172.25.0.2 重配成功 (~1s)", icon: "fa-check" },
+    { time: "15:18:00.271", node: "S-3", type: "success", event: "+slave-reconf-done → 192.168.3.100", detail: "最后一个从库重配完成 (~948ms)。所有从库已指向新主", icon: "fa-check" },
+    { time: "15:18:00.361", node: "S-3", type: "success", event: "+failover-end / +switch-master", detail: "✅ 故障转移完成。主库已切换: 172.25.0.4 → 172.25.0.3", icon: "fa-flag-checkered" },
+    { time: "15:18:00.363", node: "S-3", type: "error", event: "⚠️ 最终配置保存失败", detail: "最终拓扑未写入磁盘。集群状态目前仅存于内存！", icon: "fa-hard-drive" },
+    { time: "15:18:02~05", node: "ALL", type: "warn", event: "+sdown slave 172.25.0.4", detail: "旧主库在新的从库角色下被标记为主观下线", icon: "fa-power-off" },
+    { time: "15:19:07", node: "ALL", type: "success", event: "-sdown slave 172.25.0.4", detail: "旧主库恢复响应，作为从库重新上线（宕机约 65 秒）", icon: "fa-power-off" },
+    { time: "15:19:23.415", node: "S-3", type: "info", event: "+fix-slave-config 172.25.0.4", detail: "Leader 修正了旧主库的复制配置，使其正确跟随新主", icon: "fa-screwdriver-wrench" },
+  ];
+
+  function getNodeColor(node) {
+    if (node === 'S-1') return { badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30', dot: 'bg-amber-500' };
+    if (node === 'S-2') return { badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', dot: 'bg-emerald-500' };
+    if (node === 'S-3') return { badge: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', dot: 'bg-indigo-500' };
+    return { badge: 'bg-slate-500/20 text-slate-400 border-slate-500/30', dot: 'bg-slate-500' };
+  }
+
+  function getTypeTag(type) {
+    const map = {
+      'error': '<span class="tag-error text-[10px] px-1.5 py-0.5 rounded mono font-bold">错误</span>',
+      'warn': '<span class="tag-warn text-[10px] px-1.5 py-0.5 rounded mono font-bold">警告</span>',
+      'info': '<span class="tag-info text-[10px] px-1.5 py-0.5 rounded mono font-bold">信息</span>',
+      'success': '<span class="tag-success text-[10px] px-1.5 py-0.5 rounded mono font-bold">成功</span>',
+    };
+    return map[type] || '';
+  }
+
+  function renderTimeline() {
+    const container = document.getElementById('timeline-container');
+
+    timelineData.forEach((item, index) => {
+      const colors = getNodeColor(item.node);
+      const delay = index * 0.03;
+
+      const el = document.createElement('div');
+      el.className = `relative pl-12 fade-in`;
+      el.style.animationDelay = `${delay}s`;
+
+      // 时间线上的圆点
+      const dotSize = item.type === 'error' ? 'w-4 h-4' : 'w-3 h-3';
+      const dotRing = item.type === 'error' ? 'ring-4 ring-red-500/20' : '';
+
+      el.innerHTML = `
+            <div class="absolute left-[18px] top-4 ${dotSize} ${colors.dot} ${dotRing} rounded-full z-10 shadow-lg"></div>
+            <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 hover:bg-slate-800 transition-colors duration-200 group">
+                <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span class="mono text-xs text-slate-500">${item.time}</span>
+                    <span class="${colors.badge} border text-[10px] px-1.5 py-0.5 rounded mono font-bold">${item.node}</span>
+                    ${getTypeTag(item.type)}
+                    <span class="mono text-xs text-slate-300 font-medium group-hover:text-white transition-colors">
+                        <i class="fa-solid ${item.icon} mr-1 text-[10px] opacity-60"></i>${item.event}
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400 leading-relaxed pl-0.5">${item.detail}</p>
+            </div>
+        `;
+
+      container.appendChild(el);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', renderTimeline);
+</script>
+</body>
+</html>
