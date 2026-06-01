@@ -7,7 +7,7 @@ spring:
 
   # ====== 默认使用单机 Redis ======
   profiles:
-    active: standalone
+    active: sentinel
 
   # ====== MySQL：SAGA 事务日志 & 迁移状态机 ======
   datasource:
