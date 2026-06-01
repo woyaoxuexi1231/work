@@ -23,7 +23,7 @@ echo "============================================"
 # ---------- 1. 创建 Docker 网络 ----------
 echo ""
 echo "[1/5] 创建 Docker 网络: ${NETWORK}"
-docker network rm ${NETWORK} 2>/dev/null || true
+docker network rm ${NETWORK} 2>&1 || true
 docker network create ${NETWORK} --subnet=172.28.0.0/16
 echo "  ✓ 网络创建成功"
 
@@ -40,7 +40,7 @@ for i in "${!NODES[@]}"; do
 
   echo "  启动 ${NODE} (IP: ${IP}, AMQP: ${AMQP_PORT}, MGMT: ${MGMT_PORT})"
 
-  docker rm -f ${NODE} 2>/dev/null || true
+  docker rm -f ${NODE} 2>&1 || true
 
   docker run -d \
     --name ${NODE} \
@@ -67,7 +67,7 @@ wait_for_rabbit() {
   local port=$2
   echo -n "  等待 ${name} (端口 ${port})..."
   for i in $(seq 1 60); do
-    if docker exec ${name} rabbitmqctl status 2>/dev/null | grep -q "Runtime"; then
+    if docker exec ${name} rabbitmqctl status 2>&1 | grep -q "Runtime"; then
       echo " ✓"
       return 0
     fi
