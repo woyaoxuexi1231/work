@@ -87,6 +87,8 @@ cat > "${DATA_ROOT}/master/redis.conf" << EOF
 port 6379
 requirepass ${REDIS_PASSWORD}
 masterauth ${REDIS_PASSWORD}
+replica-announce-ip ${HOST_IP}
+replica-announce-port 6379
 protected-mode no
 daemonize no
 appendonly yes
@@ -102,6 +104,8 @@ port 6379
 replicaof ${MASTER_HOST} 6379
 masterauth ${REDIS_PASSWORD}
 requirepass ${REDIS_PASSWORD}
+replica-announce-ip ${HOST_IP}
+replica-announce-port 6380
 protected-mode no
 daemonize no
 appendonly yes
@@ -117,6 +121,8 @@ port 6379
 replicaof ${MASTER_HOST} 6379
 masterauth ${REDIS_PASSWORD}
 requirepass ${REDIS_PASSWORD}
+replica-announce-ip ${HOST_IP}
+replica-announce-port 6381
 protected-mode no
 daemonize no
 appendonly yes
@@ -187,6 +193,7 @@ sentinel auth-pass mymaster ${REDIS_PASSWORD}
 sentinel down-after-milliseconds mymaster 5000
 sentinel failover-timeout mymaster 10000
 sentinel parallel-syncs mymaster 1
+sentinel announce-ip ${HOST_IP}
 protected-mode no
 daemonize no
 logfile ""
