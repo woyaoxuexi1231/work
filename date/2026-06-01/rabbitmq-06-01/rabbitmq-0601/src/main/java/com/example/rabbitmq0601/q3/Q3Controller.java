@@ -50,12 +50,35 @@ public class Q3Controller {
         });
     }
 
+    // ==================== 初始化：创建队列 ====================
+
+    /**
+     * 创建镜像队列和普通对照队列（替代脚本职责）
+     *
+     * 前置：必须先运行 02-mirrored-queue.sh 配置镜像策略
+     */
+    @GetMapping("/setup")
+    public Map<String, Object> setup() {
+        // 【重点】队列名以 "mirrored." 开头 → 自动匹配镜像策略 → 一主一从
+        rabbitAdmin.declareQueue(new Queue("mirrored.order.pending", true, false, false));
+        rabbitAdmin.declareQueue(new Queue("mirrored.order.confirmed", true, false, false));
+        // 普通对照队列
+        rabbitAdmin.declareQueue(new Queue("q3.classic.control", true, false, false));
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("mirrored.order.pending", "已创建 — 以 mirrored. 开头，自动匹配 ha-policy → 一主一从");
+        resp.put("mirrored.order.confirmed", "已创建 — 同上");
+        resp.put("q3.classic.control", "已创建 — 普通队列，无镜像");
+        resp.put("next", "GET /q3/publish-mirrored  ← 镜像队列 confirm 延迟");
+        return resp;
+    }
+
     // ==================== 实验 A：镜像队列 confirm 延迟 ====================
 
     /**
      * 向镜像队列发 20 条消息，精确测量每条 confirm 的延迟
      *
-     * 前置：必须已运行 02-mirrored-queue.sh（配置镜像策略 + 创建 mirrored.order.pending）
+     * 前置：GET /q3/setup
      */
     @GetMapping("/publish-mirrored")
     public Map<String, Object> publishToMirrored(@RequestParam(defaultValue = "20") int count) {
