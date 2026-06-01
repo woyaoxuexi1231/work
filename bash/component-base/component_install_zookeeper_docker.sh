@@ -2,7 +2,7 @@
 # ZooKeeper 3.9 | Port: 2181, 2888, 3888, 8181 | Data: /root/zookeeper
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="zookeeper"
 IMAGE="zookeeper:${ZK_VERSION:-3.9}"

@@ -2,7 +2,7 @@
 # Redis 7.2 | Port: 6379 | Data: /root/redis | Password: 123456
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="redis"
 IMAGE="redis:${REDIS_VERSION:-7.2}"

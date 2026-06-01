@@ -2,7 +2,7 @@
 # Consul 1.15.4 | Port: 8500, 8600 | Data: /root/consul
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="consul"
 IMAGE="consul:${CONSUL_VERSION:-1.15.4}"

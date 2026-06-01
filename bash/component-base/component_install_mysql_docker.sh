@@ -2,7 +2,7 @@
 # MySQL 8.1 | Port: 3306 | Data: /root/mysql | Password: 123456
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="mysql"
 IMAGE="mysql:${MYSQL_VERSION:-8.1}"

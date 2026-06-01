@@ -2,7 +2,7 @@
 # Elasticsearch 8.11 | Port: 9200, 9300 | Data: /root/elasticsearch
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="elasticsearch"
 IMAGE="elasticsearch:${ES_VERSION:-8.11.0}"

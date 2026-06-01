@@ -2,7 +2,7 @@
 # MinIO | Port: 9000(API), 9001(Console) | Data: /root/minio | minioadmin/minioadmin
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="minio"
 IMAGE="minio/minio:${MINIO_VERSION:-latest}"

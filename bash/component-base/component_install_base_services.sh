@@ -2,7 +2,7 @@
 # 基础服务批量安装 | 用法: bash $0 [--all] [--services minio,redis,mysql]
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 # 可用服务
 declare -A SERVICES=(

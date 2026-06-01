@@ -2,7 +2,7 @@
 # Nacos 2.3.2 | Port: 8848, 9848, 9849 | Data: /root/nacos | nacos/nacos
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="nacos"
 IMAGE="nacos/nacos-server:${NACOS_VERSION:-v2.3.2}"

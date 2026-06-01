@@ -2,7 +2,7 @@
 # MongoDB 8.0 | Port: 27017 | Data: /root/mongo | admin/admin123
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+source "${SCRIPT_DIR}/common.sh"
 
 CONTAINER="mongo"
 IMAGE="mongo:${MONGO_VERSION:-8.0}"
