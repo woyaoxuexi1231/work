@@ -59,7 +59,19 @@ public class HotKeyController {
 
     @PostConstruct
     public void init() {
-        redis = new Jedis(redisHost, redisPort, 3000);
+        // cluster profile 没有 spring.redis.host，默认值 6379 连不上。
+        // 直接试 7000(cluster) → 6379(standalone) → 6380(sentinel slave)
+        String host = redisHost;
+        int port = redisPort;
+        for (int p : new int[]{7000, 6379, 6380}) {
+            try (Jedis j = new Jedis(host, p, 2000)) {
+                j.auth(password);
+                j.ping();
+                port = p;
+                break;
+            } catch (Exception ignored) {}
+        }
+        redis = new Jedis(host, port, 3000);
         redis.auth(password);
     }
 
