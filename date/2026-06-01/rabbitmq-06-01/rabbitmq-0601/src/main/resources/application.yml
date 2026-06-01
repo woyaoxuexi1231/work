@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: rabbitmq-0601
+  rabbitmq:
+    # 连接到 3 节点集群 (逗号分隔，客户端自动故障切换)
+    addresses: 192.168.3.100:5672,192.168.3.100:5673,192.168.3.100:5674
+    username: admin
+    password: admin123
+    # 连接超时
+    connection-timeout: 5000ms
+    # 开启 publisher confirm
+    publisher-confirm-type: correlated
+    # 开启 publisher returns (消息无法路由时回调)
+    publisher-returns: true
+    # 消费者手动 ack
+    listener:
+      simple:
+        acknowledge-mode: manual
+        # 每次拉取 10 条
+        prefetch: 10
+        # 重试策略
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          multiplier: 2.0
+    # 连接缓存
+    cache:
+      channel:
+        size: 25
+      connection:
+        mode: channel
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.example.rabbitmq0601: DEBUG
+    org.springframework.amqp.rabbit.connection: INFO
