@@ -4,13 +4,16 @@
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 C="mysql"; I="mysql:${MYSQL_VERSION:-8.1}"; P="${MYSQL_PORT:-3306}"
-PASS="${MYSQL_ROOT_PASSWORD:-123456}"; DATA="${MYSQL_DATA_ROOT:-/root/mysql}"
+PASS="${MYSQL_ROOT_PASSWORD:-123456}"
+# 数据根目录: C:\Users\15434\Desktop\docker-data\<组件名>
+DOCKER_DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}"
+DATA="${DOCKER_DATA}/mysql-data"
 
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
 
 # 创建数据目录
 mkdir -p "${DATA}/conf" "${DATA}/data" "${DATA}/log" 2>/dev/null || {
-  log_warn "无法创建 ${DATA}，尝试使用 /tmp/mysql"; DATA="/tmp/mysql"; mkdir -p "${DATA}/conf" "${DATA}/data" "${DATA}/log"
+  log_warn "无法创建 ${DATA}，回退到当前目录"; DATA="./mysql-data"; mkdir -p "${DATA}/conf" "${DATA}/data" "${DATA}/log"
 }
 
 # 配置文件
