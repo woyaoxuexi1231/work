@@ -8,7 +8,7 @@ U="${MINIO_ROOT_USER:-minioadmin}"; PASS="${MINIO_ROOT_PASSWORD:-minioadmin}"
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
 
 pull_image "${I}"
-docker run -d --name "${C}" --restart=always -p ${AP}:9000 -p ${CP}:9001 \
+docker run -d --name "${C}" --restart=always -p ${AP}:9000 -p ${CP}:9001 -e TZ=Asia/Shanghai \
   -e "MINIO_ROOT_USER=${U}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
   "${I}" server /data --console-address ":9001"
 wait_for_container "${C}" 20

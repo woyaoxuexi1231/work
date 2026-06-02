@@ -7,7 +7,7 @@ C="consul"; I="consul:${CONSUL_VERSION:-1.15.4}"; HP="${CONSUL_HTTP_PORT:-8500}"
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
 
 pull_image "${I}"
-docker run -d --name "${C}" --restart=always \
+docker run -d --name "${C}" --restart=always -e TZ=Asia/Shanghai \
   -p ${HP}:8500 -p ${DP}:${DP}/tcp -p ${DP}:${DP}/udp \
   "${I}" agent -dev -client=0.0.0.0 -bind=0.0.0.0 -ui
 wait_for_container "${C}" 15

@@ -8,7 +8,7 @@ G1=$((P+1000)); G2=$((P+1001))
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
 
 pull_image "${I}"
-docker run -d --name "${C}" --restart=always -p ${P}:8848 -p ${G1}:9848 -p ${G2}:9849 \
+docker run -d --name "${C}" --restart=always -p ${P}:8848 -p ${G1}:9848 -p ${G2}:9849 -e TZ=Asia/Shanghai \
   -e MODE="${NACOS_MODE:-standalone}" -e NACOS_AUTH_ENABLE=false "${I}"
 wait_for_container "${C}" 60
 

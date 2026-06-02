@@ -9,7 +9,7 @@ P="${MILVUS_PORT:-19530}"; ATTU_P="${ATTU_PORT:-3000}"
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
 
 pull_image "${MI}"
-docker run -d --name "${C}" --restart=unless-stopped \
+docker run -d --name "${C}" --restart=unless-stopped -e TZ=Asia/Shanghai \
   -p ${P}:19530 -p 9091:9091 \
   -e ETCD_USE_EMBED=true \
   -e ETCD_DATA_DIR=/var/lib/milvus/etcd \
