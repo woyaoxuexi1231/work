@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电商测试数据库架构文档</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'sans-serif'] },
+            colors: { primary: '#3b82f6', secondary: '#64748b', accent: '#8b5cf6' }
+          }
+        }
+      }
+      // 关键修复：使用 neutral 主题并关闭安全模式以兼容复杂标签
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'neutral',
+        securityLevel: 'loose',
+        er: { useMaxWidth: true, fontSize: 12 }
+      });
+    </script>
+    <style>
+        body { background-color: #f8fafc; }
+        .table-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .field-row:hover { background-color: #f1f5f9; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased pb-20">
+
+<!-- Header -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50 bg-opacity-90 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">DB</div>
+            <h1 class="text-xl font-bold text-slate-900">E-Commerce Test DB Schema</h1>
+        </div>
+        <div class="text-sm text-slate-500 flex gap-4">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span> MySQL 8.0+</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500"></span> InnoDB</span>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+
+    <!-- Stats Overview -->
+    <section>
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+            数据规模概览
+        </h2>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><div class="text-slate-500 text-xs uppercase tracking-wider font-semibold">Users</div><div class="text-2xl font-bold text-slate-800 mt-1">10,000</div></div>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><div class="text-slate-500 text-xs uppercase tracking-wider font-semibold">Products</div><div class="text-2xl font-bold text-slate-800 mt-1">1,000</div></div>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><div class="text-slate-500 text-xs uppercase tracking-wider font-semibold">Orders</div><div class="text-2xl font-bold text-slate-800 mt-1">50,000</div></div>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><div class="text-slate-500 text-xs uppercase tracking-wider font-semibold">Order Items</div><div class="text-2xl font-bold text-slate-800 mt-1">150,000</div></div>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><div class="text-slate-500 text-xs uppercase tracking-wider font-semibold">Order Logs</div><div class="text-2xl font-bold text-slate-800 mt-1">500,000</div><div class="text-[10px] text-orange-500 mt-1 font-medium">Partitioned Table</div></div>
+        </div>
+    </section>
+
+    <!-- ER Diagram (Fixed for Mermaid v11) -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <h2 class="text-lg font-bold text-slate-800">实体关系图 (ER Diagram)</h2>
+            <span class="text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">Mermaid v11 Compatible</span>
+        </div>
+        <div class="p-8 overflow-x-auto flex justify-center min-h-[500px]">
+            <div class="mermaid">
+                erDiagram
+                USERS ||--o{ ORDERS : "places"
+                USERS ||--o{ REVIEWS : "writes"
+                CATEGORIES ||--|{ PRODUCTS : "contains"
+                CATEGORIES ||--o{ CATEGORIES : "parent_child"
+                PRODUCTS ||--o{ ORDER_ITEMS : "included_in"
+                PRODUCTS ||--|| INVENTORY : "has"
+                ORDERS ||--|{ ORDER_ITEMS : "contains"
+                ORDERS ||--o| PAYMENTS : "has"
+                ORDERS ||--o{ ORDER_LOGS : "tracks"
+                ORDERS ||--o{ REVIEWS : "receives"
+
+                USERS {
+                bigint id PK
+                varchar name
+                varchar city
+                tinyint vip_level
+                datetime created_at
+                }
+                CATEGORIES {
+                int id PK
+                varchar name
+                int parent_id FK
+                }
+                PRODUCTS {
+                bigint id PK
+                varchar name
+                int category_id FK
+                decimal price
+                int sales_count
+                }
+                ORDERS {
+                bigint id PK
+                varchar order_no UK
+                bigint user_id FK
+                decimal total_amount
+                enum status
+                datetime created_at
+                }
+                ORDER_ITEMS {
+                bigint id PK
+                bigint order_id FK
+                bigint product_id FK
+                int quantity
+                decimal unit_price
+                }
+                PAYMENTS {
+                bigint id PK
+                bigint order_id FK_UK
+                enum method
+                enum status
+                }
+                INVENTORY {
+                bigint product_id PK_FK
+                int stock_quantity
+                int version
+                }
+                ORDER_LOGS {
+                bigint id PK
+                bigint order_id FK
+                varchar action
+                datetime created_at
+                }
+                REVIEWS {
+                bigint id PK
+                bigint order_id FK
+                bigint product_id FK
+                tinyint rating
+                }
+            </div>
+        </div>
+    </section>
+
+    <!-- Detailed Table Structures -->
+    <section>
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+            详细表结构
+        </h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6" id="tables-container"></div>
+    </section>
+</main>
+
+<footer class="border-t border-slate-200 mt-12 py-8 text-center text-slate-400 text-sm">
+    <p>Generated for MySQL Interview Guide • E-commerce Scenario</p>
+</footer>
+
+<script>
+  const tables = [
+    { name: "users", desc: "用户基础信息表，包含VIP等级、地理位置等维度，用于用户画像分析。", color: "blue", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "name", type: "VARCHAR(50)", key: "", extra: "NOT NULL" },
+        { name: "email", type: "VARCHAR(100)", key: "", extra: "NULLABLE" },
+        { name: "phone", type: "VARCHAR(20)", key: "", extra: "NULLABLE" },
+        { name: "city", type: "VARCHAR(50)", key: "IDX", extra: "NULLABLE" },
+        { name: "age", type: "TINYINT", key: "IDX", extra: "18-70" },
+        { name: "gender", type: "ENUM", key: "", extra: "NULLABLE" },
+        { name: "vip_level", type: "TINYINT", key: "IDX", extra: "0-5 DEFAULT 0" },
+        { name: "balance", type: "DECIMAL", key: "", extra: "DEFAULT 0.00" },
+        { name: "created_at", type: "DATETIME", key: "IDX", extra: "NOT NULL" },
+        { name: "status", type: "TINYINT", key: "IDX", extra: "1=正常 0=禁用" }
+      ]},
+    { name: "categories", desc: "商品分类表，支持三级分类树，使用 parent_id 自引用，适合练习递归 CTE。", color: "green", fields: [
+        { name: "id", type: "INT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "name", type: "VARCHAR(50)", key: "", extra: "NOT NULL" },
+        { name: "parent_id", type: "INT", key: "FK", extra: "自引用 NULL=顶级" },
+        { name: "sort_order", type: "INT", key: "", extra: "DEFAULT 0" }
+      ]},
+    { name: "products", desc: "商品SKU表，包含价格、成本、库存快照及销量统计字段。", color: "purple", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "name", type: "VARCHAR(200)", key: "", extra: "NOT NULL" },
+        { name: "category_id", type: "INT", key: "FK", extra: "NOT NULL" },
+        { name: "price", type: "DECIMAL", key: "IDX", extra: "NOT NULL" },
+        { name: "cost", type: "DECIMAL", key: "", extra: "成本算毛利" },
+        { name: "stock", type: "INT", key: "", extra: "冗余字段" },
+        { name: "sales_count", type: "INT", key: "IDX", extra: "销量排行" },
+        { name: "rating", type: "DECIMAL", key: "IDX", extra: "1.00-5.00" },
+        { name: "is_on_sale", type: "TINYINT", key: "IDX", extra: "上下架状态" },
+        { name: "created_at", type: "DATETIME", key: "", extra: "NOT NULL" }
+      ]},
+    { name: "orders", desc: "订单主表，核心业务表。包含金额流转与状态机，索引覆盖常用查询场景。", color: "orange", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "order_no", type: "VARCHAR(32)", key: "UK", extra: "唯一订单号" },
+        { name: "user_id", type: "BIGINT", key: "FK", extra: "NOT NULL" },
+        { name: "total_amount", type: "DECIMAL", key: "", extra: "原价总额" },
+        { name: "discount_amount", type: "DECIMAL", key: "", extra: "优惠金额" },
+        { name: "pay_amount", type: "DECIMAL", key: "IDX", extra: "实付金额" },
+        { name: "status", type: "ENUM", key: "IDX", extra: "6种状态流转" },
+        { name: "created_at", type: "DATETIME", key: "IDX", extra: "下单时间" },
+        { name: "updated_at", type: "DATETIME", key: "", extra: "更新时间" }
+      ]},
+    { name: "order_items", desc: "订单明细表，典型的关联表，记录每个订单中具体购买的商品快照。", color: "orange", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "order_id", type: "BIGINT", key: "FK", extra: "NOT NULL" },
+        { name: "product_id", type: "BIGINT", key: "FK", extra: "NOT NULL" },
+        { name: "quantity", type: "INT", key: "", extra: "购买数量" },
+        { name: "unit_price", type: "DECIMAL", key: "", extra: "成交单价快照" }
+      ]},
+    { name: "payments", desc: "支付流水表，与订单 1:1 或 1:0 关系，记录支付渠道与第三方交易号。", color: "pink", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "order_id", type: "BIGINT", key: "FK_UK", extra: "NOT NULL UNIQUE" },
+        { name: "amount", type: "DECIMAL", key: "", extra: "支付金额" },
+        { name: "method", type: "ENUM", key: "IDX", extra: "alipay/wechat/card" },
+        { name: "transaction_id", type: "VARCHAR(64)", key: "", extra: "第三方流水号" },
+        { name: "status", type: "ENUM", key: "IDX", extra: "success/failed" },
+        { name: "paid_at", type: "DATETIME", key: "IDX", extra: "支付完成时间" }
+      ]},
+    { name: "inventory", desc: "库存专用表，独立于商品表以支持高并发扣减，包含乐观锁版本号。", color: "red", fields: [
+        { name: "product_id", type: "BIGINT", key: "PK_FK", extra: "一对一商品" },
+        { name: "stock_quantity", type: "INT", key: "IDX", extra: "实际库存" },
+        { name: "locked_quantity", type: "INT", key: "", extra: "锁定预占库存" },
+        { name: "version", type: "INT", key: "", extra: "乐观锁版本号" },
+        { name: "updated_at", type: "DATETIME", key: "", extra: "最后更新时间" }
+      ]},
+    { name: "order_logs", desc: "订单操作日志表，采用 RANGE 分区按年存储，用于审计与状态回溯。", color: "slate", badge: "PARTITIONED", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "联合主键成员" },
+        { name: "order_id", type: "BIGINT", key: "FK", extra: "NOT NULL" },
+        { name: "action", type: "VARCHAR(50)", key: "IDX", extra: "pay/ship/complete" },
+        { name: "old_status", type: "VARCHAR(20)", key: "", extra: "变更前状态" },
+        { name: "new_status", type: "VARCHAR(20)", key: "", extra: "变更后状态" },
+        { name: "operator", type: "VARCHAR(50)", key: "", extra: "system/admin/user" },
+        { name: "created_at", type: "DATETIME", key: "PK_IDX", extra: "分区键" }
+      ]},
+    { name: "reviews", desc: "商品评价表，关联订单与商品，支持匿名评价与评分分布统计。", color: "yellow", fields: [
+        { name: "id", type: "BIGINT", key: "PK", extra: "AUTO_INCREMENT" },
+        { name: "order_id", type: "BIGINT", key: "FK", extra: "NOT NULL" },
+        { name: "product_id", type: "BIGINT", key: "FK", extra: "NOT NULL" },
+        { name: "user_id", type: "BIGINT", key: "IDX", extra: "NOT NULL" },
+        { name: "rating", type: "TINYINT", key: "IDX", extra: "1-5星" },
+        { name: "content", type: "TEXT", key: "", extra: "评价内容" },
+        { name: "is_anonymous", type: "TINYINT", key: "", extra: "是否匿名" },
+        { name: "created_at", type: "DATETIME", key: "", extra: "评价时间" }
+      ]}
+  ];
+
+  const colorMap = {
+    blue:   { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800' },
+    green:  { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-800' },
+    purple: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', badge: 'bg-purple-100 text-purple-800' },
+    orange: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-800' },
+    pink:   { bg: 'bg-pink-50', border: 'border-pink-200', text: 'text-pink-700', badge: 'bg-pink-100 text-pink-800' },
+    red:    { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', badge: 'bg-red-100 text-red-800' },
+    slate:  { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', badge: 'bg-slate-200 text-slate-800' },
+    yellow: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-800' },
+  };
+
+  const container = document.getElementById('tables-container');
+  tables.forEach(table => {
+    const c = colorMap[table.color] || colorMap.slate;
+    let fieldsHtml = table.fields.map(f => {
+      let keyBadge = '';
+      if (f.key.includes('PK')) keyBadge += `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200 mr-1">PK</span>`;
+      if (f.key.includes('FK')) keyBadge += `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200 mr-1">FK</span>`;
+      if (f.key.includes('UK')) keyBadge += `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 mr-1">UK</span>`;
+      if (f.key.includes('IDX')) keyBadge += `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 mr-1">IDX</span>`;
+      return `
+                    <div class="field-row grid grid-cols-12 gap-2 py-2 px-3 border-b border-slate-50 last:border-0 items-center transition-colors">
+                        <div class="col-span-4 font-mono text-sm font-medium text-slate-700">${f.name}</div>
+                        <div class="col-span-3 font-mono text-xs text-slate-500">${f.type}</div>
+                        <div class="col-span-3 flex flex-wrap items-center">${keyBadge}</div>
+                        <div class="col-span-2 text-xs text-slate-400 truncate text-right" title="${f.extra}">${f.extra.split(',')[0]}</div>
+                    </div>`;
+    }).join('');
+
+    const card = document.createElement('div');
+    card.className = `table-card bg-white rounded-xl border ${c.border} shadow-sm overflow-hidden transition-all duration-300 flex flex-col`;
+    card.innerHTML = `
+                <div class="${c.bg} px-5 py-4 border-b ${c.border} flex justify-between items-start">
+                    <div>
+                        <h3 class="font-bold text-lg ${c.text} font-mono flex items-center gap-2">
+                            ${table.name}
+                            ${table.badge ? `<span class="text-[10px] px-2 py-0.5 rounded-full ${c.badge} font-sans uppercase tracking-wide">${table.badge}</span>` : ''}
+                        </h3>
+                        <p class="text-sm text-slate-600 mt-1 leading-relaxed">${table.desc}</p>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-auto max-h-[400px]">
+                    <div class="grid grid-cols-12 gap-2 py-2 px-3 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100 sticky top-0 z-10">
+                        <div class="col-span-4">Column</div>
+                        <div class="col-span-3">Type</div>
+                        <div class="col-span-3">Key</div>
+                        <div class="col-span-2 text-right">Extra</div>
+                    </div>
+                    ${fieldsHtml}
+                </div>`;
+    container.appendChild(card);
+  });
+</script>
+</body>
+</html>
