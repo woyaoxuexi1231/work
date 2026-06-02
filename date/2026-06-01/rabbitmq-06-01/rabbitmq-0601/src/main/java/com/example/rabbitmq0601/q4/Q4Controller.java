@@ -79,24 +79,24 @@ public class Q4Controller {
         resp.put("exactly_2_1主1从",   rEx2.toMap());
         resp.put("无镜像_基线",         rNone.toMap());
 
-        // 【重点】计算写放大代价
-        double degradation = rNone.throughput > 0
-                ? (1.0 - rAll.throughput / rNone.throughput) * 100 : 0;
-
+        // 用平均延迟对比（不用吞吐，避免数值溢出）
         Map<String, Object> analysis = new LinkedHashMap<>();
-        analysis.put("all吞吐降幅_vs_无镜像", String.format("%.1f%%", degradation));
-        analysis.put("all_P99_vs_无镜像", (rNone.p99 > 0 ? String.format("%.1fx", (double) rAll.p99 / rNone.p99) : "N/A"));
-        analysis.put("ex2_P99_vs_无镜像", (rNone.p99 > 0 ? String.format("%.1fx", (double) rEx2.p99 / rNone.p99) : "N/A"));
+        double allVsNone = rNone.avgMs > 0 ? (double) rAll.avgMs / rNone.avgMs : 1.0;
+        double ex2VsNone = rNone.avgMs > 0 ? (double) rEx2.avgMs / rNone.avgMs : 1.0;
+        double allVsNoneP99 = rNone.p99 > 0 ? (double) rAll.p99 / rNone.p99 : 1.0;
 
-        if (degradation > 20) {
+        analysis.put("all_avg_vs_无镜像", String.format("%.1fx", allVsNone));
+        analysis.put("ex2_avg_vs_无镜像", String.format("%.1fx", ex2VsNone));
+        analysis.put("all_P99_vs_无镜像", String.format("%.1fx", allVsNoneP99));
+
+        if (allVsNone > 1.5) {
             analysis.put("结论", String.format(
-                    "ha-mode:all 吞吐量只有无镜像的 %.0f%%，P99 是无镜像的 %.1f 倍。"
-                    + "每条消息写 3 个节点，且 master 必须等最慢的 mirror 确认。"
-                    + "而 exactly:2 只比无镜像慢一点点，却多了一个备胎。",
-                    100 - degradation, (double) rAll.p99 / Math.max(1, rNone.p99)));
+                    "ha-mode:all 平均延迟是无镜像的 %.1f 倍，P99 是 %.1f 倍。"
+                    + "每条消息写 3 个节点，master 等最慢 mirror → 写放大严重。"
+                    + "exactly:2 只慢 %.1f 倍，却有备胎。",
+                    allVsNone, allVsNoneP99, ex2VsNone));
         } else {
-            analysis.put("结论", "三组差距不大，可能 master 恰好在同一节点或磁盘性能一致。"
-                    + "尝试增大 count 到 500 或混用 SSD/HDD 节点再测。");
+            analysis.put("结论", "三组差距不大。尝试增大 count 或混用 SSD/HDD 节点再测。");
         }
 
         resp.put("分析", analysis);
@@ -110,7 +110,6 @@ public class Q4Controller {
 
         for (int i = 1; i <= count; i++) {
             long start = System.nanoTime();
-            // 【重点】convertAndSend 的耗时含 confirm，在 all 模式下 = 等 3 个节点全部确认
             rabbitTemplate.convertAndSend("", queueName, "Q4-BENCH-" + i);
             long elapsed = System.nanoTime() - start;
             totalNs += elapsed;
@@ -120,9 +119,9 @@ public class Q4Controller {
         BenchResult r = new BenchResult();
         r.count = count;
         r.totalMs = TimeUnit.NANOSECONDS.toMillis(totalNs);
-        r.avgMs   = TimeUnit.NANOSECONDS.toMillis(totalNs) / count;
-        r.p99     = TimeUnit.NANOSECONDS.toMillis(maxNs);  // 简化：用 max 近似 P99
-        r.throughput = (double) count / TimeUnit.NANOSECONDS.toSeconds(totalNs);
+        // 健壮：totalNs==0 时避免 Infinity
+        r.avgMs     = totalNs > 0 ? TimeUnit.NANOSECONDS.toMillis(totalNs) / count : 0;
+        r.p99       = TimeUnit.NANOSECONDS.toMillis(maxNs);
         return r;
     }
 
@@ -161,7 +160,6 @@ public class Q4Controller {
         long totalMs;
         long avgMs;
         long p99;
-        double throughput;
 
         Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -169,7 +167,6 @@ public class Q4Controller {
             m.put("总耗时_ms", totalMs);
             m.put("平均_ms", avgMs);
             m.put("P99_ms (max)", p99);
-            m.put("吞吐_msg/s", String.format("%.1f", throughput));
             return m;
         }
     }

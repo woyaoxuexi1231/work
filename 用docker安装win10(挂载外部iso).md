@@ -37,12 +37,12 @@ docker run -d `
   --name win10 `
   --privileged `
   -e VERSION=10 `
-  -e RAM_SIZE=2G `
+  -e RAM_SIZE=1536M `
   -e CPU_CORES=1 `
-  -e DISK_SIZE=64G `
+  -e DISK_SIZE=40G `
   -p 3389:3389 `
   -p 8006:8006 `
-  -v "C:\Users\15434\Desktop\iso\Windows.iso:/boot.iso" `
+  -v "C:\Users\15434\Desktop\iso\Windows-ch-origin.iso:/boot.iso" `
   -v "C:\Users\15434\Desktop\share:/shared" `
   dockurr/windows
 ```

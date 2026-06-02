@@ -100,8 +100,6 @@ public class Q2Controller {
 
         for (int i = 1; i <= count; i++) {
             long start = System.nanoTime();
-            // 【重点】这条路径的完整耗时：
-            // node1(连接节点) → (集群查元数据找 master) → 如果 master 在 node3，转发 → 写入 → confirm
             rabbitTemplate.convertAndSend("", queueName, "Q2-BENCH-" + i);
             latencies.add(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
         }
@@ -109,11 +107,11 @@ public class Q2Controller {
         Collections.sort(latencies);
         BenchResult r = new BenchResult();
         r.count = count;
-        r.min = latencies.get(0);
-        r.p50 = latencies.get(count / 2);
-        r.p99 = latencies.get((int) (count * 0.99));
-        r.max = latencies.get(count - 1);
-        r.avg = latencies.stream().mapToLong(Long::longValue).average().orElse(0);
+        r.min = latencies.isEmpty() ? 0 : latencies.get(0);
+        r.p50 = latencies.isEmpty() ? 0 : latencies.get(count / 2);
+        r.p99 = latencies.isEmpty() ? 0 : latencies.get((int) (count * 0.99));
+        r.max = latencies.isEmpty() ? 0 : latencies.get(count - 1);
+        r.avg = latencies.isEmpty() ? 0 : latencies.stream().mapToLong(Long::longValue).average().orElse(0);
         return r;
     }
 

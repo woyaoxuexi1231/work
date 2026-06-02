@@ -74,21 +74,22 @@ public class Q5Controller {
 
         // 对比分析
         Map<String, Object> analysis = new LinkedHashMap<>();
-        double latencyRatio = rQuorum.avgMs > 0 ? (double) rMirrored.avgMs / rQuorum.avgMs : 1;
+
+        // 健壮除零保护
+        double latencyRatio = rQuorum.avgMs > 0 ? (double) rMirrored.avgMs / rQuorum.avgMs : 1.0;
+
         analysis.put("延迟比_镜像/仲裁", String.format("%.2fx", latencyRatio));
-        analysis.put("吞吐比_镜像/仲裁", String.format("%.2fx",
-                rQuorum.throughput > 0 ? rMirrored.throughput / rQuorum.throughput : 1));
 
         if (latencyRatio < 0.85) {
+            int pct = (int) Math.round((1.0 - latencyRatio) * 100);
             analysis.put("结论", String.format(
-                    "镜像队列平均快 %.0f%% —— exactly:2 只需等 1 个 mirror，仲裁需多数派(2/3)确认。"
-                    + "但镜像的延迟波动大（木桶效应），仲裁的延迟更稳定可预测。",
-                    (1 - latencyRatio) * 100));
+                    "镜像队列平均快 %d%% —— exactly:2 只需等 1 个 mirror，仲裁需多数派(2/3)确认。"
+                    + "但镜像的延迟波动大（木桶效应），仲裁的延迟更稳定可预测。", pct));
         } else if (latencyRatio > 1.15) {
+            int pct = (int) Math.round((latencyRatio - 1.0) * 100);
             analysis.put("结论", String.format(
-                    "仲裁队列更快 —— Raft 管道批量提交在某些场景下优于 GM 逐个广播。"
-                    + "但关键差异不在性能，在故障时的数据安全性。",
-                    (latencyRatio - 1) * 100));
+                    "仲裁队列更快 %d%% —— Raft 管道批量提交在某些场景下优于 GM 逐个广播。"
+                    + "但关键差异不在性能，在故障时的数据安全性。", pct));
         } else {
             analysis.put("结论", "两者延迟接近。真正的差异在故障切换时的数据安全性 —— 见 /q5/verify-after-failover");
         }
@@ -112,9 +113,8 @@ public class Q5Controller {
         BenchResult r = new BenchResult();
         r.count = count;
         r.totalMs = TimeUnit.NANOSECONDS.toMillis(totalNs);
-        r.avgMs   = TimeUnit.NANOSECONDS.toMillis(totalNs) / count;
+        r.avgMs   = totalNs > 0 ? TimeUnit.NANOSECONDS.toMillis(totalNs) / count : 0;
         r.p99     = TimeUnit.NANOSECONDS.toMillis(maxNs);
-        r.throughput = (double) count / TimeUnit.NANOSECONDS.toSeconds(totalNs);
         return r;
     }
 
@@ -188,7 +188,6 @@ public class Q5Controller {
         long totalMs;
         long avgMs;
         long p99;
-        double throughput;
 
         Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -196,7 +195,6 @@ public class Q5Controller {
             m.put("总耗时_ms", totalMs);
             m.put("平均_ms", avgMs);
             m.put("P99_ms", p99);
-            m.put("吞吐_msg/s", String.format("%.1f", throughput));
             return m;
         }
     }
