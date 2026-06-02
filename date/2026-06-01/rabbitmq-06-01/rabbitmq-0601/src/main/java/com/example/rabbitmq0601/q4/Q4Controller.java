@@ -53,17 +53,11 @@ public class Q4Controller {
 
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("queues", Arrays.asList(
-                "q4.all.bench  → 需配 ha-mode:all",
-                "q4.ex2.bench  → 需配 ha-mode:exactly, ha-params:2",
-                "q4.none.bench → 无需策略（基线）"
+                "q4.all.bench  → 匹配 ^q4\\.all\\. → ha-mode:all（3 副本）",
+                "q4.ex2.bench  → 匹配 ^q4\\.ex2\\. → exactly:2（1 主 1 从）",
+                "q4.none.bench → 无策略（裸奔基线）"
         ));
-        resp.put("请执行以下两条命令配置策略", Arrays.asList(
-                "docker exec rabbitmq-node1 rabbitmqctl set_policy q4-all '^q4\\.all\\.' "
-                        + "'{\"ha-mode\":\"all\",\"ha-sync-mode\":\"automatic\"}' --apply-to queues",
-                "docker exec rabbitmq-node1 rabbitmqctl set_policy q4-ex2 '^q4\\.ex2\\.' "
-                        + "'{\"ha-mode\":\"exactly\",\"ha-params\":2,\"ha-sync-mode\":\"automatic\"}' --apply-to queues"
-        ));
-        resp.put("验证策略", "docker exec rabbitmq-node1 rabbitmqctl list_policies");
+        resp.put("前置", "sudo bash scripts/02-mirrored-queue.sh（已配置 q4-all 和 q4-ex2 策略）");
         resp.put("验证镜像", "去管理界面查看 q4.all.bench → 应有 2 个 slave；q4.ex2.bench → 1 个 slave；q4.none.bench → 0 个 slave");
         resp.put("next_反面实验", "GET /q4/bench?count=200  ← 三组并行压测");
         return resp;
