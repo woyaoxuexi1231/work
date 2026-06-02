@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
+
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL="*"
+
 # MySQL 8.1 (挂载版) | Port: 3306 | Password: 123456 | Data: /root/mysql
 # 此脚本挂载配置文件和数据目录到宿主机，容器删除后数据不丢失
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 C="mysql"; I="mysql:${MYSQL_VERSION:-8.1}"; P="${MYSQL_PORT:-3306}"
 PASS="${MYSQL_ROOT_PASSWORD:-123456}"
-# 数据根目录: C:\Users\15434\Desktop\docker-data\<组件名>
-DOCKER_DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}"
-DATA="${DOCKER_DATA}/mysql-data"
+DOCKER_DATA_ROOT="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}"
+DATA="${DOCKER_DATA_ROOT}/mysql-data"
 
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
 
-# 创建数据目录
-mkdir -p "${DATA}/conf" "${DATA}/data" "${DATA}/log" 2>/dev/null || {
-  log_warn "无法创建 ${DATA}，回退到当前目录"; DATA="./mysql-data"; mkdir -p "${DATA}/conf" "${DATA}/data" "${DATA}/log"
+# 创建数据目录（必须成功，否则终止）
+mkdir -p "${DATA}/conf" "${DATA}/data" "${DATA}/log" || {
+  log_error "无法创建 ${DATA}，请确认:"
+  log_error "  1. 路径存在: C:\\Users\\15434\\Desktop\\docker-data\\"
+  log_error "  2. Docker Desktop → Settings → Resources → File Sharing 已添加 C 盘"
+  exit 1
 }
 
 # 配置文件

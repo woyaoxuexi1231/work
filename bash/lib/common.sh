@@ -6,6 +6,20 @@
 
 set -euo pipefail
 
+# ---- CRLF 自动修复 (Git Bash) ----
+_fix_crlf() {
+  local f
+  for f in "${BASH_SOURCE[0]}" "${BASH_SOURCE[1]:-}"; do
+    [[ -z "$f" || ! -f "$f" ]] && continue
+    if grep -q $'\r' "$f" 2>/dev/null; then
+      sed -i 's/'$'\r''$//' "$f"
+      printf '[%s] [WARN] 已修复 %s 的 CRLF 换行符，请重新运行脚本\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$f"
+      exit 1
+    fi
+  done
+}
+_fix_crlf
+
 # ---- logging ----
 log() {
   local level="$1"; shift
