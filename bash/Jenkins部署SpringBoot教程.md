@@ -1,26 +1,93 @@
 # Jenkins 部署 Spring Boot 项目 — Pipeline 流水线教程
 
-从头到尾：拉代码 → 编译 → 打包 → 构建镜像 → 运行容器。
+> 架构：Windows Server + Docker Desktop + Jenkins 容器 + TCP API 控制宿主机 Docker
 
 ---
 
-## 一、项目准备
+## 〇、前置条件
 
-假设你的 Spring Boot 项目结构：
+### 开启 Docker Desktop TCP API
+
+1. Docker Desktop → **Settings** → **General**
+2. 勾选 **Expose daemon on tcp://localhost:2375 without TLS**
+3. 点 **Apply & Restart**
+
+验证：
+
+```bash
+curl http://localhost:2375/containers/json
+```
+
+能返回数据就说明 TCP API 已开启。
+
+### 启动 Jenkins
+
+```bash
+bash component_install_jenkins_data_docker.sh
+```
+
+初始化后配置 Tools：**Manage Jenkins → Tools**：
+
+| 工具 | Name | 配置 |
+|------|------|------|
+| JDK | `JDK8` | JAVA_HOME: `/usr/lib/jvm/java-8-openjdk-amd64`，取消 "Install automatically" |
+| Maven | `Maven3` | 勾选 "Install automatically"，版本选最新 |
+
+---
+
+## 一、整体架构
 
 ```
-my-app/
+Windows Server
+├── Docker Desktop (引擎)
+│   ├── Jenkins 容器 (8080)
+│   │   ├── Git + Maven
+│   │   ├── JDK8 ← 编译你的项目
+│   │   ├── Docker CLI ←─TCP:2375─→ Docker Desktop 引擎
+│   │   └── Pipeline 调度
+│   │
+│   ├── MySQL 容器 (3306)
+│   ├── Redis 容器 (6379)
+│   └── SpringBoot 容器 (9090) ← Jenkins 自动部署
+│
+└── 浏览器
+    http://服务器IP:8080 → Jenkins
+    http://服务器IP:9090 → 应用
+```
+
+发布流程：
+
+```
+git push
+  ↓
+Jenkins: git clone
+  ↓
+Jenkins: mvn clean package
+  ↓
+Jenkins: docker build  ──TCP:2375→ Docker Desktop
+  ↓
+Jenkins: docker rm -f   ──TCP:2375→ 停止旧容器
+  ↓
+Jenkins: docker run     ──TCP:2375→ 启动新容器
+  ↓
+应用上线
+```
+
+---
+
+## 二、项目准备
+
+项目结构：
+
+```
+demo/
 ├── src/
-├── pom.xml          ← Maven 项目
-├── Dockerfile       ← Docker 构建文件
-└── Jenkinsfile      ← Jenkins 流水线定义（本文档重点）
+├── pom.xml
+├── Dockerfile
+└── Jenkinsfile
 ```
 
----
-
-## 二、创建 Dockerfile
-
-在项目根目录新建 `Dockerfile`：
+### Dockerfile
 
 ```dockerfile
 FROM openjdk:8-jdk-slim
@@ -30,13 +97,9 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-> 端口号改成你项目实际的，比如 8080。
-
 ---
 
-## 三、创建 Jenkinsfile
-
-在项目根目录新建 `Jenkinsfile`，内容如下：
+## 三、Jenkinsfile
 
 ```groovy
 pipeline {
@@ -48,8 +111,8 @@ pipeline {
     }
 
     environment {
-        // 容器参数（按需修改）
-        APP_NAME = 'my-springboot-app'
+        IMAGE_NAME = 'demo'
+        CONTAINER_NAME = 'demo'
         APP_PORT = '9090'
     }
 
@@ -61,51 +124,56 @@ pipeline {
             }
         }
 
-        stage('Maven Build') {
+        stage('Build Jar') {
             steps {
                 echo '=== Maven 编译打包 ==='
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Docker Build') {
+        stage('Build Docker Image') {
             steps {
                 echo '=== 构建 Docker 镜像 ==='
-                sh "docker build -t ${APP_NAME}:latest ."
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
-        stage('Deploy') {
+        stage('Stop Old Container') {
             steps {
                 echo '=== 停止旧容器 ==='
-                sh "docker rm -f ${APP_NAME} || true"
+                sh "docker rm -f ${CONTAINER_NAME} || true"
+            }
+        }
+
+        stage('Run New Container') {
+            steps {
                 echo '=== 启动新容器 ==='
                 sh """
                     docker run -d \
-                      --name ${APP_NAME} \
+                      --name ${CONTAINER_NAME} \
                       --restart=unless-stopped \
                       -p ${APP_PORT}:8080 \
                       -e TZ=Asia/Shanghai \
-                      ${APP_NAME}:latest
+                      ${IMAGE_NAME}:latest
                 """
             }
         }
 
         stage('Verify') {
             steps {
-                echo '=== 验证部署 ==='
-                sh "sleep 5 && curl -sf -o /dev/null http://localhost:${APP_PORT}/actuator/health || echo 'Health check not available, check logs'"
-                sh "docker ps --filter name=${APP_NAME} --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+                echo '=== 验证 ==='
+                sh "sleep 3 && docker ps --filter name=${CONTAINER_NAME} --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+                sh "curl -sf -o /dev/null http://host.docker.internal:${APP_PORT} || echo '健康检查跳过'"
             }
         }
     }
 
     post {
         success {
-            echo "✅ ${APP_NAME} 部署成功 -> http://localhost:${APP_PORT}"
+            echo "✅ 部署成功 → http://服务器IP:${APP_PORT}"
         }
         failure {
-            echo "❌ 部署失败，检查日志"
+            echo "❌ 部署失败，查看 Console Output"
         }
     }
 }
@@ -113,9 +181,7 @@ pipeline {
 
 ---
 
-## 四、推送代码到 Git
-
-确保项目（含 `Dockerfile` + `Jenkinsfile`）已推送：
+## 四、推送代码
 
 ```bash
 git add .
@@ -125,106 +191,128 @@ git push
 
 ---
 
-## 五、Jenkins 创建流水线任务
+## 五、Jenkins 创建任务
 
-### 5.1 新建 Pipeline
-
-1. Jenkins 首页 → **New Item**
-2. 输入任务名，比如 `my-springboot-app`
-3. 选择 **Pipeline**，点 **OK**
-
-### 5.2 配置 Git 仓库
-
-拉到 **Pipeline** 配置区域：
+1. **新建任务** → 名称 `demo` → 选 **流水线** → OK
+2. 拉到 **流水线** 配置区域：
 
 | 配置项 | 值 |
 |--------|-----|
 | Definition | `Pipeline script from SCM` |
 | SCM | `Git` |
-| Repository URL | 你的 Git 仓库地址，比如 `https://github.com/xxx/my-app.git` |
-| Branches to build | `*/main`（或你的分支） |
+| Repository URL | 你的 Git 地址 |
+| Branches to build | `*/master` |
 | Script Path | `Jenkinsfile` |
 
-> 如果是私有仓库，点 **Add** → **Jenkins** 添加用户名密码凭据。
-
-### 5.3 配置触发器（可选）
-
-勾选 **Poll SCM**，Schedule 填 `H/5 * * * *`，每 5 分钟检查一次代码变更自动构建。
-
-### 5.4 保存
-
-点 **Save**。
+3. 保存 → **立即构建**
 
 ---
 
 ## 六、首次构建
 
-回到任务页面，点 **Build Now**。左侧会看到构建进度条，点进构建号 → **Console Output** 可以看实时日志。
-
-流水线的五个阶段依次执行：
+点 **立即构建** → 点进构建号 → **控制台输出**，看实时日志：
 
 ```
-Checkout     → 拉取 Git 代码
-Maven Build  → mvn clean package
-Docker Build → docker build
-Deploy       → 停止旧容器，启动新容器
-Verify       → 健康检查
+Checkout        → git clone
+Build Jar       → mvn clean package
+Build Docker    → docker build -t demo:latest
+Stop Old        → docker rm -f demo
+Run New         → docker run -d --name demo -p 9090:8080 demo:latest
+Verify          → docker ps
 ```
 
-全部绿色就是成功了。
+最后 `Finished: SUCCESS` 就完成了。
+
+浏览器打开 `http://服务器IP:9090` 看到你的应用。
 
 ---
 
-## 七、后续使用
-
-### 自动触发
-
-- 代码 push 后会自动检测（如果配置了 Poll SCM）
-- 也可以在 Jenkins 页面手动点 **Build Now**
-
-### 查看部署状态
+## 七、后续更新代码
 
 ```bash
-docker ps --filter name=my-springboot-app
-curl http://localhost:9090/actuator/health
-```
+# 改完代码
+git push
 
-### 回滚
-
-```bash
-# 重新构建上一个版本
-docker ps -a  # 找到之前的容器或镜像
+# Jenkins → demo → 立即构建
+# 30秒~2分钟后完成
 ```
 
 ---
 
-## 八、常见问题
+## 八、验证 Docker 连接（排障）
 
-| 问题 | 解决 |
+进 Jenkins 容器验证：
+
+```bash
+docker exec -it jenkins bash
+docker ps         # 应该能看到所有容器，包括 jenkins 自己
+docker images     # 能看到镜像列表
+mvn -version      # Maven 可用
+```
+
+如果 `docker ps` 报错，检查：
+
+1. Docker Desktop 是否开了 `tcp://localhost:2375`
+2. Jenkins 启动时是否有 `-e DOCKER_HOST=tcp://host.docker.internal:2375`
+
+---
+
+## 九、Jenkins 容器里网络要点
+
+| 地址 | 作用 |
 |------|------|
-| `docker: command not found` | Jenkins 容器里没 Docker CLI，需要挂载 `-v /var/run/docker.sock:/var/run/docker.sock` |
-| Maven 构建太慢 | 用阿里云 Maven 仓库：`settings.xml` 配置 `mirrors.aliyun.com` |
-| 端口冲突 | 改 Jenkinsfile 里的 `APP_PORT` |
-| 健康检查失败 | 确保项目有 `/actuator/health` 端点（加 `spring-boot-starter-actuator` 依赖） |
+| `host.docker.internal` | 指向 Windows 宿主机 |
+| `host.docker.internal:2375` | Docker Desktop TCP API |
+| `host.docker.internal:9090` | 访问宿主机上暴露的应用端口 |
+| `localhost` | Jenkins 容器自己（别用它访问其他容器） |
 
 ---
 
-## 九、让 Jenkins 能调 Docker（DinD）
+## 十、推荐：自动清理旧镜像
 
-两个启动脚本已经默认挂载了 `-v /var/run/docker.sock:/var/run/docker.sock`，无需额外配置。Windows Docker Desktop 同样支持，不需要修改。
+在 Pipeline 最后加一个阶段：
+
+```groovy
+stage('Clean Images') {
+    steps {
+        sh 'docker image prune -f'
+    }
+}
+```
 
 ---
 
-## 十、完整流程总结
+## 十一、目录结构建议
 
 ```
-你 push 代码
-    ↓
-Jenkins 检测到变更（或手动 Build Now）
-    ↓
-拉代码 → mvn package → docker build → docker run
-    ↓
-应用运行在 http://localhost:9090
+C:\Users\15434\Desktop\
+├── docker-data\
+│   ├── jenkins-data\    ← Jenkins 所有数据（插件/Job/凭据）
+│   ├── mysql-data\      ← MySQL 数据
+│   └── ...
+│
+├── projects\
+│   └── demo\             ← Spring Boot 项目源码
+│
+└── scripts\              ← 所有安装脚本
 ```
 
-Done.
+---
+
+## 十二、完整流程总结
+
+```
+你写代码 → git push
+  ↓
+Jenkins 拉代码
+  ↓
+Maven 打包 jar
+  ↓
+Docker 构建镜像 ──TCP:2375→ Docker Desktop
+  ↓
+停止旧容器
+  ↓
+启动新容器
+  ↓
+http://服务器IP:9090  上线 🎉
+```

@@ -3,7 +3,8 @@
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL="*"
 
-# Jenkins LTS (最新) + JDK8 数据挂载版 | Port: 8080, 50000
+# Jenkins LTS (最新) + JDK8 + Docker CLI 数据挂载版 | Port: 8080, 50000
+# 通过 Docker Desktop TCP API (2375) 控制宿主机 Docker
 # 数据落盘: C:\Users\15434\Desktop\docker-data\jenkins-data
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
@@ -24,13 +25,17 @@ pull_image "${I}"
 docker run -d --name "${C}" --restart=unless-stopped \
   -p ${P}:8080 -p ${AP}:50000 \
   -e TZ=Asia/Shanghai \
-  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e DOCKER_HOST=tcp://host.docker.internal:2375 \
   -v "${DATA}:/var/jenkins_home" \
   "${I}"
 
 wait_for_container "${C}" 120
 
-# ---- 安装 JDK8 ----
+# ---- 安装 Docker CLI + JDK8 ----
+log_info "安装 Docker CLI..."
+docker exec -u root "${C}" bash -c 'apt-get update -qq && apt-get install -y -qq docker.io && apt-get clean'
+docker exec "${C}" docker --version
+
 log_info "安装 JDK8 (Adoptium Temurin)..."
 docker exec -u root "${C}" bash -c '
   JDK8_URL="https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse"
@@ -44,7 +49,7 @@ docker exec -u root "${C}" bash -c '
   echo "JDK8 installed: $JDK8_DIR"
 '
 
-# ---- 切换更新中心为清华镜像 ----
+# ---- 切换更新中心 ----
 for i in $(seq 1 30); do
   if docker exec "${C}" test -f /var/jenkins_home/hudson.model.UpdateCenter.xml 2>/dev/null; then
     docker exec "${C}" sed -i 's|https://updates.jenkins.io/update-center.json|https://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/update-center.json|g' /var/jenkins_home/hudson.model.UpdateCenter.xml
@@ -55,7 +60,15 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-# ---- 获取初始密码 ----
+# ---- 验证 Docker 连接 ----
+log_info "验证 Docker API 连接..."
+if docker exec "${C}" docker ps >/dev/null 2>&1; then
+  log_info "✓ Jenkins → Docker Desktop 通信正常"
+else
+  log_warn "Docker 连接失败，请确认 Docker Desktop 已开启 TCP API (tcp://localhost:2375)"
+fi
+
+# ---- 初始密码 ----
 for i in $(seq 1 45); do
   if docker exec "${C}" test -f /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null; then
     INIT_PASS=$(docker exec "${C}" cat /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null)
@@ -73,6 +86,6 @@ log_info "JDK8: $(docker exec "${C}" /usr/lib/jvm/java-8-openjdk-amd64/bin/java 
 log_info ""
 log_info "初始密码: cat ${DATA}/secrets/initialAdminPassword"
 log_info ""
-log_info "配置 JDK8 工具: Manage Jenkins → Tools → JDK → Add JDK"
+log_info "配置 JDK8: Manage Jenkins → Tools → JDK → Add JDK"
 log_info "  Name: JDK8"
 log_info "  JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64"

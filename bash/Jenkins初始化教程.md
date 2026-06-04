@@ -1,6 +1,26 @@
 # Jenkins 初始化教程
 
-Jenkins 容器已启动，访问 `http://localhost:8080` 开始初始化。
+## 〇、前置条件
+
+运行脚本前，确保 Docker Desktop 已开启 TCP API：
+
+1. Docker Desktop → **Settings** → **General**
+2. 勾选 **Expose daemon on tcp://localhost:2375 without TLS**
+3. 点 **Apply & Restart**
+
+然后启动 Jenkins：
+
+```bash
+bash component_install_jenkins_data_docker.sh
+```
+
+脚本会自动安装 Docker CLI、JDK8，并验证 Jenkins → Docker Desktop 通信正常。
+
+---
+
+## 一、解锁 Jenkins
+
+访问 `http://localhost:8080`，输入初始密码。
 
 ---
 
