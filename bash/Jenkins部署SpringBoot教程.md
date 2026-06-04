@@ -23,7 +23,7 @@ curl http://localhost:2375/containers/json
 ### 启动 Jenkins
 
 ```bash
-bash component_install_jenkins_data_docker.sh
+bash component_install_jenkins_docker.sh
 ```
 
 初始化后配置 Tools：**Manage Jenkins → Tools**：
