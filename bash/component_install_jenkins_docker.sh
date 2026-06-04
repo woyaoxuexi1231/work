@@ -22,12 +22,27 @@ docker run -d --name "${C}" --restart=unless-stopped \
   -e TZ=Asia/Shanghai -e DOCKER_HOST=tcp://host.docker.internal:2375 \
   -v "${DATA}:/var/jenkins_home" \
   "${I}"
-wait_for_container "${C}" 120
+wait_for_container "${C}" 180
+
+# ==== 等待 Jenkins 初始化完成 ====
+log_info "等待 Jenkins 初始化..."
+for i in $(seq 1 60); do
+  if docker exec "${C}" test -f /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null; then
+    log_info "Jenkins 初始化完成"
+    break
+  fi
+  sleep 3
+done
 
 # ==== 安装 Docker CLI ====
 log_info "安装 Docker CLI..."
-docker exec -u root "${C}" bash -c 'apt-get update -qq && apt-get install -y -qq docker.io && apt-get clean'
-docker exec "${C}" docker --version
+docker exec -u root "${C}" bash -c '
+  for i in $(seq 1 5); do
+    apt-get update -qq 2>/dev/null && break || sleep 5
+  done
+  apt-get install -y -qq docker.io && apt-get clean
+'
+docker exec "${C}" docker --version 2>/dev/null || log_warn "Docker CLI 安装失败, 可进容器手动安装: apt-get install -y docker.io"
 
 # ==== 安装 JDK8 ====
 log_info "安装 JDK8 (Adoptium)..."
@@ -39,7 +54,7 @@ docker exec -u root "${C}" bash -c '
   JDK8_DIR=$(ls -d /usr/lib/jvm/jdk8* 2>/dev/null || ls -d /usr/lib/jvm/temurin-8* 2>/dev/null | head -1)
   ln -sfn "$JDK8_DIR" /usr/lib/jvm/java-8-openjdk-amd64
   echo "JDK8: $JDK8_DIR"
-'
+' || log_warn "JDK8 安装失败"
 
 # ==== 切换更新中心 ====
 for i in $(seq 1 30); do
@@ -59,13 +74,8 @@ else
 fi
 
 # ==== 初始密码 ====
-for i in $(seq 1 45); do
-  if docker exec "${C}" test -f /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null; then
-    log_info "初始密码: $(docker exec "${C}" cat /var/jenkins_home/secrets/initialAdminPassword)"
-    break
-  fi
-  sleep 2
-done
+INIT_PASS=$(docker exec "${C}" cat /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null || echo "获取失败, 手动查看: cat ${DATA}/secrets/initialAdminPassword")
+log_info "初始密码: ${INIT_PASS}"
 
 # ==== 完成 ====
 done_banner "Jenkins | http://localhost:${P}"
