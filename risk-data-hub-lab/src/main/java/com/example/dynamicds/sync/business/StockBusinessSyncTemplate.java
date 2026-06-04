@@ -63,25 +63,31 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
 
     @Override
     protected List<StockRow> fetchPage(BusinessSyncContext context, long lastId, int pageSize) {
-        return switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
+        switch (context.getDatasourceType()) {
+            case HubConstants.TYPE_TRADE_OMS:
+
+                return routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> omsStockSnapshotMapper.selectList(new LambdaQueryWrapper<OmsStockSnapshot>()
                             .eq(OmsStockSnapshot::getSyncFlag, 0)
                             .gt(OmsStockSnapshot::getId, lastId)
                             .orderByAsc(OmsStockSnapshot::getId)
                             .last("limit " + pageSize))).stream().map(row -> new StockRow(
                             row.getId(), row.getSymbol(), row.getExchangeCode(), row.getMarketDay(), row.getOpenPrice(),
-                            row.getHighPrice(), row.getLowPrice(), row.getClosePrice(), row.getVolumeQty(), row.getTurnoverAmount())).toList();
-            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
+                            row.getHighPrice(), row.getLowPrice(), row.getClosePrice(), row.getVolumeQty(), row.getTurnoverAmount())).collect(java.util.stream.Collectors.toList());
+            case HubConstants.TYPE_TRADE_BROKER:
+
+                return routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> brokerStockQuoteMapper.selectList(new LambdaQueryWrapper<BrokerStockQuote>()
                             .eq(BrokerStockQuote::getSyncFlag, 0)
                             .gt(BrokerStockQuote::getId, lastId)
                             .orderByAsc(BrokerStockQuote::getId)
                             .last("limit " + pageSize))).stream().map(row -> new StockRow(
                             row.getId(), row.getSecuCode(), row.getExchangeName(), row.getTradeDay(), row.getOpenPx(),
-                            row.getHighPx(), row.getLowPx(), row.getClosePx(), row.getVolNum(), row.getTurnoverAmt())).toList();
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
-        };
+                            row.getHighPx(), row.getLowPx(), row.getClosePx(), row.getVolNum(), row.getTurnoverAmt())).collect(java.util.stream.Collectors.toList());
+            default:
+
+                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
+        }
     }
 
     @Override
@@ -113,15 +119,21 @@ public class StockBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Stoc
     @Override
     protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
         switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_OMS:
+
+                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     omsStockSnapshotMapper.update(null, new LambdaUpdateWrapper<OmsStockSnapshot>()
                             .set(OmsStockSnapshot::getSyncFlag, 1)
                             .eq(OmsStockSnapshot::getId, rowId)));
-            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_BROKER:
+
+                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     brokerStockQuoteMapper.update(null, new LambdaUpdateWrapper<BrokerStockQuote>()
                             .set(BrokerStockQuote::getSyncFlag, 1)
                             .eq(BrokerStockQuote::getId, rowId)));
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
+            default:
+
+                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
         }
     }
 

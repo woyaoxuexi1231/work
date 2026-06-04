@@ -37,7 +37,7 @@ public class WechatCallbackStrategy implements CallbackChannelStrategy {
     @Override
     public List<String> getHandlerNames() {
         // 微信不做风控上报（⑤ RiskReportHandler）
-        return List.of(
+        return java.util.Arrays.asList(
                 "signatureVerify",
                 "idempotencyCheck",
                 "amountVerify",

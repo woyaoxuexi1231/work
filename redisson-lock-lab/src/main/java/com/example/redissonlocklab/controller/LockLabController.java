@@ -4,9 +4,9 @@ import com.example.redissonlocklab.service.IdempotencyService;
 import com.example.redissonlocklab.service.InstanceId;
 import com.example.redissonlocklab.service.LuaValueLockService;
 import com.example.redissonlocklab.service.RedissonLockDemoService;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
+import javax.validation.Valid;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotBlank;
 import java.time.Duration;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -31,10 +31,10 @@ public class LockLabController {
 
     @GetMapping("/info")
     public Map<String, Object> info() {
-        return Map.of(
-                "instanceId", instanceId.value(),
-                "redissonLockWatchdogTimeoutMs", lockWatchdogTimeoutMs
-        );
+        java.util.Map<String, Object> info = new java.util.HashMap<>();
+        info.put("instanceId", instanceId.value());
+        info.put("redissonLockWatchdogTimeoutMs", lockWatchdogTimeoutMs);
+        return info;
     }
 
     @PostMapping("/redisson/run")
@@ -49,10 +49,10 @@ public class LockLabController {
 
     @PostMapping("/ttl")
     public Map<String, Object> ttl(@Valid @RequestBody TtlRequest req) {
-        return Map.of(
-                "lockKey", req.getLockKey(),
-                "ttlMs", luaValueLockService.ttlMs(req.getLockKey())
-        );
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("lockKey", req.getLockKey());
+        result.put("ttlMs", luaValueLockService.ttlMs(req.getLockKey()));
+        return result;
     }
 
     @PostMapping("/idem")

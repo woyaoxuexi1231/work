@@ -1,6 +1,6 @@
 package com.example.dynamicds.sync;
 
-public static class CleanRecordContext {
+public class CleanRecordContext {
 
     private final Long globalId;
 

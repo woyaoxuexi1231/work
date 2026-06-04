@@ -5,7 +5,7 @@ import com.example.dynamicds.datasource.DynamicDataSourceManager;
 import com.example.dynamicds.datasource.RoutingMybatisExecutor;
 import com.example.dynamicds.dto.DataSourceConfigDTO;
 import com.example.dynamicds.mapper.DynamicSqlMapper;
-import jakarta.annotation.PostConstruct;
+import javax.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -66,7 +66,7 @@ public class MockDataSourceInitializer {
         String prefix = hubUrl.substring(0, hubUrl.indexOf('/', "jdbc:mysql://".length()));
         String query = hubUrl.contains("?") ? hubUrl.substring(hubUrl.indexOf('?')) : "";
         String baseUrl = prefix + query;
-        for (String db : List.of("trade_oms", "trade_broker")) {
+        for (String db : java.util.Arrays.asList("trade_oms", "trade_broker")) {
             try (Connection c = DriverManager.getConnection(baseUrl, hubUser, hubPwd);
                  Statement s = c.createStatement()) {
                 s.execute("create database if not exists `" + db + "` default character set utf8mb4");

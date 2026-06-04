@@ -1,0 +1,54 @@
+/* ===== MLM Anime Platform 全局样式 ===== */
+
+/* CSS 变量 — 品牌色覆盖 */
+:root {
+  --mlm-primary: #409EFF;
+  --mlm-success: #67c23a;
+  --mlm-warning: #e6a23c;
+  --mlm-danger: #f56c6c;
+  --mlm-bg: #f0f2f5;
+  --mlm-card-radius: 12px;
+}
+
+/* Element Plus 主色覆盖 */
+:root {
+  --el-color-primary: var(--mlm-primary);
+}
+
+body {
+  margin: 0;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', Arial, sans-serif;
+  background: var(--mlm-bg);
+  color: #303133;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* 通用卡片样式 */
+.content-card {
+  border-radius: var(--mlm-card-radius) !important;
+  margin-top: 16px;
+}
+
+/* 面包屑 + 页面头部间距 */
+.page-header {
+  margin-bottom: 16px;
+}
+
+/* el-table 圆角修复 */
+.el-table {
+  border-radius: var(--mlm-card-radius);
+}
+
+/* 过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}

@@ -46,7 +46,7 @@ public class ProducerDemoController {
 
     @GetMapping("/reliable/send")
     public void send() {
-        Map<String, Object> msg = Map.of("key", "value");
+        Map<String, Object> msg = java.util.Collections.singletonMap("key", "value");
         reliableProducerService.sendWithRetryRecord("key", "asjfgdaskjfhh");
     }
 

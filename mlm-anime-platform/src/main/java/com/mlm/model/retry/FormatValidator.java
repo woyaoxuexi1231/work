@@ -46,7 +46,7 @@ public class FormatValidator {
             case TEXT_TO_IMAGE:
             case IMAGE_TO_VIDEO:
                 // 图片/视频类：必须有可访问的结果 URL
-                if (response.getResultUrl() == null || response.getResultUrl().isBlank()) {
+                if (response.getResultUrl() == null || response.getResultUrl().trim().isEmpty()) {
                     log.warn("格式校验失败: 媒体类型缺少 resultUrl");
                     return false;
                 }

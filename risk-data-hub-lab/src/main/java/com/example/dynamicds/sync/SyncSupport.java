@@ -51,7 +51,7 @@ public final class SyncSupport {
         }
 
         public static <S> PageChunk<S> end() {
-            return new PageChunk<>(0, List.of(), true);
+            return new PageChunk<>(0, java.util.Arrays.asList(), true);
         }
     }
 

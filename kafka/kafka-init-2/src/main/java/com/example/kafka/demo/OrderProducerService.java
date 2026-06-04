@@ -30,7 +30,10 @@ public class OrderProducerService {
                 "orders",
                 partition,
                 orderId,
-                Map.of("orderId", orderId, "amount", amount)
+                new java.util.HashMap<String, Object>() {{
+                    put("orderId", orderId);
+                    put("amount", amount);
+                }}
         );
 
         kafkaTemplate.send(record).whenComplete((result, ex) -> {
@@ -49,6 +52,9 @@ public class OrderProducerService {
     // 如果 key 不为 null，使用 key 的 hash 对分区数取模；
     // 如果 key 为 null，使用轮询（sticky partition）。
     public void sendOrderWithKey(String orderId, double amount) {
-        kafkaTemplate.send("orders", orderId, Map.of("orderId", orderId, "amount", amount));
+                java.util.Map<String, Object> msg = new java.util.HashMap<>();
+        msg.put("orderId", orderId);
+        msg.put("amount", amount);
+        kafkaTemplate.send("orders", orderId, msg);
     }
 }

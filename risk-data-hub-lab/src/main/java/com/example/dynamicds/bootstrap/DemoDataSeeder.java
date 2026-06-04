@@ -40,10 +40,10 @@ import java.util.function.IntConsumer;
 @Service
 public class DemoDataSeeder {
 
-    private static final List<String> OMS_STATUSES = List.of("NEW", "DONE", "CANCEL");
-    private static final List<String> BROKER_STATUSES = List.of("A", "S", "X");
-    private static final List<String> OMS_ACCOUNTS = List.of("量化一号", "量化二号", "多因子策略", "中性策略", "高频策略");
-    private static final List<String> BROKER_CLIENTS = List.of("华泰资管账户", "中信机构账户", "国君量化账户", "招商自营账户", "东方财富量化户");
+    private static final List<String> OMS_STATUSES = java.util.Arrays.asList("NEW", "DONE", "CANCEL");
+    private static final List<String> BROKER_STATUSES = java.util.Arrays.asList("A", "S", "X");
+    private static final List<String> OMS_ACCOUNTS = java.util.Arrays.asList("量化一号", "量化二号", "多因子策略", "中性策略", "高频策略");
+    private static final List<String> BROKER_CLIENTS = java.util.Arrays.asList("华泰资管账户", "中信机构账户", "国君量化账户", "招商自营账户", "东方财富量化户");
     private static final int OMS_ORDER_REPEAT = 3;
     private static final int BROKER_DEAL_REPEAT = 4;
     private static final int BOOTSTRAP_PROGRESS_STEP = 200;

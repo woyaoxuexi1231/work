@@ -65,7 +65,7 @@ public class OpenAiAdapter implements ModelAdapter {
     public GenerateResponse parseResult(String vendorTaskId, Object vendorResponse) {
         GenerateResponse response = new GenerateResponse();
         response.setResultUrl("https://mock.example.com/script/" + vendorTaskId + ".json");
-        response.setExtensions(Map.of("rawText", vendorResponse.toString()));
+        response.setExtensions(java.util.Collections.singletonMap("rawText", vendorResponse.toString()));
         return response;
     }
 }

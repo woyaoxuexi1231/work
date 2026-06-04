@@ -11,7 +11,7 @@ public class OverviewBlueprint {
 
     private static final String PROJECT_NAME = "精简版数据中台同步实验室";
     private static final String PROJECT_SUMMARY = "启动阶段只保证表结构正常。演示数据由前端手动触发初始化；同步阶段按模板模式并发处理股票、交易、持仓、资金四类业务。";
-    private static final List<String> ARCHITECTURE_ANSWERS = List.of(
+    private static final List<String> ARCHITECTURE_ANSWERS = java.util.Arrays.asList(
             "动态数据源只保留最核心的维护能力：查看、注册、删除，并在注册时带上 datasourceType。",
             "启动阶段只做 schema 和 table 校验，不再自动灌演示数据；演示数据初始化改成前端手动触发。",
             "同步流程改成模板模式，固定三步：拉取数据 -> 转换数据 -> 落库。",
@@ -36,13 +36,13 @@ public class OverviewBlueprint {
                 .currentStart(longValue(leafStateMap.get("currentStart")))
                 .currentNext(longValue(leafStateMap.get("currentNext")))
                 .step(stringValue(leafStateMap.get("step")))
-                .getMode(stringValue(leafStateMap.get("mode")))
+                .mode(stringValue(leafStateMap.get("mode")))
                 .description(stringValue(leafStateMap.get("description")))
                 .build();
     }
 
     private Long longValue(Object value) {
-        return value instanceof Number number ? number.longValue() : null;
+        return value instanceof Number ? ((Number) value).longValue() : null;
     }
 
     private String stringValue(Object value) {

@@ -44,7 +44,7 @@ public class HubController {
         try {
             return ApiResult.ok(initDataTaskService.startTask(), "INIT_TASK_STARTED");
         } catch (IllegalStateException e) {
-            return ApiResult.getFail(409, e.getMessage(), "INIT_TASK_ALREADY_RUNNING");
+            return ApiResult.fail(409, e.getMessage(), "INIT_TASK_ALREADY_RUNNING");
         }
     }
 
@@ -59,9 +59,9 @@ public class HubController {
         try {
             return ApiResult.ok(syncTaskService.startTask(request.getDataSourceKey(), request.getPageSize()), "SYNC_TASK_STARTED");
         } catch (IllegalArgumentException e) {
-            return ApiResult.getFail(400, e.getMessage(), "SYNC_TASK_INVALID_PARAM");
+            return ApiResult.fail(400, e.getMessage(), "SYNC_TASK_INVALID_PARAM");
         } catch (IllegalStateException e) {
-            return ApiResult.getFail(409, e.getMessage(), "SYNC_TASK_ALREADY_RUNNING");
+            return ApiResult.fail(409, e.getMessage(), "SYNC_TASK_ALREADY_RUNNING");
         }
     }
 

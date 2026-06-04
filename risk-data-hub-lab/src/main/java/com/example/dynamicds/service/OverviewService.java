@@ -23,7 +23,7 @@ public class OverviewService {
 
     public OverviewVO overview() {
         Map<String, Integer> hubStats = bootstrapService.currentHubTableStats();
-        OverviewVO.LeafStateVO leafState = overviewBlueprint.toLeafState(leafSegmentService.getState("clean_trade"));
+        OverviewVO.LeafStateVO leafState = overviewBlueprint.toLeafState(leafSegmentService.state("clean_trade"));
 
         return OverviewVO.builder()
                 .project(overviewBlueprint.projectName())

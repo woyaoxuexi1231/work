@@ -48,11 +48,11 @@ Windows Server
 │   │
 │   ├── MySQL 容器 (3306)
 │   ├── Redis 容器 (6379)
-│   └── SpringBoot 容器 (9090) ← Jenkins 自动部署
+│   └── poker-tracker 容器 (9090) ← Jenkins 自动部署
 │
 └── 浏览器
     http://服务器IP:8080 → Jenkins
-    http://服务器IP:9090 → 应用
+    http://服务器IP:9090 → poker-tracker
 ```
 
 发布流程：
@@ -80,7 +80,7 @@ Jenkins: docker run     ──TCP:2375→ 启动新容器
 项目结构：
 
 ```
-demo/
+poker-tracker/
 ├── src/
 ├── pom.xml
 ├── Dockerfile
@@ -92,7 +92,7 @@ demo/
 ```dockerfile
 FROM openjdk:8-jdk-slim
 WORKDIR /app
-COPY target/*.jar app.jar
+COPY target/poker-tracker.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
@@ -111,8 +111,8 @@ pipeline {
     }
 
     environment {
-        IMAGE_NAME = 'demo'
-        CONTAINER_NAME = 'demo'
+        IMAGE_NAME = 'poker-tracker'
+        CONTAINER_NAME = 'poker-tracker'
         APP_PORT = '9090'
     }
 
@@ -120,7 +120,8 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo '=== 拉取代码 ==='
-                checkout scm
+                sh 'git config --global http.sslVerify false'
+                sh 'git clone https://github.com/woyaoxuexi1231/poker.git .'
             }
         }
 
@@ -193,8 +194,10 @@ git push
 
 ## 五、Jenkins 创建任务
 
-1. **新建任务** → 名称 `demo` → 选 **流水线** → OK
-2. 拉到 **流水线** 配置区域：
+> **Jenkinsfile 是通用的**：上面的内容既可以存到 Git 仓库用 "Pipeline script from SCM" 引用，也可以直接粘贴到 Jenkins 的 "Pipeline script" 文本框。语法完全一样，选哪个都行。
+
+1. **新建任务** → 名称 `poker-tracker` → 选 **流水线** → OK
+2. 拉到 **流水线** 配置区域，选 **Pipeline script**，把上面的 Jenkinsfile 粘贴进去
 
 | 配置项 | 值 |
 |--------|-----|
@@ -215,25 +218,40 @@ git push
 ```
 Checkout        → git clone
 Build Jar       → mvn clean package
-Build Docker    → docker build -t demo:latest
-Stop Old        → docker rm -f demo
-Run New         → docker run -d --name demo -p 9090:8080 demo:latest
+Build Docker    → docker build -t poker-tracker:latest
+Stop Old        → docker rm -f poker-tracker
+Run New         → docker run -d --name poker-tracker -p 9090:8080 poker-tracker:latest
 Verify          → docker ps
 ```
 
 最后 `Finished: SUCCESS` 就完成了。
 
-浏览器打开 `http://服务器IP:9090` 看到你的应用。
+浏览器打开 `http://服务器IP:9090` 看到 poker-tracker。
 
 ---
 
-## 七、后续更新代码
+## 七、Pipeline 阶段视图
+
+构建完成后，回到 `poker-tracker` 任务页面，你会看到 **Stage View** 表格：
+
+```
+┌────────────┬──────────┬──────────────┬──────────┬──────────┬────────┐
+│ Checkout   │ Build Jar│ Build Docker │ Stop Old │ Run New  │ Verify │
+│ 15s ✅     │ 45s ✅   │ 22s ✅       │ 1s ✅    │ 3s ✅    │ 2s ✅  │
+└────────────┴──────────┴──────────────┴──────────┴──────────┴────────┘
+```
+
+每个阶段显示耗时和成功/失败状态，绿色 ✅ 成功，红色 ❌ 失败。点进去能看到该阶段的完整日志。
+
+> 这也是 Jenkins 被企业广泛使用的原因之一——每个项目的构建进度、每个阶段的耗时、哪步挂了，一目了然。
+
+## 八、后续更新代码
 
 ```bash
 # 改完代码
 git push
 
-# Jenkins → demo → 立即构建
+# Jenkins → poker-tracker → 立即构建
 # 30秒~2分钟后完成
 ```
 
@@ -292,7 +310,7 @@ C:\Users\15434\Desktop\
 │   └── ...
 │
 ├── projects\
-│   └── demo\             ← Spring Boot 项目源码
+│   └── poker-tracker\     ← Spring Boot 项目源码
 │
 └── scripts\              ← 所有安装脚本
 ```
@@ -314,5 +332,5 @@ Docker 构建镜像 ──TCP:2375→ Docker Desktop
   ↓
 启动新容器
   ↓
-http://服务器IP:9090  上线 🎉
+http://服务器IP:9090  上线 poker-tracker 🎉
 ```

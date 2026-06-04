@@ -60,23 +60,29 @@ public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Asse
 
     @Override
     protected List<AssetRow> fetchPage(BusinessSyncContext context, long lastId, int pageSize) {
-        return switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
+        switch (context.getDatasourceType()) {
+            case HubConstants.TYPE_TRADE_OMS:
+
+                return routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> omsCashAssetMapper.selectList(new LambdaQueryWrapper<OmsCashAsset>()
                             .eq(OmsCashAsset::getSyncFlag, 0)
                             .gt(OmsCashAsset::getId, lastId)
                             .orderByAsc(OmsCashAsset::getId)
                             .last("limit " + pageSize))).stream().map(row -> new AssetRow(
-                            row.getId(), row.getInvestorName(), row.getAccountNo(), row.getCashBalance(), row.getFrozenBalance(), row.getTotalAsset(), row.getStatDay())).toList();
-            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
+                            row.getId(), row.getInvestorName(), row.getAccountNo(), row.getCashBalance(), row.getFrozenBalance(), row.getTotalAsset(), row.getStatDay())).collect(java.util.stream.Collectors.toList());
+            case HubConstants.TYPE_TRADE_BROKER:
+
+                return routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> brokerFundAccountMapper.selectList(new LambdaQueryWrapper<BrokerFundAccount>()
                             .eq(BrokerFundAccount::getSyncFlag, 0)
                             .gt(BrokerFundAccount::getId, lastId)
                             .orderByAsc(BrokerFundAccount::getId)
                             .last("limit " + pageSize))).stream().map(row -> new AssetRow(
-                            row.getId(), row.getClientFullName(), row.getFundAccountNo(), row.getCurrentBalance(), row.getFrozenCapital(), row.getTotalAsset(), row.getBizDate())).toList();
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
-        };
+                            row.getId(), row.getClientFullName(), row.getFundAccountNo(), row.getCurrentBalance(), row.getFrozenCapital(), row.getTotalAsset(), row.getBizDate())).collect(java.util.stream.Collectors.toList());
+            default:
+
+                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
+        }
     }
 
     @Override
@@ -105,15 +111,21 @@ public class AssetBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Asse
     @Override
     protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
         switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_OMS:
+
+                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     omsCashAssetMapper.update(null, new LambdaUpdateWrapper<OmsCashAsset>()
                             .set(OmsCashAsset::getSyncFlag, 1)
                             .eq(OmsCashAsset::getId, rowId)));
-            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_BROKER:
+
+                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     brokerFundAccountMapper.update(null, new LambdaUpdateWrapper<BrokerFundAccount>()
                             .set(BrokerFundAccount::getSyncFlag, 1)
                             .eq(BrokerFundAccount::getId, rowId)));
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
+            default:
+
+                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
         }
     }
 

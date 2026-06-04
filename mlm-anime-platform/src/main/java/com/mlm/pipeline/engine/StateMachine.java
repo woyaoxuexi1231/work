@@ -18,7 +18,7 @@ import java.util.Set;
  */
 public class StateMachine {
 
-    private static final List<EpisodeStatus> ORDER = List.of(
+    private static final List<EpisodeStatus> ORDER = java.util.Arrays.asList(
         EpisodeStatus.SCRIPT_DRAFT,      // 2
         EpisodeStatus.SCRIPT_REVIEW,     // 3
         EpisodeStatus.STORYBOARD,        // 4
@@ -27,10 +27,10 @@ public class StateMachine {
         EpisodeStatus.COMPLETED          // 7
     );
 
-    private static final Set<Pair> REJECTIONS = Set.of(
+    private static final Set<Pair> REJECTIONS = new java.util.HashSet<>(java.util.Arrays.asList(
         new Pair(EpisodeStatus.SCRIPT_REVIEW, EpisodeStatus.SCRIPT_DRAFT),
         new Pair(EpisodeStatus.EPISODE_APPROVAL, EpisodeStatus.GENERATING)
-    );
+    ));
 
     /** 获取下一步，不需要外抛异常了（状态机内部可判） */
     public static EpisodeStatus next(EpisodeStatus current) {

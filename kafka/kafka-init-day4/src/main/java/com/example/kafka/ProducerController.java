@@ -21,10 +21,7 @@ public class ProducerController {
     @GetMapping("/test")
     public void test() {
         for (int i = 0; i < 10; i++) {
-            // Map<String, Object> order = Map.of(
-            //         "orderId", "order-" + i,
-            //         "amount", 100.0 * i,
-            //         "timestamp", System.currentTimeMillis()
+            // Map<String, Object> order = new java.util.HashMap<String, Object>() {{    put(//         "orderId", "order-" + i);    put(//         "amount", 100.0 * i);    put(//         "timestamp", System.currentTimeMillis();}}
             // );
             Order order1 = new Order("order-" + i, 100.0 * i + 500, System.currentTimeMillis(), 0);
             ProducerRecord<String, Object> record = new ProducerRecord<>(

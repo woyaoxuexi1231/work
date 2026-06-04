@@ -27,42 +27,42 @@ public class AuthController {
                                                  @RequestParam String password) {
         AuthUser user = authService.login(username, password);
         if (user == null) {
-            return ApiResult.getFail(401, "用户名或密码错误");
+            return ApiResult.fail(401, "用户名或密码错误");
         }
 
-        String token = jwtUtil.create(Map.of(
-            "sub", user.getId().toString(),
-            "username", user.getUsername(),
-            "role", user.getRole()
-        ));
+        java.util.Map<String, Object> claims = new java.util.HashMap<>();
+        claims.put("sub", user.getId().toString());
+        claims.put("username", user.getUsername());
+        claims.put("role", user.getRole());
+        String token = jwtUtil.create(claims);
 
-        return ApiResult.ok(Map.of(
-            "token", token,
-            "userId", user.getId(),
-            "username", user.getUsername(),
-            "role", user.getRole()
-        ));
+        java.util.Map<String, Object> loginResult = new java.util.HashMap<>();
+        loginResult.put("token", token);
+        loginResult.put("userId", user.getId());
+        loginResult.put("username", user.getUsername());
+        loginResult.put("role", user.getRole());
+        return ApiResult.ok(loginResult);
     }
 
     @PostMapping("/api/auth/me")
     public ApiResult<Map<String, Object>> me(@RequestHeader("Authorization") String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ApiResult.getFail(401, "未登录");
+            return ApiResult.fail(401, "未登录");
         }
         Map<String, Object> claims = jwtUtil.verify(authHeader.substring(7));
         if (claims == null) {
-            return ApiResult.getFail(401, "令牌无效或已过期");
+            return ApiResult.fail(401, "令牌无效或已过期");
         }
         Long userId = Long.parseLong((String) claims.get("sub"));
         AuthUser user = authService.getById(userId);
         if (user == null) {
-            return ApiResult.getFail(401, "用户不存在");
+            return ApiResult.fail(401, "用户不存在");
         }
-        return ApiResult.ok(Map.of(
-            "id", user.getId(),
-            "username", user.getUsername(),
-            "role", user.getRole()
-        ));
+        java.util.Map<String, Object> userMap = new java.util.HashMap<>();
+        userMap.put("id", user.getId());
+        userMap.put("username", user.getUsername());
+        userMap.put("role", user.getRole());
+        return ApiResult.ok(userMap);
     }
 
     @PostMapping("/logout")

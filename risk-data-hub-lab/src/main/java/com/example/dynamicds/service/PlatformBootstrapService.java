@@ -40,19 +40,19 @@ public class PlatformBootstrapService {
             return k + " (" + (c != null ? c.getName() : "?") + ")";
         });
         map.put("上游业务系统", sources);
-        map.put("中台库", List.of(HubConstants.DS_HUB));
+        map.put("中台库", java.util.Arrays.asList(HubConstants.DS_HUB));
         return map;
     }
 
     public Map<String, Object> currentBusinessTableStats() {
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put(HubConstants.DS_TRADE_OMS, countTables(HubConstants.DS_TRADE_OMS, List.of("oms_stock_snapshot", "oms_trade_order", "oms_position_holding", "oms_cash_asset")));
-        r.put(HubConstants.DS_TRADE_BROKER, countTables(HubConstants.DS_TRADE_BROKER, List.of("broker_stock_quote", "broker_trade_deal", "broker_position_balance", "broker_fund_account")));
+        r.put(HubConstants.DS_TRADE_OMS, countTables(HubConstants.DS_TRADE_OMS, java.util.Arrays.asList("oms_stock_snapshot", "oms_trade_order", "oms_position_holding", "oms_cash_asset")));
+        r.put(HubConstants.DS_TRADE_BROKER, countTables(HubConstants.DS_TRADE_BROKER, java.util.Arrays.asList("broker_stock_quote", "broker_trade_deal", "broker_position_balance", "broker_fund_account")));
         return r;
     }
 
     public Map<String, Integer> currentHubTableStats() {
-        return countTables(HubConstants.DS_HUB, List.of("clean_stock", "clean_trade", "clean_position", "clean_asset", "event_message", "init_task", "sync_task", "sync_business_record"));
+        return countTables(HubConstants.DS_HUB, java.util.Arrays.asList("clean_stock", "clean_trade", "clean_position", "clean_asset", "event_message", "init_task", "sync_task", "sync_business_record"));
     }
 
     private Map<String, Integer> countTables(String dsKey, List<String> tables) {

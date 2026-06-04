@@ -38,7 +38,7 @@ public class AlipayCallbackStrategy implements CallbackChannelStrategy {
 
     @Override
     public List<String> getHandlerNames() {
-        return List.of(
+        return java.util.Arrays.asList(
                 "signatureVerify",
                 "idempotencyCheck",
                 "amountVerify",

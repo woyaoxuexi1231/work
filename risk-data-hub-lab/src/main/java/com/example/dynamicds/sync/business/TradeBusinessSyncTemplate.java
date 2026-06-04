@@ -67,23 +67,29 @@ public class TradeBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Trad
 
     @Override
     protected List<TradeRow> fetchPage(BusinessSyncContext context, long lastId, int pageSize) {
-        return switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.query(context.getDataSourceKey(),
+        switch (context.getDatasourceType()) {
+            case HubConstants.TYPE_TRADE_OMS:
+
+                return routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> omsTradeOrderMapper.selectList(new LambdaQueryWrapper<OmsTradeOrder>()
                             .eq(OmsTradeOrder::getSyncFlag, 0)
                             .gt(OmsTradeOrder::getId, lastId)
                             .orderByAsc(OmsTradeOrder::getId)
                             .last("limit " + pageSize))).stream().map(row -> new TradeRow(
-                            row.getId(), row.getOrderNo(), row.getInvestorName(), row.getSideCode(), row.getOrderAmount(), row.getTradeStatus(), row.getTradeTime())).toList();
-            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.query(context.getDataSourceKey(),
+                            row.getId(), row.getOrderNo(), row.getInvestorName(), row.getSideCode(), row.getOrderAmount(), row.getTradeStatus(), row.getTradeTime())).collect(java.util.stream.Collectors.toList());
+            case HubConstants.TYPE_TRADE_BROKER:
+
+                return routingMybatisExecutor.query(context.getDataSourceKey(),
                     () -> brokerTradeDealMapper.selectList(new LambdaQueryWrapper<BrokerTradeDeal>()
                             .eq(BrokerTradeDeal::getSyncFlag, 0)
                             .gt(BrokerTradeDeal::getId, lastId)
                             .orderByAsc(BrokerTradeDeal::getId)
                             .last("limit " + pageSize))).stream().map(row -> new TradeRow(
-                            row.getId(), row.getDealCode(), row.getClientFullName(), row.getBsFlag(), row.getTurnoverAmount(), row.getStatusMark(), row.getDealAt())).toList();
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
-        };
+                            row.getId(), row.getDealCode(), row.getClientFullName(), row.getBsFlag(), row.getTurnoverAmount(), row.getStatusMark(), row.getDealAt())).collect(java.util.stream.Collectors.toList());
+            default:
+
+                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
+        }
     }
 
     @Override
@@ -114,15 +120,21 @@ public class TradeBusinessSyncTemplate extends AbstractBusinessSyncTemplate<Trad
     @Override
     protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
         switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_OMS:
+
+                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     omsTradeOrderMapper.update(null, new LambdaUpdateWrapper<OmsTradeOrder>()
                             .set(OmsTradeOrder::getSyncFlag, 1)
                             .eq(OmsTradeOrder::getId, rowId)));
-            case HubConstants.TYPE_TRADE_BROKER -> routingMybatisExecutor.run(context.getDataSourceKey(), () ->
+            case HubConstants.TYPE_TRADE_BROKER:
+
+                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
                     brokerTradeDealMapper.update(null, new LambdaUpdateWrapper<BrokerTradeDeal>()
                             .set(BrokerTradeDeal::getSyncFlag, 1)
                             .eq(BrokerTradeDeal::getId, rowId)));
-            default -> throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
+            default:
+
+                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
         }
     }
 

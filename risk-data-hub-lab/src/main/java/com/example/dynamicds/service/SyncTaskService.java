@@ -10,7 +10,7 @@ import com.example.dynamicds.entity.SyncBusinessRecord;
 import com.example.dynamicds.entity.SyncTask;
 import com.example.dynamicds.mapper.SyncBusinessRecordMapper;
 import com.example.dynamicds.mapper.SyncTaskMapper;
-import jakarta.annotation.PreDestroy;
+import javax.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;

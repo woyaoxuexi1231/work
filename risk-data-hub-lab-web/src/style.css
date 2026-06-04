@@ -1,0 +1,31 @@
+/* ===== Risk Data Hub Lab 全局样式 ===== */
+
+:root {
+  --risk-primary: #67c23a;
+  --risk-success: #67c23a;
+  --risk-warning: #e6a23c;
+  --risk-danger: #f56c6c;
+  --risk-bg: #f5f7fa;
+  --risk-card-radius: 14px;
+}
+
+:root {
+  --el-color-primary: var(--risk-primary);
+}
+
+body {
+  margin: 0;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', Arial, sans-serif;
+  background: var(--risk-bg);
+  color: #303133;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.content-card {
+  border-radius: var(--risk-card-radius) !important;
+  margin-top: 16px;
+}

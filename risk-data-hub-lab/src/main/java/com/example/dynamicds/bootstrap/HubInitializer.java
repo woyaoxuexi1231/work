@@ -8,7 +8,7 @@ import com.example.dynamicds.entity.LeafAlloc;
 import com.example.dynamicds.mapper.DictItemMapper;
 import com.example.dynamicds.mapper.DynamicSqlMapper;
 import com.example.dynamicds.mapper.LeafAllocMapper;
-import jakarta.annotation.PostConstruct;
+import javax.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

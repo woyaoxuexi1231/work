@@ -2,7 +2,6 @@ package com.example.redissonlocklab.service;
 
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,7 +20,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class LuaValueLockService {
     private static final StringCodec CODEC = StringCodec.INSTANCE;
-    private static final HexFormat HEX = HexFormat.of();
+    private static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b & 0xff));
+        }
+        return sb.toString();
+    }
 
     private static final String LUA_TRY_LOCK =
             "local ok = redis.call('set', KEYS[1], ARGV[1], 'PX', ARGV[2], 'NX')\n" +
@@ -194,7 +199,7 @@ public class LuaValueLockService {
                 RScript.Mode.READ_WRITE,
                 LUA_UNLOCK,
                 RScript.ReturnType.INTEGER,
-                java.util.List.of(lockKey),
+                java.util.Arrays.asList(lockKey),
                 lockValue
         );
         return Objects.equals(res, 1L);
@@ -228,7 +233,7 @@ public class LuaValueLockService {
                 RScript.Mode.READ_WRITE,
                 LUA_TRY_LOCK,
                 RScript.ReturnType.INTEGER,
-                java.util.List.of(lockKey),
+                java.util.Arrays.asList(lockKey),
                 lockValue,
                 String.valueOf(leaseMs)
         );
@@ -261,7 +266,7 @@ public class LuaValueLockService {
                 RScript.Mode.READ_WRITE,
                 LUA_RENEW,
                 RScript.ReturnType.INTEGER,
-                java.util.List.of(lockKey),
+                java.util.Arrays.asList(lockKey),
                 lockValue,
                 String.valueOf(leaseMs)
         );
@@ -271,7 +276,7 @@ public class LuaValueLockService {
     private String randomToken() {
         byte[] b = new byte[16];
         new SecureRandom().nextBytes(b);
-        return HEX.formatHex(b);
+        return hex(b);
     }
 
     private static final class RenewCounter {

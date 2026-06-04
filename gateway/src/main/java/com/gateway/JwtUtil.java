@@ -34,7 +34,10 @@ public class JwtUtil {
             mutableClaims.put("iat", now / 1000);
             mutableClaims.put("exp", (now + expiration) / 1000);
 
-            String headerJson = objectMapper.writeValueAsString(new java.util.HashMap<>(Map.of("alg", "HS256", "typ", "JWT")));
+            java.util.Map<String, String> headerMap = new java.util.HashMap<>();
+            headerMap.put("alg", "HS256");
+            headerMap.put("typ", "JWT");
+            String headerJson = objectMapper.writeValueAsString(headerMap);
             String payloadJson = objectMapper.writeValueAsString(mutableClaims);
 
             String headerB64 = base64UrlEncode(headerJson.getBytes(StandardCharsets.UTF_8));

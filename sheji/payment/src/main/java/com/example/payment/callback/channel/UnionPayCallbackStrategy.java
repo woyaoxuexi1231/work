@@ -37,7 +37,7 @@ public class UnionPayCallbackStrategy implements CallbackChannelStrategy {
     @Override
     public List<String> getHandlerNames() {
         // 银联不做幂等（②）+ 不做风控（⑤）
-        return List.of(
+        return java.util.Arrays.asList(
                 "signatureVerify",
                 "amountVerify",
                 "statusTransition",

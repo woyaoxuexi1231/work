@@ -41,7 +41,7 @@ public class TaskPollingScheduler {
     private static final Logger log = LoggerFactory.getLogger(TaskPollingScheduler.class);
 
     /** AI 步骤完成后需要自动推进的剧集状态集合 */
-    private static final List<EpisodeStatus> AUTO_ADVANCE_STATES = List.of(
+    private static final List<EpisodeStatus> AUTO_ADVANCE_STATES = java.util.Arrays.asList(
         EpisodeStatus.STORYBOARD,
         EpisodeStatus.GENERATING
     );
@@ -73,7 +73,7 @@ public class TaskPollingScheduler {
         for (Task task : tasks) {
             try {
                 Optional<ModelConfigEntity> configOpt = configLoader.load(task.getVendor(), task.getModelType());
-                if (configOpt.isEmpty()) {
+                if (!configOpt.isPresent()) {
                     log.warn("未找到模型配置: vendor={}, type={}", task.getVendor(), task.getModelType());
                     continue;
                 }

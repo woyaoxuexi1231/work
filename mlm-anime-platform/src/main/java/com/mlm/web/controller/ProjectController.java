@@ -24,13 +24,14 @@ import com.mlm.web.dto.ResultsRequest;
 import com.mlm.web.dto.ScriptSubmitRequest;
 import com.mlm.web.dto.StageMembersListRequest;
 import com.mlm.web.dto.StageMembersSetRequest;
-import jakarta.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -75,13 +76,13 @@ public class ProjectController {
     @PostMapping("/get")
     public ApiResult<ProjectDetailVO> get(@RequestBody IdRequest req, HttpServletRequest request) {
         if (req == null || req.getId() == null) {
-            return ApiResult.getFail(400, "项目ID不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目ID不能为空", "INVALID_REQUEST");
         }
         Project project = projectService.getById(req.getId());
-        if (project == null) return ApiResult.getFail(404, "项目不存在", "PROJECT_NOT_FOUND");
+        if (project == null) return ApiResult.fail(404, "项目不存在", "PROJECT_NOT_FOUND");
         Long userId = currentUserId(request);
         if (!project.getIsPublic() && !project.getCreatedBy().equals(userId))
-            return ApiResult.getFail(403, "无权访问该项目", "ACCESS_DENIED");
+            return ApiResult.fail(403, "无权访问该项目", "ACCESS_DENIED");
         List<Episode> episodes = episodeService.findByProjectId(req.getId());
         return ApiResult.ok(ProjectDetailVO.builder()
                 .project(project)
@@ -93,10 +94,10 @@ public class ProjectController {
     @PostMapping("/create")
     public ApiResult<Project> create(@RequestBody ProjectCreateRequest req, HttpServletRequest request) {
         if (req == null || req.getName() == null || req.getName().trim().isEmpty()) {
-            return ApiResult.getFail(400, "项目名称不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目名称不能为空", "INVALID_REQUEST");
         }
         if (req.getName().length() > 100) {
-            return ApiResult.getFail(400, "项目名称不能超过100字符", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目名称不能超过100字符", "INVALID_REQUEST");
         }
         Long userId = currentUserId(request);
         Project project = pipelineEngine.createProject(req.getName().trim(), req.getResourceId(), userId);
@@ -107,12 +108,12 @@ public class ProjectController {
     @PostMapping("/toggle-visibility")
     public ApiResult<String> toggleVisibility(@RequestBody IdRequest req, HttpServletRequest request) {
         if (req == null || req.getId() == null) {
-            return ApiResult.getFail(400, "项目ID不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目ID不能为空", "INVALID_REQUEST");
         }
         Long userId = currentUserId(request);
         Project project = projectService.getById(req.getId());
-        if (project == null) return ApiResult.getFail(404, "项目不存在", "PROJECT_NOT_FOUND");
-        if (!project.getCreatedBy().equals(userId)) return ApiResult.getFail(403, "仅创建者可操作", "PERMISSION_DENIED");
+        if (project == null) return ApiResult.fail(404, "项目不存在", "PROJECT_NOT_FOUND");
+        if (!project.getCreatedBy().equals(userId)) return ApiResult.fail(403, "仅创建者可操作", "PERMISSION_DENIED");
         project.setIsPublic(!project.getIsPublic());
         projectService.update(project);
         String newStatus = project.getIsPublic() ? "PROJECT_PUBLISHED" : "PROJECT_UNPUBLISHED";
@@ -123,7 +124,7 @@ public class ProjectController {
     @PostMapping("/episode/add")
     public ApiResult<Episode> addEpisode(@RequestBody EpisodeAddRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null) {
-            return ApiResult.getFail(400, "项目ID不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目ID不能为空", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 2, request);
         Episode episode = pipelineEngine.addEpisode(
@@ -138,12 +139,12 @@ public class ProjectController {
     @PostMapping("/episode/submit-script")
     public ApiResult<String> submitScript(@RequestBody ScriptSubmitRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 2, request);
         Episode episode = episodeService.getById(req.getEpisodeId());
         if (episode == null || !episode.getProjectId().equals(req.getProjectId())) {
-            return ApiResult.getFail(404, "剧集不存在", "EPISODE_NOT_FOUND");
+            return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         }
         episode.setScriptContent(req.getScriptContent());
         pipelineEngine.submitScript(episode);
@@ -154,12 +155,12 @@ public class ProjectController {
     @PostMapping("/episode/approve-script")
     public ApiResult<String> approveScript(@RequestBody EpisodeIdRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 3, request);
         Episode episode = episodeService.getById(req.getEpisodeId());
         if (episode == null || !episode.getProjectId().equals(req.getProjectId())) {
-            return ApiResult.getFail(404, "剧集不存在", "EPISODE_NOT_FOUND");
+            return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         }
         pipelineEngine.advance(episode);
         return ApiResult.ok("SCRIPT_APPROVED");
@@ -169,7 +170,7 @@ public class ProjectController {
     @PostMapping("/episode/reject-script")
     public ApiResult<String> rejectScript(@RequestBody EpisodeIdRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 3, request);
         pipelineEngine.reject(req.getEpisodeId(), EpisodeStatus.SCRIPT_DRAFT);
@@ -180,12 +181,12 @@ public class ProjectController {
     @PostMapping("/episode/approve")
     public ApiResult<String> approve(@RequestBody EpisodeIdRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 6, request);
         Episode episode = episodeService.getById(req.getEpisodeId());
         if (episode == null || !episode.getProjectId().equals(req.getProjectId())) {
-            return ApiResult.getFail(404, "剧集不存在", "EPISODE_NOT_FOUND");
+            return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         }
         pipelineEngine.advance(episode);
         return ApiResult.ok("FINAL_APPROVED");
@@ -195,7 +196,7 @@ public class ProjectController {
     @PostMapping("/episode/reject")
     public ApiResult<String> reject(@RequestBody EpisodeIdRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 6, request);
         pipelineEngine.reject(req.getEpisodeId(), EpisodeStatus.GENERATING);
@@ -206,11 +207,11 @@ public class ProjectController {
     @PostMapping("/episode/retry")
     public ApiResult<String> retry(@RequestBody EpisodeIdRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         Episode episode = episodeService.getById(req.getEpisodeId());
         if (episode == null || !episode.getProjectId().equals(req.getProjectId())) {
-            return ApiResult.getFail(404, "剧集不存在", "EPISODE_NOT_FOUND");
+            return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         }
         checkStagePermission(req.getProjectId(), episode.getStatus(), request);
         pipelineEngine.retry(req.getEpisodeId());
@@ -223,7 +224,7 @@ public class ProjectController {
     @PostMapping("/episode/generate-image")
     public ApiResult<String> generateImage(@RequestBody GenerateImageRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 5, request);
         GenerateRequest genReq = new GenerateRequest();
@@ -241,7 +242,7 @@ public class ProjectController {
     @PostMapping("/episode/generate-video")
     public ApiResult<String> generateVideo(@RequestBody GenerateVideoRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 5, request);
         GenerateRequest genReq = new GenerateRequest();
@@ -257,11 +258,11 @@ public class ProjectController {
     @PostMapping("/episode/complete-generation")
     public ApiResult<String> completeGeneration(@RequestBody EpisodeIdRequest req, HttpServletRequest request) {
         if (req == null || req.getProjectId() == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "参数不完整", "INVALID_REQUEST");
+            return ApiResult.fail(400, "参数不完整", "INVALID_REQUEST");
         }
         checkStagePermission(req.getProjectId(), 5, request);
         Episode episode = episodeService.getById(req.getEpisodeId());
-        if (episode == null) return ApiResult.getFail(404, "剧集不存在", "EPISODE_NOT_FOUND");
+        if (episode == null) return ApiResult.fail(404, "剧集不存在", "EPISODE_NOT_FOUND");
         pipelineEngine.advance(episode);
         return ApiResult.ok("GENERATION_COMPLETED");
     }
@@ -270,11 +271,11 @@ public class ProjectController {
     @PostMapping("/episode/results")
     public ApiResult<GenerationResultVO> getResults(@RequestBody ResultsRequest req) {
         if (req == null || req.getEpisodeId() == null) {
-            return ApiResult.getFail(400, "剧集ID不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "剧集ID不能为空", "INVALID_REQUEST");
         }
         Long episodeId = req.getEpisodeId();
         return ApiResult.ok(GenerationResultVO.builder()
-                .items(List.of(
+                .items(java.util.Arrays.asList(
                         GenerationResultVO.GenerationItemVO.builder().url("https://picsum.photos/seed/" + episodeId + "a/960/540").label("分镜1").build(),
                         GenerationResultVO.GenerationItemVO.builder().url("https://picsum.photos/seed/" + episodeId + "b/960/540").label("分镜2").build(),
                         GenerationResultVO.GenerationItemVO.builder().url("https://picsum.photos/seed/" + episodeId + "c/960/540").label("分镜3").build(),
@@ -288,7 +289,7 @@ public class ProjectController {
     @PostMapping("/stage-members/list")
     public ApiResult<List<StageMember>> listMembers(@RequestBody StageMembersListRequest req) {
         if (req == null || req.getProjectId() == null) {
-            return ApiResult.getFail(400, "项目ID不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目ID不能为空", "INVALID_REQUEST");
         }
         return ApiResult.ok(stageMemberMapper.selectList(
                 new LambdaQueryWrapper<StageMember>().eq(StageMember::getProjectId, req.getProjectId())));
@@ -298,12 +299,12 @@ public class ProjectController {
     @Transactional(rollbackFor = Exception.class)
     public ApiResult<Void> setMembers(@RequestBody StageMembersSetRequest req, HttpServletRequest httpRequest) {
         if (req == null || req.getProjectId() == null) {
-            return ApiResult.getFail(400, "项目ID不能为空", "INVALID_REQUEST");
+            return ApiResult.fail(400, "项目ID不能为空", "INVALID_REQUEST");
         }
         Long userId = currentUserId(httpRequest);
         Project project = projectService.getById(req.getProjectId());
-        if (project == null) return ApiResult.getFail(404, "项目不存在", "PROJECT_NOT_FOUND");
-        if (!project.getCreatedBy().equals(userId)) return ApiResult.getFail(403, "仅创建者可设置", "PERMISSION_DENIED");
+        if (project == null) return ApiResult.fail(404, "项目不存在", "PROJECT_NOT_FOUND");
+        if (!project.getCreatedBy().equals(userId)) return ApiResult.fail(403, "仅创建者可设置", "PERMISSION_DENIED");
 
         // 先删除现有成员
         stageMemberMapper.delete(new LambdaQueryWrapper<StageMember>().eq(StageMember::getProjectId, req.getProjectId()));

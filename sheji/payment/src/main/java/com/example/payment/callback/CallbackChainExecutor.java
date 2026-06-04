@@ -89,18 +89,18 @@ public class CallbackChainExecutor {
                 ctx.addStep(handler.name(), "FAILED: " + e.getMessage(),
                         System.currentTimeMillis() - stepStart);
                 log.error("[{}][{}] FAILED: {}", channel, handler.name(), e.getMessage());
-                return CallbackResult.getFail(handler.name(), e.getMessage(), ctx.getSteps());
+                return CallbackResult.fail(handler.name(), e.getMessage(), ctx.getSteps());
 
             } catch (Exception e) {
                 ctx.addStep(handler.name(), "ERROR: " + e.getMessage(),
                         System.currentTimeMillis() - stepStart);
                 log.error("[{}][{}] UNEXPECTED ERROR: {}", channel, handler.name(), e.getMessage(), e);
-                return CallbackResult.getFail(handler.name(),
+                return CallbackResult.fail(handler.name(),
                         "未知异常: " + e.getMessage(), ctx.getSteps());
             }
         }
 
-        return CallbackResult.isSuccess(ctx.getSteps(), System.currentTimeMillis() - start);
+        return CallbackResult.success(ctx.getSteps(), System.currentTimeMillis() - start);
     }
 
     /** 获取指定渠道的 handler 名称列表 */

@@ -30,7 +30,7 @@ public class PaymentController {
             m.put("displayName", s.getDisplayName());
             return m;
         }).collect(Collectors.toList());
-        return ApiResult.ok("已注册 " + list.size() + " 个渠道", Map.of("channels", list));
+        return ApiResult.ok("已注册 " + list.size() + " 个渠道", java.util.Collections.singletonMap("channels", list));
     }
 
     /** 发起支付 —— 根据 channel 自动路由到对应策略 */

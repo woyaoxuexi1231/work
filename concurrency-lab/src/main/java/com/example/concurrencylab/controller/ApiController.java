@@ -4,10 +4,10 @@ import com.example.concurrencylab.service.InMemoryStockService;
 import com.example.concurrencylab.service.LoadTestService;
 import com.example.concurrencylab.service.PointsService;
 import com.example.concurrencylab.service.RedisDbStockService;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import javax.validation.Valid;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,13 +30,13 @@ public class ApiController {
     public Map<String, Object> reset(@Valid @RequestBody ResetRequest req) {
         inMemoryStockService.reset(req.getInMemoryStock());
         pointsService.reset();
-        return Map.of("ok", true);
+        return java.util.Collections.singletonMap("ok", true);
     }
 
     @PostMapping("/redis/init")
     public Map<String, Object> initRedisSku(@Valid @RequestBody RedisInitRequest req) {
         redisDbStockService.initSku(req.getSku(), req.getTotal(), req.getPrefetch());
-        return Map.of("ok", true);
+        return java.util.Collections.singletonMap("ok", true);
     }
 
     @PostMapping("/redis/buy")

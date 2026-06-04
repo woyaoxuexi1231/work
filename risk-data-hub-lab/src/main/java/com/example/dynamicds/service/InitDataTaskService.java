@@ -6,7 +6,7 @@ import com.example.dynamicds.entity.InitTask;
 import com.example.dynamicds.bootstrap.DemoDataSeeder;
 import com.example.dynamicds.bootstrap.HubConstants;
 import com.example.dynamicds.mapper.InitTaskMapper;
-import jakarta.annotation.PreDestroy;
+import javax.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
