@@ -95,12 +95,7 @@ public class HubInitializer {
 
     private void initHubBaseData() {
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            dictItemMapper.insert(buildDictItem("trade_status_oms", "NEW", "待确认", "OMS待确认"));
-            dictItemMapper.insert(buildDictItem("trade_status_oms", "DONE", "已成交", "OMS成交完成"));
-            dictItemMapper.insert(buildDictItem("trade_status_oms", "CANCEL", "已撤单", "OMS撤单状态"));
-            dictItemMapper.insert(buildDictItem("trade_status_broker", "A", "待确认", "Broker待确认"));
-            dictItemMapper.insert(buildDictItem("trade_status_broker", "S", "已成交", "Broker成交完成"));
-            dictItemMapper.insert(buildDictItem("trade_status_broker", "X", "已撤单", "Broker撤单状态"));
+            // 1. 先插入 Leaf 发号器记录 — dict_item 等需要用到 nextId 的 tag 必须先存在
             leafAllocMapper.insert(buildLeafAlloc(TAG_INIT_TASK, 1L, 10, "init_task主键"));
             leafAllocMapper.insert(buildLeafAlloc(TAG_SYNC_TASK, 1L, 10, "sync_task主键"));
             leafAllocMapper.insert(buildLeafAlloc(TAG_DICT_ITEM, 1L, 20, "dict_item主键"));
@@ -118,6 +113,14 @@ public class HubInitializer {
             leafAllocMapper.insert(buildLeafAlloc("clean_asset", 300000L, 20, "clean_asset主键"));
             leafAllocMapper.insert(buildLeafAlloc("event_message", 500000L, 20, "event_message主键"));
             leafAllocMapper.insert(buildLeafAlloc("tx_audit", 900000L, 10, "tx_audit主键"));
+
+            // 2. 再插入字典数据 — 此时 leaf_alloc 表已有 dict_item 标签，nextId 正常工作
+            dictItemMapper.insert(buildDictItem("trade_status_oms", "NEW", "待确认", "OMS待确认"));
+            dictItemMapper.insert(buildDictItem("trade_status_oms", "DONE", "已成交", "OMS成交完成"));
+            dictItemMapper.insert(buildDictItem("trade_status_oms", "CANCEL", "已撤单", "OMS撤单状态"));
+            dictItemMapper.insert(buildDictItem("trade_status_broker", "A", "待确认", "Broker待确认"));
+            dictItemMapper.insert(buildDictItem("trade_status_broker", "S", "已成交", "Broker成交完成"));
+            dictItemMapper.insert(buildDictItem("trade_status_broker", "X", "已撤单", "Broker撤单状态"));
         });
     }
 

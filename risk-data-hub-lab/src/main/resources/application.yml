@@ -18,11 +18,10 @@ spring:
     username: admin
     password: admin
     virtual-host: /
-  data:
-    redis:
-      host: 192.168.3.100
-      port: 6379
-      password: 123456
+  redis:
+    host: 192.168.3.100
+    port: 6379
+    password: 123456
 
 server:
   port: 8501
