@@ -43,7 +43,7 @@ docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 
 把得到的密码粘贴到输入框，点 **Continue**。
 
-> 978361b9c6a54dce8e2bfda8af438d1a
+> a85d9af233234468bbc1f648f5c1e190
 
 ---
 
