@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Nacos 2.3.2 | Port: 8848, 9848, 9849 | nacos/nacos
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====

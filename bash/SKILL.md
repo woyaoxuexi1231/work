@@ -37,7 +37,7 @@ component_install_<组件名>_docker.sh
 ```bash
 #!/usr/bin/env bash
 # <组件名> <版本> | Port: <端口> | <凭据信息>
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====
@@ -180,7 +180,7 @@ done_banner "Redis | Port: ${P} | Pass: ${PASS} | Data: ${DATA}"
 ```bash
 #!/usr/bin/env bash
 # Redis 7.2 | Port: 6379 | Pass: 123456
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====
@@ -218,7 +218,7 @@ done_banner "Redis | Port: ${P} | Pass: ${PASS} | Data: ${DATA}"
 ```bash
 #!/usr/bin/env bash
 # MySQL 8.1 | Port: 3306 | Pass: 123456
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====
@@ -266,7 +266,7 @@ done_banner "MySQL | Port: ${P} | Pass: ${PASS} | Data: ${DATA}"
 ```bash
 #!/usr/bin/env bash
 # Jenkins LTS + JDK8 + Docker CLI | Port: 8080, 50000
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====
@@ -318,7 +318,6 @@ done_banner "Jenkins | http://localhost:${P}"
 
 - [ ] 文件名：`component_install_<组件>_docker.sh`
 - [ ] 第二行是 `# 组件名 版本 | Port: XXX | ...`
-- [ ] 开头有 `export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"`
 - [ ] `source "${SCRIPT_DIR}/lib/common.sh"` 正确引用公共库
 - [ ] 配置变量用大写单字母：`C`、`I`、`P`、`PASS`、`DATA`
 - [ ] `DATA` 路径为 `/c/Users/15434/Desktop/docker-data/<组件>-data`

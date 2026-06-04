@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # RabbitMQ 3.13 | Port: 5672, 15672 | admin/admin
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====

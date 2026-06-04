@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 基础服务批量安装 | 用法: bash $0 [--all] [--services minio,redis,mysql]
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 服务列表 ====

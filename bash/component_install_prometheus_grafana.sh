@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prometheus + Grafana | Port: 9090(Prom), 3000(Grafana)
-export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
+# export MSYS_NO_PATHCONV=1; export MSYS2_ARG_CONV_EXCL="*"
 set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"
 
 # ==== 配置 ====
