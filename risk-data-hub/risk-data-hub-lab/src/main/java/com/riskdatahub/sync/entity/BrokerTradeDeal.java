@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * Broker 券商系统成交记录实体。
@@ -47,7 +48,7 @@ public class BrokerTradeDeal {
     private String statusMark;
 
     /** 成交时间 */
-    private String dealAt;
+    private LocalDateTime dealAt;
 
     /** 同步标记：0-未同步，1-已同步 */
     private Integer syncFlag;

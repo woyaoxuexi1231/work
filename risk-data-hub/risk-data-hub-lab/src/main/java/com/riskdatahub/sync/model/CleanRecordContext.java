@@ -3,6 +3,8 @@ package com.riskdatahub.sync.model;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 清洗记录上下文 — 中台表每条记录的来源追溯信息。
  * <p>
@@ -32,5 +34,5 @@ public class CleanRecordContext {
     private String cleanBatch;
 
     /** 记录创建时间 */
-    private String createdAt;
+    private LocalDateTime createdAt;
 }

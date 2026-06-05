@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * OMS 系统交易订单实体。
@@ -47,7 +48,7 @@ public class OmsTradeOrder {
     private String tradeStatus;
 
     /** 交易时间 */
-    private String tradeTime;
+    private LocalDateTime tradeTime;
 
     /** 同步标记：0-未同步，1-已同步 */
     private Integer syncFlag;

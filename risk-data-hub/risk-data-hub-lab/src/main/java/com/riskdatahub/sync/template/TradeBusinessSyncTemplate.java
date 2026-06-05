@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -207,6 +208,6 @@ public class TradeBusinessSyncTemplate
         private String directionCode;
         private BigDecimal amount;
         private String statusCode;
-        private String tradeTime;
+        private LocalDateTime tradeTime;
     }
 }

@@ -2,7 +2,6 @@ package com.riskdatahub.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.DataSourceManager;
@@ -33,8 +32,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,46 +103,29 @@ public class SyncTaskService {
 
     /**
      * 提交异步同步任务。
-     * <p>流程：校验数据源 → 检查当天是否已有成功任务（有则拒绝） → 持久化 QUEUED 状态。
-     * 任务不会立即执行，而是由 {@link #scanAndExecute()} 定时扫描后调度。</p>
+     * <p>每天只保留一条同步任务记录。如果当天已有任务（非 RUNNING 状态），重置为 QUEUED 重新执行；
+     * 如果任务正在运行则拒绝提交。无当天任务时创建新记录。</p>
      *
      * @param dataSourceKey 数据源标识
      * @param pageSize      每页大小
-     * @return 刚创建的同步任务对象
+     * @return 同步任务对象
      * @throws IllegalArgumentException 数据源不存在或为中台库
-     * @throws IllegalStateException    当天已有成功同步任务
+     * @throws IllegalStateException    当天已有正在运行的任务
      */
     public SyncTask startTask(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = validateDataSource(dataSourceKey);
-
-        // 检查当天是否已有成功的同步任务
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        Long successCount = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
-                syncTaskMapper.selectCount(new LambdaQueryWrapper<SyncTask>()
-                        .eq(SyncTask::getStatus, "SUCCESS")
-                        .apply("DATE_FORMAT(submitted_at, '%Y-%m-%d') = {0}", today)));
-        if (successCount > 0) {
-            throw new IllegalStateException("今天已存在成功的同步任务，请勿重复提交");
-        }
-
-        return createQueuedTask(dataSourceKey, config, pageSize, "同步任务已提交，等待执行");
+        return createOrResetTask(dataSourceKey, config, pageSize, "同步任务已提交，等待执行");
     }
 
     /**
-     * 强制刷新 — 清除 risk_hub 全部业务数据和任务记录，然后重新全量同步。
+     * 强制刷新 — 清除 risk_hub 全部清洗数据和 Redis 缓存，然后重新全量同步。
      * <p>
-     * 执行步骤：
-     * <ol>
-     *   <li>清空 4 张清洗表（clean_stock / clean_trade / clean_position / clean_asset）</li>
-     *   <li>清空同步任务记录（sync_business_record / sync_task）</li>
-     *   <li>清除 Redis 中所有已存在 ID 的缓存（sync:existing:*）</li>
-     *   <li>创建新的 QUEUED 任务，跳过"当天已有成功任务"的检查</li>
-     * </ol>
+     * 不清除 sync_task / sync_business_record 记录，仅重置当天任务状态为 QUEUED。
      * </p>
      *
      * @param dataSourceKey 数据源标识
      * @param pageSize      每页大小
-     * @return 刚创建的同步任务对象
+     * @return 同步任务对象
      */
     public SyncTask forceRefresh(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = validateDataSource(dataSourceKey);
@@ -159,19 +140,58 @@ public class SyncTaskService {
             cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
         });
 
-        // 2. 清空同步任务记录
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            syncBusinessRecordMapper.delete(new LambdaQueryWrapper<SyncBusinessRecord>().apply("1=1"));
-            syncTaskMapper.delete(new LambdaQueryWrapper<SyncTask>().apply("1=1"));
-        });
-
-        // 3. 清除 Redis 缓存
+        // 2. 清除 Redis 缓存
         syncCacheHelper.clearByPattern("sync:existing:*");
 
-        // 4. 创建新的 QUEUED 任务（跳过当天已有成功任务的检查）
-        SyncTask task = createQueuedTask(dataSourceKey, config, pageSize, "强制刷新任务已提交，等待执行");
-        log.warn("[SyncTask] 强制刷新完成，新任务 id={}", task.getId());
-        return task;
+        // 3. 创建或重置当天任务
+        return createOrResetTask(dataSourceKey, config, pageSize, "强制刷新任务已提交，等待执行");
+    }
+
+    /**
+     * 创建或重置当天的同步任务——每天只保留一条记录。
+     * <p>
+     * 如果当天已有任务且不在运行中，重置为 QUEUED 重新排队；
+     * 如果当天任务正在运行则抛出异常；
+     * 无当天任务时创建新记录。</p>
+     */
+    private SyncTask createOrResetTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
+        int safePageSize = Math.max(1, Math.min(pageSize, 500));
+
+        // 查找当天已有任务
+        SyncTask existing = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
+                        .apply("DATE(submitted_at) = CURDATE()")
+                        .orderByDesc(SyncTask::getId)
+                        .last("limit 1")));
+
+        if (existing != null) {
+            if ("RUNNING".equals(existing.getStatus())) {
+                throw new IllegalStateException("当天同步任务正在运行中，请等待完成后再试");
+            }
+            // 重置已有任务为 QUEUED
+            Long taskId = existing.getId();
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                existing.setStatus("QUEUED");
+                existing.setProgress(0);
+                existing.setDataSourceKey(dataSourceKey);
+                existing.setDataSourceName(config.getName());
+                existing.setDatasourceType(config.getDatasourceType());
+                existing.setPageSize(safePageSize);
+                existing.setMessage(message);
+                existing.setStartedAt(null);
+                existing.setFinishedAt(null);
+                existing.setTotalPulledCount(0);
+                existing.setTotalSavedCount(0);
+                existing.setErrorMessage(null);
+                existing.setRunning(true);
+                syncTaskMapper.updateById(existing);
+            });
+            log.info("[SyncTask] resetTask id={}, dataSourceKey={}, status={}->QUEUED", taskId, dataSourceKey, existing.getStatus());
+            return existing;
+        }
+
+        // 无当天任务，创建新记录
+        return createQueuedTask(dataSourceKey, config, safePageSize, message);
     }
 
     /**
@@ -199,7 +219,7 @@ public class SyncTaskService {
      */
     private SyncTask createQueuedTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
         long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
-        String now = TimeUtils.now();
+        LocalDateTime now = TimeUtils.now();
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
 
         SyncTask task = new SyncTask();

@@ -12,6 +12,8 @@ spring:
       pool-name: HikariPool-risk_hub
   jackson:
     time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
   rabbitmq:
     host: host.docker.internal
     port: 5672

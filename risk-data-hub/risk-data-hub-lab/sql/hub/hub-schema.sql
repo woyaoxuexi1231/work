@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS clean_stock (
     volume_qty BIGINT NOT NULL,
     turnover_amount DECIMAL(18,2) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    created_at VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
     UNIQUE KEY uk_stock_source(source_system, source_row_id)
 );
 
@@ -51,8 +51,8 @@ CREATE TABLE IF NOT EXISTS clean_trade (
     counterparty_name VARCHAR(128),
     clean_mode VARCHAR(32) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    trade_time VARCHAR(32) NOT NULL,
-    created_at VARCHAR(32) NOT NULL,
+    trade_time TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL,
     UNIQUE KEY uk_trade_source(source_system, source_row_id)
 );
 
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS clean_position (
     market_value DECIMAL(18,2) NOT NULL,
     stat_day VARCHAR(16) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    created_at VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
     UNIQUE KEY uk_position_source(source_system, source_row_id)
 );
 
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS clean_asset (
     total_asset DECIMAL(18,2) NOT NULL,
     stat_day VARCHAR(16) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    created_at VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
     UNIQUE KEY uk_asset_source(source_system, source_row_id)
 );
 
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS event_message (
     biz_key VARCHAR(128) NOT NULL,
     payload TEXT NOT NULL,
     status VARCHAR(32) NOT NULL,
-    created_at VARCHAR(32) NOT NULL
+    created_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tx_coordination_log (
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS tx_coordination_log (
     source_system VARCHAR(64) NOT NULL,
     phase VARCHAR(32) NOT NULL,
     detail VARCHAR(256) NOT NULL,
-    created_at VARCHAR(32) NOT NULL
+    created_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sync_task (
@@ -116,9 +116,9 @@ CREATE TABLE IF NOT EXISTS sync_task (
     progress INT DEFAULT 0,
     total_pulled_count INT DEFAULT 0,
     total_saved_count INT DEFAULT 0,
-    submitted_at VARCHAR(32),
-    started_at VARCHAR(32),
-    finished_at VARCHAR(32),
+    submitted_at TIMESTAMP,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
     message VARCHAR(256),
     error_message VARCHAR(1024)
 );
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS sync_business_record (
     saved_count INT DEFAULT 0,
     last_row_id BIGINT DEFAULT 0,
     error_message VARCHAR(1024),
-    started_at VARCHAR(32),
-    finished_at VARCHAR(32),
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
     KEY idx_record_task_id(task_id)
 );

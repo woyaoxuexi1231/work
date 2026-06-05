@@ -13,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
 
+import java.time.LocalDateTime;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,7 +96,7 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         }
     }
 
-    protected String now() {
+    protected LocalDateTime now() {
         return TimeUtils.now();
     }
 

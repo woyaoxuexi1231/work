@@ -3,6 +3,8 @@ package com.riskdatahub.message.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 事件消息实体 — 发件箱模式中的持久化事件。
  * <p>
@@ -32,5 +34,5 @@ public class EventMessage {
     private String status;
 
     /** 创建时间 */
-    private String createdAt;
+    private LocalDateTime createdAt;
 }

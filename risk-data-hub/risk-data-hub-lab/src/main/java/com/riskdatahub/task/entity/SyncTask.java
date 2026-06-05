@@ -3,6 +3,8 @@ package com.riskdatahub.task.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 同步任务实体 — 记录每次同步任务的执行状态。
  * <p>
@@ -43,13 +45,13 @@ public class SyncTask {
     private Integer totalSavedCount;
 
     /** 提交时间 */
-    private String submittedAt;
+    private LocalDateTime submittedAt;
 
     /** 开始时间 */
-    private String startedAt;
+    private LocalDateTime startedAt;
 
     /** 完成时间 */
-    private String finishedAt;
+    private LocalDateTime finishedAt;
 
     /** 状态描述信息 */
     private String message;

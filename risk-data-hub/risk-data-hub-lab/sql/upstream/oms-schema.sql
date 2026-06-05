@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS oms_trade_order (
     trade_price DECIMAL(18,4),
     order_amount DECIMAL(18,2),
     trade_status VARCHAR(32),
-    trade_time VARCHAR(32),
+    trade_time TIMESTAMP,
     sync_flag INT DEFAULT 0
 );
 

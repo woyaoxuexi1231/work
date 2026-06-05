@@ -7,6 +7,7 @@ import com.riskdatahub.sync.model.CleanRecordContext;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 中台清洗后股票行情实体。
@@ -63,7 +64,7 @@ public class CleanStock {
     private String cleanBatch;
 
     /** 记录创建时间 */
-    private String createdAt;
+    private LocalDateTime createdAt;
 
     /**
      * 工厂方法 — 从清洗上下文和源数据构造中台实体。

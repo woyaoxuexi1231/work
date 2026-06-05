@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS broker_trade_deal (
     deal_price DECIMAL(18,4),
     turnover_amount DECIMAL(18,2),
     status_mark VARCHAR(4),
-    deal_at VARCHAR(32),
+    deal_at TIMESTAMP,
     sync_flag INT DEFAULT 0
 );
 

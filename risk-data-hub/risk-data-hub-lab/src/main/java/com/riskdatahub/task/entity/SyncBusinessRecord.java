@@ -3,6 +3,8 @@ package com.riskdatahub.task.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 同步业务记录 — 记录每次同步任务中各业务类型的执行详情。
  * <p>
@@ -43,8 +45,8 @@ public class SyncBusinessRecord {
     private String errorMessage;
 
     /** 开始时间 */
-    private String startedAt;
+    private LocalDateTime startedAt;
 
     /** 完成时间 */
-    private String finishedAt;
+    private LocalDateTime finishedAt;
 }

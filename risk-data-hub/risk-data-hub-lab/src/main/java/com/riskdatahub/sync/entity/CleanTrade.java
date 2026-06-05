@@ -7,6 +7,7 @@ import com.riskdatahub.sync.model.CleanRecordContext;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 中台清洗后交易记录实体。
@@ -57,10 +58,10 @@ public class CleanTrade {
     private String cleanBatch;
 
     /** 交易时间 */
-    private String tradeTime;
+    private LocalDateTime tradeTime;
 
     /** 记录创建时间 */
-    private String createdAt;
+    private LocalDateTime createdAt;
 
     /**
      * 工厂方法 — 从清洗上下文和源数据构造中台实体。
@@ -84,7 +85,7 @@ public class CleanTrade {
                                     String statusName,
                                     String counterpartyName,
                                     String cleanMode,
-                                    String tradeTime) {
+                                    LocalDateTime tradeTime) {
         CleanTrade trade = new CleanTrade();
         trade.setGlobalId(context.getGlobalId());
         trade.setSourceSystem(context.getSourceSystem());
