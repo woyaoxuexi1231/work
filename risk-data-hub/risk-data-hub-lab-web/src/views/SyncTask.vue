@@ -21,7 +21,7 @@ const form = ref({
   pageSize: 100
 })
 
-// 可选数据源列表
+// 可选数据源列表（不含中台库）
 const dsOptions = ref([])
 
 // 自动刷新定时器
@@ -60,11 +60,11 @@ async function loadTask() {
   }
 }
 
-// ===== 加载数据源选项 =====
+// ===== 加载数据源选项（过滤掉中台库） =====
 async function loadDsOptions() {
   try {
     const res = await listDatasources()
-    dsOptions.value = res.data || []
+    dsOptions.value = (res.data || []).filter(ds => ds.datasourceType !== 'HUB')
   } catch (e) {
     console.error('[同步] 获取数据源列表失败', e.message)
   }

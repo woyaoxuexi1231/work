@@ -1,5 +1,7 @@
 package com.riskdatahub.id.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -15,7 +17,8 @@ import lombok.Data;
 @TableName("leaf_alloc")
 public class LeafAlloc {
 
-    /** 业务标签（如 clean_trade / clean_stock） */
+    /** 业务标签（如 clean_trade / clean_stock），主键 */
+    @TableId(type = IdType.INPUT)
     private String bizTag;
 
     /** 当前已分配的最大 ID */

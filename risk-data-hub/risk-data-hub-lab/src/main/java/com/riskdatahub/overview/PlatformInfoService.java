@@ -6,10 +6,12 @@ import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
 import com.riskdatahub.mapper.DynamicSqlMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +21,7 @@ import java.util.Map;
  *
  * @author risk-data-hub
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PlatformInfoService {
@@ -73,14 +76,19 @@ public class PlatformInfoService {
                         "event_message", "sync_task", "sync_business_record"));
     }
 
-    /** 在指定数据源上统计多个表的记录数 */
+    /** 在指定数据源上统计多个表的记录数，路由失败时返回空 Map。 */
     private Map<String, Integer> countTables(String dsKey, List<String> tables) {
-        return routingMybatisExecutor.query(dsKey, () -> {
-            Map<String, Integer> r = new LinkedHashMap<>();
-            for (String t : tables) {
-                r.put(t, dynamicSqlMapper.countTable(t));
-            }
-            return r;
-        });
+        try {
+            return routingMybatisExecutor.query(dsKey, () -> {
+                Map<String, Integer> r = new LinkedHashMap<>();
+                for (String t : tables) {
+                    r.put(t, dynamicSqlMapper.countTable(t));
+                }
+                return r;
+            });
+        } catch (Exception e) {
+            log.warn("[表统计] 数据源 '{}' 不可用: {}", dsKey, e.getMessage());
+            return Collections.emptyMap();
+        }
     }
 }
