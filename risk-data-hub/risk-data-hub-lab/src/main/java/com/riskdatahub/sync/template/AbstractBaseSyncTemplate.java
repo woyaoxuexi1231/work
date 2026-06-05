@@ -195,7 +195,7 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
             return;
         }
         try {
-            long totalMs = fetchMs + transformMs + saveMs;
+            long totalMs = fetchMs + queueWaitMs + transformMs + saveMs;
             double rps = totalMs > 0 ? (double) rowCount / totalMs * 1000 : 0;
 
             SyncBatchMetrics m = new SyncBatchMetrics();

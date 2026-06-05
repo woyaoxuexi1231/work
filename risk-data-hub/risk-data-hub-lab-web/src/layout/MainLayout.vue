@@ -87,7 +87,7 @@ function goTo(path) {
       <!-- 顶部标题栏：固定定位，显示当前页面名称 -->
       <header class="h-16 bg-white border-b border-slate-200 flex items-center px-8 sticky top-0 z-10">
         <h1 class="text-lg font-semibold text-slate-800">
-          {{ navItems.find(n => n.path === activePath)?.label || 'Risk Hub' }}
+          {{ navItems.find(n => n.path === activePath)?.label || route.meta?.title || 'Risk Hub' }}
         </h1>
       </header>
 

@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics (
     global_id_query_duration_ms BIGINT DEFAULT 0 COMMENT '⑦查ID：查询已有行的globalId耗时',
     set_id_duration_ms       BIGINT DEFAULT 0 COMMENT '⑦设ID：设置globalId到实体耗时',
     update_duration_ms       BIGINT DEFAULT 0 COMMENT '⑧UPDATE：批量更新耗时',
-    total_page_ms            BIGINT DEFAULT 0 COMMENT '本页总耗时(拉取+转换+落库)',
+    total_page_ms            BIGINT DEFAULT 0 COMMENT '本页总耗时(排队+拉取+转换+落库)',
 
     -- 速率
     rows_per_second        DOUBLE DEFAULT 0 COMMENT '本页处理速率(条/秒)',

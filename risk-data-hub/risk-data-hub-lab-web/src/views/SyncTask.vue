@@ -11,7 +11,10 @@
 -->
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getSyncTask, startSync, forceRefresh, listDatasources, getSyncDetails, getBatchMetrics } from '@/api/index.js'
+import { useRouter } from 'vue-router'
+import { getSyncTask, startSync, forceRefresh, listDatasources, getSyncDetails } from '@/api/index.js'
+
+const router = useRouter()
 
 // ============================================================
 // 数据状态
@@ -21,7 +24,7 @@ const task = ref(null)
 const details = ref([])
 const loading = ref(false)
 const taskError = ref('')
-const batchModal = ref({ visible: false, recordId: null, businessCode: '', current: 1, data: null })
+
 
 // ============================================================
 // 发起同步弹窗状态
@@ -198,39 +201,7 @@ function bizPending(rec) {
   return Math.max(0, (rec.pulledCount || 0) - (rec.savedCount || 0))
 }
 
-function slowClass(ms) {
-  if (!ms || ms < 1000) return ''
-  if (ms < 3000) return 'text-amber-600'
-  return 'text-red-600 font-semibold'
-}
 
-function pct(val, total) {
-  if (!val || !total || total === 0) return ''
-  const p = (val / total) * 100
-  if (p < 1) return '<1%'
-  return Math.round(p) + '%'
-}
-
-function batchTotalMs(records) {
-  if (!records || records.length === 0) return 0
-  return records.reduce((s, r) => s + (r.totalPageMs || 0), 0)
-}
-
-function openBatchModal(rec) {
-  batchModal.value = { visible: true, recordId: rec.id, businessCode: rec.businessCode, current: 1, data: null }
-  loadBatchModal(1)
-}
-
-async function loadBatchModal(page) {
-  if (!batchModal.value.recordId) return
-  try {
-    const res = await getBatchMetrics(batchModal.value.recordId, page, 50)
-    batchModal.value.data = res.data
-    batchModal.value.current = page
-  } catch (e) {
-    console.error('加载批次耗时失败', e.message)
-  }
-}
 
 function fmtMs(ms) {
   if (!ms && ms !== 0) return '-'
@@ -484,7 +455,7 @@ function bizAvgSaveMs(rec) {
           <!-- 批次耗时按钮（运行中也可查看，数据实时写入 sync_batch_metrics） -->
           <div v-if="rec.id && rec.pulledCount > 0" class="mt-2">
             <button
-              @click="openBatchModal(rec)"
+              @click="router.push('/batch-metrics/' + rec.id + '?biz=' + rec.businessCode)"
               class="text-xs text-indigo-500 hover:text-indigo-700 font-medium"
             >
               查看批次耗时 →
@@ -576,124 +547,11 @@ function bizAvgSaveMs(rec) {
       </div>
     </div>
 
-    <!-- ============================================================
-         批次耗时弹窗
-         ============================================================ -->
-    <div
-      v-if="batchModal.visible"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      @click.self="batchModal.visible = false"
-    >
-      <div class="bg-white rounded-xl shadow-2xl w-[95vw] max-w-5xl max-h-[85vh] flex flex-col">
-        <!-- 弹窗头部 -->
-        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
-          <div>
-            <span class="font-semibold text-slate-800">{{ batchModal.businessCode }}</span>
-            <span class="text-sm text-slate-400 ml-2">批次耗时明细</span>
+
           <div class="text-[11px] text-slate-500 mt-1 leading-relaxed space-y-0.5">
             <div><b class="text-sky-600">①拉取</b> — 上游数据库查询耗时。右侧<kbd>排队</kbd>是数据在队列中的等待时间，排队久说明落库线程是瓶颈。</div>
             <div><b class="text-emerald-600">②转换</b> — 上游字段映射为中台字段耗时。<kbd>%</kbd>=占总耗时比例，<kbd>ID生成</kbd>=Leaf批量获取ID耗时（已优化为批量预分配，大幅减少锁竞争）。</div>
             <div><b class="text-indigo-600">③落库</b> — 写入中台库总耗时。子步骤：查重(判存)→拆分(分组)→INSERT(新增写库)→写缓存(同步Redis)→查ID(查已有主键)→UPDATE(更新)。</div>
           </div>
-          </div>
-          <button @click="batchModal.visible = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
-        </div>
-
-        <!-- 弹窗表格（左右可滑动） -->
-        <div class="flex-1 overflow-auto px-5 py-3">
-          <div class="min-w-[1200px] overflow-x-auto">
-          <table v-if="batchModal.data" class="w-full text-sm text-slate-700 border-collapse">
-            <!-- 表头（扁平结构，颜色分组） -->
-            <thead>
-              <tr class="text-xs sticky top-0">
-                <th class="px-3 py-2 text-left w-12 bg-white z-10">批次</th>
-                <th class="px-3 py-2 text-right w-16 bg-white z-10">行数</th>
-                <!-- ①拉取组 -->
-                <th class="px-3 py-2 text-right w-28 bg-sky-50 text-sky-700 border-r border-sky-200">①拉取</th>
-                <th class="px-3 py-2 text-[10px] text-sky-400 bg-sky-50/80 w-16 border-r-2 border-sky-200">排队</th>
-                <!-- ②转换组 -->
-                <th class="px-3 py-2 text-right w-24 bg-emerald-50 text-emerald-700 border-r border-emerald-200">②转换</th>
-                <th class="px-3 py-2 text-[10px] text-emerald-400 bg-emerald-50/80 w-14 border-r border-emerald-200">%</th>
-                <th class="px-3 py-2 text-[10px] text-emerald-400 bg-emerald-50/80 w-20 border-r-2 border-emerald-200">ID生成</th>
-                <!-- ③落库组 -->
-                <th class="px-3 py-2 text-right w-20 bg-indigo-50 text-indigo-700 border-r border-indigo-200">落库</th>
-                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16">查重</th>
-                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-14">拆分</th>
-                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16">INSERT</th>
-                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16">写缓存</th>
-                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-14">查ID</th>
-                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16 border-r-2 border-indigo-200">UPDATE</th>
-                <!-- 汇总 -->
-                <th class="px-3 py-2 text-right w-24 bg-white z-10">总耗时</th>
-                <th class="px-3 py-2 text-right w-16 bg-white z-10">速率</th>
-              </tr>
-            </thead>
-            <!-- 数据体 -->
-            <tbody>
-              <template v-for="bm in batchModal.data.records" :key="bm.batchNo">
-                <!-- 主行 -->
-                <tr class="border-t border-slate-100 hover:bg-slate-50 text-sm">
-                  <td class="px-3 py-2.5 font-mono font-semibold text-slate-700">{{ bm.batchNo }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono">{{ (bm.pulledCount || 0).toLocaleString() }}</td>
-                  <!-- ①拉取 -->
-                  <td class="px-3 py-2.5 text-right font-mono bg-sky-50/30 border-r border-sky-200" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono text-slate-300 bg-sky-50/20 border-r-2 border-sky-200">{{ fmtMs(bm.queueWaitMs) }}</td>
-                  <!-- ②转换 -->
-                  <td class="px-3 py-2.5 text-right font-mono bg-emerald-50/30 border-r border-emerald-200" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono text-slate-300 bg-emerald-50/20 border-r border-emerald-200">{{ pct(bm.transformDurationMs, bm.totalPageMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono bg-emerald-50/20 border-r-2 border-emerald-200" :class="slowClass(bm.idGenDurationMs)">{{ fmtMs(bm.idGenDurationMs) }}</td>
-                  <!-- ③落库 -->
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/30 border-r border-indigo-200" :class="slowClass(bm.saveDurationMs)">{{ fmtMs(bm.saveDurationMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.cacheLookupDurationMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.splitCheckMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.cacheAddDurationMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20 border-r-2 border-indigo-200" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
-                  <!-- 汇总 -->
-                  <td class="px-3 py-2 text-right font-mono font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
-                </tr>
-                <!-- 子行：统计数据 -->
-                <tr class="text-[10px] text-slate-400 border-0 bg-white">
-                  <td colspan="2"></td>
-                  <td class="px-3 pb-1.5 border-r border-sky-200" colspan="2">
-                    <span v-if="bm.queueWaitMs">排队 <b class="text-slate-500">{{ fmtMs(bm.queueWaitMs) }}</b></span>
-                    <span v-else class="text-slate-300">排队 -</span>
-                  </td>
-                  <td class="px-3 pb-1.5 border-r border-emerald-200" colspan="3"></td>
-                  <td class="px-3 pb-1.5 border-r border-indigo-200" colspan="7">
-                    设ID <b class="text-slate-500">{{ fmtMs(bm.setIdDurationMs) }}</b>
-                    <span v-if="bm.insertCount"> · 新增 <b class="text-slate-500">{{ bm.insertCount }}</b> 行</span>
-                    <span v-if="bm.updateCount"> · 更新 <b class="text-slate-500">{{ bm.updateCount }}</b> 行</span>
-                  </td>
-                  <td colspan="2"></td>
-                </tr>
-              </template>
-              <tr v-if="!batchModal.data.records || batchModal.data.records.length === 0">
-                <td colspan="15" class="px-3 py-8 text-center text-slate-400 text-sm">暂无数据</td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-        </div>
-
-        <!-- 弹窗分页 -->
-        <div v-if="batchModal.data && batchModal.data.pages > 1"
-          class="flex items-center justify-end gap-3 px-5 py-3 border-t border-slate-200 text-xs">
-          <button
-            @click="loadBatchModal(batchModal.current - 1)"
-            :disabled="batchModal.current <= 1"
-            class="px-3 py-1 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
-          >上一页</button>
-          <span class="text-slate-400">{{ batchModal.current }}/{{ batchModal.data.pages }}</span>
-          <button
-            @click="loadBatchModal(batchModal.current + 1)"
-            :disabled="batchModal.current >= batchModal.data.pages"
-            class="px-3 py-1 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
-          >下一页</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
