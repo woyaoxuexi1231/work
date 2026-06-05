@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -22,10 +23,15 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
-public class SyncCacheHelper {
+@ConditionalOnProperty(name = "sync.cache.strategy", havingValue = "redis-set", matchIfMissing = true)
+public class SyncCacheHelper implements ExistingIdsCache {
 
     private final RedissonClient redissonClient;
+
+    public SyncCacheHelper(RedissonClient redissonClient) {
+        log.info("[SyncCache] 使用 Redis 缓存");
+        this.redissonClient = redissonClient;
+    }
 
     public Set<Long> getExistingIds(String cacheKey, Supplier<Set<Long>> dbLoader) {
         try {

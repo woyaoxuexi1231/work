@@ -56,3 +56,6 @@ hub:
         min-idle: 1
 
 
+sync:
+  cache:
+    strategy: bloom-filter

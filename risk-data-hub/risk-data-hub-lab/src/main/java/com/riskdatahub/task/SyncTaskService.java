@@ -10,7 +10,7 @@ import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.RabbitMqSender;
 import com.riskdatahub.sync.SyncOrchestrator;
-import com.riskdatahub.sync.cache.SyncCacheHelper;
+import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.entity.CleanAsset;
 import com.riskdatahub.sync.entity.CleanPosition;
 import com.riskdatahub.sync.entity.CleanStock;
@@ -69,7 +69,7 @@ public class SyncTaskService {
     private final CleanTradeMapper cleanTradeMapper;
     private final CleanPositionMapper cleanPositionMapper;
     private final CleanAssetMapper cleanAssetMapper;
-    private final SyncCacheHelper syncCacheHelper;
+    private final ExistingIdsCache existingIdsCache;
 
     public SyncTaskService(RedissonClient redissonClient,
                            LeafSegmentService leafSegmentService,
@@ -84,7 +84,7 @@ public class SyncTaskService {
                            CleanTradeMapper cleanTradeMapper,
                            CleanPositionMapper cleanPositionMapper,
                            CleanAssetMapper cleanAssetMapper,
-                           SyncCacheHelper syncCacheHelper) {
+                           ExistingIdsCache existingIdsCache) {
         this.redissonClient = redissonClient;
         this.leafSegmentService = leafSegmentService;
         this.syncOrchestrator = syncOrchestrator;
@@ -98,7 +98,7 @@ public class SyncTaskService {
         this.cleanTradeMapper = cleanTradeMapper;
         this.cleanPositionMapper = cleanPositionMapper;
         this.cleanAssetMapper = cleanAssetMapper;
-        this.syncCacheHelper = syncCacheHelper;
+        this.existingIdsCache = existingIdsCache;
     }
 
     /**
@@ -520,7 +520,7 @@ public class SyncTaskService {
                 cleanTradeMapper.delete(new LambdaQueryWrapper<CleanTrade>().apply("1=1"));
                 cleanPositionMapper.delete(new LambdaQueryWrapper<CleanPosition>().apply("1=1"));
                 cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
-                syncCacheHelper.clearByPattern("sync:existing:*");
+                existingIdsCache.clearByPattern("sync:existing:*");
                 // 改一下消息避免下次 runTask 重复清除
                 task.setMessage("强制刷新-同步执行中");
                 task.setStatus("RUNNING");

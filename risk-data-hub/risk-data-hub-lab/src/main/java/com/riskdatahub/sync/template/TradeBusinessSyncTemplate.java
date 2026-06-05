@@ -6,7 +6,7 @@ import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.dictionary.DictionaryService;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.cache.SyncCacheHelper;
+import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.entity.BrokerTradeDeal;
 import com.riskdatahub.sync.entity.CleanTrade;
 import com.riskdatahub.sync.entity.OmsTradeOrder;
@@ -45,7 +45,7 @@ public class TradeBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<TradeBusinessSyncTemplate.TradeRow, CleanTrade> {
 
     private final DictionaryService dictionaryService;
-    private final SyncCacheHelper syncCacheHelper;
+    private final ExistingIdsCache existingIdsCache;
     private final CleanTradeMapper cleanTradeMapper;
     private final OmsTradeOrderMapper omsTradeOrderMapper;
     private final BrokerTradeDealMapper brokerTradeDealMapper;
@@ -55,13 +55,13 @@ public class TradeBusinessSyncTemplate
                                      MessageOutboxService messageOutboxService,
                                      @Qualifier("tradePairExecutor") ThreadPoolExecutor pairExecutor,
                                      DictionaryService dictionaryService,
-                                     SyncCacheHelper syncCacheHelper,
+                                     ExistingIdsCache existingIdsCache,
                                      CleanTradeMapper cleanTradeMapper,
                                      OmsTradeOrderMapper omsTradeOrderMapper,
                                      BrokerTradeDealMapper brokerTradeDealMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
         this.dictionaryService = dictionaryService;
-        this.syncCacheHelper = syncCacheHelper;
+        this.existingIdsCache = existingIdsCache;
         this.cleanTradeMapper = cleanTradeMapper;
         this.omsTradeOrderMapper = omsTradeOrderMapper;
         this.brokerTradeDealMapper = brokerTradeDealMapper;
@@ -129,7 +129,7 @@ public class TradeBusinessSyncTemplate
         if (targets.isEmpty()) return;
 
         String cacheKey = "sync:existing:clean_trade:" + context.getDataSourceKey();
-        Set<Long> existingIds = syncCacheHelper.getExistingIds(cacheKey, () ->
+        Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                                 .select(CleanTrade::getSourceRowId)
                                 .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
@@ -147,7 +147,7 @@ public class TradeBusinessSyncTemplate
 
         if (!toInsert.isEmpty()) {
             cleanTradeMapper.insert(toInsert);
-            syncCacheHelper.addNewIds(cacheKey,
+            existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList()));
         }
 

@@ -5,7 +5,7 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.cache.SyncCacheHelper;
+import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.entity.BrokerPositionBalance;
 import com.riskdatahub.sync.entity.CleanPosition;
 import com.riskdatahub.sync.entity.OmsPositionHolding;
@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
 public class PositionBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<PositionBusinessSyncTemplate.PositionRow, CleanPosition> {
 
-    private final SyncCacheHelper syncCacheHelper;
+    private final ExistingIdsCache existingIdsCache;
     private final CleanPositionMapper cleanPositionMapper;
     private final OmsPositionHoldingMapper omsPositionHoldingMapper;
     private final BrokerPositionBalanceMapper brokerPositionBalanceMapper;
@@ -50,12 +50,12 @@ public class PositionBusinessSyncTemplate
                                         LeafSegmentService leafSegmentService,
                                         MessageOutboxService messageOutboxService,
                                         @Qualifier("positionPairExecutor") ThreadPoolExecutor pairExecutor,
-                                        SyncCacheHelper syncCacheHelper,
+                                        ExistingIdsCache existingIdsCache,
                                         CleanPositionMapper cleanPositionMapper,
                                         OmsPositionHoldingMapper omsPositionHoldingMapper,
                                         BrokerPositionBalanceMapper brokerPositionBalanceMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
-        this.syncCacheHelper = syncCacheHelper;
+        this.existingIdsCache = existingIdsCache;
         this.cleanPositionMapper = cleanPositionMapper;
         this.omsPositionHoldingMapper = omsPositionHoldingMapper;
         this.brokerPositionBalanceMapper = brokerPositionBalanceMapper;
@@ -121,7 +121,7 @@ public class PositionBusinessSyncTemplate
         if (targets.isEmpty()) return;
 
         String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
-        Set<Long> existingIds = syncCacheHelper.getExistingIds(cacheKey, () ->
+        Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                                 .select(CleanPosition::getSourceRowId)
                                 .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
@@ -139,7 +139,7 @@ public class PositionBusinessSyncTemplate
 
         if (!toInsert.isEmpty()) {
             cleanPositionMapper.insert(toInsert);
-            syncCacheHelper.addNewIds(cacheKey,
+            existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
         }
 
