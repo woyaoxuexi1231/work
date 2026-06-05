@@ -94,11 +94,6 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         }
     }
 
-    /**
-     * 获取当前时间的格式化字符串。
-     *
-     * @return "yyyy-MM-dd HH:mm:ss" 格式的时间字符串
-     */
     protected String now() {
         return TimeUtils.now();
     }
@@ -124,47 +119,20 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
 
     // ==================== 子类需实现的抽象方法 ====================
 
-    /**
-     * 分页拉取上游未同步数据。
-     *
-     * @param context  同步上下文
-     * @param lastId   上一页最后一条记录的 ID（游标）
-     * @param pageSize 每页大小
-     * @return 本页数据列表
-     */
     protected abstract List<S> fetchPage(BusinessSyncContext context, long lastId, int pageSize);
 
-    /**
-     * 获取源数据行的 ID（用于游标推进）。
-     *
-     * @param row 源数据行
-     * @return 行 ID
-     */
     protected abstract long sourceRowId(S row);
 
-    /**
-     * 将上游数据行转换为中台实体。
-     *
-     * @param context 同步上下文
-     * @param row     上游数据行
-     * @return 中台实体
-     */
     protected abstract T transform(BusinessSyncContext context, S row);
 
     /**
      * 批量将转换后的中台实体写入数据库。
-     * <p>实现类应在一次 {@link RoutingMybatisExecutor#run} 中完成批量写入，
-     * 避免每行单独开连接。</p>
+     * <p>使用 {@link com.baomidou.mybatisplus.extension.toolkit.SqlHelper#executeBatch}
+     * 在实现类中完成批量写入。</p>
      *
      * @param targets 中台实体列表
      */
-    protected abstract void saveBatch(List<T> targets);
+    protected abstract void saveBatch(BusinessSyncContext context, List<T> targets);
 
-    /**
-     * 将源数据标记为已同步（设置 sync_flag = 1）。
-     *
-     * @param context 同步上下文
-     * @param rowId   源数据行 ID
-     */
     protected abstract void markSourceRowSynced(BusinessSyncContext context, long rowId);
 }

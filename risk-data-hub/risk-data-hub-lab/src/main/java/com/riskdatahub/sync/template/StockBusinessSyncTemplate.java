@@ -72,11 +72,11 @@ public class StockBusinessSyncTemplate
         switch (context.getDatasourceType()) {
             case HubConstants.TYPE_TRADE_OMS:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> omsStockSnapshotMapper.selectList(new LambdaQueryWrapper<OmsStockSnapshot>()
-                                .eq(OmsStockSnapshot::getSyncFlag, 0)
-                                .gt(OmsStockSnapshot::getId, lastId)
-                                .orderByAsc(OmsStockSnapshot::getId)
-                                .last("limit " + pageSize)))
+                                () -> omsStockSnapshotMapper.selectList(new LambdaQueryWrapper<OmsStockSnapshot>()
+                                        .eq(OmsStockSnapshot::getSyncFlag, 0)
+                                        .gt(OmsStockSnapshot::getId, lastId)
+                                        .orderByAsc(OmsStockSnapshot::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new StockRow(
                                 row.getId(), row.getSymbol(), row.getExchangeCode(),
                                 row.getMarketDay(), row.getOpenPrice(), row.getHighPrice(),
@@ -85,11 +85,11 @@ public class StockBusinessSyncTemplate
                         .collect(Collectors.toList());
             case HubConstants.TYPE_TRADE_BROKER:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> brokerStockQuoteMapper.selectList(new LambdaQueryWrapper<BrokerStockQuote>()
-                                .eq(BrokerStockQuote::getSyncFlag, 0)
-                                .gt(BrokerStockQuote::getId, lastId)
-                                .orderByAsc(BrokerStockQuote::getId)
-                                .last("limit " + pageSize)))
+                                () -> brokerStockQuoteMapper.selectList(new LambdaQueryWrapper<BrokerStockQuote>()
+                                        .eq(BrokerStockQuote::getSyncFlag, 0)
+                                        .gt(BrokerStockQuote::getId, lastId)
+                                        .orderByAsc(BrokerStockQuote::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new StockRow(
                                 row.getId(), row.getSecuCode(), row.getExchangeName(),
                                 row.getTradeDay(), row.getOpenPx(), row.getHighPx(),
@@ -119,12 +119,9 @@ public class StockBusinessSyncTemplate
     }
 
     @Override
-    protected void saveBatch(List<CleanStock> targets) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            for (CleanStock target : targets) {
-                cleanStockMapper.insert(target);
-            }
-        });
+    protected void saveBatch(BusinessSyncContext context, List<CleanStock> targets) {
+        if (targets.isEmpty()) return;
+        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanStockMapper.insert(targets));
     }
 
     /**
@@ -152,7 +149,9 @@ public class StockBusinessSyncTemplate
         }
     }
 
-    /** 构造清洗记录上下文 */
+    /**
+     * 构造清洗记录上下文
+     */
     private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
         return new CleanRecordContext(
                 leafSegmentService.nextId("clean_stock"),
@@ -160,7 +159,9 @@ public class StockBusinessSyncTemplate
                 sourceRowId, context.getBatchNo(), now());
     }
 
-    /** 股票行情中间行（统一 OMS/Broker 的字段差异） */
+    /**
+     * 股票行情中间行（统一 OMS/Broker 的字段差异）
+     */
     @Data
     @AllArgsConstructor
     static class StockRow {

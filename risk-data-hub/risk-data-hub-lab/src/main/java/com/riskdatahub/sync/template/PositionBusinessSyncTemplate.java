@@ -67,11 +67,11 @@ public class PositionBusinessSyncTemplate
         switch (context.getDatasourceType()) {
             case HubConstants.TYPE_TRADE_OMS:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> omsPositionHoldingMapper.selectList(new LambdaQueryWrapper<OmsPositionHolding>()
-                                .eq(OmsPositionHolding::getSyncFlag, 0)
-                                .gt(OmsPositionHolding::getId, lastId)
-                                .orderByAsc(OmsPositionHolding::getId)
-                                .last("limit " + pageSize)))
+                                () -> omsPositionHoldingMapper.selectList(new LambdaQueryWrapper<OmsPositionHolding>()
+                                        .eq(OmsPositionHolding::getSyncFlag, 0)
+                                        .gt(OmsPositionHolding::getId, lastId)
+                                        .orderByAsc(OmsPositionHolding::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new PositionRow(
                                 row.getId(), row.getInvestorName(), row.getStockCode(),
                                 row.getHoldingQty(), row.getAvailableQty(), row.getCostPrice(),
@@ -79,11 +79,11 @@ public class PositionBusinessSyncTemplate
                         .collect(Collectors.toList());
             case HubConstants.TYPE_TRADE_BROKER:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> brokerPositionBalanceMapper.selectList(new LambdaQueryWrapper<BrokerPositionBalance>()
-                                .eq(BrokerPositionBalance::getSyncFlag, 0)
-                                .gt(BrokerPositionBalance::getId, lastId)
-                                .orderByAsc(BrokerPositionBalance::getId)
-                                .last("limit " + pageSize)))
+                                () -> brokerPositionBalanceMapper.selectList(new LambdaQueryWrapper<BrokerPositionBalance>()
+                                        .eq(BrokerPositionBalance::getSyncFlag, 0)
+                                        .gt(BrokerPositionBalance::getId, lastId)
+                                        .orderByAsc(BrokerPositionBalance::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new PositionRow(
                                 row.getId(), row.getClientFullName(), row.getSecuCode(),
                                 row.getCurrentVolume(), row.getEnableVolume(), row.getCostPx(),
@@ -112,12 +112,9 @@ public class PositionBusinessSyncTemplate
     }
 
     @Override
-    protected void saveBatch(List<CleanPosition> targets) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            for (CleanPosition target : targets) {
-                cleanPositionMapper.insert(target);
-            }
-        });
+    protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets) {
+        if (targets.isEmpty()) return;
+        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanPositionMapper.insert(targets));
     }
 
     /**
@@ -145,7 +142,9 @@ public class PositionBusinessSyncTemplate
         }
     }
 
-    /** 构造清洗记录上下文 */
+    /**
+     * 构造清洗记录上下文
+     */
     private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
         return new CleanRecordContext(
                 leafSegmentService.nextId("clean_position"),
@@ -153,7 +152,9 @@ public class PositionBusinessSyncTemplate
                 sourceRowId, context.getBatchNo(), now());
     }
 
-    /** 持仓中间行（统一 OMS/Broker 的字段差异） */
+    /**
+     * 持仓中间行（统一 OMS/Broker 的字段差异）
+     */
     @Data
     @AllArgsConstructor
     static class PositionRow {

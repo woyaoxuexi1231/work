@@ -155,7 +155,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 for (S row : rows) {
                     targets.add(transform(context, row));
                 }
-                saveBatch(targets);
+                saveBatch(context, targets);
                 long pageMaxId = 0;
                 for (S row : rows) {
                     markSourceRowSynced(context, sourceRowId(row));

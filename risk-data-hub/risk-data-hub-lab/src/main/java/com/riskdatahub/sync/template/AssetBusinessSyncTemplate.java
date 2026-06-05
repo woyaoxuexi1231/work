@@ -67,11 +67,11 @@ public class AssetBusinessSyncTemplate
         switch (context.getDatasourceType()) {
             case HubConstants.TYPE_TRADE_OMS:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> omsCashAssetMapper.selectList(new LambdaQueryWrapper<OmsCashAsset>()
-                                .eq(OmsCashAsset::getSyncFlag, 0)
-                                .gt(OmsCashAsset::getId, lastId)
-                                .orderByAsc(OmsCashAsset::getId)
-                                .last("limit " + pageSize)))
+                                () -> omsCashAssetMapper.selectList(new LambdaQueryWrapper<OmsCashAsset>()
+                                        .eq(OmsCashAsset::getSyncFlag, 0)
+                                        .gt(OmsCashAsset::getId, lastId)
+                                        .orderByAsc(OmsCashAsset::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new AssetRow(
                                 row.getId(), row.getInvestorName(), row.getAccountNo(),
                                 row.getCashBalance(), row.getFrozenBalance(), row.getTotalAsset(),
@@ -79,11 +79,11 @@ public class AssetBusinessSyncTemplate
                         .collect(Collectors.toList());
             case HubConstants.TYPE_TRADE_BROKER:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> brokerFundAccountMapper.selectList(new LambdaQueryWrapper<BrokerFundAccount>()
-                                .eq(BrokerFundAccount::getSyncFlag, 0)
-                                .gt(BrokerFundAccount::getId, lastId)
-                                .orderByAsc(BrokerFundAccount::getId)
-                                .last("limit " + pageSize)))
+                                () -> brokerFundAccountMapper.selectList(new LambdaQueryWrapper<BrokerFundAccount>()
+                                        .eq(BrokerFundAccount::getSyncFlag, 0)
+                                        .gt(BrokerFundAccount::getId, lastId)
+                                        .orderByAsc(BrokerFundAccount::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new AssetRow(
                                 row.getId(), row.getClientFullName(), row.getFundAccountNo(),
                                 row.getCurrentBalance(), row.getFrozenCapital(), row.getTotalAsset(),
@@ -111,12 +111,9 @@ public class AssetBusinessSyncTemplate
     }
 
     @Override
-    protected void saveBatch(List<CleanAsset> targets) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            for (CleanAsset target : targets) {
-                cleanAssetMapper.insert(target);
-            }
-        });
+    protected void saveBatch(BusinessSyncContext context, List<CleanAsset> targets) {
+        if (targets.isEmpty()) return;
+        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanAssetMapper.insert(targets));
     }
 
     /**
@@ -144,7 +141,9 @@ public class AssetBusinessSyncTemplate
         }
     }
 
-    /** 构造清洗记录上下文 */
+    /**
+     * 构造清洗记录上下文
+     */
     private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
         return new CleanRecordContext(
                 leafSegmentService.nextId("clean_asset"),
@@ -152,7 +151,9 @@ public class AssetBusinessSyncTemplate
                 sourceRowId, context.getBatchNo(), now());
     }
 
-    /** 资金中间行（统一 OMS/Broker 的字段差异） */
+    /**
+     * 资金中间行（统一 OMS/Broker 的字段差异）
+     */
     @Data
     @AllArgsConstructor
     static class AssetRow {

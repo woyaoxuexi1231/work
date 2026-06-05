@@ -72,11 +72,11 @@ public class TradeBusinessSyncTemplate
         switch (context.getDatasourceType()) {
             case HubConstants.TYPE_TRADE_OMS:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> omsTradeOrderMapper.selectList(new LambdaQueryWrapper<OmsTradeOrder>()
-                                .eq(OmsTradeOrder::getSyncFlag, 0)
-                                .gt(OmsTradeOrder::getId, lastId)
-                                .orderByAsc(OmsTradeOrder::getId)
-                                .last("limit " + pageSize)))
+                                () -> omsTradeOrderMapper.selectList(new LambdaQueryWrapper<OmsTradeOrder>()
+                                        .eq(OmsTradeOrder::getSyncFlag, 0)
+                                        .gt(OmsTradeOrder::getId, lastId)
+                                        .orderByAsc(OmsTradeOrder::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new TradeRow(
                                 row.getId(), row.getOrderNo(), row.getInvestorName(),
                                 row.getSideCode(), row.getOrderAmount(), row.getTradeStatus(),
@@ -84,11 +84,11 @@ public class TradeBusinessSyncTemplate
                         .collect(Collectors.toList());
             case HubConstants.TYPE_TRADE_BROKER:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
-                        () -> brokerTradeDealMapper.selectList(new LambdaQueryWrapper<BrokerTradeDeal>()
-                                .eq(BrokerTradeDeal::getSyncFlag, 0)
-                                .gt(BrokerTradeDeal::getId, lastId)
-                                .orderByAsc(BrokerTradeDeal::getId)
-                                .last("limit " + pageSize)))
+                                () -> brokerTradeDealMapper.selectList(new LambdaQueryWrapper<BrokerTradeDeal>()
+                                        .eq(BrokerTradeDeal::getSyncFlag, 0)
+                                        .gt(BrokerTradeDeal::getId, lastId)
+                                        .orderByAsc(BrokerTradeDeal::getId)
+                                        .last("limit " + pageSize)))
                         .stream().map(row -> new TradeRow(
                                 row.getId(), row.getDealCode(), row.getClientFullName(),
                                 row.getBsFlag(), row.getTurnoverAmount(), row.getStatusMark(),
@@ -119,12 +119,9 @@ public class TradeBusinessSyncTemplate
     }
 
     @Override
-    protected void saveBatch(List<CleanTrade> targets) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            for (CleanTrade target : targets) {
-                cleanTradeMapper.insert(target);
-            }
-        });
+    protected void saveBatch(BusinessSyncContext context, List<CleanTrade> targets) {
+        if (targets.isEmpty()) return;
+        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanTradeMapper.insert(targets));
     }
 
     /**
@@ -152,7 +149,9 @@ public class TradeBusinessSyncTemplate
         }
     }
 
-    /** 解析交易方向：OMS 用 B/S，Broker 用 1/2 */
+    /**
+     * 解析交易方向：OMS 用 B/S，Broker 用 1/2
+     */
     private String resolveTradeDirection(String datasourceType, String rawDirection) {
         if (HubConstants.TYPE_TRADE_OMS.equals(datasourceType)) {
             return "B".equalsIgnoreCase(rawDirection) ? "BUY" : "SELL";
@@ -160,7 +159,9 @@ public class TradeBusinessSyncTemplate
         return "1".equals(rawDirection) ? "BUY" : "SELL";
     }
 
-    /** 通过字典服务翻译交易状态码 */
+    /**
+     * 通过字典服务翻译交易状态码
+     */
     private String resolveTradeStatus(String datasourceType, String rawStatus) {
         if (HubConstants.TYPE_TRADE_OMS.equals(datasourceType)) {
             return dictionaryService.translate("trade_status_oms", rawStatus);
@@ -168,7 +169,9 @@ public class TradeBusinessSyncTemplate
         return dictionaryService.translate("trade_status_broker", rawStatus);
     }
 
-    /** 构造清洗记录上下文 */
+    /**
+     * 构造清洗记录上下文
+     */
     private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
         return new CleanRecordContext(
                 leafSegmentService.nextId("clean_trade"),
@@ -176,7 +179,9 @@ public class TradeBusinessSyncTemplate
                 sourceRowId, context.getBatchNo(), now());
     }
 
-    /** 交易中间行（统一 OMS/Broker 的字段差异） */
+    /**
+     * 交易中间行（统一 OMS/Broker 的字段差异）
+     */
     @Data
     @AllArgsConstructor
     static class TradeRow {
