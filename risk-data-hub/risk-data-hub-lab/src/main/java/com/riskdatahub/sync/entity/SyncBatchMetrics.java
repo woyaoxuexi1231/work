@@ -25,11 +25,14 @@ public class SyncBatchMetrics {
     private Long fetchDurationMs;         // 本页拉取耗时
     private Long queueWaitMs;             // 在队列中等待耗时（fetch完成→insert开始处理）
     private Long transformDurationMs;     // 转换耗时（所有行转换累加）
-    private Long cacheLookupDurationMs;   // 查重缓存耗时
-    private Long saveDurationMs;          // 落库总耗时（含查globalId + INSERT + UPDATE）
-    private Long insertDurationMs;        // 批量 INSERT 耗时
-    private Long globalIdQueryDurationMs; // 查 globalId 耗时
-    private Long updateDurationMs;        // 批量 UPDATE 耗时
+    private Long cacheLookupDurationMs;   // ④查重：查已有sourceRowId耗时
+    private Long splitCheckMs;            // ⑤拆分：将数据分为insert/update两类的耗时
+    private Long saveDurationMs;          // ⑥落库：saveBatch总耗时（= ④+⑤+⑥INSERT+⑥INSERT写缓存+⑥UPDATE+…）
+    private Long insertDurationMs;        // ⑥INSERT：批量新增耗时
+    private Long cacheAddDurationMs;      // ⑥写缓存：新增后写入Redis缓存耗时
+    private Long globalIdQueryDurationMs; // ⑦查ID：查询已有行的globalId耗时
+    private Long setIdDurationMs;         // ⑦设ID：将globalId设到实体上的耗时
+    private Long updateDurationMs;        // ⑧UPDATE：批量更新耗时
     private Long totalPageMs;             // 本页总耗时（拉取→转换→落库，不含排队）
 
     // ====== 速率 ======

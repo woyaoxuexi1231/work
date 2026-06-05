@@ -155,9 +155,12 @@ public final class SyncSupport {
 
         // ====== saveBatch 内部子步骤（当批值，用于 sync_batch_metrics） ======
         private long lastCacheLookupMs;
+        private long lastSplitCheckMs;        // 拆分 toInsert/toUpdate 耗时
         private int lastInsertCount;
         private long lastBatchInsertMs;
-        private long lastGlobalIdQueryMs;
+        private long lastCacheAddMs;          // addNewIds 写入缓存耗时
+        private long lastGlobalIdQueryMs;     // 查 globalId 耗时
+        private long lastSetIdMs;             // 设置 globalId 耗时
         private int lastUpdateCount;
         private long lastBatchUpdateMs;
 
@@ -182,9 +185,14 @@ public final class SyncSupport {
             lastCacheLookupMs = elapsedMs;
         }
 
-        public void recordBatchInsert(long elapsedMs, int insertCount) {
+        public void recordSplitCheck(long elapsedMs) {
+            lastSplitCheckMs = elapsedMs;
+        }
+
+        public void recordBatchInsert(long elapsedMs, long cacheAddMs, int insertCount) {
             batchInsertDurationMs += elapsedMs;
             lastBatchInsertMs = elapsedMs;
+            lastCacheAddMs = cacheAddMs;
             lastInsertCount = insertCount;
         }
 
@@ -193,18 +201,24 @@ public final class SyncSupport {
             lastGlobalIdQueryMs = elapsedMs;
         }
 
-        public void recordBatchUpdate(long elapsedMs, int updateCount) {
-            batchUpdateDurationMs += elapsedMs;
-            lastBatchUpdateMs = elapsedMs;
+        public void recordBatchUpdate(long queryIdMs, long setIdMs, long updateMs, int updateCount) {
+            globalIdQueryDurationMs += queryIdMs;
+            batchUpdateDurationMs += updateMs;
+            lastGlobalIdQueryMs = queryIdMs;
+            lastSetIdMs = setIdMs;
+            lastBatchUpdateMs = updateMs;
             lastUpdateCount = updateCount;
         }
 
         /** 重置当批子步骤值（每批 saveBatch 前调用） */
         public void resetBatchSubTimings() {
             lastCacheLookupMs = 0;
+            lastSplitCheckMs = 0;
             lastInsertCount = 0;
             lastBatchInsertMs = 0;
+            lastCacheAddMs = 0;
             lastGlobalIdQueryMs = 0;
+            lastSetIdMs = 0;
             lastUpdateCount = 0;
             lastBatchUpdateMs = 0;
         }

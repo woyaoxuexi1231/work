@@ -184,9 +184,12 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
 
             // 子步骤使用当批值（resetBatchSubTimings 每批清零），不是累计值
             m.setCacheLookupDurationMs(metrics.getLastCacheLookupMs());
+            m.setSplitCheckMs(metrics.getLastSplitCheckMs());
             m.setInsertCount(metrics.getLastInsertCount());
             m.setInsertDurationMs(metrics.getLastBatchInsertMs());
+            m.setCacheAddDurationMs(metrics.getLastCacheAddMs());
             m.setGlobalIdQueryDurationMs(metrics.getLastGlobalIdQueryMs());
+            m.setSetIdDurationMs(metrics.getLastSetIdMs());
             m.setUpdateCount(metrics.getLastUpdateCount());
             m.setUpdateDurationMs(metrics.getLastBatchUpdateMs());
 

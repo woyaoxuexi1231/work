@@ -152,15 +152,18 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics (
     update_count INT DEFAULT 0 COMMENT '本页更新行数',
 
     -- 各阶段耗时（毫秒）
-    fetch_duration_ms      BIGINT DEFAULT 0 COMMENT '上游查询耗时',
-    queue_wait_ms          BIGINT DEFAULT 0 COMMENT '队列等待耗时',
-    transform_duration_ms  BIGINT DEFAULT 0 COMMENT '数据转换耗时',
-    cache_lookup_duration_ms BIGINT DEFAULT 0 COMMENT '查重缓存耗时',
-    save_duration_ms       BIGINT DEFAULT 0 COMMENT '落库总耗时',
-    insert_duration_ms     BIGINT DEFAULT 0 COMMENT '批量INSERT耗时',
-    global_id_query_duration_ms BIGINT DEFAULT 0 COMMENT '查globalId耗时',
-    update_duration_ms     BIGINT DEFAULT 0 COMMENT '批量UPDATE耗时',
-    total_page_ms          BIGINT DEFAULT 0 COMMENT '本页总耗时(拉取+转换+落库)',
+    fetch_duration_ms        BIGINT DEFAULT 0 COMMENT '①拉取：上游查询耗时',
+    queue_wait_ms            BIGINT DEFAULT 0 COMMENT '②排队：队列等待耗时',
+    transform_duration_ms    BIGINT DEFAULT 0 COMMENT '③转换：字段映射耗时',
+    cache_lookup_duration_ms BIGINT DEFAULT 0 COMMENT '④查重：查已有sourceRowId耗时',
+    split_check_ms           BIGINT DEFAULT 0 COMMENT '⑤拆分：数据分为insert/update耗时',
+    save_duration_ms         BIGINT DEFAULT 0 COMMENT '⑥落库：saveBatch总耗时',
+    insert_duration_ms       BIGINT DEFAULT 0 COMMENT '⑥INSERT：批量新增耗时',
+    cache_add_duration_ms    BIGINT DEFAULT 0 COMMENT '⑥写缓存：新增后写入Redis耗时',
+    global_id_query_duration_ms BIGINT DEFAULT 0 COMMENT '⑦查ID：查询已有行的globalId耗时',
+    set_id_duration_ms       BIGINT DEFAULT 0 COMMENT '⑦设ID：设置globalId到实体耗时',
+    update_duration_ms       BIGINT DEFAULT 0 COMMENT '⑧UPDATE：批量更新耗时',
+    total_page_ms            BIGINT DEFAULT 0 COMMENT '本页总耗时(拉取+转换+落库)',
 
     -- 速率
     rows_per_second        DOUBLE DEFAULT 0 COMMENT '本页处理速率(条/秒)',

@@ -204,6 +204,18 @@ function slowClass(ms) {
   return 'text-red-600 font-semibold'
 }
 
+function pct(val, total) {
+  if (!val || !total || total === 0) return ''
+  const p = (val / total) * 100
+  if (p < 1) return '<1%'
+  return Math.round(p) + '%'
+}
+
+function batchTotalMs(records) {
+  if (!records || records.length === 0) return 0
+  return records.reduce((s, r) => s + (r.totalPageMs || 0), 0)
+}
+
 function openBatchModal(rec) {
   batchModal.value = { visible: true, recordId: rec.id, businessCode: rec.businessCode, current: 1, data: null }
   loadBatchModal(1)
@@ -579,14 +591,11 @@ function bizAvgSaveMs(rec) {
             <span class="font-semibold text-slate-800">{{ batchModal.businessCode }}</span>
             <span class="text-sm text-slate-400 ml-2">批次耗时明细</span>
           <div class="text-[11px] text-slate-500 mt-1 leading-relaxed space-y-0.5">
-            <div><b class="text-slate-600">①拉取</b> — 上游数据库查询耗时。从数据源按游标翻页拉取一页数据，包含 SQL 执行时间 + 网络传输时间。如果这个值高，说明上游查询慢（缺索引/大字段/网络延迟）。</div>
-            <div><b class="text-slate-600">②排队</b> — 数据从拉取完成到开始处理的时间差。拉取线程把数据放入队列，落库线程消费。排队时间长说明落库线程忙不过来（积压），瓶颈可能在转换或落库阶段。</div>
-            <div><b class="text-slate-600">③转换</b> — 字段映射转换耗时。将上游的字段（如 stock_code/openPrice）映射为中台字段（如 CleanStock），每行逐一转换。如果这个值高，说明转换逻辑重或行数多。</div>
-            <div><b class="text-slate-600">④查重</b> — 判断数据是否已存在的耗时。通过 Redis 或 DB 查询当前页的 sourceRowId 是否已落库，决定走 INSERT 还是 UPDATE。首次全量同步时全部是新数据，查重结果都是"不存在"。</div>
-            <div><b class="text-slate-600">⑤落库</b> — 写入中台库的总耗时（= ⑥INSERT + ⑦查ID + ⑧UPDATE 之和）。</div>
-            <div><b class="text-slate-600">⑥INSERT</b> — 新数据批量写入中台库的耗时。首次全量同步时所有行都在这里，如果慢说明批量插入性能有问题（事务/索引/磁盘IO）。</div>
-            <div><b class="text-slate-600">⑦查ID</b> — 已存在行需要先查询 globalId 才能执行 UPDATE。首次全量同步没有已存在行，所以为 0ms。增量同步时如果这个值高，说明 IN 查询慢。</div>
-            <div><b class="text-slate-600">⑧UPDATE</b> — 已存在行更新到中台库的耗时。首次全量同步没有更新操作，所以为 0ms。增量同步时如果有大量已存在行需要更新，这个值会升高。</div>
+            <div class="font-medium">三大步骤 + 子步骤说明：</div>
+            <div><b class="text-sky-600">①拉取</b> — 上游数据库查询耗时。包含 SQL 执行 + 网络传输。排队=数据在队列中等待处理的时间，排队久说明落库线程是瓶颈。</div>
+            <div><b class="text-emerald-600">②转换</b> — 上游字段映射为中台字段的耗时（每行逐一转换）。高说明转换逻辑重或行数多。</div>
+            <div><b class="text-indigo-600">③落库</b> — 写入中台库总耗时。子步骤从左到右：</div>
+            <div class="pl-4 text-slate-400">查重=判断是否已存在 | 拆分=分成insert/update两组 | INSERT=新增写入 | 写缓存=同步Redis | 查ID=查询已有行的主键 | UPDATE=已有行更新</div>
           </div>
           </div>
           <button @click="batchModal.visible = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
@@ -595,40 +604,72 @@ function bizAvgSaveMs(rec) {
         <!-- 弹窗表格 -->
         <div class="flex-1 overflow-auto px-5 py-3">
           <table v-if="batchModal.data" class="w-full text-sm text-slate-700 border-collapse">
+            <!-- 表头 -->
             <thead>
               <tr class="bg-slate-50 text-slate-500 text-xs sticky top-0">
-                <th class="px-3 py-2 text-left w-12" title="页码">批次</th>
-                <th class="px-3 py-2 text-right w-16" title="本页拉取行数">行数</th>
-                <th class="px-3 py-2 text-right" title="上游数据库查询耗时，包含网络和SQL执行时间">①拉取</th>
-                <th class="px-3 py-2 text-right" title="数据在队列中等待被消费的时间，积压说明落库线程是瓶颈">②排队</th>
-                <th class="px-3 py-2 text-right" title="上游字段→中台字段的转换耗时">③转换</th>
-                <th class="px-3 py-2 text-right" title="查询Redis/DB判断sourceRowId是否已存在">④查重</th>
-                <th class="px-3 py-2 text-right" title="落库总耗时（含INSERT+查ID+UPDATE）">⑤落库</th>
-                <th class="px-3 py-2 text-right" title="新数据批量写入中台库耗时">⑥INSERT</th>
-                <th class="px-3 py-2 text-right" title="已存在数据需要先查询globalId">⑦查ID</th>
-                <th class="px-3 py-2 text-right" title="已存在数据更新耗时">⑧UPDATE</th>
-                <th class="px-3 py-2 text-right" title="本页从拉取到落库完成的总耗时（不含排队）">总计</th>
-                <th class="px-3 py-2 text-right w-20" title="每秒处理行数">速率</th>
+                <th class="px-3 py-2 text-left w-12">批次</th>
+                <th class="px-3 py-2 text-right w-16">行数</th>
+                <th class="px-3 py-2 text-center border-x-2 border-sky-200 bg-sky-50/60 w-28" colspan="2">①拉取</th>
+                <th class="px-3 py-2 text-center border-r-2 border-emerald-200 bg-emerald-50/60 w-28" colspan="2">②转换</th>
+                <th class="px-3 py-2 text-center border-r-2 border-indigo-200 bg-indigo-50/60" colspan="7">③落库</th>
+                <th class="px-3 py-2 text-right w-24" rowspan="2">总耗时</th>
+                <th class="px-3 py-2 text-right w-16" rowspan="2">速率</th>
+              </tr>
+              <tr class="bg-slate-50 text-slate-400 text-[10px] sticky top-[26px]">
+                <!-- 拉取子列 -->
+                <th class="px-3 py-1 text-right border-x-2 border-sky-200 bg-sky-50/60" colspan="2">查询数据库</th>
+                <!-- 转换子列 -->
+                <th class="px-3 py-1 text-right border-r-2 border-emerald-200 bg-emerald-50/60" colspan="2">字段映射</th>
+                <!-- 落库子列 -->
+                <th class="px-3 py-1 text-right border-l-2 border-indigo-200 bg-indigo-50/60">总</th>
+                <th class="px-3 py-1 text-right bg-indigo-50/30">查重</th>
+                <th class="px-3 py-1 text-right bg-indigo-50/30">拆分</th>
+                <th class="px-3 py-1 text-right bg-indigo-50/30">INSERT</th>
+                <th class="px-3 py-1 text-right bg-indigo-50/30">写缓存</th>
+                <th class="px-3 py-1 text-right bg-indigo-50/30">查ID</th>
+                <th class="px-3 py-1 text-right bg-indigo-50/30">UPDATE</th>
               </tr>
             </thead>
+            <!-- 数据体 -->
             <tbody>
-              <tr v-for="bm in batchModal.data.records" :key="bm.batchNo"
-                class="border-t border-slate-100 hover:bg-slate-50">
-                <td class="px-3 py-2 font-mono text-xs">{{ bm.batchNo }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs">{{ (bm.pulledCount || 0).toLocaleString() }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.queueWaitMs)">{{ fmtMs(bm.queueWaitMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs">{{ fmtMs(bm.cacheLookupDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.saveDurationMs)">{{ fmtMs(bm.saveDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
-                <td class="px-3 py-2 text-right font-mono text-xs text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
-              </tr>
+              <template v-for="bm in batchModal.data.records" :key="bm.batchNo">
+                <!-- 主行：批次概览 -->
+                <tr class="border-t border-slate-100 hover:bg-slate-50 text-xs">
+                  <td class="px-3 py-2.5 font-mono font-semibold text-slate-700">{{ bm.batchNo }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono">{{ (bm.pulledCount || 0).toLocaleString() }}</td>
+                  <!-- ①拉取 -->
+                  <td class="px-3 py-2.5 text-right font-mono border-x-2 border-sky-200" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
+                  <td class="px-2 py-2.5 text-xs text-slate-300 border-r-2 border-sky-200">{{ pct(bm.fetchDurationMs, bm.totalPageMs) }}</td>
+                  <!-- ③转换 -->
+                  <td class="px-3 py-2.5 text-right font-mono border-r-2 border-emerald-200" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
+                  <td class="px-2 py-2.5 text-xs text-slate-300 border-r-2 border-emerald-200">{{ pct(bm.transformDurationMs, bm.totalPageMs) }}</td>
+                  <!-- ④落库主 -->
+                  <td class="px-3 py-2.5 text-right font-mono border-l-2 border-indigo-200" :class="slowClass(bm.saveDurationMs)">{{ fmtMs(bm.saveDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.cacheLookupDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.splitCheckMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.cacheAddDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
+                  <!-- 总计/速率 -->
+                  <td class="px-3 py-2.5 text-right font-mono font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
+                </tr>
+                <!-- 子行：排队 + 设ID（次要指标折叠） -->
+                <tr class="text-[10px] text-slate-300 border-0 -mt-1">
+                  <td colspan="2"></td>
+                  <td class="px-3 pb-1 border-x-2 border-sky-100" colspan="2">排队 {{ fmtMs(bm.queueWaitMs) }}</td>
+                  <td class="px-3 pb-1 border-r-2 border-emerald-100" colspan="2"></td>
+                  <td class="px-3 pb-1 border-l-2 border-indigo-100" colspan="7">
+                    设ID {{ fmtMs(bm.setIdDurationMs) }}
+                    <span v-if="bm.insertCount"> | 新增 {{ bm.insertCount }} 行</span>
+                    <span v-if="bm.updateCount"> | 更新 {{ bm.updateCount }} 行</span>
+                  </td>
+                  <td colspan="2"></td>
+                </tr>
+              </template>
               <tr v-if="!batchModal.data.records || batchModal.data.records.length === 0">
-                <td colspan="12" class="px-3 py-8 text-center text-slate-400 text-sm">暂无数据</td>
+                <td colspan="15" class="px-3 py-8 text-center text-slate-400 text-sm">暂无数据</td>
               </tr>
             </tbody>
           </table>

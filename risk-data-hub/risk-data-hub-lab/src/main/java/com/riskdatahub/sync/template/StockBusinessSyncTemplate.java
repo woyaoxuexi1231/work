@@ -136,8 +136,10 @@ public class StockBusinessSyncTemplate
                                 .select(CleanStock::getSourceRowId)
                                 .eq(CleanStock::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanStock::getSourceRowId).collect(Collectors.toSet()));
-        metrics.recordCacheLookup(System.currentTimeMillis() - t0);
+        long cacheLookupMs = System.currentTimeMillis() - t0;
+        metrics.recordCacheLookup(cacheLookupMs);
 
+        long tSplit = System.currentTimeMillis();
         List<CleanStock> toInsert = new ArrayList<>();
         List<CleanStock> toUpdate = new ArrayList<>();
         for (CleanStock target : targets) {
@@ -147,13 +149,18 @@ public class StockBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
+        long splitMs = System.currentTimeMillis() - tSplit;
+        metrics.recordSplitCheck(splitMs);
 
         if (!toInsert.isEmpty()) {
             long t1 = System.currentTimeMillis();
             cleanStockMapper.insert(toInsert);
-            metrics.recordBatchInsert(System.currentTimeMillis() - t1, toInsert.size());
+            long insertMs = System.currentTimeMillis() - t1;
+            long tCacheAdd = System.currentTimeMillis();
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanStock::getSourceRowId).collect(Collectors.toList()));
+            long cacheAddMs = System.currentTimeMillis() - tCacheAdd;
+            metrics.recordBatchInsert(insertMs, cacheAddMs, toInsert.size());
         }
 
         if (!toUpdate.isEmpty()) {
@@ -165,13 +172,16 @@ public class StockBusinessSyncTemplate
                             .in(CleanStock::getSourceRowId,
                                     toUpdate.stream().map(CleanStock::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
-            metrics.recordGlobalIdQuery(System.currentTimeMillis() - t2);
+            long queryIdMs = System.currentTimeMillis() - t2;
+            long tSetId = System.currentTimeMillis();
             for (CleanStock target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
+            long setIdMs = System.currentTimeMillis() - tSetId;
             long t3 = System.currentTimeMillis();
             cleanStockMapper.updateById(toUpdate);
-            metrics.recordBatchUpdate(System.currentTimeMillis() - t3, toUpdate.size());
+            long updateMs = System.currentTimeMillis() - t3;
+            metrics.recordBatchUpdate(queryIdMs, setIdMs, updateMs, toUpdate.size());
         }
     }
 
