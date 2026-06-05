@@ -7,7 +7,7 @@ spring:
 
   # MySQL
   datasource:
-    url: jdbc:mysql://192.168.3.100:3306/mlm_anime?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    url: jdbc:mysql://localhost:3306/mlm_anime?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
     password: 123456
@@ -20,7 +20,7 @@ spring:
 
   # RabbitMQ
   rabbitmq:
-    host: 192.168.3.100
+    host: localhost
     port: 5672
     username: admin
     password: admin
@@ -51,7 +51,7 @@ mybatis-plus:
 
 # MinIO
 minio:
-  endpoint: http://192.168.3.100:9000
+  endpoint: http://localhost:9000
   access-key: minioadmin
   secret-key: minioadmin
   bucket: mlm-resources

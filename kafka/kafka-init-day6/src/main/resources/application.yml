@@ -9,7 +9,7 @@ logging:
 spring:
 
   kafka:
-    bootstrap-servers: 192.168.3.100:9092
+    bootstrap-servers: localhost:9092
     # 生产者配置
     producer:
       # ----- 序列化器 -----
@@ -60,6 +60,6 @@ spring:
 #      ack-mode: manual_immediate
 
   datasource:
-    url: jdbc:mysql://192.168.3.100:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&connectionCollation=utf8mb4&rewriteBatchedStatements=true&allowMultiQueries=true&useCursorFetch=true
+    url: jdbc:mysql://localhost:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&connectionCollation=utf8mb4&rewriteBatchedStatements=true&allowMultiQueries=true&useCursorFetch=true
     username: root
     password: 123456

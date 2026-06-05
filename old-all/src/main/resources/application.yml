@@ -53,7 +53,7 @@ spring:
 
   # 数据源
   datasource:
-    url: jdbc:mysql://192.168.3.100:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&connectionCollation=utf8mb4&rewriteBatchedStatements=true&allowMultiQueries=true&useCursorFetch=true
+    url: jdbc:mysql://localhost:3306/test?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&connectionCollation=utf8mb4&rewriteBatchedStatements=true&allowMultiQueries=true&useCursorFetch=true
     username: root
     password: 123456
 
@@ -73,7 +73,7 @@ spring:
   # Redis
   data:
     redis:
-      host: 192.168.3.100
+      host: localhost
       port: 6379
       password: 123456
       timeout: 5000
@@ -81,17 +81,17 @@ spring:
 
     # MongoDB
     mongodb:
-      host: 192.168.3.100
+      host: localhost
       port: 27017
       database: demo_db
 
   # Elasticsearch
   elasticsearch:
-    uris: http://192.168.3.100:9200
+    uris: http://localhost:9200
 
   # RabbitMQ
   rabbitmq:
-    addresses: 192.168.3.100
+    addresses: localhost
     port: 5672
     username: admin
     password: admin
@@ -105,7 +105,7 @@ spring:
 
   # Kafka 配置
   kafka:
-    bootstrap-servers: 192.168.3.100:9092  # Kafka 服务器地址（Docker 网络）
+    bootstrap-servers: localhost:9092  # Kafka 服务器地址（Docker 网络）
     consumer: # 配置消费者
       group-id: kafka-demo-group   # 消费者组 ID
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -127,7 +127,7 @@ spring:
 
 # ========== RocketMQ 配置 (版本 2.3.5) ==========
 rocketmq:
-  name-server: 192.168.3.100:9876  # NameServer 地址
+  name-server: localhost:9876  # NameServer 地址
   producer:
     group: demo-producer-group     # 生产者组名
     send-message-timeout: 3000     # 发送消息超时时间（毫秒）
@@ -203,4 +203,4 @@ curator:
   elapsed-time-ms: 500
   session-timeout-ms: 60000
   connection-timeout-ms: 10000
-  connect-string: 192.168.3.100:2181
+  connect-string: localhost:2181

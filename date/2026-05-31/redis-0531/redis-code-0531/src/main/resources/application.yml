@@ -11,7 +11,7 @@ spring:
 
   # ====== MySQL：SAGA 事务日志 & 迁移状态机 ======
   datasource:
-    url: jdbc:mysql://192.168.3.100:3306/redis_demo?useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3306/redis_demo?useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456
     driver-class-name: com.mysql.jdbc.Driver
@@ -36,14 +36,14 @@ logging:
 ---
 # ================================================================
 #  profile: standalone  — 单机 Redis（默认）
-#  redis-cli: redis-cli -h 192.168.3.100 -p 6379 -a 123456
+#  redis-cli: redis-cli -h localhost -p 6379 -a 123456
 # ================================================================
 spring:
   config:
     activate:
       on-profile: standalone
   redis:
-    host: 192.168.3.100
+    host: localhost
     port: 6379
     password: 123456
     database: 0
@@ -59,7 +59,7 @@ spring:
 # ================================================================
 #  profile: sentinel  — 哨兵模式
 #  主: 6379  从: 6380,6381  哨兵: 26379,26380,26381
-#  redis-cli: redis-cli -h 192.168.3.100 -p 26379 -a 123456 sentinel masters
+#  redis-cli: redis-cli -h localhost -p 26379 -a 123456 sentinel masters
 # ================================================================
 spring:
   config:
@@ -71,9 +71,9 @@ spring:
     sentinel:
       master: mymaster
       nodes:
-        - 192.168.3.100:26379
-        - 192.168.3.100:26380
-        - 192.168.3.100:26381
+        - localhost:26379
+        - localhost:26380
+        - localhost:26381
       password: 123456
     lettuce:
       pool:
@@ -86,7 +86,7 @@ spring:
 # ================================================================
 #  profile: cluster  — 集群模式 (Redis 7.2.5, 6 节点)
 #  节点: 7000-7005  总线: 17000-17005
-#  redis-cli: redis-cli -c -h 192.168.3.100 -p 7000 -a 123456 cluster nodes
+#  redis-cli: redis-cli -c -h localhost -p 7000 -a 123456 cluster nodes
 # ================================================================
 spring:
   config:
@@ -97,12 +97,12 @@ spring:
     timeout: 3000ms
     cluster:
       nodes:
-        - 192.168.3.100:7000
-        - 192.168.3.100:7001
-        - 192.168.3.100:7002
-        - 192.168.3.100:7003
-        - 192.168.3.100:7004
-        - 192.168.3.100:7005
+        - localhost:7000
+        - localhost:7001
+        - localhost:7002
+        - localhost:7003
+        - localhost:7004
+        - localhost:7005
       max-redirects: 5
     lettuce:
       pool:
