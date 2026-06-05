@@ -77,10 +77,11 @@ public class SyncOrchestrator {
      * @return 同步结果摘要
      */
     public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize, Long taskId,
-                                          Map<String, Long> initialCursors) {
+                                          Map<String, Long> initialCursors,
+                                          Map<String, Long> businessRecordIds) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
         int safePageSize = sanitizePageSize(pageSize);
-        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId, initialCursors);
+        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId, initialCursors, businessRecordIds);
 
         log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 任务ID={}, 业务模板数={}",
                 dataSourceKey, config.getDatasourceType(), safePageSize,
@@ -141,9 +142,10 @@ public class SyncOrchestrator {
         return Math.max(1, Math.min(pageSize, 100000));
     }
 
-    /** 构建同步上下文（含唯一批次号、任务 ID 和断点续传游标） */
+    /** 构建同步上下文（含唯一批次号、任务 ID、断点续传游标和业务记录 ID 映射） */
     private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize,
-                                             Long taskId, Map<String, Long> initialCursors) {
+                                             Long taskId, Map<String, Long> initialCursors,
+                                             Map<String, Long> businessRecordIds) {
         return BusinessSyncContext.builder()
                 .dataSourceKey(dataSourceKey)
                 .datasourceType(config.getDatasourceType())
@@ -151,6 +153,7 @@ public class SyncOrchestrator {
                 .batchNo("SYNC-" + System.currentTimeMillis())
                 .taskId(taskId)
                 .initialCursors(initialCursors == null ? Collections.emptyMap() : initialCursors)
+                .businessRecordIds(businessRecordIds == null ? Collections.emptyMap() : businessRecordIds)
                 .build();
     }
 
@@ -193,18 +196,7 @@ public class SyncOrchestrator {
                     wrapper.set(SyncBusinessRecord::getPageCount, result.getPageCount())
                             .set(SyncBusinessRecord::getPulledCount, result.getPulledCount())
                             .set(SyncBusinessRecord::getSavedCount, result.getSavedCount())
-                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId())
-                            .set(SyncBusinessRecord::getFetchDurationMs, result.getFetchDurationMs())
-                            .set(SyncBusinessRecord::getTransformDurationMs, result.getTransformDurationMs())
-                            .set(SyncBusinessRecord::getSaveDurationMs, result.getSaveDurationMs())
-                            .set(SyncBusinessRecord::getFetchPageCount, result.getFetchPageCount())
-                            .set(SyncBusinessRecord::getSaveBatchCount, result.getSaveBatchCount())
-                            .set(SyncBusinessRecord::getMaxFetchPageMs, result.getMaxFetchPageMs())
-                            .set(SyncBusinessRecord::getMaxSaveBatchMs, result.getMaxSaveBatchMs())
-                            .set(SyncBusinessRecord::getCacheLookupDurationMs, result.getCacheLookupDurationMs())
-                            .set(SyncBusinessRecord::getBatchInsertDurationMs, result.getBatchInsertDurationMs())
-                            .set(SyncBusinessRecord::getGlobalIdQueryDurationMs, result.getGlobalIdQueryDurationMs())
-                            .set(SyncBusinessRecord::getBatchUpdateDurationMs, result.getBatchUpdateDurationMs());
+                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId());
                     syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "SUCCESS"));
                 } else {
                     syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "FAILED")

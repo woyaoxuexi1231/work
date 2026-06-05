@@ -144,7 +144,7 @@ public class PositionBusinessSyncTemplate
         if (!toInsert.isEmpty()) {
             long t1 = System.currentTimeMillis();
             cleanPositionMapper.insert(toInsert);
-            metrics.recordBatchInsert(System.currentTimeMillis() - t1);
+            metrics.recordBatchInsert(System.currentTimeMillis() - t1, toInsert.size());
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
         }
@@ -164,7 +164,7 @@ public class PositionBusinessSyncTemplate
             }
             long t3 = System.currentTimeMillis();
             cleanPositionMapper.updateById(toUpdate);
-            metrics.recordBatchUpdate(System.currentTimeMillis() - t3);
+            metrics.recordBatchUpdate(System.currentTimeMillis() - t3, toUpdate.size());
         }
     }
 

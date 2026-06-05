@@ -141,7 +141,9 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 counter.setPageCount(pageNo);
                 counter.setLastRowId(cursor);
                 counter.addPulledCount(rows.size());
-                queue.put(PageChunk.data(pageNo, rows));
+                PageChunk<S> chunk = PageChunk.data(pageNo, rows);
+                chunk.setFetchDurationMs(fetchElapsed);
+                queue.put(chunk);
                 log.info("[同步模板] 业务 {} 第 {} 页拉取完成，行数={}, 当前游标={}",
                         businessCode(), pageNo, rows.size(), counter.getLastRowId());
                 publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());
@@ -181,18 +183,26 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 for (S row : rows) {
                     targets.add(transform(context, row));
                 }
-                metrics.recordTransform(System.currentTimeMillis() - transformStart);
+                long transformElapsed = System.currentTimeMillis() - transformStart;
+                metrics.recordTransform(transformElapsed);
 
+                metrics.resetBatchSubTimings();
                 long saveStart = System.currentTimeMillis();
                 saveBatch(context, targets, metrics);
-                metrics.recordSaveBatch(System.currentTimeMillis() - saveStart);
+                long saveElapsed = System.currentTimeMillis() - saveStart;
+                metrics.recordSaveBatch(saveElapsed);
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }
                 counter.updateSavedMaxRowId(sourceRowId(rows.get(rows.size() - 1)));
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), chunk.getPageNo(), counter.getSavedCount());
-                publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());
+                publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
+
+                long queueWaitMs = System.currentTimeMillis() - chunk.getCreatedAt();
+                recordBatchMetrics(context, chunk.getPageNo(), rows.size(),
+                        chunk.getFetchDurationMs(), queueWaitMs,
+                        transformElapsed, saveElapsed, metrics);
             }
         } catch (Exception e) {
             recordFailure(queue, failure, new IllegalStateException(

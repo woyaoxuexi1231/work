@@ -13,6 +13,8 @@ import com.riskdatahub.sync.SyncOrchestrator;
 import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.entity.CleanAsset;
 import com.riskdatahub.sync.entity.CleanPosition;
+import com.riskdatahub.sync.entity.SyncBatchMetrics;
+import com.riskdatahub.sync.mapper.SyncBatchMetricsMapper;
 import com.riskdatahub.sync.entity.CleanStock;
 import com.riskdatahub.sync.entity.CleanTrade;
 import com.riskdatahub.sync.mapper.CleanAssetMapper;
@@ -70,6 +72,9 @@ public class SyncTaskService {
     private final CleanPositionMapper cleanPositionMapper;
     private final CleanAssetMapper cleanAssetMapper;
     private final ExistingIdsCache existingIdsCache;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private SyncBatchMetricsMapper batchMetricsMapper;
 
     public SyncTaskService(RedissonClient redissonClient,
                            LeafSegmentService leafSegmentService,
@@ -413,8 +418,18 @@ public class SyncTaskService {
                 }
             }
 
+            // 收集各业务的 recordId，用于批次耗时写入
+            Map<String, Long> businessRecordIds = new HashMap<>();
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                for (SyncBusinessRecord rec : syncBusinessRecordMapper.selectList(
+                        new LambdaQueryWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getTaskId, id))) {
+                    businessRecordIds.put(rec.getBusinessCode(), rec.getId());
+                }
+            });
+
             // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理，实时更新 SyncBusinessRecord）
-            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id, initialCursors);
+            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
 
             // 统计总数（每个业务的状态已由 SyncOrchestrator.executeTemplate 独立更新）
             int totalPulled = 0;
@@ -496,6 +511,15 @@ public class SyncTaskService {
      * @param taskId 同步任务 ID
      * @return 业务执行记录列表（按 businessCode 排序）
      */
+    public com.baomidou.mybatisplus.core.metadata.IPage<SyncBatchMetrics> getBatchMetrics(Long recordId, int page, int size) {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                batchMetricsMapper.selectPage(
+                        new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size),
+                        new LambdaQueryWrapper<SyncBatchMetrics>()
+                                .eq(SyncBatchMetrics::getRecordId, recordId)
+                                .orderByAsc(SyncBatchMetrics::getBatchNo)));
+    }
+
     public List<SyncBusinessRecord> getBusinessRecords(Long taskId) {
         return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
                 syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()

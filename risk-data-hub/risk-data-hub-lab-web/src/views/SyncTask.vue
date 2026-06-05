@@ -11,7 +11,7 @@
 -->
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getSyncTask, startSync, forceRefresh, listDatasources, getSyncDetails } from '@/api/index.js'
+import { getSyncTask, startSync, forceRefresh, listDatasources, getSyncDetails, getBatchMetrics } from '@/api/index.js'
 
 // ============================================================
 // 数据状态
@@ -21,6 +21,7 @@ const task = ref(null)
 const details = ref([])
 const loading = ref(false)
 const taskError = ref('')
+const batchModal = ref({ visible: false, recordId: null, businessCode: '', current: 1, data: null })
 
 // ============================================================
 // 发起同步弹窗状态
@@ -195,6 +196,54 @@ function bizProgress(rec) {
 
 function bizPending(rec) {
   return Math.max(0, (rec.pulledCount || 0) - (rec.savedCount || 0))
+}
+
+function slowClass(ms) {
+  if (!ms || ms < 1000) return ''
+  if (ms < 3000) return 'text-amber-600'
+  return 'text-red-600 font-semibold'
+}
+
+function openBatchModal(rec) {
+  batchModal.value = { visible: true, recordId: rec.id, businessCode: rec.businessCode, current: 1, data: null }
+  loadBatchModal(1)
+}
+
+async function loadBatchModal(page) {
+  if (!batchModal.value.recordId) return
+  try {
+    const res = await getBatchMetrics(batchModal.value.recordId, page, 50)
+    batchModal.value.data = res.data
+    batchModal.value.current = page
+  } catch (e) {
+    console.error('加载批次耗时失败', e.message)
+  }
+}
+
+function fmtMs(ms) {
+  if (!ms && ms !== 0) return '-'
+  if (ms < 1000) return ms + 'ms'
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's'
+  return Math.floor(ms / 60000) + 'm' + Math.floor((ms % 60000) / 1000) + 's'
+}
+
+function fmtRate(rec) {
+  const total = (rec.saveDurationMs || 0) + (rec.fetchDurationMs || 0) + (rec.transformDurationMs || 0)
+  if (total === 0) return '-'
+  const rowsPerSec = Math.round((rec.pulledCount || 0) / (total / 1000))
+  return rowsPerSec + '条/s'
+}
+
+function bizTotalMs(rec) {
+  return (rec.fetchDurationMs || 0) + (rec.transformDurationMs || 0) + (rec.saveDurationMs || 0)
+}
+
+function bizAvgFetchMs(rec) {
+  return rec.fetchPageCount ? (rec.fetchDurationMs || 0) / rec.fetchPageCount : 0
+}
+
+function bizAvgSaveMs(rec) {
+  return rec.saveBatchCount ? (rec.saveDurationMs || 0) / rec.saveBatchCount : 0
 }
 </script>
 
@@ -414,6 +463,22 @@ function bizPending(rec) {
             </div>
           </div>
 
+          <!-- 批次概览（同步完成后展示，详细数据在下面的批次表中） -->
+          <div v-if="rec.status === 'SUCCESS'" class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400">
+            <span>共 {{ rec.pageCount || '-' }} 页, {{ rec.pulledCount || 0 }} 条数据</span>
+            <span v-if="rec.finishedAt" class="ml-3">完成于 {{ rec.finishedAt }}</span>
+          </div>
+
+          <!-- 批次耗时按钮（运行中也可查看，数据实时写入 sync_batch_metrics） -->
+          <div v-if="rec.id && rec.pulledCount > 0" class="mt-2">
+            <button
+              @click="openBatchModal(rec)"
+              class="text-xs text-indigo-500 hover:text-indigo-700 font-medium"
+            >
+              查看批次耗时 →
+            </button>
+          </div>
+
           <!-- 错误信息 -->
           <div
             v-if="rec.errorMessage"
@@ -495,6 +560,94 @@ function bizPending(rec) {
           >
             {{ submitting ? '提交中...' : forceMode ? '确认强制刷新' : '开始同步' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         批次耗时弹窗
+         ============================================================ -->
+    <div
+      v-if="batchModal.visible"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      @click.self="batchModal.visible = false"
+    >
+      <div class="bg-white rounded-xl shadow-2xl w-[90vw] max-w-3xl max-h-[80vh] flex flex-col">
+        <!-- 弹窗头部 -->
+        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+          <div>
+            <span class="font-semibold text-slate-800">{{ batchModal.businessCode }}</span>
+            <span class="text-sm text-slate-400 ml-2">批次耗时明细</span>
+          <div class="text-[11px] text-slate-500 mt-1 leading-relaxed space-y-0.5">
+            <div><b class="text-slate-600">①拉取</b> — 上游数据库查询耗时。从数据源按游标翻页拉取一页数据，包含 SQL 执行时间 + 网络传输时间。如果这个值高，说明上游查询慢（缺索引/大字段/网络延迟）。</div>
+            <div><b class="text-slate-600">②排队</b> — 数据从拉取完成到开始处理的时间差。拉取线程把数据放入队列，落库线程消费。排队时间长说明落库线程忙不过来（积压），瓶颈可能在转换或落库阶段。</div>
+            <div><b class="text-slate-600">③转换</b> — 字段映射转换耗时。将上游的字段（如 stock_code/openPrice）映射为中台字段（如 CleanStock），每行逐一转换。如果这个值高，说明转换逻辑重或行数多。</div>
+            <div><b class="text-slate-600">④查重</b> — 判断数据是否已存在的耗时。通过 Redis 或 DB 查询当前页的 sourceRowId 是否已落库，决定走 INSERT 还是 UPDATE。首次全量同步时全部是新数据，查重结果都是"不存在"。</div>
+            <div><b class="text-slate-600">⑤落库</b> — 写入中台库的总耗时（= ⑥INSERT + ⑦查ID + ⑧UPDATE 之和）。</div>
+            <div><b class="text-slate-600">⑥INSERT</b> — 新数据批量写入中台库的耗时。首次全量同步时所有行都在这里，如果慢说明批量插入性能有问题（事务/索引/磁盘IO）。</div>
+            <div><b class="text-slate-600">⑦查ID</b> — 已存在行需要先查询 globalId 才能执行 UPDATE。首次全量同步没有已存在行，所以为 0ms。增量同步时如果这个值高，说明 IN 查询慢。</div>
+            <div><b class="text-slate-600">⑧UPDATE</b> — 已存在行更新到中台库的耗时。首次全量同步没有更新操作，所以为 0ms。增量同步时如果有大量已存在行需要更新，这个值会升高。</div>
+          </div>
+          </div>
+          <button @click="batchModal.visible = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <!-- 弹窗表格 -->
+        <div class="flex-1 overflow-auto px-5 py-3">
+          <table v-if="batchModal.data" class="w-full text-sm text-slate-700 border-collapse">
+            <thead>
+              <tr class="bg-slate-50 text-slate-500 text-xs sticky top-0">
+                <th class="px-3 py-2 text-left w-12" title="页码">批次</th>
+                <th class="px-3 py-2 text-right w-16" title="本页拉取行数">行数</th>
+                <th class="px-3 py-2 text-right" title="上游数据库查询耗时，包含网络和SQL执行时间">①拉取</th>
+                <th class="px-3 py-2 text-right" title="数据在队列中等待被消费的时间，积压说明落库线程是瓶颈">②排队</th>
+                <th class="px-3 py-2 text-right" title="上游字段→中台字段的转换耗时">③转换</th>
+                <th class="px-3 py-2 text-right" title="查询Redis/DB判断sourceRowId是否已存在">④查重</th>
+                <th class="px-3 py-2 text-right" title="落库总耗时（含INSERT+查ID+UPDATE）">⑤落库</th>
+                <th class="px-3 py-2 text-right" title="新数据批量写入中台库耗时">⑥INSERT</th>
+                <th class="px-3 py-2 text-right" title="已存在数据需要先查询globalId">⑦查ID</th>
+                <th class="px-3 py-2 text-right" title="已存在数据更新耗时">⑧UPDATE</th>
+                <th class="px-3 py-2 text-right" title="本页从拉取到落库完成的总耗时（不含排队）">总计</th>
+                <th class="px-3 py-2 text-right w-20" title="每秒处理行数">速率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="bm in batchModal.data.records" :key="bm.batchNo"
+                class="border-t border-slate-100 hover:bg-slate-50">
+                <td class="px-3 py-2 font-mono text-xs">{{ bm.batchNo }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs">{{ (bm.pulledCount || 0).toLocaleString() }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.queueWaitMs)">{{ fmtMs(bm.queueWaitMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs">{{ fmtMs(bm.cacheLookupDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.saveDurationMs)">{{ fmtMs(bm.saveDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
+              </tr>
+              <tr v-if="!batchModal.data.records || batchModal.data.records.length === 0">
+                <td colspan="12" class="px-3 py-8 text-center text-slate-400 text-sm">暂无数据</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 弹窗分页 -->
+        <div v-if="batchModal.data && batchModal.data.pages > 1"
+          class="flex items-center justify-end gap-3 px-5 py-3 border-t border-slate-200 text-xs">
+          <button
+            @click="loadBatchModal(batchModal.current - 1)"
+            :disabled="batchModal.current <= 1"
+            class="px-3 py-1 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+          >上一页</button>
+          <span class="text-slate-400">{{ batchModal.current }}/{{ batchModal.data.pages }}</span>
+          <button
+            @click="loadBatchModal(batchModal.current + 1)"
+            :disabled="batchModal.current >= batchModal.data.pages"
+            class="px-3 py-1 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+          >下一页</button>
         </div>
       </div>
     </div>

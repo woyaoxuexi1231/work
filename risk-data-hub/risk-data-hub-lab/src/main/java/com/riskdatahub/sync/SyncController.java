@@ -1,7 +1,9 @@
 package com.riskdatahub.sync;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.riskdatahub.common.result.ApiResult;
 import com.riskdatahub.sync.entity.CleanTrade;
+import com.riskdatahub.sync.entity.SyncBatchMetrics;
 import com.riskdatahub.task.SyncTaskService;
 import com.riskdatahub.task.entity.SyncBusinessRecord;
 import com.riskdatahub.task.entity.SyncTask;
@@ -92,12 +94,34 @@ public class SyncController {
     }
 
     /**
+     * 查询指定业务记录的批次耗时明细。
+     */
+    @PostMapping("/api-hub-batch-metrics")
+    public ApiResult<IPage<SyncBatchMetrics>> batchMetrics(@Valid @RequestBody BatchMetricsRequest request) {
+        return ApiResult.ok(
+                syncTaskService.getBatchMetrics(request.getRecordId(), request.getPage(), request.getSize()),
+                "SYNC_BATCH_METRICS");
+    }
+
+    /**
      * 同步业务详情请求体。
      */
     @Data
     public static class DetailRequest {
         @NotNull(message = "任务 ID 不能为空")
         private Long taskId;
+    }
+
+    /**
+     * 批次耗时请求体。
+     */
+    @Data
+    public static class BatchMetricsRequest {
+        @NotNull(message = "记录 ID 不能为空")
+        private Long recordId;
+        private int page = 1;
+        @Min(1) @Max(200)
+        private int size = 50;
     }
 
     /**

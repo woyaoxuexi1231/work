@@ -65,11 +65,12 @@ public class SyncProgressEventListener {
                                     + ", 已落库 " + event.getSavedCount()));
 
             // 更新 sync_business_record 实时明细
-            syncBusinessRecordMapper.update(null, new LambdaUpdateWrapper<SyncBusinessRecord>()
+            LambdaUpdateWrapper<SyncBusinessRecord> wrapper = new LambdaUpdateWrapper<SyncBusinessRecord>()
                     .eq(SyncBusinessRecord::getTaskId, event.getTaskId())
                     .eq(SyncBusinessRecord::getBusinessCode, event.getBusinessCode())
                     .set(SyncBusinessRecord::getPulledCount, event.getPulledCount())
-                    .set(SyncBusinessRecord::getSavedCount, event.getSavedCount()));
+                    .set(SyncBusinessRecord::getSavedCount, event.getSavedCount());
+            syncBusinessRecordMapper.update(null, wrapper);
         });
     }
 }

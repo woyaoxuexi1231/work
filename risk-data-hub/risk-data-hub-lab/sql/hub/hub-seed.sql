@@ -21,6 +21,7 @@ INSERT IGNORE INTO leaf_alloc (biz_tag, max_id, step, description) VALUES
 ('clean_position',      200000, 20, 'clean_position主键'),
 ('clean_asset',         300000, 20, 'clean_asset主键'),
 ('event_message',       500000, 20, 'event_message主键'),
+('sync_batch_metrics',  1,      10, 'sync_batch_metrics主键'),
 ('tx_audit',            900000, 10, 'tx_audit主键');
 
 -- 字典初始值

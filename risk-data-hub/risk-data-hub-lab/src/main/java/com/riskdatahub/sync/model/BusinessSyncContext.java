@@ -38,4 +38,8 @@ public class BusinessSyncContext {
     /** 每个业务的上一次成功游标，用于断点续传（businessCode → lastRowId） */
     @Builder.Default
     private final Map<String, Long> initialCursors = Collections.emptyMap();
+
+    /** 各业务在 sync_business_record 表中的记录 ID（businessCode → recordId），用于写入批次耗时 */
+    @Builder.Default
+    private final Map<String, Long> businessRecordIds = Collections.emptyMap();
 }

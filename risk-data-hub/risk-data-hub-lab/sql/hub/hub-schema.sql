@@ -136,18 +136,35 @@ CREATE TABLE IF NOT EXISTS sync_business_record (
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
 
-    -- 耗时指标（毫秒）
-    fetch_duration_ms          BIGINT DEFAULT 0  COMMENT '拉取总耗时',
-    transform_duration_ms      BIGINT DEFAULT 0  COMMENT '转换总耗时',
-    save_duration_ms           BIGINT DEFAULT 0  COMMENT '落库总耗时',
-    fetch_page_count           INT    DEFAULT 0  COMMENT '拉取页数',
-    save_batch_count           INT    DEFAULT 0  COMMENT '落库批次数',
-    max_fetch_page_ms          BIGINT DEFAULT 0  COMMENT '最慢单页拉取',
-    max_save_batch_ms          BIGINT DEFAULT 0  COMMENT '最慢单批落库',
-    cache_lookup_duration_ms   BIGINT DEFAULT 0  COMMENT '查缓存耗时',
-    batch_insert_duration_ms   BIGINT DEFAULT 0  COMMENT '批量INSERT耗时',
-    global_id_query_duration_ms BIGINT DEFAULT 0 COMMENT '查globalId耗时',
-    batch_update_duration_ms   BIGINT DEFAULT 0  COMMENT '批量UPDATE耗时',
-
     KEY idx_record_task_id(task_id)
+);
+
+-- 批次耗时明细：每批落库一条记录，用于性能分析（非常详细）
+CREATE TABLE IF NOT EXISTS sync_batch_metrics (
+    id BIGINT PRIMARY KEY,
+    record_id BIGINT NOT NULL COMMENT '关联 sync_business_record.id',
+    batch_no INT NOT NULL COMMENT '页码',
+
+    -- 数据量
+    pulled_count INT DEFAULT 0 COMMENT '本页拉取行数',
+    saved_count INT DEFAULT 0 COMMENT '本页落库行数',
+    insert_count INT DEFAULT 0 COMMENT '本页新增行数',
+    update_count INT DEFAULT 0 COMMENT '本页更新行数',
+
+    -- 各阶段耗时（毫秒）
+    fetch_duration_ms      BIGINT DEFAULT 0 COMMENT '上游查询耗时',
+    queue_wait_ms          BIGINT DEFAULT 0 COMMENT '队列等待耗时',
+    transform_duration_ms  BIGINT DEFAULT 0 COMMENT '数据转换耗时',
+    cache_lookup_duration_ms BIGINT DEFAULT 0 COMMENT '查重缓存耗时',
+    save_duration_ms       BIGINT DEFAULT 0 COMMENT '落库总耗时',
+    insert_duration_ms     BIGINT DEFAULT 0 COMMENT '批量INSERT耗时',
+    global_id_query_duration_ms BIGINT DEFAULT 0 COMMENT '查globalId耗时',
+    update_duration_ms     BIGINT DEFAULT 0 COMMENT '批量UPDATE耗时',
+    total_page_ms          BIGINT DEFAULT 0 COMMENT '本页总耗时(拉取+转换+落库)',
+
+    -- 速率
+    rows_per_second        DOUBLE DEFAULT 0 COMMENT '本页处理速率(条/秒)',
+
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_batch_record(record_id)
 );

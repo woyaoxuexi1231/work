@@ -112,6 +112,16 @@ export function getSyncDetails(taskId) {
 }
 
 /**
+ * 查询指定业务记录的批次耗时明细（分页）
+ * @param {number} recordId sync_business_record.id
+ * @param {number} page 页码（从 1 开始）
+ * @param {number} size 每页条数
+ */
+export function getBatchMetrics(recordId, page = 1, size = 50) {
+  return request.post('/api-hub-batch-metrics', { recordId, page, size })
+}
+
+/**
  * 强制刷新 — 清除 risk_hub 全部业务数据和任务记录，然后重新全量同步
  * @param {string} dataSourceKey 要同步的数据源标识
  * @param {number} pageSize 每页拉取条数，默认 100

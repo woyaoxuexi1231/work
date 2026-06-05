@@ -6,6 +6,8 @@ import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
+import com.riskdatahub.sync.entity.SyncBatchMetrics;
+import com.riskdatahub.sync.mapper.SyncBatchMetricsMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncProgressEvent;
 import com.riskdatahub.sync.model.SyncSupport.SyncCounter;
@@ -53,6 +55,10 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     /** 当前业务类型的双线程池（每个业务 2 线程：拉取 + 落库） */
     protected final ThreadPoolExecutor pairExecutor;
 
+    /** 批次耗时记录 Mapper（由 Spring 注入到基类） */
+    @org.springframework.beans.factory.annotation.Autowired
+    private SyncBatchMetricsMapper batchMetricsMapper;
+
     protected AbstractBaseSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
                                         LeafSegmentService leafSegmentService,
                                         MessageOutboxService messageOutboxService,
@@ -72,6 +78,26 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     protected void publishProgress(Long taskId, String businessCode, int pulledCount, int savedCount) {
         if (taskId == null) return;
         eventPublisher.publishEvent(new SyncProgressEvent(taskId, businessCode, pulledCount, savedCount));
+    }
+
+    /** 发布含耗时指标的进度事件（由落库线程每页完成后调用） */
+    protected void publishProgressWithMetrics(Long taskId, String businessCode,
+                                               int pulledCount, int savedCount,
+                                               SyncMetrics metrics) {
+        if (taskId == null) return;
+        SyncProgressEvent event = new SyncProgressEvent(taskId, businessCode, pulledCount, savedCount);
+        event.setFetchDurationMs(metrics.getFetchDurationMs());
+        event.setTransformDurationMs(metrics.getTransformDurationMs());
+        event.setSaveDurationMs(metrics.getSaveDurationMs());
+        event.setFetchPageCount(metrics.getFetchPageCount());
+        event.setSaveBatchCount(metrics.getSaveBatchCount());
+        event.setMaxFetchPageMs(metrics.getMaxFetchPageMs());
+        event.setMaxSaveBatchMs(metrics.getMaxSaveBatchMs());
+        event.setCacheLookupDurationMs(metrics.getCacheLookupDurationMs());
+        event.setBatchInsertDurationMs(metrics.getBatchInsertDurationMs());
+        event.setGlobalIdQueryDurationMs(metrics.getGlobalIdQueryDurationMs());
+        event.setBatchUpdateDurationMs(metrics.getBatchUpdateDurationMs());
+        eventPublisher.publishEvent(event);
     }
 
     /**
@@ -118,6 +144,59 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
             }
         }
         return 0L;
+    }
+
+    /**
+     * 记录单批落库耗时到 sync_batch_metrics 表。
+     * <p>由 runInsertThread 每处理完一页后调用。</p>
+     */
+    protected void recordBatchMetrics(BusinessSyncContext context, int pageNo, int rowCount,
+                                       long fetchMs, long queueWaitMs,
+                                       long transformMs, long saveMs,
+                                       SyncMetrics metrics) {
+        Long recordId = context.getBusinessRecordIds().get(businessCode());
+        if (batchMetricsMapper == null) {
+            log.warn("[同步模板] batchMetricsMapper 未注入，跳过批次耗时记录");
+            return;
+        }
+        if (recordId == null) {
+            log.warn("[同步模板] businessRecordIds 中找不到业务 {}，跳过批次耗时记录", businessCode());
+            return;
+        }
+        try {
+            long totalMs = fetchMs + transformMs + saveMs;
+            double rps = totalMs > 0 ? (double) rowCount / totalMs * 1000 : 0;
+
+            SyncBatchMetrics m = new SyncBatchMetrics();
+            m.setId(leafSegmentService.nextId("sync_batch_metrics"));
+            m.setRecordId(recordId);
+            m.setBatchNo(pageNo);
+            m.setPulledCount(rowCount);
+            m.setSavedCount(rowCount);
+            m.setInsertCount(0);
+            m.setUpdateCount(0);
+
+            m.setFetchDurationMs(fetchMs > 0 ? fetchMs : 0);
+            m.setQueueWaitMs(queueWaitMs > 0 ? queueWaitMs : 0);
+            m.setTransformDurationMs(transformMs);
+            m.setSaveDurationMs(saveMs);
+            m.setTotalPageMs(totalMs);
+
+            // 子步骤使用当批值（resetBatchSubTimings 每批清零），不是累计值
+            m.setCacheLookupDurationMs(metrics.getLastCacheLookupMs());
+            m.setInsertCount(metrics.getLastInsertCount());
+            m.setInsertDurationMs(metrics.getLastBatchInsertMs());
+            m.setGlobalIdQueryDurationMs(metrics.getLastGlobalIdQueryMs());
+            m.setUpdateCount(metrics.getLastUpdateCount());
+            m.setUpdateDurationMs(metrics.getLastBatchUpdateMs());
+
+            m.setRowsPerSecond(Math.round(rps * 10) / 10.0);
+
+            m.setRecordedAt(now());
+            batchMetricsMapper.insert(m);
+        } catch (Exception e) {
+            log.warn("[同步模板] 记录批次耗时失败: {}", e.getMessage(), e);
+        }
     }
 
     // ==================== 子类需实现的抽象方法 ====================

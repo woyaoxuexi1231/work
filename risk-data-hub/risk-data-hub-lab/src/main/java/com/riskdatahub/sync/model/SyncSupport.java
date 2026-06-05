@@ -39,9 +39,19 @@ public final class SyncSupport {
         private int pageNo;
         private List<S> rows;
         private boolean end;
+        private long createdAt;
+        private long fetchDurationMs;
+
+        public PageChunk(int pageNo, List<S> rows, boolean end) {
+            this.pageNo = pageNo;
+            this.rows = rows;
+            this.end = end;
+            this.createdAt = System.currentTimeMillis();
+            this.fetchDurationMs = 0;
+        }
 
         /**
-         * 构造包含数据的页块。
+         * 构造包含数据的页块（记录创建时间戳，用于计算队列等待耗时）。
          *
          * @param pageNo 页码
          * @param rows   数据行
@@ -137,11 +147,19 @@ public final class SyncSupport {
         private int saveBatchCount;
         private long maxSaveBatchMs;
 
-        // ====== saveBatch 内部子步骤 ======
-        private long cacheLookupDurationMs;    // getExistingIds 耗时
-        private long batchInsertDurationMs;    // INSERT 耗时
-        private long globalIdQueryDurationMs;  // 查询 globalId 耗时
-        private long batchUpdateDurationMs;    // UPDATE 耗时
+        // ====== saveBatch 内部子步骤（累计值，用于 sync_business_record） ======
+        private long cacheLookupDurationMs;
+        private long batchInsertDurationMs;
+        private long globalIdQueryDurationMs;
+        private long batchUpdateDurationMs;
+
+        // ====== saveBatch 内部子步骤（当批值，用于 sync_batch_metrics） ======
+        private long lastCacheLookupMs;
+        private int lastInsertCount;
+        private long lastBatchInsertMs;
+        private long lastGlobalIdQueryMs;
+        private int lastUpdateCount;
+        private long lastBatchUpdateMs;
 
         public void recordFetchPage(long elapsedMs) {
             fetchDurationMs += elapsedMs;
@@ -159,13 +177,37 @@ public final class SyncSupport {
             if (elapsedMs > maxSaveBatchMs) maxSaveBatchMs = elapsedMs;
         }
 
-        public void recordCacheLookup(long elapsedMs) { cacheLookupDurationMs += elapsedMs; }
+        public void recordCacheLookup(long elapsedMs) {
+            cacheLookupDurationMs += elapsedMs;
+            lastCacheLookupMs = elapsedMs;
+        }
 
-        public void recordBatchInsert(long elapsedMs) { batchInsertDurationMs += elapsedMs; }
+        public void recordBatchInsert(long elapsedMs, int insertCount) {
+            batchInsertDurationMs += elapsedMs;
+            lastBatchInsertMs = elapsedMs;
+            lastInsertCount = insertCount;
+        }
 
-        public void recordGlobalIdQuery(long elapsedMs) { globalIdQueryDurationMs += elapsedMs; }
+        public void recordGlobalIdQuery(long elapsedMs) {
+            globalIdQueryDurationMs += elapsedMs;
+            lastGlobalIdQueryMs = elapsedMs;
+        }
 
-        public void recordBatchUpdate(long elapsedMs) { batchUpdateDurationMs += elapsedMs; }
+        public void recordBatchUpdate(long elapsedMs, int updateCount) {
+            batchUpdateDurationMs += elapsedMs;
+            lastBatchUpdateMs = elapsedMs;
+            lastUpdateCount = updateCount;
+        }
+
+        /** 重置当批子步骤值（每批 saveBatch 前调用） */
+        public void resetBatchSubTimings() {
+            lastCacheLookupMs = 0;
+            lastInsertCount = 0;
+            lastBatchInsertMs = 0;
+            lastGlobalIdQueryMs = 0;
+            lastUpdateCount = 0;
+            lastBatchUpdateMs = 0;
+        }
 
         public Double avgFetchPageMs() {
             return fetchPageCount > 0 ? (double) fetchDurationMs / fetchPageCount : 0;

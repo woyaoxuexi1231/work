@@ -50,38 +50,4 @@ public class SyncBusinessRecord {
     /** 完成时间 */
     private LocalDateTime finishedAt;
 
-    // ====== 耗时指标（毫秒），由 SyncMetrics 采集 ======
-
-    /** 拉取阶段总耗时（所有 fetchPage 累加） */
-    private Long fetchDurationMs;
-
-    /** 转换阶段总耗时（所有 transform 累加） */
-    private Long transformDurationMs;
-
-    /** 落库阶段总耗时（所有 saveBatch 累加） */
-    private Long saveDurationMs;
-
-    /** 拉取页数 */
-    private Integer fetchPageCount;
-
-    /** 落库批次数 */
-    private Integer saveBatchCount;
-
-    /** 单页最大拉取耗时 */
-    private Long maxFetchPageMs;
-
-    /** 单批最大落库耗时 */
-    private Long maxSaveBatchMs;
-
-    /** 缓存查询累计耗时（getExistingIds） */
-    private Long cacheLookupDurationMs;
-
-    /** 批量 INSERT 累计耗时 */
-    private Long batchInsertDurationMs;
-
-    /** 查询 globalId 累计耗时 */
-    private Long globalIdQueryDurationMs;
-
-    /** 批量 UPDATE 累计耗时 */
-    private Long batchUpdateDurationMs;
 }

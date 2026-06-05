@@ -214,18 +214,23 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 for (S row : rows) {
                     targets.add(transform(context, row));
                 }
-                metrics.recordTransform(System.currentTimeMillis() - transformStart);
+                long transformElapsed = System.currentTimeMillis() - transformStart;
+                metrics.recordTransform(transformElapsed);
 
+                metrics.resetBatchSubTimings();
                 long saveStart = System.currentTimeMillis();
                 saveBatch(context, targets, metrics);
-                metrics.recordSaveBatch(System.currentTimeMillis() - saveStart);
+                long saveElapsed = System.currentTimeMillis() - saveStart;
+                metrics.recordSaveBatch(saveElapsed);
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }
                 counter.updateSavedMaxRowId(sourceRowId(rows.get(rows.size() - 1)));
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), counter.getPageCount(), counter.getSavedCount());
-                publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());
+                publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
+                recordBatchMetrics(context, counter.getPageCount(), rows.size(),
+                        0, 0, transformElapsed, saveElapsed, metrics);
             }
         } catch (Exception e) {
             recordFailure(fetchPermit, failure, new IllegalStateException(
