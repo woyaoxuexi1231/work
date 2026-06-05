@@ -11,6 +11,9 @@ import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncResultDTO;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.sync.template.BusinessSyncTemplate;
+import com.riskdatahub.task.entity.SyncBusinessRecord;
+import com.riskdatahub.task.mapper.SyncBusinessRecordMapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -53,6 +56,7 @@ public class SyncOrchestrator {
     private final DataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final CleanTradeMapper cleanTradeMapper;
+    private final SyncBusinessRecordMapper syncBusinessRecordMapper;
 
     /** Spring 自动注入所有 BusinessSyncTemplate 实现类（策略模式） */
     private final List<BusinessSyncTemplate> businessSyncTemplates;
@@ -160,12 +164,44 @@ public class SyncOrchestrator {
         return futures;
     }
 
-    /** 执行单个模板，包装异常 */
+    /** 执行单个模板，每个业务独立更新自己的 SyncBusinessRecord 状态 */
     private BusinessSyncResult executeTemplate(BusinessSyncTemplate template, BusinessSyncContext context) {
+        Long taskId = context.getTaskId();
+        String bizCode = template.businessCode();
         try {
-            return template.execute(context);
+            BusinessSyncResult result = template.execute(context);
+            if (taskId != null) {
+                updateRecordStatus(taskId, bizCode, "SUCCESS", result);
+            }
+            return result;
         } catch (Exception e) {
+            if (taskId != null) {
+                updateRecordStatus(taskId, bizCode, "FAILED", null);
+            }
             throw new RuntimeException(e);
+        }
+    }
+
+    private void updateRecordStatus(Long taskId, String bizCode, String status, BusinessSyncResult result) {
+        try {
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                LambdaUpdateWrapper<SyncBusinessRecord> wrapper = new LambdaUpdateWrapper<SyncBusinessRecord>()
+                        .eq(SyncBusinessRecord::getTaskId, taskId)
+                        .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                        .set(SyncBusinessRecord::getFinishedAt, java.time.LocalDateTime.now());
+                if ("SUCCESS".equals(status) && result != null) {
+                    wrapper.set(SyncBusinessRecord::getPageCount, result.getPageCount())
+                            .set(SyncBusinessRecord::getPulledCount, result.getPulledCount())
+                            .set(SyncBusinessRecord::getSavedCount, result.getSavedCount())
+                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId());
+                    syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "SUCCESS"));
+                } else {
+                    syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "FAILED")
+                            .set(SyncBusinessRecord::getErrorMessage, "同步异常"));
+                }
+            });
+        } catch (Exception ignored) {
+            // 状态更新失败不影响同步主流程
         }
     }
 

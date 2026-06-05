@@ -420,26 +420,14 @@ public class SyncTaskService {
             // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理，实时更新 SyncBusinessRecord）
             SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id, initialCursors);
 
-            // 同步完成后更新每个业务记录为 SUCCESS
+            // 统计总数（每个业务的状态已由 SyncOrchestrator.executeTemplate 独立更新）
             int totalPulled = 0;
             int totalSaved = 0;
 
             for (Map.Entry<String, BusinessSyncResult> entry : result.getBusinessResults().entrySet()) {
-                String bizCode = entry.getKey();
                 BusinessSyncResult bizResult = entry.getValue();
                 totalPulled += bizResult.getPulledCount();
                 totalSaved += bizResult.getSavedCount();
-
-                routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
-                        syncBusinessRecordMapper.update(null, new LambdaUpdateWrapper<SyncBusinessRecord>()
-                                .eq(SyncBusinessRecord::getTaskId, id)
-                                .eq(SyncBusinessRecord::getBusinessCode, bizCode)
-                                .set(SyncBusinessRecord::getStatus, "SUCCESS")
-                                .set(SyncBusinessRecord::getPageCount, bizResult.getPageCount())
-                                .set(SyncBusinessRecord::getPulledCount, bizResult.getPulledCount())
-                                .set(SyncBusinessRecord::getSavedCount, bizResult.getSavedCount())
-                                .set(SyncBusinessRecord::getLastRowId, bizResult.getLastRowId())
-                                .set(SyncBusinessRecord::getFinishedAt, TimeUtils.now())));
             }
 
             int finalPulled = totalPulled;
@@ -468,22 +456,7 @@ public class SyncTaskService {
                 task.setRunning(false);
             });
 
-            // 然后尝试更新业务的 SyncBusinessRecord 为 FAILED（可能无记录，忽略失败）
-            try {
-                routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-                    List<SyncBusinessRecord> records = syncBusinessRecordMapper.selectList(
-                            new LambdaQueryWrapper<SyncBusinessRecord>()
-                                    .eq(SyncBusinessRecord::getTaskId, id));
-                    for (SyncBusinessRecord rec : records) {
-                        rec.setStatus("FAILED");
-                        rec.setErrorMessage(e.getMessage());
-                        rec.setFinishedAt(TimeUtils.now());
-                        syncBusinessRecordMapper.updateById(rec);
-                    }
-                });
-            } catch (Exception ignored) {
-                log.warn("[SyncTask] 更新业务记录状态失败（可忽略）id={}", id, ignored);
-            }
+            // 业务记录的状态已由 SyncOrchestrator.executeTemplate 在每个线程中独立更新，无需再次处理
 
             log.error("[SyncTask] failed id={}", id, e);
         } finally {
