@@ -119,8 +119,12 @@ public class StockBusinessSyncTemplate
     }
 
     @Override
-    protected void save(CleanStock target) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> cleanStockMapper.insert(target));
+    protected void saveBatch(List<CleanStock> targets) {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            for (CleanStock target : targets) {
+                cleanStockMapper.insert(target);
+            }
+        });
     }
 
     /**

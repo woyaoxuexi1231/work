@@ -111,8 +111,12 @@ public class AssetBusinessSyncTemplate
     }
 
     @Override
-    protected void save(CleanAsset target) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> cleanAssetMapper.insert(target));
+    protected void saveBatch(List<CleanAsset> targets) {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            for (CleanAsset target : targets) {
+                cleanAssetMapper.insert(target);
+            }
+        });
     }
 
     /**

@@ -94,7 +94,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 counter.getPageCount(),
                 counter.getPulledCount(),
                 counter.getSavedCount(),
-                counter.getLastRowId());
+                counter.getSavedMaxRowId());
     }
 
     /**
@@ -111,7 +111,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                                 SyncCounter counter,
                                 AtomicBoolean noMoreData,
                                 AtomicReference<RuntimeException> failure) {
-        long cursor = 0L;
+        long cursor = initialCursor(context);
         int pageNo = 0;
         try {
             while (failure.get() == null) {
@@ -184,13 +184,20 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 sharedPage.clear();
                 fetchPermit.release();
 
-                // 逐条转换落库（此时拉取线程已在拉取下一页，互不干扰）
+                // 批量转换落库（此时拉取线程已在拉取下一页，互不干扰）
+                List<T> targets = new ArrayList<>(rows.size());
                 for (S row : rows) {
-                    T target = transform(context, row);
-                    save(target);
+                    targets.add(transform(context, row));
+                }
+                saveBatch(targets);
+                long pageMaxId = 0;
+                for (S row : rows) {
                     markSourceRowSynced(context, sourceRowId(row));
                     counter.incrementSavedCount();
+                    long rowId = sourceRowId(row);
+                    if (rowId > pageMaxId) pageMaxId = rowId;
                 }
+                counter.updateSavedMaxRowId(pageMaxId);
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), counter.getPageCount(), counter.getSavedCount());
                 publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());

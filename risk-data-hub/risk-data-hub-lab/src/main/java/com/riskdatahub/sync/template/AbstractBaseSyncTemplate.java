@@ -103,6 +103,25 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         return TimeUtils.now();
     }
 
+    /**
+     * 获取当前业务的初始游标（断点续传）。
+     * <p>从 {@link BusinessSyncContext#getInitialCursors()} 中读取当前业务编码对应的游标，
+     * 如果存在有效的上次成功游标则返回，否则返回 0（从头开始）。</p>
+     *
+     * @param context 同步上下文
+     * @return 起始游标 ID，0 表示从头开始
+     */
+    protected long initialCursor(BusinessSyncContext context) {
+        Map<String, Long> cursors = context.getInitialCursors();
+        if (cursors != null) {
+            Long cursor = cursors.get(businessCode());
+            if (cursor != null && cursor > 0) {
+                return cursor;
+            }
+        }
+        return 0L;
+    }
+
     // ==================== 子类需实现的抽象方法 ====================
 
     /**
@@ -133,11 +152,13 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     protected abstract T transform(BusinessSyncContext context, S row);
 
     /**
-     * 将转换后的中台实体写入数据库。
+     * 批量将转换后的中台实体写入数据库。
+     * <p>实现类应在一次 {@link RoutingMybatisExecutor#run} 中完成批量写入，
+     * 避免每行单独开连接。</p>
      *
-     * @param target 中台实体
+     * @param targets 中台实体列表
      */
-    protected abstract void save(T target);
+    protected abstract void saveBatch(List<T> targets);
 
     /**
      * 将源数据标记为已同步（设置 sync_flag = 1）。

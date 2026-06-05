@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -163,6 +164,14 @@ public class SyncTaskService {
      */
     @Scheduled(fixedDelay = 3000)
     public void scanAndExecute() {
+        try {
+            doScanAndExecute();
+        } catch (Exception e) {
+            log.error("[SyncTask] scanAndExecute 执行异常，下次调度继续尝试", e);
+        }
+    }
+
+    private void doScanAndExecute() {
         RLock lock = redissonClient.getLock(LOCK_KEY);
         boolean lockHeld = lock.isLocked();
 
@@ -245,8 +254,22 @@ public class SyncTaskService {
                         () -> syncBusinessRecordMapper.insert(record));
             }
 
+            // 查询每个业务上一次成功同步的游标，用于断点续传
+            Map<String, Long> initialCursors = new HashMap<>();
+            for (String bizCode : businessCodes) {
+                SyncBusinessRecord last = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                        syncBusinessRecordMapper.selectOne(new LambdaQueryWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                                .orderByDesc(SyncBusinessRecord::getId)
+                                .last("limit 1")));
+                if (last != null && last.getLastRowId() != null && last.getLastRowId() > 0) {
+                    initialCursors.put(bizCode, last.getLastRowId());
+                    log.info("[SyncTask] 业务 {} 断点续传，从游标 {} 开始", bizCode, last.getLastRowId());
+                }
+            }
+
             // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理，实时更新 SyncBusinessRecord）
-            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id);
+            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id, initialCursors);
 
             // 同步完成后更新每个业务记录为 SUCCESS
             int totalPulled = 0;
@@ -286,18 +309,31 @@ public class SyncTaskService {
             rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
                     totalPulled, totalSaved);
         } catch (Exception e) {
-            // 更新所有业务的 SyncBusinessRecord 为 FAILED
-            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-                List<SyncBusinessRecord> records = syncBusinessRecordMapper.selectList(
-                        new LambdaQueryWrapper<SyncBusinessRecord>()
-                                .eq(SyncBusinessRecord::getTaskId, id));
-                for (SyncBusinessRecord rec : records) {
-                    rec.setStatus("FAILED");
-                    rec.setErrorMessage(e.getMessage());
-                    rec.setFinishedAt(TimeUtils.now());
-                    syncBusinessRecordMapper.updateById(rec);
-                }
+            // 优先标记任务为 FAILED（这是最重要的恢复操作，先执行）
+            updateTaskFields(id, task -> {
+                task.setStatus("FAILED");
+                task.setMessage("同步任务失败");
+                task.setErrorMessage(e.getMessage());
+                task.setFinishedAt(TimeUtils.now());
             });
+
+            // 然后尝试更新业务的 SyncBusinessRecord 为 FAILED（可能无记录，忽略失败）
+            try {
+                routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                    List<SyncBusinessRecord> records = syncBusinessRecordMapper.selectList(
+                            new LambdaQueryWrapper<SyncBusinessRecord>()
+                                    .eq(SyncBusinessRecord::getTaskId, id));
+                    for (SyncBusinessRecord rec : records) {
+                        rec.setStatus("FAILED");
+                        rec.setErrorMessage(e.getMessage());
+                        rec.setFinishedAt(TimeUtils.now());
+                        syncBusinessRecordMapper.updateById(rec);
+                    }
+                });
+            } catch (Exception ignored) {
+                log.warn("[SyncTask] 更新业务记录状态失败（可忽略）id={}", id, ignored);
+            }
+
             log.error("[SyncTask] failed id={}", id, e);
         } finally {
             // 释放分布式锁（仅当持有锁时才释放）

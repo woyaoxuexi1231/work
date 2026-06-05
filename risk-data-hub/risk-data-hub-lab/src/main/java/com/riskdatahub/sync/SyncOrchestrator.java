@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,12 +69,14 @@ public class SyncOrchestrator {
      * @param dataSourceKey 数据源标识
      * @param pageSize      分页大小
      * @param taskId        同步任务 ID（用于进度事件关联）
+     * @param initialCursors 每个业务的上一次成功游标（businessCode → lastRowId），用于断点续传
      * @return 同步结果摘要
      */
-    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize, Long taskId) {
+    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize, Long taskId,
+                                          Map<String, Long> initialCursors) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
         int safePageSize = sanitizePageSize(pageSize);
-        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId);
+        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId, initialCursors);
 
         log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 任务ID={}, 业务模板数={}",
                 dataSourceKey, config.getDatasourceType(), safePageSize,
@@ -134,14 +137,16 @@ public class SyncOrchestrator {
         return Math.max(1, Math.min(pageSize, 500));
     }
 
-    /** 构建同步上下文（含唯一批次号和任务 ID） */
-    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize, Long taskId) {
+    /** 构建同步上下文（含唯一批次号、任务 ID 和断点续传游标） */
+    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize,
+                                             Long taskId, Map<String, Long> initialCursors) {
         return BusinessSyncContext.builder()
                 .dataSourceKey(dataSourceKey)
                 .datasourceType(config.getDatasourceType())
                 .pageSize(pageSize)
                 .batchNo("SYNC-" + System.currentTimeMillis())
                 .taskId(taskId)
+                .initialCursors(initialCursors == null ? Collections.emptyMap() : initialCursors)
                 .build();
     }
 

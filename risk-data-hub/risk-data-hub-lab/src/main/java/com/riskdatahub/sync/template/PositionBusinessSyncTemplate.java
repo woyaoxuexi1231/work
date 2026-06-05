@@ -112,8 +112,12 @@ public class PositionBusinessSyncTemplate
     }
 
     @Override
-    protected void save(CleanPosition target) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> cleanPositionMapper.insert(target));
+    protected void saveBatch(List<CleanPosition> targets) {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            for (CleanPosition target : targets) {
+                cleanPositionMapper.insert(target);
+            }
+        });
     }
 
     /**

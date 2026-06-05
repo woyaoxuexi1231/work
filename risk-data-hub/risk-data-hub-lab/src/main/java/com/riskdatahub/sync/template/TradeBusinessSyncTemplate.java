@@ -119,8 +119,12 @@ public class TradeBusinessSyncTemplate
     }
 
     @Override
-    protected void save(CleanTrade target) {
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> cleanTradeMapper.insert(target));
+    protected void saveBatch(List<CleanTrade> targets) {
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            for (CleanTrade target : targets) {
+                cleanTradeMapper.insert(target);
+            }
+        });
     }
 
     /**

@@ -2,6 +2,8 @@ package com.riskdatahub.sync.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -95,26 +97,24 @@ public final class SyncSupport {
      * 累加操作发生在各自单一线程内，无需加锁。
      * </p>
      */
+    @Getter
     public static class SyncCounter {
+        @Setter
         private int pageCount;
         private int pulledCount;
         private int savedCount;
+        @Setter
         private long lastRowId;
-
-        public int getPageCount() { return pageCount; }
-
-        public void setPageCount(int pageCount) { this.pageCount = pageCount; }
-
-        public int getPulledCount() { return pulledCount; }
+        private long savedMaxRowId;
 
         public void addPulledCount(int pulledCount) { this.pulledCount += pulledCount; }
 
-        public int getSavedCount() { return savedCount; }
-
         public void incrementSavedCount() { this.savedCount++; }
 
-        public long getLastRowId() { return lastRowId; }
-
-        public void setLastRowId(long lastRowId) { this.lastRowId = lastRowId; }
+        public void updateSavedMaxRowId(long rowId) {
+            if (rowId > savedMaxRowId) {
+                this.savedMaxRowId = rowId;
+            }
+        }
     }
 }

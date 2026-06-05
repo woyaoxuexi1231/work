@@ -9,6 +9,7 @@ import com.riskdatahub.sync.model.SyncSupport.PageChunk;
 import com.riskdatahub.sync.model.SyncSupport.SyncCounter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -88,7 +89,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 counter.getPageCount(),
                 counter.getPulledCount(),
                 counter.getSavedCount(),
-                counter.getLastRowId());
+                counter.getSavedMaxRowId());
     }
 
     /**
@@ -99,7 +100,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                                 BlockingQueue<PageChunk<S>> queue,
                                 SyncCounter counter,
                                 AtomicReference<RuntimeException> failure) {
-        long cursor = 0L;
+        long cursor = initialCursor(context);
         int pageNo = 0;
         try {
             while (failure.get() == null) {
@@ -149,12 +150,20 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 if (chunk.isEnd()) {
                     break;
                 }
-                for (S row : chunk.getRows()) {
-                    T target = transform(context, row);
-                    save(target);
+                List<S> rows = chunk.getRows();
+                List<T> targets = new ArrayList<>(rows.size());
+                for (S row : rows) {
+                    targets.add(transform(context, row));
+                }
+                saveBatch(targets);
+                long pageMaxId = 0;
+                for (S row : rows) {
                     markSourceRowSynced(context, sourceRowId(row));
                     counter.incrementSavedCount();
+                    long rowId = sourceRowId(row);
+                    if (rowId > pageMaxId) pageMaxId = rowId;
                 }
+                counter.updateSavedMaxRowId(pageMaxId);
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), chunk.getPageNo(), counter.getSavedCount());
                 publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());

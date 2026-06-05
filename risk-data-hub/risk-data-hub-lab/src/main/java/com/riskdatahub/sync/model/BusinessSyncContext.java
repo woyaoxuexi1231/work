@@ -3,6 +3,9 @@ package com.riskdatahub.sync.model;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.util.Collections;
+import java.util.Map;
+
 /**
  * 同步上下文 — 携带当前同步任务的参数。
  * <p>
@@ -31,4 +34,8 @@ public class BusinessSyncContext {
 
     /** 同步任务 ID（用于进度事件关联 sync_task 记录） */
     private final Long taskId;
+
+    /** 每个业务的上一次成功游标，用于断点续传（businessCode → lastRowId） */
+    @Builder.Default
+    private final Map<String, Long> initialCursors = Collections.emptyMap();
 }
