@@ -2,6 +2,7 @@ package com.riskdatahub.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.DataSourceManager;
@@ -10,6 +11,15 @@ import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.RabbitMqSender;
 import com.riskdatahub.sync.SyncOrchestrator;
+import com.riskdatahub.sync.cache.SyncCacheHelper;
+import com.riskdatahub.sync.entity.CleanAsset;
+import com.riskdatahub.sync.entity.CleanPosition;
+import com.riskdatahub.sync.entity.CleanStock;
+import com.riskdatahub.sync.entity.CleanTrade;
+import com.riskdatahub.sync.mapper.CleanAssetMapper;
+import com.riskdatahub.sync.mapper.CleanPositionMapper;
+import com.riskdatahub.sync.mapper.CleanStockMapper;
+import com.riskdatahub.sync.mapper.CleanTradeMapper;
 import com.riskdatahub.sync.model.SyncResultDTO;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.task.entity.SyncBusinessRecord;
@@ -57,6 +67,11 @@ public class SyncTaskService {
     private final SyncBusinessRecordMapper syncBusinessRecordMapper;
     private final RabbitMqSender rabbitMqSender;
     private final ThreadPoolExecutor syncTaskExecutor;
+    private final CleanStockMapper cleanStockMapper;
+    private final CleanTradeMapper cleanTradeMapper;
+    private final CleanPositionMapper cleanPositionMapper;
+    private final CleanAssetMapper cleanAssetMapper;
+    private final SyncCacheHelper syncCacheHelper;
 
     public SyncTaskService(RedissonClient redissonClient,
                            LeafSegmentService leafSegmentService,
@@ -66,7 +81,12 @@ public class SyncTaskService {
                            SyncTaskMapper syncTaskMapper,
                            SyncBusinessRecordMapper syncBusinessRecordMapper,
                            RabbitMqSender rabbitMqSender,
-                           @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor) {
+                           @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor,
+                           CleanStockMapper cleanStockMapper,
+                           CleanTradeMapper cleanTradeMapper,
+                           CleanPositionMapper cleanPositionMapper,
+                           CleanAssetMapper cleanAssetMapper,
+                           SyncCacheHelper syncCacheHelper) {
         this.redissonClient = redissonClient;
         this.leafSegmentService = leafSegmentService;
         this.syncOrchestrator = syncOrchestrator;
@@ -76,6 +96,11 @@ public class SyncTaskService {
         this.syncBusinessRecordMapper = syncBusinessRecordMapper;
         this.rabbitMqSender = rabbitMqSender;
         this.syncTaskExecutor = syncTaskExecutor;
+        this.cleanStockMapper = cleanStockMapper;
+        this.cleanTradeMapper = cleanTradeMapper;
+        this.cleanPositionMapper = cleanPositionMapper;
+        this.cleanAssetMapper = cleanAssetMapper;
+        this.syncCacheHelper = syncCacheHelper;
     }
 
     /**
@@ -90,16 +115,9 @@ public class SyncTaskService {
      * @throws IllegalStateException    当天已有成功同步任务
      */
     public SyncTask startTask(String dataSourceKey, int pageSize) {
-        // 1. 校验数据源存在且不是中台库（自己不能同步自己）
-        DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
-        if (config == null) {
-            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
-        }
-        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
-            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
-        }
+        DataSourceConfigDTO config = validateDataSource(dataSourceKey);
 
-        // 2. 检查当天是否已有成功的同步任务
+        // 检查当天是否已有成功的同步任务
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         Long successCount = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
                 syncTaskMapper.selectCount(new LambdaQueryWrapper<SyncTask>()
@@ -109,7 +127,77 @@ public class SyncTaskService {
             throw new IllegalStateException("今天已存在成功的同步任务，请勿重复提交");
         }
 
-        // 3. 创建 QUEUED 任务记录，等待定时调度执行
+        return createQueuedTask(dataSourceKey, config, pageSize, "同步任务已提交，等待执行");
+    }
+
+    /**
+     * 强制刷新 — 清除 risk_hub 全部业务数据和任务记录，然后重新全量同步。
+     * <p>
+     * 执行步骤：
+     * <ol>
+     *   <li>清空 4 张清洗表（clean_stock / clean_trade / clean_position / clean_asset）</li>
+     *   <li>清空同步任务记录（sync_business_record / sync_task）</li>
+     *   <li>清除 Redis 中所有已存在 ID 的缓存（sync:existing:*）</li>
+     *   <li>创建新的 QUEUED 任务，跳过"当天已有成功任务"的检查</li>
+     * </ol>
+     * </p>
+     *
+     * @param dataSourceKey 数据源标识
+     * @param pageSize      每页大小
+     * @return 刚创建的同步任务对象
+     */
+    public SyncTask forceRefresh(String dataSourceKey, int pageSize) {
+        DataSourceConfigDTO config = validateDataSource(dataSourceKey);
+
+        log.warn("[SyncTask] 强制刷新开始，将清除全部业务数据 dataSourceKey={}", dataSourceKey);
+
+        // 1. 清空 4 张清洗表
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            cleanStockMapper.delete(new LambdaQueryWrapper<CleanStock>().apply("1=1"));
+            cleanTradeMapper.delete(new LambdaQueryWrapper<CleanTrade>().apply("1=1"));
+            cleanPositionMapper.delete(new LambdaQueryWrapper<CleanPosition>().apply("1=1"));
+            cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
+        });
+
+        // 2. 清空同步任务记录
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            syncBusinessRecordMapper.delete(new LambdaQueryWrapper<SyncBusinessRecord>().apply("1=1"));
+            syncTaskMapper.delete(new LambdaQueryWrapper<SyncTask>().apply("1=1"));
+        });
+
+        // 3. 清除 Redis 缓存
+        syncCacheHelper.clearByPattern("sync:existing:*");
+
+        // 4. 创建新的 QUEUED 任务（跳过当天已有成功任务的检查）
+        SyncTask task = createQueuedTask(dataSourceKey, config, pageSize, "强制刷新任务已提交，等待执行");
+        log.warn("[SyncTask] 强制刷新完成，新任务 id={}", task.getId());
+        return task;
+    }
+
+    /**
+     * 校验数据源存在且不是中台库。
+     */
+    private DataSourceConfigDTO validateDataSource(String dataSourceKey) {
+        DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
+        if (config == null) {
+            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
+        }
+        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
+            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
+        }
+        return config;
+    }
+
+    /**
+     * 创建 QUEUED 状态的同步任务记录。
+     *
+     * @param dataSourceKey 数据源标识
+     * @param config        数据源配置
+     * @param pageSize      分页大小
+     * @param message       任务描述信息
+     * @return 刚创建的同步任务对象
+     */
+    private SyncTask createQueuedTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
         long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
         String now = TimeUtils.now();
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
@@ -123,11 +211,11 @@ public class SyncTaskService {
         task.setDatasourceType(config.getDatasourceType());
         task.setPageSize(safePageSize);
         task.setSubmittedAt(now);
-        task.setMessage("同步任务已提交，等待执行");
+        task.setMessage(message);
         task.setRunning(true);
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> syncTaskMapper.insert(task));
 
-        log.info("[SyncTask] submit id={}, dataSourceKey={}, pageSize={}", task.getId(), dataSourceKey, safePageSize);
+        log.info("[SyncTask] createQueuedTask id={}, dataSourceKey={}, pageSize={}", task.getId(), dataSourceKey, safePageSize);
         return task;
     }
 

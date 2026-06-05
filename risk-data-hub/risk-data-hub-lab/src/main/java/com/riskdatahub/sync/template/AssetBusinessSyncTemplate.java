@@ -5,6 +5,7 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
+import com.riskdatahub.sync.cache.SyncCacheHelper;
 import com.riskdatahub.sync.entity.BrokerFundAccount;
 import com.riskdatahub.sync.entity.CleanAsset;
 import com.riskdatahub.sync.entity.OmsCashAsset;
@@ -19,7 +20,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -36,6 +41,7 @@ import java.util.stream.Collectors;
 public class AssetBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<AssetBusinessSyncTemplate.AssetRow, CleanAsset> {
 
+    private final SyncCacheHelper syncCacheHelper;
     private final CleanAssetMapper cleanAssetMapper;
     private final OmsCashAssetMapper omsCashAssetMapper;
     private final BrokerFundAccountMapper brokerFundAccountMapper;
@@ -44,10 +50,12 @@ public class AssetBusinessSyncTemplate
                                      LeafSegmentService leafSegmentService,
                                      MessageOutboxService messageOutboxService,
                                      @Qualifier("assetPairExecutor") ThreadPoolExecutor pairExecutor,
+                                     SyncCacheHelper syncCacheHelper,
                                      CleanAssetMapper cleanAssetMapper,
                                      OmsCashAssetMapper omsCashAssetMapper,
                                      BrokerFundAccountMapper brokerFundAccountMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+        this.syncCacheHelper = syncCacheHelper;
         this.cleanAssetMapper = cleanAssetMapper;
         this.omsCashAssetMapper = omsCashAssetMapper;
         this.brokerFundAccountMapper = brokerFundAccountMapper;
@@ -110,7 +118,43 @@ public class AssetBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanAsset> targets) {
         if (targets.isEmpty()) return;
-        cleanAssetMapper.insert(targets);
+
+        String cacheKey = "sync:existing:clean_asset:" + context.getDataSourceKey();
+        Set<Long> existingIds = syncCacheHelper.getExistingIds(cacheKey, () ->
+                cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
+                                .select(CleanAsset::getSourceRowId)
+                                .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
+                        .stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet()));
+
+        List<CleanAsset> toInsert = new ArrayList<>();
+        List<CleanAsset> toUpdate = new ArrayList<>();
+        for (CleanAsset target : targets) {
+            if (existingIds.contains(target.getSourceRowId())) {
+                toUpdate.add(target);
+            } else {
+                toInsert.add(target);
+            }
+        }
+
+        if (!toInsert.isEmpty()) {
+            cleanAssetMapper.insert(toInsert);
+            syncCacheHelper.addNewIds(cacheKey,
+                    toInsert.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList()));
+        }
+
+        if (!toUpdate.isEmpty()) {
+            Map<Long, Long> idMap = new HashMap<>();
+            cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
+                            .select(CleanAsset::getGlobalId, CleanAsset::getSourceRowId)
+                            .eq(CleanAsset::getSourceSystem, context.getDataSourceKey())
+                            .in(CleanAsset::getSourceRowId,
+                                    toUpdate.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList())))
+                    .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
+            for (CleanAsset target : toUpdate) {
+                target.setGlobalId(idMap.get(target.getSourceRowId()));
+            }
+            cleanAssetMapper.updateById(toUpdate);
+        }
     }
 
     /**

@@ -5,6 +5,7 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
+import com.riskdatahub.sync.cache.SyncCacheHelper;
 import com.riskdatahub.sync.entity.BrokerStockQuote;
 import com.riskdatahub.sync.entity.CleanStock;
 import com.riskdatahub.sync.entity.OmsStockSnapshot;
@@ -19,7 +20,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -41,6 +46,7 @@ import java.util.stream.Collectors;
 public class StockBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<StockBusinessSyncTemplate.StockRow, CleanStock> {
 
+    private final SyncCacheHelper syncCacheHelper;
     private final CleanStockMapper cleanStockMapper;
     private final OmsStockSnapshotMapper omsStockSnapshotMapper;
     private final BrokerStockQuoteMapper brokerStockQuoteMapper;
@@ -49,10 +55,12 @@ public class StockBusinessSyncTemplate
                                      LeafSegmentService leafSegmentService,
                                      MessageOutboxService messageOutboxService,
                                      @Qualifier("stockPairExecutor") ThreadPoolExecutor pairExecutor,
+                                     SyncCacheHelper syncCacheHelper,
                                      CleanStockMapper cleanStockMapper,
                                      OmsStockSnapshotMapper omsStockSnapshotMapper,
                                      BrokerStockQuoteMapper brokerStockQuoteMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+        this.syncCacheHelper = syncCacheHelper;
         this.cleanStockMapper = cleanStockMapper;
         this.omsStockSnapshotMapper = omsStockSnapshotMapper;
         this.brokerStockQuoteMapper = brokerStockQuoteMapper;
@@ -118,7 +126,43 @@ public class StockBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanStock> targets) {
         if (targets.isEmpty()) return;
-        cleanStockMapper.insert(targets);
+
+        String cacheKey = "sync:existing:clean_stock:" + context.getDataSourceKey();
+        Set<Long> existingIds = syncCacheHelper.getExistingIds(cacheKey, () ->
+                cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
+                                .select(CleanStock::getSourceRowId)
+                                .eq(CleanStock::getSourceSystem, context.getDataSourceKey()))
+                        .stream().map(CleanStock::getSourceRowId).collect(Collectors.toSet()));
+
+        List<CleanStock> toInsert = new ArrayList<>();
+        List<CleanStock> toUpdate = new ArrayList<>();
+        for (CleanStock target : targets) {
+            if (existingIds.contains(target.getSourceRowId())) {
+                toUpdate.add(target);
+            } else {
+                toInsert.add(target);
+            }
+        }
+
+        if (!toInsert.isEmpty()) {
+            cleanStockMapper.insert(toInsert);
+            syncCacheHelper.addNewIds(cacheKey,
+                    toInsert.stream().map(CleanStock::getSourceRowId).collect(Collectors.toList()));
+        }
+
+        if (!toUpdate.isEmpty()) {
+            Map<Long, Long> idMap = new HashMap<>();
+            cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
+                            .select(CleanStock::getGlobalId, CleanStock::getSourceRowId)
+                            .eq(CleanStock::getSourceSystem, context.getDataSourceKey())
+                            .in(CleanStock::getSourceRowId,
+                                    toUpdate.stream().map(CleanStock::getSourceRowId).collect(Collectors.toList())))
+                    .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
+            for (CleanStock target : toUpdate) {
+                target.setGlobalId(idMap.get(target.getSourceRowId()));
+            }
+            cleanStockMapper.updateById(toUpdate);
+        }
     }
 
     /**

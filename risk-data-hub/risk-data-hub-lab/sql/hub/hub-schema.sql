@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS clean_stock (
     volume_qty BIGINT NOT NULL,
     turnover_amount DECIMAL(18,2) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    created_at VARCHAR(32) NOT NULL
+    created_at VARCHAR(32) NOT NULL,
+    UNIQUE KEY uk_stock_source(source_system, source_row_id)
 );
 
 CREATE TABLE IF NOT EXISTS clean_trade (
@@ -51,7 +52,8 @@ CREATE TABLE IF NOT EXISTS clean_trade (
     clean_mode VARCHAR(32) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
     trade_time VARCHAR(32) NOT NULL,
-    created_at VARCHAR(32) NOT NULL
+    created_at VARCHAR(32) NOT NULL,
+    UNIQUE KEY uk_trade_source(source_system, source_row_id)
 );
 
 CREATE TABLE IF NOT EXISTS clean_position (
@@ -67,7 +69,8 @@ CREATE TABLE IF NOT EXISTS clean_position (
     market_value DECIMAL(18,2) NOT NULL,
     stat_day VARCHAR(16) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    created_at VARCHAR(32) NOT NULL
+    created_at VARCHAR(32) NOT NULL,
+    UNIQUE KEY uk_position_source(source_system, source_row_id)
 );
 
 CREATE TABLE IF NOT EXISTS clean_asset (
@@ -82,7 +85,8 @@ CREATE TABLE IF NOT EXISTS clean_asset (
     total_asset DECIMAL(18,2) NOT NULL,
     stat_day VARCHAR(16) NOT NULL,
     clean_batch VARCHAR(64) NOT NULL,
-    created_at VARCHAR(32) NOT NULL
+    created_at VARCHAR(32) NOT NULL,
+    UNIQUE KEY uk_asset_source(source_system, source_row_id)
 );
 
 CREATE TABLE IF NOT EXISTS event_message (

@@ -5,6 +5,7 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
+import com.riskdatahub.sync.cache.SyncCacheHelper;
 import com.riskdatahub.sync.entity.BrokerPositionBalance;
 import com.riskdatahub.sync.entity.CleanPosition;
 import com.riskdatahub.sync.entity.OmsPositionHolding;
@@ -19,7 +20,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -36,6 +41,7 @@ import java.util.stream.Collectors;
 public class PositionBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<PositionBusinessSyncTemplate.PositionRow, CleanPosition> {
 
+    private final SyncCacheHelper syncCacheHelper;
     private final CleanPositionMapper cleanPositionMapper;
     private final OmsPositionHoldingMapper omsPositionHoldingMapper;
     private final BrokerPositionBalanceMapper brokerPositionBalanceMapper;
@@ -44,10 +50,12 @@ public class PositionBusinessSyncTemplate
                                         LeafSegmentService leafSegmentService,
                                         MessageOutboxService messageOutboxService,
                                         @Qualifier("positionPairExecutor") ThreadPoolExecutor pairExecutor,
+                                        SyncCacheHelper syncCacheHelper,
                                         CleanPositionMapper cleanPositionMapper,
                                         OmsPositionHoldingMapper omsPositionHoldingMapper,
                                         BrokerPositionBalanceMapper brokerPositionBalanceMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+        this.syncCacheHelper = syncCacheHelper;
         this.cleanPositionMapper = cleanPositionMapper;
         this.omsPositionHoldingMapper = omsPositionHoldingMapper;
         this.brokerPositionBalanceMapper = brokerPositionBalanceMapper;
@@ -111,7 +119,43 @@ public class PositionBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets) {
         if (targets.isEmpty()) return;
-        cleanPositionMapper.insert(targets);
+
+        String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
+        Set<Long> existingIds = syncCacheHelper.getExistingIds(cacheKey, () ->
+                cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
+                                .select(CleanPosition::getSourceRowId)
+                                .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
+                        .stream().map(CleanPosition::getSourceRowId).collect(Collectors.toSet()));
+
+        List<CleanPosition> toInsert = new ArrayList<>();
+        List<CleanPosition> toUpdate = new ArrayList<>();
+        for (CleanPosition target : targets) {
+            if (existingIds.contains(target.getSourceRowId())) {
+                toUpdate.add(target);
+            } else {
+                toInsert.add(target);
+            }
+        }
+
+        if (!toInsert.isEmpty()) {
+            cleanPositionMapper.insert(toInsert);
+            syncCacheHelper.addNewIds(cacheKey,
+                    toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
+        }
+
+        if (!toUpdate.isEmpty()) {
+            Map<Long, Long> idMap = new HashMap<>();
+            cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
+                            .select(CleanPosition::getGlobalId, CleanPosition::getSourceRowId)
+                            .eq(CleanPosition::getSourceSystem, context.getDataSourceKey())
+                            .in(CleanPosition::getSourceRowId,
+                                    toUpdate.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList())))
+                    .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
+            for (CleanPosition target : toUpdate) {
+                target.setGlobalId(idMap.get(target.getSourceRowId()));
+            }
+            cleanPositionMapper.updateById(toUpdate);
+        }
     }
 
     /**

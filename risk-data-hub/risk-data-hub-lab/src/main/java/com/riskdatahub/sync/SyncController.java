@@ -46,6 +46,19 @@ public class SyncController {
     }
 
     /**
+     * 强制刷新 — 清除 risk_hub 全部业务数据，然后重新全量同步。
+     *
+     * @param request 同步请求参数（数据源标识 + 分页大小）
+     * @return 刚创建的同步任务
+     */
+    @PostMapping("/api-hub-sync-force-refresh")
+    public ApiResult<SyncTask> forceRefresh(@Valid @RequestBody SyncRequest request) {
+        return ApiResult.ok(
+                syncTaskService.forceRefresh(request.getDataSourceKey(), request.getPageSize()),
+                "FORCE_REFRESH_STARTED");
+    }
+
+    /**
      * 查询当前同步任务状态。
      *
      * @return 最近一条同步任务的状态
