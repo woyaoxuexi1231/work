@@ -125,14 +125,5 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
 
     protected abstract T transform(BusinessSyncContext context, S row);
 
-    /**
-     * 批量将转换后的中台实体写入数据库。
-     * <p>使用 {@link com.baomidou.mybatisplus.extension.toolkit.SqlHelper#executeBatch}
-     * 在实现类中完成批量写入。</p>
-     *
-     * @param targets 中台实体列表
-     */
     protected abstract void saveBatch(BusinessSyncContext context, List<T> targets);
-
-    protected abstract void markSourceRowSynced(BusinessSyncContext context, long rowId);
 }

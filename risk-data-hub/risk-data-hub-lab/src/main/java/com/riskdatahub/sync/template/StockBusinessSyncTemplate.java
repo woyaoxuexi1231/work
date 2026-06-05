@@ -1,7 +1,6 @@
 package com.riskdatahub.sync.template;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
@@ -73,7 +72,6 @@ public class StockBusinessSyncTemplate
             case HubConstants.TYPE_TRADE_OMS:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
                                 () -> omsStockSnapshotMapper.selectList(new LambdaQueryWrapper<OmsStockSnapshot>()
-                                        .eq(OmsStockSnapshot::getSyncFlag, 0)
                                         .gt(OmsStockSnapshot::getId, lastId)
                                         .orderByAsc(OmsStockSnapshot::getId)
                                         .last("limit " + pageSize)))
@@ -86,7 +84,6 @@ public class StockBusinessSyncTemplate
             case HubConstants.TYPE_TRADE_BROKER:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
                                 () -> brokerStockQuoteMapper.selectList(new LambdaQueryWrapper<BrokerStockQuote>()
-                                        .eq(BrokerStockQuote::getSyncFlag, 0)
                                         .gt(BrokerStockQuote::getId, lastId)
                                         .orderByAsc(BrokerStockQuote::getId)
                                         .last("limit " + pageSize)))
@@ -122,31 +119,6 @@ public class StockBusinessSyncTemplate
     protected void saveBatch(BusinessSyncContext context, List<CleanStock> targets) {
         if (targets.isEmpty()) return;
         routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanStockMapper.insert(targets));
-    }
-
-    /**
-     * 将源数据行的 sync_flag 标记为 1（已同步）。
-     */
-    @Override
-    protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
-        switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS:
-                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
-                        omsStockSnapshotMapper.update(null,
-                                new LambdaUpdateWrapper<OmsStockSnapshot>()
-                                        .set(OmsStockSnapshot::getSyncFlag, 1)
-                                        .eq(OmsStockSnapshot::getId, rowId)));
-                break;
-            case HubConstants.TYPE_TRADE_BROKER:
-                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
-                        brokerStockQuoteMapper.update(null,
-                                new LambdaUpdateWrapper<BrokerStockQuote>()
-                                        .set(BrokerStockQuote::getSyncFlag, 1)
-                                        .eq(BrokerStockQuote::getId, rowId)));
-                break;
-            default:
-                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
-        }
     }
 
     /**

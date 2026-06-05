@@ -1,7 +1,6 @@
 package com.riskdatahub.sync.template;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
@@ -68,7 +67,6 @@ public class PositionBusinessSyncTemplate
             case HubConstants.TYPE_TRADE_OMS:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
                                 () -> omsPositionHoldingMapper.selectList(new LambdaQueryWrapper<OmsPositionHolding>()
-                                        .eq(OmsPositionHolding::getSyncFlag, 0)
                                         .gt(OmsPositionHolding::getId, lastId)
                                         .orderByAsc(OmsPositionHolding::getId)
                                         .last("limit " + pageSize)))
@@ -80,7 +78,6 @@ public class PositionBusinessSyncTemplate
             case HubConstants.TYPE_TRADE_BROKER:
                 return routingMybatisExecutor.query(context.getDataSourceKey(),
                                 () -> brokerPositionBalanceMapper.selectList(new LambdaQueryWrapper<BrokerPositionBalance>()
-                                        .eq(BrokerPositionBalance::getSyncFlag, 0)
                                         .gt(BrokerPositionBalance::getId, lastId)
                                         .orderByAsc(BrokerPositionBalance::getId)
                                         .last("limit " + pageSize)))
@@ -115,31 +112,6 @@ public class PositionBusinessSyncTemplate
     protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets) {
         if (targets.isEmpty()) return;
         routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanPositionMapper.insert(targets));
-    }
-
-    /**
-     * 将源数据行的 sync_flag 标记为 1（已同步）。
-     */
-    @Override
-    protected void markSourceRowSynced(BusinessSyncContext context, long rowId) {
-        switch (context.getDatasourceType()) {
-            case HubConstants.TYPE_TRADE_OMS:
-                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
-                        omsPositionHoldingMapper.update(null,
-                                new LambdaUpdateWrapper<OmsPositionHolding>()
-                                        .set(OmsPositionHolding::getSyncFlag, 1)
-                                        .eq(OmsPositionHolding::getId, rowId)));
-                break;
-            case HubConstants.TYPE_TRADE_BROKER:
-                routingMybatisExecutor.run(context.getDataSourceKey(), () ->
-                        brokerPositionBalanceMapper.update(null,
-                                new LambdaUpdateWrapper<BrokerPositionBalance>()
-                                        .set(BrokerPositionBalance::getSyncFlag, 1)
-                                        .eq(BrokerPositionBalance::getId, rowId)));
-                break;
-            default:
-                throw new IllegalArgumentException("不支持的数据源类型: " + context.getDatasourceType());
-        }
     }
 
     /**

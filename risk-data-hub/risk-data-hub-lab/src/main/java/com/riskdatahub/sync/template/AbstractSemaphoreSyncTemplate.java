@@ -190,14 +190,10 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                     targets.add(transform(context, row));
                 }
                 saveBatch(context, targets);
-                long pageMaxId = 0;
                 for (S row : rows) {
-                    markSourceRowSynced(context, sourceRowId(row));
                     counter.incrementSavedCount();
-                    long rowId = sourceRowId(row);
-                    if (rowId > pageMaxId) pageMaxId = rowId;
                 }
-                counter.updateSavedMaxRowId(pageMaxId);
+                counter.updateSavedMaxRowId(sourceRowId(rows.get(rows.size() - 1)));
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), counter.getPageCount(), counter.getSavedCount());
                 publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());
