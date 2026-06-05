@@ -19,6 +19,7 @@
 
 import os
 import sys
+
 import pymysql
 
 # ---------- 配置 ----------
@@ -29,9 +30,9 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "123456")
 
 # Schema 定义：数据库名 → DDL 文件路径（相对于项目根目录）
 SCHEMAS = {
-    "risk_hub": "sql/ddl/hub-schema.sql",
-    "trade_oms": "sql/ddl/oms-schema.sql",
-    "trade_broker": "sql/ddl/broker-schema.sql",
+    "risk_hub": "sql/hub/hub-schema.sql",
+    "trade_oms": "sql/upstream/oms-schema.sql",
+    "trade_broker": "sql/upstream/broker-schema.sql",
 }
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,8 +58,12 @@ def create_database_if_not_exists(cursor, db_name: str):
     print(f"  [OK] 数据库 '{db_name}' 已就绪")
 
 
-def execute_sql_file(cursor, file_path: str):
-    """执行 SQL 文件中的全部语句（按分号分割）。"""
+def execute_sql_file(cursor, file_path: str) -> int:
+    """
+    执行 SQL 文件中的全部语句。
+
+    先移除所有 -- 注释行，再按分号分割逐条执行，避免注释前缀导致含 INSERT 的语句块被整体跳过。
+    """
     full_path = os.path.join(PROJECT_ROOT, file_path)
     if not os.path.exists(full_path):
         print(f"  [WARN] SQL 文件不存在: {full_path}")
@@ -67,10 +72,14 @@ def execute_sql_file(cursor, file_path: str):
     with open(full_path, "r", encoding="utf-8") as f:
         content = f.read()
 
+    # 移除注释行（以 -- 开头），保留纯 SQL
+    clean_lines = [line for line in content.split("\n") if not line.strip().startswith("--")]
+    clean_sql = "\n".join(clean_lines)
+
     count = 0
-    for statement in content.split(";"):
-        stmt = statement.strip()
-        if not stmt or stmt.startswith("--"):
+    for raw_stmt in clean_sql.split(";"):
+        stmt = raw_stmt.strip()
+        if not stmt:
             continue
         cursor.execute(stmt)
         count += 1
@@ -79,14 +88,9 @@ def execute_sql_file(cursor, file_path: str):
     return count
 
 
-def main():
-    """主流程：创建所有数据库并执行 schema DDL。"""
-    print("=" * 60)
-    print("  数据中台 — 数据库初始化")
-    print("=" * 60)
-    print(f"  连接: {DB_USER}@{DB_HOST}:{DB_PORT}\n")
-
-    # Step 1: 创建数据库（连接到 MySQL 实例，不指定数据库）
+def ensure_schemas():
+    """创建所有数据库并执行 schema DDL。"""
+    print(f"\n  --- 创建数据库 ---")
     conn = get_connection()
     try:
         with conn.cursor() as cursor:
@@ -95,7 +99,6 @@ def main():
     finally:
         conn.close()
 
-    # Step 2: 对每个数据库执行 schema DDL
     total_statements = 0
     for db_name, sql_file in SCHEMAS.items():
         print(f"\n  --- {db_name} ({sql_file}) ---")
@@ -106,8 +109,20 @@ def main():
         finally:
             db_conn.close()
 
+    return total_statements
+
+
+def main():
+    """主流程：创建数据库并执行 schema DDL。"""
+    print("=" * 60)
+    print("  数据中台 — 数据库 & 表结构初始化")
+    print("=" * 60)
+    print(f"  连接: {DB_USER}@{DB_HOST}:{DB_PORT}\n")
+
+    total = ensure_schemas()
+
     print(f"\n{'=' * 60}")
-    print(f"  初始化完成，共执行 {total_statements} 条 DDL 语句")
+    print(f"  初始化完成，共执行 {total} 条 DDL 语句")
     print(f"{'=' * 60}")
 
 

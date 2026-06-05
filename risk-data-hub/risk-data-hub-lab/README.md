@@ -7,10 +7,10 @@
 两个上游交易系统（OMS / Broker）存储同一种业务含义的交易数据，但表结构、字段命名、状态码不一致。中台按统一模型清洗、转换后落库。
 
 | 系统 | 类型 | 表 |
-|------|------|----|
+|------|------|------|
 | trade_oms | TRADE_OMS | oms_stock_snapshot, oms_trade_order, oms_position_holding, oms_cash_asset |
 | trade_broker | TRADE_BROKER | broker_stock_quote, broker_trade_deal, broker_position_balance, broker_fund_account |
-| risk_hub | HUB | clean_stock, clean_trade, clean_position, clean_asset, event_message, init_task, sync_task, sync_business_record |
+| risk_hub | HUB | clean_stock, clean_trade, clean_position, clean_asset, event_message, sync_task, sync_business_record |
 
 ## 架构
 
@@ -35,18 +35,17 @@
 
 ```
 com.riskdatahub
-├── common          — 常量、异常、统一响应、工具类（TimeUtils / DistributedLockTemplate）
-├── config          — 数据源、线程池、CORS 配置
-├── datasource      — 动态路由数据源、连接池管理、RoutingMybatisExecutor
-├── id              — Leaf 号段发号器（双缓冲 + 20% 水位线预加载）
-├── dictionary      — 字典服务（状态码翻译）
-├── sync            — ETL 同步引擎（编排器 + 4 类业务模板 + 实体 + Mapper）
-├── task            — 初始化/同步任务管理
-├── message         — 事件消息发件箱 + RabbitMQ 发送
-├── overview        — 系统总览
-├── controller      — RESTful 控制器
-├── demo            — 演示数据播种器
-└── mapper          — 动态 SQL 执行器
+├── common        — 常量、异常、统一响应、工具类
+├── config        — 数据源、线程池、CORS 配置
+├── datasource    — 动态路由数据源、连接池管理
+├── id            — Leaf 号段发号器（双缓冲 + 20% 水位线预加载）
+├── dictionary    — 字典服务（状态码翻译）
+├── sync          — ETL 同步引擎（编排器 + 4 类业务模板 + 实体 + Mapper）
+├── task          — 同步任务管理
+├── message       — 事件消息发件箱 + RabbitMQ 发送
+├── overview      — 系统总览
+├── controller    — RESTful 控制器
+└── mapper        — 动态 SQL 执行器
 ```
 
 ## 技术栈
@@ -79,13 +78,26 @@ pip install PyMySQL
 python scripts/init_databases.py
 ```
 
-### 2. 灌入种子数据
+### 2. 灌入中台种子数据
 
 ```bash
 python scripts/seed_data.py
 ```
 
-### 3. 启动应用
+### 3. 灌入上游演示数据
+
+```bash
+# 默认 500 只股票 × 10 个交易日
+python scripts/seed_upstream.py
+
+# 自定义规模
+python scripts/seed_upstream.py --stocks 2000 --days 20
+
+# 先清空再灌入
+python scripts/seed_upstream.py --force
+```
+
+### 4. 启动应用
 
 ```bash
 mvn spring-boot:run
@@ -93,20 +105,12 @@ mvn spring-boot:run
 
 访问 `http://localhost:8501/`
 
-### 4. 注册上游数据源
-
-通过 API 注册上游数据源（配置定义在 `application.yml` 的 `hub.datasource.items`）：
+### 5. 注册上游数据源
 
 ```bash
 curl -X POST http://localhost:8501/api/datasource/register \
   -H "Content-Type: application/json" \
   -d '{"key":"trade_oms","name":"交易系统A库","datasourceType":"TRADE_OMS","url":"jdbc:mysql://host.docker.internal:3306/trade_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai","username":"root","password":"123456"}'
-```
-
-### 5. 初始化演示数据
-
-```bash
-curl -X POST http://localhost:8501/api/hub/init-data
 ```
 
 ### 6. 执行同步
@@ -122,24 +126,27 @@ curl -X POST http://localhost:8501/api/hub/sync \
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/hub/overview | 系统总览 |
-| GET | /api/hub/init-task | 初始化任务状态 |
 | GET | /api/hub/sync-task | 同步任务状态 |
 | GET | /api/hub/cleaned-trades | 清洗交易记录 |
-| POST | /api/hub/init-data | 提交初始化任务 |
 | POST | /api/hub/sync | 提交同步任务 |
 | GET | /api/datasource | 数据源列表 |
 | GET | /api/datasource/{key} | 数据源详情 |
 | POST | /api/datasource/register | 注册数据源 |
 | DELETE | /api/datasource/{key} | 删除数据源 |
 
-## SQL 脚本
-
-统一管理在项目根目录 `sql/` 下：
+## SQL 结构
 
 ```
 sql/
-├── ddl/           — 建表（CREATE TABLE）
-└── dml/           — 数据操作（种子数据、清表）
+├── upstream/           — 上游系统 DDL（OMS / Broker 建表）
+├── hub/                — 中台库 DDL + 种子数据
+└── dml/                — 清表脚本（--force 模式使用）
 ```
 
-`init_databases.py` 读取 `sql/ddl/` 中的 schema 文件建表，`seed_data.py` 读取 `sql/dml/` 灌入种子数据。
+## Python 脚本
+
+| 脚本 | 职责 |
+|------|------|
+| init_databases.py | 创建 3 个数据库 + 执行所有 DDL 建表 |
+| seed_data.py | 灌入中台库种子数据（Leaf 号段 + 字典） |
+| seed_upstream.py | 向上游库灌入大量模拟行情/交易/持仓/资金数据 |
