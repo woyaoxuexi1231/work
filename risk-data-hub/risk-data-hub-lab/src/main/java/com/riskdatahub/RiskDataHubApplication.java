@@ -9,6 +9,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 应用启动类。
@@ -31,6 +32,7 @@ import org.springframework.context.annotation.Bean;
  * @author risk-data-hub
  */
 @SpringBootApplication
+@EnableScheduling
 @MapperScan("com.riskdatahub.**.mapper")
 @EnableConfigurationProperties({HubDataSourceProperties.class})
 public class RiskDataHubApplication {

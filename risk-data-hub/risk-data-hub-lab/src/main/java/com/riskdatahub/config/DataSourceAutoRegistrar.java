@@ -26,11 +26,11 @@ public class DataSourceAutoRegistrar {
     private final HubDataSourceProperties hubDataSourceProperties;
     private final DataSourceManager dataSourceManager;
 
-    // ============================================================
-    // 启动时自动注册所有配置的数据源
-    // 遍历 hub.datasource.items 中的每一项，转换为 DataSourceConfigDTO 后注册。
-    // 注册失败（如数据库不可达）不会阻塞应用启动，仅打印告警日志。
-    // ============================================================
+    /**
+     * 启动时自动注册所有配置的数据源。
+     * <p>遍历 hub.datasource.items 中的每一项，转换为 DataSourceConfigDTO 后注册。
+     * 注册失败（如数据库不可达）不会阻塞应用启动，仅打印告警日志。</p>
+     */
     @PostConstruct
     public void autoRegister() {
         // 遍历配置文件中所有数据源配置

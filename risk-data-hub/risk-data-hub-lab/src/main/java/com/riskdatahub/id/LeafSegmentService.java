@@ -52,10 +52,13 @@ public class LeafSegmentService {
     private final ExecutorService preloadExecutor =
             Executors.newSingleThreadExecutor(new CustomizableThreadFactory("leaf-preload-"));
 
-    // ============================================================
-    // 1. 获取下一个全局唯一 ID（核心入口）
-    // 流程：惰性初始化号段 → synchronized 线程安全发放 → 号段耗尽自动切换 → 检查水位线触发预加载
-    // ============================================================
+    /**
+     * 获取下一个全局唯一 ID（核心入口）。
+     * <p>流程：惰性初始化号段 → synchronized 线程安全发放 → 号段耗尽自动切换 → 检查水位线触发预加载。</p>
+     *
+     * @param tag 业务标签（如 sync_task、sync_business_record）
+     * @return 全局唯一 ID
+     */
     public long nextId(String tag) {
         // 每个 tag 首次访问时自动创建 SegmentBuffer
         SegmentBuffer buffer = buffers.computeIfAbsent(tag, key -> new SegmentBuffer());
@@ -73,10 +76,14 @@ public class LeafSegmentService {
         }
     }
 
-    // ============================================================
-    // 2. 批量获取 ID（供测试 / 管理接口使用）
-    // 循环调用 nextId，内部已经做了线程安全处理
-    // ============================================================
+    /**
+     * 批量获取 ID（供测试 / 管理接口使用）。
+     * <p>循环调用 nextId，内部已做线程安全处理。</p>
+     *
+     * @param tag   业务标签
+     * @param count 需要的 ID 数量
+     * @return 包含 tag、count、ids 数组和 buffer 状态的 Map
+     */
     public Map<String, Object> nextIds(String tag, int count) {
         Map<String, Object> result = new LinkedHashMap<>();
         long[] ids = new long[count];
@@ -90,10 +97,13 @@ public class LeafSegmentService {
         return result;
     }
 
-    // ============================================================
-    // 3. 查询双缓冲状态（监控用）
-    // 返回 current 和 next 两个号段的 start/nextId/end 等信息
-    // ============================================================
+    /**
+     * 查询双缓冲状态（监控用）。
+     * <p>返回 current 和 next 两个号段的 start / nextId / end 等信息。</p>
+     *
+     * @param tag 业务标签
+     * @return 双缓冲各字段的 Map
+     */
     public Map<String, Object> state(String tag) {
         SegmentBuffer buffer = buffers.computeIfAbsent(tag, key -> new SegmentBuffer());
         synchronized (buffer) {
@@ -109,18 +119,21 @@ public class LeafSegmentService {
         }
     }
 
-    // ============================================================
-    // 4. 清空本地缓存（数据初始化后调用）
-    // 确保旧的号段不会继续发放，重建时从数据库重新获取
-    // ============================================================
+    /**
+     * 清空本地缓存（数据初始化后调用）。
+     * <p>确保旧的号段不会继续发放，重建时从数据库重新获取。</p>
+     */
     public void clearLocalCache() {
         buffers.clear();
     }
 
-    // ============================================================
-    // 5. 号段切换（内部方法）
-    // 优先切换到预加载好的 next（零等待），没有则回源数据库申请
-    // ============================================================
+    /**
+     * 号段切换（内部方法）。
+     * <p>优先切换到预加载好的 next（零等待），没有则回源数据库申请。</p>
+     *
+     * @param buffer 双缓冲容器
+     * @param tag    业务标签
+     */
     private void switchSegment(SegmentBuffer buffer, String tag) {
         // 有预加载好的 next 号段 → 直接切换（纯内存操作）
         if (buffer.next.ready) {
@@ -136,11 +149,14 @@ public class LeafSegmentService {
         buffer.next = Segment.empty();
     }
 
-    // ============================================================
-    // 6. 水位线检查 & 预加载触发
-    // 当前号段剩余不足 20% 时，异步提交到单线程池申请下一段
-    // 防止高并发下号段耗尽时所有线程都去抢数据库
-    // ============================================================
+    /**
+     * 水位线检查 &amp; 预加载触发。
+     * <p>当前号段剩余不足 20% 时，异步提交到单线程池申请下一段，
+     * 防止高并发下号段耗尽时所有线程都去抢数据库。</p>
+     *
+     * @param tag    业务标签
+     * @param buffer 双缓冲容器
+     */
     private void triggerPreloadIfNeeded(String tag, SegmentBuffer buffer) {
         long remaining = buffer.current.end - buffer.current.nextId + 1;
         long total = Math.max(1, buffer.current.end - buffer.current.start + 1);
@@ -162,11 +178,14 @@ public class LeafSegmentService {
         });
     }
 
-    // ============================================================
-    // 7. 从数据库申请新号段
-    // 流程：SELECT ... FOR UPDATE 悲观锁 → 读取 max_id → 增加步长 → 更新 → 返回号段
-    // 事务由 TransactionTemplate 管理，数据源切换到中台库
-    // ============================================================
+    /**
+     * 从数据库申请新号段。
+     * <p>流程：SELECT ... FOR UPDATE 悲观锁 → 读取 max_id → 增加步长 → 更新 → 返回号段。
+     * 事务由 TransactionTemplate 管理，数据源切换到中台库。</p>
+     *
+     * @param tag 业务标签
+     * @return 新申请的号段
+     */
     private Segment fetchSegment(String tag) {
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         // 中台库数据源下执行，使用悲观锁防止多实例竞争
@@ -190,20 +209,21 @@ public class LeafSegmentService {
                 }));
     }
 
-    // ============================================================
-    // 8. 内部数据结构
-    // SegmentBuffer — 双缓冲容器，current/next 两个号段
-    // Segment — 一个号段 [start, end]，nextId 是当前已发放到的位置
-    // ============================================================
-
-    /** 号段缓冲区 — 双缓冲容器。current=当前发放，next=预加载号段 */
+    /**
+     * 号段缓冲区 — 双缓冲容器。
+     * <p>current = 当前发放号段，next = 预加载号段。</p>
+     */
     private static final class SegmentBuffer {
         private Segment current = Segment.empty();
         private Segment next = Segment.empty();
+        /** 是否正在异步预加载下一段 */
         private boolean loadingNext;
     }
 
-    /** 号段 — 表示 [start, end] 范围内的连续 ID，nextId 是已发放位置 */
+    /**
+     * 号段 — 表示 [start, end] 范围内的连续 ID。
+     * <p>nextId 是当前已发放到的位置。</p>
+     */
     private static final class Segment {
         private final long start;
         private long nextId;

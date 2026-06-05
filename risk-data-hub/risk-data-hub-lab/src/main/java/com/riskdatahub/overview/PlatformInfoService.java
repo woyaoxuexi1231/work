@@ -30,11 +30,13 @@ public class PlatformInfoService {
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final DynamicSqlMapper dynamicSqlMapper;
 
-    // ============================================================
-    // 1. 获取当前系统拓扑
-    // 返回 Map：{ "上游业务系统": [...], "中台库": [...] }
-    // 每个数据源显示为 "key (名称)" 格式
-    // ============================================================
+    /**
+     * 获取当前系统拓扑。
+     * <p>返回 Map：{ "上游业务系统": [...], "中台库": [...] }。
+     * 每个数据源显示为 "key (名称)" 格式。</p>
+     *
+     * @return 系统拓扑 Map
+     */
     public Map<String, List<String>> currentTopology() {
         // ----- 获取所有已注册数据源（含中台库），格式化为 "key (名称)" -----
         Map<String, List<String>> map = new LinkedHashMap<>();
@@ -49,10 +51,12 @@ public class PlatformInfoService {
         return map;
     }
 
-    // ============================================================
-    // 2. 获取上游业务系统的表记录统计
-    // 目前统计 trade_oms 和 trade_broker 两个数据源的关键表
-    // ============================================================
+    /**
+     * 获取上游业务系统的表记录统计。
+     * <p>目前统计 trade_oms 和 trade_broker 两个数据源的关键表。</p>
+     *
+     * @return 数据源名称到各表行数的 Map
+     */
     public Map<String, Object> currentBusinessTableStats() {
         Map<String, Object> r = new LinkedHashMap<>();
         // trade_oms 数据源：4 张核心表（库存快照、交易订单、持仓、资金）
@@ -68,10 +72,12 @@ public class PlatformInfoService {
         return r;
     }
 
-    // ============================================================
-    // 3. 获取中台库各表的记录统计
-    // 统计中台核心表：清洗表（stock/trade/position/asset）+ 事件消息 + 同步任务 + 同步记录
-    // ============================================================
+    /**
+     * 获取中台库各表的记录统计。
+     * <p>统计中台核心表：清洗表（stock/trade/position/asset）+ 事件消息 + 同步任务 + 同步记录。</p>
+     *
+     * @return 表名到行数的 Map
+     */
     public Map<String, Integer> currentHubTableStats() {
         return countTables(HubConstants.DS_HUB,
                 Arrays.asList("clean_stock", "clean_trade", "clean_position", "clean_asset",

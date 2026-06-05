@@ -60,19 +60,28 @@ public class SyncOrchestrator {
     @Qualifier("syncBusinessExecutor")
     private final ThreadPoolExecutor syncBusinessExecutor;
 
-    // ============================================================
-    // 1. 执行同步（无进度监听器版本）
-    // 委托给带监听器的重载版本，传入空实现
-    // ============================================================
+    /**
+     * 执行同步（无进度监听器版本）。
+     * <p>委托给带监听器的重载版本，传入空实现。</p>
+     *
+     * @param dataSourceKey 数据源标识
+     * @param pageSize      分页大小
+     * @return 同步结果摘要
+     */
     public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize) {
         return syncByDataSource(dataSourceKey, pageSize, progress -> {
         });
     }
 
-    // ============================================================
-    // 2. 执行同步（带进度监听器版本）
-    // 主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果
-    // ============================================================
+    /**
+     * 执行同步（带进度监听器版本）。
+     * <p>主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果。</p>
+     *
+     * @param dataSourceKey    数据源标识
+     * @param pageSize         分页大小
+     * @param progressListener 进度监听器（每页同步完成后回调）
+     * @return 同步结果摘要
+     */
     public SyncResultDTO syncByDataSource(String dataSourceKey,
                                           int pageSize,
                                           SyncProgressListener progressListener) {
@@ -102,20 +111,18 @@ public class SyncOrchestrator {
         }
     }
 
-    // ============================================================
-    // 3. 查询最近 30 条清洗交易记录
-    // 按 globalId 降序排列，取前 30 条
-    // ============================================================
+    /**
+     * 查询最近 30 条清洗交易记录。
+     * <p>按 globalId 降序排列，取前 30 条。</p>
+     *
+     * @return 清洗交易记录列表
+     */
     public List<CleanTrade> cleanedTrades() {
         return routingMybatisExecutor.query(HubConstants.DS_HUB,
                 () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                         .orderByDesc(CleanTrade::getGlobalId)
                         .last("limit 30")));
     }
-
-    // ============================================================
-    // 私有方法
-    // ============================================================
 
     /** 校验数据源存在且不是中台库 */
     private DataSourceConfigDTO requireSyncableConfig(String dataSourceKey) {
