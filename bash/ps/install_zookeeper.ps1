@@ -11,7 +11,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\data","$Data\log" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:2181 -e TZ=Asia/Shanghai `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:2181 -e TZ=Asia/Shanghai `
   -v "${Data}\data:/data" -v "${Data}\log:/logs" `
   $Image
 wait_for_container $Container 30

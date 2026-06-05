@@ -13,7 +13,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\data","$Data\log" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:27017 -e TZ=Asia/Shanghai `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:27017 -e TZ=Asia/Shanghai `
   -e "MONGO_INITDB_ROOT_USERNAME=$User" -e "MONGO_INITDB_ROOT_PASSWORD=$Pass" `
   -v "${Data}\data:/data/db" -v "${Data}\log:/var/log/mongodb" `
   $Image

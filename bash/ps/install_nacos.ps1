@@ -12,7 +12,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\logs","$Data\data" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always `
+docker run -d --name $Container --restart unless-stopped `
   -p ${Port}:8848 -p ${G1}:9848 -p ${G2}:9849 `
   -e MODE=standalone -e NACOS_AUTH_ENABLE=false -e TZ=Asia/Shanghai `
   -v "${Data}\logs:/home/nacos/logs" -v "${Data}\data:/home/nacos/data" `

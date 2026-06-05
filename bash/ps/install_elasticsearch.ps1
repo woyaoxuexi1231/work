@@ -12,7 +12,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\data","$Data\log" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:9200 -p ${Trans}:9300 `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:9200 -p ${Trans}:9300 `
   -e "discovery.type=single-node" -e "xpack.security.enabled=false" `
   -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" -e TZ=Asia/Shanghai `
   -v "${Data}\data:/usr/share/elasticsearch/data" -v "${Data}\log:/usr/share/elasticsearch/logs" `

@@ -19,7 +19,7 @@ if (-not (Test-Path "$Data\conf\my.cnf")) {
 }
 
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:3306 `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:3306 `
   -e "MYSQL_ROOT_PASSWORD=$Pass" -e TZ=Asia/Shanghai `
   -v "${Data}\conf\my.cnf:/etc/mysql/my.cnf" `
   -v "${Data}\data:/var/lib/mysql" -v "${Data}\log:/var/log/mysql" `

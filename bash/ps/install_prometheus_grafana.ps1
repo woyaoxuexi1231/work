@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force -Path "$Data\prometheus","$Data\grafana" | O
 if (-not (check_container_exists "prometheus")) {
     cleanup_container "prometheus"
     pull_image "prom/prometheus:v2.45.0"
-    docker run -d --name prometheus --restart always -p ${PromP}:9090 -e TZ=Asia/Shanghai `
+    docker run -d --name prometheus --restart unless-stopped -p ${PromP}:9090 -e TZ=Asia/Shanghai `
       -v "${Data}\prometheus:/prometheus" `
       prom/prometheus:v2.45.0 --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
     wait_for_container "prometheus" 15
@@ -22,7 +22,7 @@ if (-not (check_container_exists "prometheus")) {
 if (-not (check_container_exists "grafana")) {
     cleanup_container "grafana"
     pull_image "grafana/grafana:9.5.8"
-    docker run -d --name grafana --restart always -p ${GrafP}:3000 -e TZ=Asia/Shanghai `
+    docker run -d --name grafana --restart unless-stopped -p ${GrafP}:3000 -e TZ=Asia/Shanghai `
       -e "GF_SECURITY_ADMIN_USER=$User" -e "GF_SECURITY_ADMIN_PASSWORD=$Pass" `
       -v "${Data}\grafana:/var/lib/grafana" `
       grafana/grafana:9.5.8

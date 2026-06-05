@@ -12,7 +12,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\data" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always -e TZ=Asia/Shanghai `
+docker run -d --name $Container --restart unless-stopped -e TZ=Asia/Shanghai `
   -p ${Http}:8500 -p ${Dns}:8600/tcp -p ${Dns}:8600/udp `
   -v "${Data}\data:/consul/data" `
   $Image agent -dev -client=0.0.0.0 -bind=0.0.0.0 -ui

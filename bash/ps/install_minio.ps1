@@ -14,7 +14,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\data" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always -p ${ApiPort}:9000 -p ${ConPort}:9001 `
+docker run -d --name $Container --restart unless-stopped -p ${ApiPort}:9000 -p ${ConPort}:9001 `
   -e "MINIO_ROOT_USER=$User" -e "MINIO_ROOT_PASSWORD=$Pass" -e TZ=Asia/Shanghai `
   -v "${Data}\data:/data" `
   $Image server /data --console-address ":9001"

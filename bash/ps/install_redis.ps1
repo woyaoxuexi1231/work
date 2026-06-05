@@ -12,7 +12,7 @@ cleanup_container $Container
 New-Item -ItemType Directory -Force -Path "$Data\data" | Out-Null
 
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:6379 -e TZ=Asia/Shanghai `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:6379 -e TZ=Asia/Shanghai `
   -v "${Data}\data:/data" `
   $Image redis-server --requirepass $Pass --appendonly yes
 wait_for_container $Container 30
