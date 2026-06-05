@@ -20,6 +20,14 @@
 
 启动后 Registry 运行在 `localhost:5000`。
 
+### 安装 Registry UI（可选，Web 管理界面）
+
+```powershell
+.\install_registry_ui.ps1
+```
+
+打开 `http://localhost:8085`，可以浏览镜像列表、查看 tag、删除旧版本。
+
 ### 启动 Jenkins
 
 ```powershell
