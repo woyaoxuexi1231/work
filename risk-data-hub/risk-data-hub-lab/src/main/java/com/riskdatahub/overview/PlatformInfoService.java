@@ -70,7 +70,7 @@ public class PlatformInfoService {
     public Map<String, Integer> currentHubTableStats() {
         return countTables(HubConstants.DS_HUB,
                 Arrays.asList("clean_stock", "clean_trade", "clean_position", "clean_asset",
-                        "event_message", "init_task", "sync_task", "sync_business_record"));
+                        "event_message", "sync_task", "sync_business_record"));
     }
 
     /** 在指定数据源上统计多个表的记录数 */
