@@ -5,7 +5,8 @@
       "Bash(mkdir -p com/riskdatahub/common/constant com/riskdatahub/common/exception com/riskdatahub/common/result com/riskdatahub/common/util com/riskdatahub/config com/riskdatahub/datasource/dto com/riskdatahub/id/entity com/riskdatahub/dictionary/entity com/riskdatahub/dictionary/mapper com/riskdatahub/sync/template com/riskdatahub/sync/model com/riskdatahub/sync/entity com/riskdatahub/sync/mapper com/riskdatahub/task/entity com/riskdatahub/task/mapper com/riskdatahub/task/dto com/riskdatahub/message/entity com/riskdatahub/overview/dto com/riskdatahub/controller com/riskdatahub/demo/dto com/riskdatahub/bootstrap com/riskdatahub/mapper)",
       "Bash(mvn compile *)",
       "Bash(mvn clean *)",
-      "Bash(xargs grep -l \"HubInitializer\")"
+      "Bash(xargs grep -l \"HubInitializer\")",
+      "Bash(npx vite *)"
     ]
   }
 }

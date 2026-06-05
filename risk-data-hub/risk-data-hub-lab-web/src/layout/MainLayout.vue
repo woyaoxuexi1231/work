@@ -1,6 +1,6 @@
 <!--
-  MainLayout — Risk Data Hub Lab 主布局
-  顶部导航菜单，无需登录/登出
+  MainLayout — 主布局
+  左侧深色导航栏 + 右侧内容区域
 -->
 <script setup>
 import { computed } from 'vue'
@@ -8,50 +8,70 @@ import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
-const activeMenu = computed(() => route.path)
 
+// 当前激活的菜单项
+const activePath = computed(() => route.path)
+
+// 导航菜单配置
 const navItems = [
-  { path: '/dashboard', icon: 'HomeFilled', label: '工作台' },
-  { path: '/overview', icon: 'DataLine', label: '数据总览' },
-  { path: '/datasources', icon: 'Connection', label: '数据源' },
-  { path: '/sync', icon: 'Refresh', label: '同步任务' },
-  { path: '/init', icon: 'Upload', label: '初始化' }
+  { path: '/dashboard',    label: '工作台',     icon: '◉' },
+  { path: '/overview',     label: '数据总览',   icon: '◎' },
+  { path: '/datasources',  label: '数据源管理', icon: '◆' },
+  { path: '/sync',         label: '同步任务',   icon: '▶' }
 ]
 
-function handleNav(path) { router.push(path) }
+// 切换页面
+function goTo(path) {
+  router.push(path)
+}
 </script>
 
 <template>
-  <el-container class="layout-container">
-    <el-header class="layout-header">
-      <div class="header-left">
-        <el-icon size="26" color="#67c23a"><DataLine /></el-icon>
-        <span class="logo-text">Risk Hub</span>
+  <div class="flex h-screen bg-slate-50">
+    <!-- ===== 左侧导航栏 ===== -->
+    <aside class="w-60 bg-slate-900 text-slate-300 flex flex-col shrink-0">
+      <!-- Logo 区域 -->
+      <div class="h-16 flex items-center px-6 border-b border-slate-700">
+        <span class="text-xl font-bold text-white tracking-wide">Risk Hub</span>
       </div>
 
-      <el-menu mode="horizontal" :default-active="activeMenu" class="header-menu" :ellipsis="false">
-        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path" @click="handleNav(item.path)">
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </el-menu-item>
-      </el-menu>
-    </el-header>
+      <!-- 导航菜单 -->
+      <nav class="flex-1 py-4 px-3 space-y-1">
+        <div
+          v-for="item in navItems"
+          :key="item.path"
+          @click="goTo(item.path)"
+          class="flex items-center gap-3 px-4 py-2.5 rounded-lg cursor-pointer transition-colors duration-150"
+          :class="
+            activePath === item.path
+              ? 'bg-slate-800 text-white shadow-sm'
+              : 'hover:bg-slate-800 hover:text-white'
+          "
+        >
+          <span class="text-lg">{{ item.icon }}</span>
+          <span class="text-sm font-medium">{{ item.label }}</span>
+        </div>
+      </nav>
 
-    <el-main class="layout-main">
-      <router-view />
-    </el-main>
-  </el-container>
+      <!-- 底部版本信息 -->
+      <div class="px-6 py-4 border-t border-slate-700 text-xs text-slate-500">
+        数据中台同步实验室 v1.0
+      </div>
+    </aside>
+
+    <!-- ===== 右侧内容区域 ===== -->
+    <main class="flex-1 overflow-auto">
+      <!-- 顶部标题栏 -->
+      <header class="h-16 bg-white border-b border-slate-200 flex items-center px-8 sticky top-0 z-10">
+        <h1 class="text-lg font-semibold text-slate-800">
+          {{ navItems.find(n => n.path === activePath)?.label || 'Risk Hub' }}
+        </h1>
+      </header>
+
+      <!-- 页面内容（子路由渲染位置） -->
+      <div class="p-8">
+        <router-view />
+      </div>
+    </main>
+  </div>
 </template>
-
-<style scoped>
-.layout-container { min-height: 100vh; }
-.layout-header {
-  display: flex; align-items: center; padding: 0 24px;
-  background: #fff; border-bottom: 1px solid #e4e7ed;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-}
-.header-left { display: flex; align-items: center; gap: 10px; margin-right: 32px; }
-.logo-text { font-size: 20px; font-weight: 700; color: #303133; }
-.header-menu { flex: 1; border-bottom: none !important; }
-.layout-main { background: var(--risk-bg); padding: 24px; }
-</style>
