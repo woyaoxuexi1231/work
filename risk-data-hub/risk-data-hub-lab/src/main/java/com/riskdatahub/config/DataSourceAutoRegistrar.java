@@ -26,18 +26,17 @@ public class DataSourceAutoRegistrar {
     private final HubDataSourceProperties hubDataSourceProperties;
     private final DataSourceManager dataSourceManager;
 
-    /**
-     * 启动时自动注册所有配置的数据源。
-     * <p>
-     * 遍历 {@code hub.datasource.items} 中的每一项，
-     * 转换为 {@link DataSourceConfigDTO} 后调用注册方法。
-     * 注册失败（如数据库不可达）不会阻塞应用启动，仅打印告警日志。
-     * </p>
-     */
+    // ============================================================
+    // 启动时自动注册所有配置的数据源
+    // 遍历 hub.datasource.items 中的每一项，转换为 DataSourceConfigDTO 后注册。
+    // 注册失败（如数据库不可达）不会阻塞应用启动，仅打印告警日志。
+    // ============================================================
     @PostConstruct
     public void autoRegister() {
+        // 遍历配置文件中所有数据源配置
         for (HubDataSourceProperties.Item item : hubDataSourceProperties.getItems()) {
             try {
+                // 将 yml 配置项转换为 DataSourceManager 需要的 DTO 格式
                 DataSourceConfigDTO config = new DataSourceConfigDTO();
                 config.setKey(item.getKey());
                 config.setName(item.getName());
@@ -51,9 +50,11 @@ public class DataSourceAutoRegistrar {
                 config.setConnectionTimeout(item.getConnectionTimeout());
                 config.setIdleTimeout(item.getIdleTimeout());
                 config.setMaxLifetime(item.getMaxLifetime());
+                // 注册到 DataSourceManager（会创建连接池并加入路由表）
                 dataSourceManager.register(config);
                 log.info("[数据源自动注册] 数据源 '{}'（{}）注册成功", item.getKey(), item.getName());
             } catch (Exception e) {
+                // 注册失败不阻塞应用启动，用户后续可手动注册
                 log.warn("[数据源自动注册] 数据源 '{}' 注册失败: {}，可在运行时手动注册", item.getKey(), e.getMessage());
             }
         }

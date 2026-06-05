@@ -60,34 +60,26 @@ public class SyncOrchestrator {
     @Qualifier("syncBusinessExecutor")
     private final ThreadPoolExecutor syncBusinessExecutor;
 
-    /**
-     * 执行同步（无进度监听器）。
-     *
-     * @param dataSourceKey 数据源标识
-     * @param pageSize      每页大小
-     * @return 同步结果
-     */
+    // ============================================================
+    // 1. 执行同步（无进度监听器版本）
+    // 委托给带监听器的重载版本，传入空实现
+    // ============================================================
     public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize) {
         return syncByDataSource(dataSourceKey, pageSize, progress -> {
         });
     }
 
-    /**
-     * 执行同步（带进度监听器）。
-     * <p>
-     * 校验数据源 → 并发派发 4 类业务模板 → 合并结果。
-     * </p>
-     *
-     * @param dataSourceKey    数据源标识
-     * @param pageSize         每页大小
-     * @param progressListener 进度监听器
-     * @return 同步结果汇总
-     */
+    // ============================================================
+    // 2. 执行同步（带进度监听器版本）
+    // 主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果
+    // ============================================================
     public SyncResultDTO syncByDataSource(String dataSourceKey,
                                           int pageSize,
                                           SyncProgressListener progressListener) {
+        // ----- 2a. 校验数据源存在且不是中台库 -----
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
         int safePageSize = sanitizePageSize(pageSize);
+        // ----- 2b. 构建同步上下文（含批次号） -----
         BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize);
 
         log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 业务模板数={}",
@@ -95,8 +87,11 @@ public class SyncOrchestrator {
                 context.getBatchNo(), businessSyncTemplates.size());
 
         try {
+            // ----- 2c. 并发提交所有业务模板到线程池 -----
             List<CompletableFuture<BusinessSyncResult>> futures = submitBusinessTemplates(context, progressListener);
+            // ----- 2d. 等待所有业务同步完成 -----
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
+            // ----- 2e. 汇总结果 -----
             SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
             log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
                     dataSourceKey, context.getBatchNo(), summary.getPulledCount(), summary.getSavedCount());
@@ -107,17 +102,20 @@ public class SyncOrchestrator {
         }
     }
 
-    /**
-     * 查询最近 30 条清洗后的交易记录。
-     *
-     * @return 清洗交易记录列表
-     */
+    // ============================================================
+    // 3. 查询最近 30 条清洗交易记录
+    // 按 globalId 降序排列，取前 30 条
+    // ============================================================
     public List<CleanTrade> cleanedTrades() {
         return routingMybatisExecutor.query(HubConstants.DS_HUB,
                 () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                         .orderByDesc(CleanTrade::getGlobalId)
                         .last("limit 30")));
     }
+
+    // ============================================================
+    // 私有方法
+    // ============================================================
 
     /** 校验数据源存在且不是中台库 */
     private DataSourceConfigDTO requireSyncableConfig(String dataSourceKey) {
@@ -136,7 +134,7 @@ public class SyncOrchestrator {
         return Math.max(1, Math.min(pageSize, 500));
     }
 
-    /** 构建同步上下文 */
+    /** 构建同步上下文（含唯一批次号） */
     private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize) {
         return BusinessSyncContext.builder()
                 .dataSourceKey(dataSourceKey)
