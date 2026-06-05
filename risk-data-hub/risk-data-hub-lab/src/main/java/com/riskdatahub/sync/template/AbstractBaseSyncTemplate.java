@@ -52,6 +52,9 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     /** Jackson ObjectMapper — 用于构建 JSON 消息体 */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 当前批次预分配的 ID 队列（由 preAllocateBatchIds 填充，nextBatchId 消费） */
+    private final java.util.Queue<Long> batchIdQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
     /** 当前业务类型的双线程池（每个业务 2 线程：拉取 + 落库） */
     protected final ThreadPoolExecutor pairExecutor;
 
@@ -147,6 +150,34 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     }
 
     /**
+     * 预分配当前批次所需的全部 Leaf ID，减少逐次 synchronized 竞争。
+     * <p>在 runInsertThread 的 transform 循环前调用一次。</p>
+     *
+     * @param tag   Leaf 业务标签
+     * @param count 需要的 ID 数量
+     */
+    protected void preAllocateBatchIds(String tag, int count, SyncMetrics metrics) {
+        batchIdQueue.clear();
+        long start = System.currentTimeMillis();
+        long[] ids = leafSegmentService.nextIdBatch(tag, count);
+        long elapsed = System.currentTimeMillis() - start;
+        for (long id : ids) batchIdQueue.add(id);
+        metrics.recordIdGen(elapsed, count);
+    }
+
+    /** 从预分配队列中取下一个 ID，队列为空时回源 Leaf */
+    protected long nextId(String tag) {
+        Long id = batchIdQueue.poll();
+        return id != null ? id : leafSegmentService.nextId(tag);
+    }
+
+    /**
+     * Leaf ID 业务标签，由子类覆盖返回对应表名。
+     * 如 {@code "clean_stock"}、{@code "clean_trade"}。
+     */
+    protected abstract String getIdTag();
+
+    /**
      * 记录单批落库耗时到 sync_batch_metrics 表。
      * <p>由 runInsertThread 每处理完一页后调用。</p>
      */
@@ -179,6 +210,7 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
             m.setFetchDurationMs(fetchMs > 0 ? fetchMs : 0);
             m.setQueueWaitMs(queueWaitMs > 0 ? queueWaitMs : 0);
             m.setTransformDurationMs(transformMs);
+            m.setIdGenDurationMs(metrics.getLastIdGenMs());
             m.setSaveDurationMs(saveMs);
             m.setTotalPageMs(totalMs);
 

@@ -73,6 +73,11 @@ public class TradeBusinessSyncTemplate
         return "TRADE";
     }
 
+    @Override
+    protected String getIdTag() {
+        return "clean_trade";
+    }
+
     /**
      * 根据数据源类型分页拉取未同步的交易数据（sync_flag = 0）。
      */
@@ -211,7 +216,7 @@ public class TradeBusinessSyncTemplate
      */
     private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
         return new CleanRecordContext(
-                leafSegmentService.nextId("clean_trade"),
+                nextId("clean_trade"),
                 context.getDataSourceKey(), context.getDatasourceType(),
                 sourceRowId, context.getBatchNo(), now());
     }

@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics (
     fetch_duration_ms        BIGINT DEFAULT 0 COMMENT '①拉取：上游查询耗时',
     queue_wait_ms            BIGINT DEFAULT 0 COMMENT '②排队：队列等待耗时',
     transform_duration_ms    BIGINT DEFAULT 0 COMMENT '③转换：字段映射耗时',
+    id_gen_duration_ms       BIGINT DEFAULT 0 COMMENT '③转换-ID生成：Leaf批量获取ID耗时',
     cache_lookup_duration_ms BIGINT DEFAULT 0 COMMENT '④查重：查已有sourceRowId耗时',
     split_check_ms           BIGINT DEFAULT 0 COMMENT '⑤拆分：数据分为insert/update耗时',
     save_duration_ms         BIGINT DEFAULT 0 COMMENT '⑥落库：saveBatch总耗时',

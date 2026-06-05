@@ -72,6 +72,11 @@ public class StockBusinessSyncTemplate
         return "STOCK";
     }
 
+    @Override
+    protected String getIdTag() {
+        return "clean_stock";
+    }
+
     /**
      * 根据数据源类型分页拉取未同步的股票行情数据（sync_flag = 0）。
      */
@@ -190,7 +195,7 @@ public class StockBusinessSyncTemplate
      */
     private CleanRecordContext cleanRecordContext(BusinessSyncContext context, Long sourceRowId) {
         return new CleanRecordContext(
-                leafSegmentService.nextId("clean_stock"),
+                nextId("clean_stock"),
                 context.getDataSourceKey(), context.getDatasourceType(),
                 sourceRowId, context.getBatchNo(), now());
     }

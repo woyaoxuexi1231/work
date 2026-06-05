@@ -209,6 +209,8 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 fetchPermit.release();
 
                 // 批量转换落库（此时拉取线程已在拉取下一页，互不干扰）
+                preAllocateBatchIds(getIdTag(), rows.size(), metrics);
+
                 long transformStart = System.currentTimeMillis();
                 List<T> targets = new ArrayList<>(rows.size());
                 for (S row : rows) {

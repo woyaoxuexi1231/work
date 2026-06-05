@@ -25,6 +25,7 @@ public class SyncBatchMetrics {
     private Long fetchDurationMs;         // 本页拉取耗时
     private Long queueWaitMs;             // 在队列中等待耗时（fetch完成→insert开始处理）
     private Long transformDurationMs;     // 转换耗时（所有行转换累加）
+    private Long idGenDurationMs;         // 中 Leaf ID 生成耗时
     private Long cacheLookupDurationMs;   // ④查重：查已有sourceRowId耗时
     private Long splitCheckMs;            // ⑤拆分：将数据分为insert/update两类的耗时
     private Long saveDurationMs;          // ⑥落库：saveBatch总耗时（= ④+⑤+⑥INSERT+⑥INSERT写缓存+⑥UPDATE+…）

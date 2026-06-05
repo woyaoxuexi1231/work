@@ -178,6 +178,9 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 }
                 List<S> rows = chunk.getRows();
 
+                // 预分配本批所有 Leaf ID（避免逐次 synchronized 竞争）
+                preAllocateBatchIds(getIdTag(), rows.size(), metrics);
+
                 long transformStart = System.currentTimeMillis();
                 List<T> targets = new ArrayList<>(rows.size());
                 for (S row : rows) {

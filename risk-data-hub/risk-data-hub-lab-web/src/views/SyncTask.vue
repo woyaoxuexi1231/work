@@ -584,86 +584,88 @@ function bizAvgSaveMs(rec) {
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       @click.self="batchModal.visible = false"
     >
-      <div class="bg-white rounded-xl shadow-2xl w-[90vw] max-w-3xl max-h-[80vh] flex flex-col">
+      <div class="bg-white rounded-xl shadow-2xl w-[95vw] max-w-5xl max-h-[85vh] flex flex-col">
         <!-- 弹窗头部 -->
         <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
           <div>
             <span class="font-semibold text-slate-800">{{ batchModal.businessCode }}</span>
             <span class="text-sm text-slate-400 ml-2">批次耗时明细</span>
           <div class="text-[11px] text-slate-500 mt-1 leading-relaxed space-y-0.5">
-            <div class="font-medium">三大步骤 + 子步骤说明：</div>
-            <div><b class="text-sky-600">①拉取</b> — 上游数据库查询耗时。包含 SQL 执行 + 网络传输。排队=数据在队列中等待处理的时间，排队久说明落库线程是瓶颈。</div>
-            <div><b class="text-emerald-600">②转换</b> — 上游字段映射为中台字段的耗时（每行逐一转换）。高说明转换逻辑重或行数多。</div>
-            <div><b class="text-indigo-600">③落库</b> — 写入中台库总耗时。子步骤从左到右：</div>
-            <div class="pl-4 text-slate-400">查重=判断是否已存在 | 拆分=分成insert/update两组 | INSERT=新增写入 | 写缓存=同步Redis | 查ID=查询已有行的主键 | UPDATE=已有行更新</div>
+            <div><b class="text-sky-600">①拉取</b> — 上游数据库查询耗时。右侧<kbd>排队</kbd>是数据在队列中的等待时间，排队久说明落库线程是瓶颈。</div>
+            <div><b class="text-emerald-600">②转换</b> — 上游字段映射为中台字段耗时。<kbd>%</kbd>=占总耗时比例，<kbd>ID生成</kbd>=Leaf批量获取ID耗时（已优化为批量预分配，大幅减少锁竞争）。</div>
+            <div><b class="text-indigo-600">③落库</b> — 写入中台库总耗时。子步骤：查重(判存)→拆分(分组)→INSERT(新增写库)→写缓存(同步Redis)→查ID(查已有主键)→UPDATE(更新)。</div>
           </div>
           </div>
           <button @click="batchModal.visible = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
         </div>
 
-        <!-- 弹窗表格 -->
+        <!-- 弹窗表格（左右可滑动） -->
         <div class="flex-1 overflow-auto px-5 py-3">
+          <div class="min-w-[1200px] overflow-x-auto">
           <table v-if="batchModal.data" class="w-full text-sm text-slate-700 border-collapse">
-            <!-- 表头 -->
+            <!-- 表头（扁平结构，颜色分组） -->
             <thead>
-              <tr class="bg-slate-50 text-slate-500 text-xs sticky top-0">
-                <th class="px-3 py-2 text-left w-12">批次</th>
-                <th class="px-3 py-2 text-right w-16">行数</th>
-                <th class="px-3 py-2 text-center border-x-2 border-sky-200 bg-sky-50/60 w-28" colspan="2">①拉取</th>
-                <th class="px-3 py-2 text-center border-r-2 border-emerald-200 bg-emerald-50/60 w-28" colspan="2">②转换</th>
-                <th class="px-3 py-2 text-center border-r-2 border-indigo-200 bg-indigo-50/60" colspan="7">③落库</th>
-                <th class="px-3 py-2 text-right w-24" rowspan="2">总耗时</th>
-                <th class="px-3 py-2 text-right w-16" rowspan="2">速率</th>
-              </tr>
-              <tr class="bg-slate-50 text-slate-400 text-[10px] sticky top-[26px]">
-                <!-- 拉取子列 -->
-                <th class="px-3 py-1 text-right border-x-2 border-sky-200 bg-sky-50/60" colspan="2">查询数据库</th>
-                <!-- 转换子列 -->
-                <th class="px-3 py-1 text-right border-r-2 border-emerald-200 bg-emerald-50/60" colspan="2">字段映射</th>
-                <!-- 落库子列 -->
-                <th class="px-3 py-1 text-right border-l-2 border-indigo-200 bg-indigo-50/60">总</th>
-                <th class="px-3 py-1 text-right bg-indigo-50/30">查重</th>
-                <th class="px-3 py-1 text-right bg-indigo-50/30">拆分</th>
-                <th class="px-3 py-1 text-right bg-indigo-50/30">INSERT</th>
-                <th class="px-3 py-1 text-right bg-indigo-50/30">写缓存</th>
-                <th class="px-3 py-1 text-right bg-indigo-50/30">查ID</th>
-                <th class="px-3 py-1 text-right bg-indigo-50/30">UPDATE</th>
+              <tr class="text-xs sticky top-0">
+                <th class="px-3 py-2 text-left w-12 bg-white z-10">批次</th>
+                <th class="px-3 py-2 text-right w-16 bg-white z-10">行数</th>
+                <!-- ①拉取组 -->
+                <th class="px-3 py-2 text-right w-28 bg-sky-50 text-sky-700 border-r border-sky-200">①拉取</th>
+                <th class="px-3 py-2 text-[10px] text-sky-400 bg-sky-50/80 w-16 border-r-2 border-sky-200">排队</th>
+                <!-- ②转换组 -->
+                <th class="px-3 py-2 text-right w-24 bg-emerald-50 text-emerald-700 border-r border-emerald-200">②转换</th>
+                <th class="px-3 py-2 text-[10px] text-emerald-400 bg-emerald-50/80 w-14 border-r border-emerald-200">%</th>
+                <th class="px-3 py-2 text-[10px] text-emerald-400 bg-emerald-50/80 w-20 border-r-2 border-emerald-200">ID生成</th>
+                <!-- ③落库组 -->
+                <th class="px-3 py-2 text-right w-20 bg-indigo-50 text-indigo-700 border-r border-indigo-200">落库</th>
+                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16">查重</th>
+                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-14">拆分</th>
+                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16">INSERT</th>
+                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16">写缓存</th>
+                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-14">查ID</th>
+                <th class="px-3 py-2 text-[10px] text-indigo-400 bg-indigo-50/80 w-16 border-r-2 border-indigo-200">UPDATE</th>
+                <!-- 汇总 -->
+                <th class="px-3 py-2 text-right w-24 bg-white z-10">总耗时</th>
+                <th class="px-3 py-2 text-right w-16 bg-white z-10">速率</th>
               </tr>
             </thead>
             <!-- 数据体 -->
             <tbody>
               <template v-for="bm in batchModal.data.records" :key="bm.batchNo">
-                <!-- 主行：批次概览 -->
-                <tr class="border-t border-slate-100 hover:bg-slate-50 text-xs">
+                <!-- 主行 -->
+                <tr class="border-t border-slate-100 hover:bg-slate-50 text-sm">
                   <td class="px-3 py-2.5 font-mono font-semibold text-slate-700">{{ bm.batchNo }}</td>
                   <td class="px-3 py-2.5 text-right font-mono">{{ (bm.pulledCount || 0).toLocaleString() }}</td>
                   <!-- ①拉取 -->
-                  <td class="px-3 py-2.5 text-right font-mono border-x-2 border-sky-200" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
-                  <td class="px-2 py-2.5 text-xs text-slate-300 border-r-2 border-sky-200">{{ pct(bm.fetchDurationMs, bm.totalPageMs) }}</td>
-                  <!-- ③转换 -->
-                  <td class="px-3 py-2.5 text-right font-mono border-r-2 border-emerald-200" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
-                  <td class="px-2 py-2.5 text-xs text-slate-300 border-r-2 border-emerald-200">{{ pct(bm.transformDurationMs, bm.totalPageMs) }}</td>
-                  <!-- ④落库主 -->
-                  <td class="px-3 py-2.5 text-right font-mono border-l-2 border-indigo-200" :class="slowClass(bm.saveDurationMs)">{{ fmtMs(bm.saveDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.cacheLookupDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.splitCheckMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.cacheAddDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
-                  <!-- 总计/速率 -->
-                  <td class="px-3 py-2.5 text-right font-mono font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono bg-sky-50/30 border-r border-sky-200" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono text-slate-300 bg-sky-50/20 border-r-2 border-sky-200">{{ fmtMs(bm.queueWaitMs) }}</td>
+                  <!-- ②转换 -->
+                  <td class="px-3 py-2.5 text-right font-mono bg-emerald-50/30 border-r border-emerald-200" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono text-slate-300 bg-emerald-50/20 border-r border-emerald-200">{{ pct(bm.transformDurationMs, bm.totalPageMs) }}</td>
+                  <td class="px-3 py-2.5 text-right font-mono bg-emerald-50/20 border-r-2 border-emerald-200" :class="slowClass(bm.idGenDurationMs)">{{ fmtMs(bm.idGenDurationMs) }}</td>
+                  <!-- ③落库 -->
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/30 border-r border-indigo-200" :class="slowClass(bm.saveDurationMs)">{{ fmtMs(bm.saveDurationMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.cacheLookupDurationMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.splitCheckMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.cacheAddDurationMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono bg-indigo-50/20 border-r-2 border-indigo-200" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
+                  <!-- 汇总 -->
+                  <td class="px-3 py-2 text-right font-mono font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
                 </tr>
-                <!-- 子行：排队 + 设ID（次要指标折叠） -->
-                <tr class="text-[10px] text-slate-300 border-0 -mt-1">
+                <!-- 子行：统计数据 -->
+                <tr class="text-[10px] text-slate-400 border-0 bg-white">
                   <td colspan="2"></td>
-                  <td class="px-3 pb-1 border-x-2 border-sky-100" colspan="2">排队 {{ fmtMs(bm.queueWaitMs) }}</td>
-                  <td class="px-3 pb-1 border-r-2 border-emerald-100" colspan="2"></td>
-                  <td class="px-3 pb-1 border-l-2 border-indigo-100" colspan="7">
-                    设ID {{ fmtMs(bm.setIdDurationMs) }}
-                    <span v-if="bm.insertCount"> | 新增 {{ bm.insertCount }} 行</span>
-                    <span v-if="bm.updateCount"> | 更新 {{ bm.updateCount }} 行</span>
+                  <td class="px-3 pb-1.5 border-r border-sky-200" colspan="2">
+                    <span v-if="bm.queueWaitMs">排队 <b class="text-slate-500">{{ fmtMs(bm.queueWaitMs) }}</b></span>
+                    <span v-else class="text-slate-300">排队 -</span>
+                  </td>
+                  <td class="px-3 pb-1.5 border-r border-emerald-200" colspan="3"></td>
+                  <td class="px-3 pb-1.5 border-r border-indigo-200" colspan="7">
+                    设ID <b class="text-slate-500">{{ fmtMs(bm.setIdDurationMs) }}</b>
+                    <span v-if="bm.insertCount"> · 新增 <b class="text-slate-500">{{ bm.insertCount }}</b> 行</span>
+                    <span v-if="bm.updateCount"> · 更新 <b class="text-slate-500">{{ bm.updateCount }}</b> 行</span>
                   </td>
                   <td colspan="2"></td>
                 </tr>
@@ -673,6 +675,7 @@ function bizAvgSaveMs(rec) {
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
 
         <!-- 弹窗分页 -->

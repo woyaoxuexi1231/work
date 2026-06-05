@@ -77,6 +77,33 @@ public class LeafSegmentService {
     }
 
     /**
+     * 批量获取 ID — 单个 synchronized 块内连续分配，避免逐次锁竞争。
+     * <p>比循环调用 {@link #nextId(String)} 性能高一个数量级（减少 synchronized 进入/退出次数）。</p>
+     *
+     * @param tag   业务标签
+     * @param count 需要的 ID 数量
+     * @return ID 数组（长度 = count）
+     */
+    public long[] nextIdBatch(String tag, int count) {
+        if (count <= 0) return new long[0];
+        long[] ids = new long[count];
+        SegmentBuffer buffer = buffers.computeIfAbsent(tag, key -> new SegmentBuffer());
+        synchronized (buffer) {
+            for (int i = 0; i < count; i++) {
+                if (!buffer.current.hasNext()) {
+                    switchSegment(buffer, tag);
+                }
+                ids[i] = buffer.current.nextId++;
+                // 只在最后一次检查水位线，避免频繁触发
+                if (i == count - 1) {
+                    triggerPreloadIfNeeded(tag, buffer);
+                }
+            }
+        }
+        return ids;
+    }
+
+    /**
      * 批量获取 ID（供测试 / 管理接口使用）。
      * <p>循环调用 nextId，内部已做线程安全处理。</p>
      *

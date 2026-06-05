@@ -141,6 +141,9 @@ public final class SyncSupport {
 
         // ====== 转换阶段（insert 线程写入） ======
         private long transformDurationMs;
+        private long idGenDurationMs;        // Leaf ID 生成总耗时
+        private long lastIdGenMs;            // 当批 ID 生成耗时
+        private int lastIdGenCount;          // 当批生成 ID 数量
 
         // ====== 落库阶段（insert 线程写入） ======
         private long saveDurationMs;
@@ -172,6 +175,12 @@ public final class SyncSupport {
 
         public void recordTransform(long elapsedMs) {
             transformDurationMs += elapsedMs;
+        }
+
+        public void recordIdGen(long elapsedMs, int count) {
+            idGenDurationMs += elapsedMs;
+            lastIdGenMs = elapsedMs;
+            lastIdGenCount = count;
         }
 
         public void recordSaveBatch(long elapsedMs) {
@@ -221,6 +230,8 @@ public final class SyncSupport {
             lastSetIdMs = 0;
             lastUpdateCount = 0;
             lastBatchUpdateMs = 0;
+            lastIdGenMs = 0;
+            lastIdGenCount = 0;
         }
 
         public Double avgFetchPageMs() {
