@@ -111,7 +111,7 @@ public class PositionBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets) {
         if (targets.isEmpty()) return;
-        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanPositionMapper.insert(targets));
+        cleanPositionMapper.insert(targets);
     }
 
     /**

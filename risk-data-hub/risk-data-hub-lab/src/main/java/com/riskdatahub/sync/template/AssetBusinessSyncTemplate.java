@@ -110,7 +110,7 @@ public class AssetBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanAsset> targets) {
         if (targets.isEmpty()) return;
-        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanAssetMapper.insert(targets));
+        cleanAssetMapper.insert(targets);
     }
 
     /**

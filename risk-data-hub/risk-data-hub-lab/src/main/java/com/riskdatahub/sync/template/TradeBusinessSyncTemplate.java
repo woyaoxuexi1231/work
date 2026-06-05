@@ -118,7 +118,7 @@ public class TradeBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanTrade> targets) {
         if (targets.isEmpty()) return;
-        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanTradeMapper.insert(targets));
+        cleanTradeMapper.insert(targets);
     }
 
     /**

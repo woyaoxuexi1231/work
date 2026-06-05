@@ -118,7 +118,7 @@ public class StockBusinessSyncTemplate
     @Override
     protected void saveBatch(BusinessSyncContext context, List<CleanStock> targets) {
         if (targets.isEmpty()) return;
-        routingMybatisExecutor.run(context.getDataSourceKey(), () -> cleanStockMapper.insert(targets));
+        cleanStockMapper.insert(targets);
     }
 
     /**
