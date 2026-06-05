@@ -1,3 +1,7 @@
+-- ==========================================
+-- Broker 券商库 DDL
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS broker_stock_quote (
     id BIGINT PRIMARY KEY,
     quote_code VARCHAR(64) NOT NULL,
@@ -49,8 +53,3 @@ CREATE TABLE IF NOT EXISTS broker_fund_account (
     biz_date VARCHAR(16),
     sync_flag INT DEFAULT 0
 );
-
-ALTER TABLE broker_fund_account ADD COLUMN fund_account_no VARCHAR(64);
-ALTER TABLE broker_fund_account ADD COLUMN current_balance DECIMAL(18,2);
-ALTER TABLE broker_fund_account ADD COLUMN frozen_capital DECIMAL(18,2);
-ALTER TABLE broker_fund_account ADD COLUMN biz_date VARCHAR(16);

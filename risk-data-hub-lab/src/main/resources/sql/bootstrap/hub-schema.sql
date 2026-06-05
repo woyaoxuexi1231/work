@@ -1,3 +1,8 @@
+-- ==========================================
+-- Hub 中台库 DDL
+-- 全部使用 IF NOT EXISTS，可重复执行
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS dict_item (
     id BIGINT PRIMARY KEY,
     dict_type VARCHAR(64) NOT NULL,
@@ -140,6 +145,3 @@ CREATE TABLE IF NOT EXISTS sync_business_record (
     finished_at VARCHAR(32),
     KEY idx_record_task_id(task_id)
 );
-
-ALTER TABLE init_task ADD COLUMN progress INT DEFAULT 0;
-ALTER TABLE sync_task ADD COLUMN progress INT DEFAULT 0;

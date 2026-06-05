@@ -1,3 +1,7 @@
+-- ==========================================
+-- OMS 交易库 DDL
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS oms_stock_snapshot (
     id BIGINT PRIMARY KEY,
     symbol VARCHAR(16) NOT NULL,
@@ -48,10 +52,3 @@ CREATE TABLE IF NOT EXISTS oms_cash_asset (
     stat_day VARCHAR(16),
     sync_flag INT DEFAULT 0
 );
-
-ALTER TABLE oms_stock_snapshot ADD COLUMN open_price DECIMAL(18,4);
-ALTER TABLE oms_stock_snapshot ADD COLUMN high_price DECIMAL(18,4);
-ALTER TABLE oms_stock_snapshot ADD COLUMN low_price DECIMAL(18,4);
-ALTER TABLE oms_stock_snapshot ADD COLUMN close_price DECIMAL(18,4);
-ALTER TABLE oms_stock_snapshot ADD COLUMN volume_qty BIGINT;
-ALTER TABLE oms_stock_snapshot ADD COLUMN turnover_amount DECIMAL(18,2);
