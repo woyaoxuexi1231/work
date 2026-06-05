@@ -3,6 +3,7 @@ package com.riskdatahub.sync;
 import com.riskdatahub.common.result.ApiResult;
 import com.riskdatahub.sync.entity.CleanTrade;
 import com.riskdatahub.task.SyncTaskService;
+import com.riskdatahub.task.entity.SyncBusinessRecord;
 import com.riskdatahub.task.entity.SyncTask;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import javax.validation.Valid;
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 import java.util.List;
 
 /**
@@ -61,6 +63,28 @@ public class SyncController {
     @PostMapping("/api-hub-cleaned-trades")
     public ApiResult<List<CleanTrade>> cleanedTrades() {
         return ApiResult.ok(syncOrchestrator.cleanedTrades());
+    }
+
+    /**
+     * 查询指定同步任务的各业务执行详情。
+     *
+     * @param request 包含 taskId 的请求体
+     * @return 业务执行记录列表（按 businessCode 排序）
+     */
+    @PostMapping("/api-hub-sync-detail")
+    public ApiResult<List<SyncBusinessRecord>> syncDetail(@Valid @RequestBody DetailRequest request) {
+        return ApiResult.ok(
+                syncTaskService.getBusinessRecords(request.getTaskId()),
+                "SYNC_BUSINESS_DETAIL");
+    }
+
+    /**
+     * 同步业务详情请求体。
+     */
+    @Data
+    public static class DetailRequest {
+        @NotNull(message = "任务 ID 不能为空")
+        private Long taskId;
     }
 
     /**

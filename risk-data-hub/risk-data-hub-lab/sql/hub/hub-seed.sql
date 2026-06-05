@@ -5,7 +5,8 @@
 
 -- Leaf 发号器初始值（dict_item 的 max_id 预留 10 给 seed 数据中硬编码的 ID 2-7）
 INSERT IGNORE INTO leaf_alloc (biz_tag, max_id, step, description) VALUES
-('sync_task',           1,      10, 'sync_task主键'),
+('sync_task',             1,      10, 'sync_task主键'),
+('sync_business_record',  1,      10, 'sync_business_record主键'),
 ('dict_item',           10,     20, 'dict_item主键'),
 ('oms_stock_snapshot',  1,      20, 'oms_stock_snapshot主键'),
 ('oms_trade_order',     1,      20, 'oms_trade_order主键'),

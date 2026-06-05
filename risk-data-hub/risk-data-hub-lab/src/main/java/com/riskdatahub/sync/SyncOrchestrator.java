@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.stream.Collectors;
 
 /**
  * 同步编排引擎 — ETL 同步的核心入口。
@@ -102,6 +103,18 @@ public class SyncOrchestrator {
                 () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                         .orderByDesc(CleanTrade::getGlobalId)
                         .last("limit 30")));
+    }
+
+    /**
+     * 获取所有业务编码列表。
+     * <p>用于 SyncTaskService 在同步开始前预创建 SyncBusinessRecord 记录。</p>
+     *
+     * @return 业务编码列表（STOCK / TRADE / POSITION / ASSET）
+     */
+    public List<String> getBusinessCodes() {
+        return businessSyncTemplates.stream()
+                .map(BusinessSyncTemplate::businessCode)
+                .collect(Collectors.toList());
     }
 
     /** 校验数据源存在且不是中台库 */

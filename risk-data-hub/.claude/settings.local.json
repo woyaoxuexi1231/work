@@ -6,7 +6,8 @@
       "Bash(mvn compile *)",
       "Bash(mvn clean *)",
       "Bash(xargs grep -l \"HubInitializer\")",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(npx vue-tsc *)"
     ]
   }
 }

@@ -99,3 +99,14 @@ export function getSyncTask() {
 export function getCleanedTrades() {
   return request.post('/api-hub-cleaned-trades')
 }
+
+/**
+ * 查询指定同步任务的各业务执行详情（每张表的同步状况）
+ * @param {number} taskId 同步任务 ID
+ * 后端路径：POST /api-hub-sync-detail
+ * 响应 data：业务执行记录数组
+ *   [{ businessCode, status, pulledCount, savedCount, startedAt, finishedAt, errorMessage, ... }]
+ */
+export function getSyncDetails(taskId) {
+  return request.post('/api-hub-sync-detail', { taskId })
+}

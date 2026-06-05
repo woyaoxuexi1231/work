@@ -1,6 +1,7 @@
 package com.riskdatahub.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.DataSourceManager;
@@ -229,36 +230,46 @@ public class SyncTaskService {
                 return;
             }
 
-            // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理）
+            // 预创建每个业务的 SyncBusinessRecord 记录（status=RUNNING），用于实时进度展示
+            List<String> businessCodes = syncOrchestrator.getBusinessCodes();
+            for (String bizCode : businessCodes) {
+                SyncBusinessRecord record = new SyncBusinessRecord();
+                record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
+                record.setTaskId(id);
+                record.setBusinessCode(bizCode);
+                record.setStatus("RUNNING");
+                record.setPulledCount(0);
+                record.setSavedCount(0);
+                record.setStartedAt(TimeUtils.now());
+                routingMybatisExecutor.run(HubConstants.DS_HUB,
+                        () -> syncBusinessRecordMapper.insert(record));
+            }
+
+            // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理，实时更新 SyncBusinessRecord）
             SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id);
 
-            // 记录每个业务类型的同步结果明细
+            // 同步完成后更新每个业务记录为 SUCCESS
             int totalPulled = 0;
             int totalSaved = 0;
 
             for (Map.Entry<String, BusinessSyncResult> entry : result.getBusinessResults().entrySet()) {
                 String bizCode = entry.getKey();
                 BusinessSyncResult bizResult = entry.getValue();
-
-                SyncBusinessRecord record = new SyncBusinessRecord();
-                record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
-                record.setTaskId(id);
-                record.setBusinessCode(bizCode);
-                record.setStatus("SUCCESS");
-                record.setPageCount(bizResult.getPageCount());
-                record.setPulledCount(bizResult.getPulledCount());
-                record.setSavedCount(bizResult.getSavedCount());
-                record.setLastRowId(bizResult.getLastRowId());
-                record.setStartedAt(TimeUtils.now());
-                record.setFinishedAt(TimeUtils.now());
-                routingMybatisExecutor.run(HubConstants.DS_HUB,
-                        () -> syncBusinessRecordMapper.insert(record));
-
                 totalPulled += bizResult.getPulledCount();
                 totalSaved += bizResult.getSavedCount();
+
+                routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
+                        syncBusinessRecordMapper.update(null, new LambdaUpdateWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getTaskId, id)
+                                .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                                .set(SyncBusinessRecord::getStatus, "SUCCESS")
+                                .set(SyncBusinessRecord::getPageCount, bizResult.getPageCount())
+                                .set(SyncBusinessRecord::getPulledCount, bizResult.getPulledCount())
+                                .set(SyncBusinessRecord::getSavedCount, bizResult.getSavedCount())
+                                .set(SyncBusinessRecord::getLastRowId, bizResult.getLastRowId())
+                                .set(SyncBusinessRecord::getFinishedAt, TimeUtils.now())));
             }
 
-            // 更新任务为 SUCCESS 状态
             int finalPulled = totalPulled;
             int finalSaved = totalSaved;
             updateTaskFields(id, task -> {
@@ -275,12 +286,17 @@ public class SyncTaskService {
             rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
                     totalPulled, totalSaved);
         } catch (Exception e) {
-            // 异常处理：更新为 FAILED 状态
-            updateTaskFields(id, task -> {
-                task.setStatus("FAILED");
-                task.setMessage("同步任务失败");
-                task.setErrorMessage(e.getMessage());
-                task.setFinishedAt(TimeUtils.now());
+            // 更新所有业务的 SyncBusinessRecord 为 FAILED
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                List<SyncBusinessRecord> records = syncBusinessRecordMapper.selectList(
+                        new LambdaQueryWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getTaskId, id));
+                for (SyncBusinessRecord rec : records) {
+                    rec.setStatus("FAILED");
+                    rec.setErrorMessage(e.getMessage());
+                    rec.setFinishedAt(TimeUtils.now());
+                    syncBusinessRecordMapper.updateById(rec);
+                }
             });
             log.error("[SyncTask] failed id={}", id, e);
         } finally {
@@ -309,5 +325,18 @@ public class SyncTaskService {
             updater.accept(task);
             syncTaskMapper.updateById(task);
         });
+    }
+
+    /**
+     * 查询指定同步任务的各业务执行详情。
+     *
+     * @param taskId 同步任务 ID
+     * @return 业务执行记录列表（按 businessCode 排序）
+     */
+    public List<SyncBusinessRecord> getBusinessRecords(Long taskId) {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()
+                        .eq(SyncBusinessRecord::getTaskId, taskId)
+                        .orderByAsc(SyncBusinessRecord::getBusinessCode)));
     }
 }
