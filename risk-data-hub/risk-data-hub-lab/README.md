@@ -41,15 +41,14 @@
 ```
 com.riskdatahub
 ├── common           — 常量、异常、统一响应、工具类（锁模板、时间工具）
-├── config           — 数据源、线程池、CORS 配置
-├── datasource       — 动态路由数据源、连接池管理、DTO
+├── config           — 线程池、CORS 配置
+├── datasource       — 动态路由数据源、连接池管理、DTO、控制器
 ├── id               — Leaf 号段发号器（双缓冲 + 20% 水位线预加载）
 ├── dictionary       — 字典服务（状态码翻译）
-├── sync             — ETL 同步引擎（编排器 + 4 类业务模板 + 实体 + Mapper + 模型）
+├── sync             — ETL 同步引擎（编排器 + 4 类模板 + 实体 + Mapper + 控制器）
 ├── task             — 同步任务管理（任务持久化 + 状态追踪）
 ├── message          — 事件消息发件箱 + RabbitMQ 发送
-├── overview         — 系统总览（拓扑、表统计、Leaf 状态）
-├── controller       — RESTful 控制器
+├── overview         — 系统总览（拓扑、表统计、Leaf 状态、控制器）
 └── mapper           — 动态 SQL 执行器
 ```
 
@@ -146,7 +145,7 @@ mvn spring-boot:run
 ### 5. 注册上游数据源
 
 ```bash
-curl -X POST http://localhost:8501/api/datasource/register \
+curl -X POST http://localhost:8501/api-datasource-register \
   -H "Content-Type: application/json" \
   -d '{"key":"trade_oms","name":"交易系统A库","datasourceType":"TRADE_OMS","url":"jdbc:mysql://host.docker.internal:3306/trade_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai","username":"root","password":"123456"}'
 ```
@@ -154,23 +153,23 @@ curl -X POST http://localhost:8501/api/datasource/register \
 ### 6. 执行同步
 
 ```bash
-curl -X POST http://localhost:8501/api/hub/sync \
+curl -X POST http://localhost:8501/api-hub-sync \
   -H "Content-Type: application/json" \
   -d '{"dataSourceKey":"trade_oms","pageSize":100}'
 ```
 
-## RESTful API
+## API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/hub/overview | 系统总览（拓扑、表统计、Leaf 状态） |
-| GET | /api/hub/sync-task | 当前同步任务状态 |
-| GET | /api/hub/cleaned-trades | 最近 30 条清洗交易记录 |
-| POST | /api/hub/sync | 提交同步任务 |
-| GET | /api/datasource | 列出所有数据源 |
-| GET | /api/datasource/{key} | 查看单个数据源 |
-| POST | /api/datasource/register | 注册新数据源 |
-| DELETE | /api/datasource/{key} | 删除数据源 |
+| POST | /api-hub-overview | 系统总览（拓扑、表统计、Leaf 状态） |
+| POST | /api-hub-sync | 提交同步任务 |
+| POST | /api-hub-sync-task | 当前同步任务状态 |
+| POST | /api-hub-cleaned-trades | 最近 30 条清洗交易记录 |
+| POST | /api-datasource-list | 列出所有数据源 |
+| POST | /api-datasource-get | 查看单个数据源（Body: {"key":"xxx"}） |
+| POST | /api-datasource-register | 注册新数据源 |
+| POST | /api-datasource-remove | 删除数据源（Body: {"key":"xxx"}） |
 
 ## Python 脚本
 

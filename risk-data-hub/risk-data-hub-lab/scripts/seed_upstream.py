@@ -191,7 +191,7 @@ def seed_oms(cursor, stock_pool, trade_dates, force: bool):
                 order_count += 1
                 order_rows.append(
                     f"({order_count},'OMS-{sym}-{date_fmt}-{j:02d}','{sym}','{investor}',"
-                    f"{'B' if j % 2 == 0 else 'S'},{qty},{px},{round(px * qty, 2)},"
+                    f"'{'B' if j % 2 == 0 else 'S'}',{qty},{px},{round(px * qty, 2)},"
                     f"'{random.choice(OMS_STATUSES)}','{time_fmt}',0)"
                 )
 

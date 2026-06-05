@@ -10,7 +10,7 @@ import java.util.List;
  * 数据源配置属性绑定 — 对应 application.yml 中 {@code hub.datasource.*} 配置段。
  * <p>
  * 在启动时由 {@link org.springframework.boot.context.properties.EnableConfigurationProperties} 激活，
- * 运行时通过 {@link com.riskdatahub.controller.DataSourceController} 注册上游数据源。
+ * 运行时通过 {@link com.riskdatahub.datasource.DataSourceController} 注册上游数据源。
  * </p>
  *
  * @author risk-data-hub
