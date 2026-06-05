@@ -136,9 +136,9 @@ public class SyncOrchestrator {
         return config;
     }
 
-    /** 限制分页大小在 [1, 500] 区间 */
+    /** 限制分页大小在 [1, 100000] 区间 */
     private int sanitizePageSize(int pageSize) {
-        return Math.max(1, Math.min(pageSize, 500));
+        return Math.max(1, Math.min(pageSize, 100000));
     }
 
     /** 构建同步上下文（含唯一批次号、任务 ID 和断点续传游标） */

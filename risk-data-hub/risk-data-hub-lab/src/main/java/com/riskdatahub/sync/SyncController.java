@@ -110,9 +110,9 @@ public class SyncController {
         @NotBlank(message = "数据源 key 不能为空")
         private String dataSourceKey;
 
-        /** 每页记录数，范围 1~500 */
+        /** 每页记录数，默认 10000，最大 100000 */
         @Min(value = 1, message = "分页大小最小为 1")
-        @Max(value = 500, message = "分页大小最大为 500")
-        private int pageSize = 100;
+        @Max(value = 100000, message = "分页大小最大为 100000")
+        private int pageSize = 10000;
     }
 }

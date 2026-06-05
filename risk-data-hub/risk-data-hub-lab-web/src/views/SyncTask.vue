@@ -32,7 +32,7 @@ const forceMode = ref(false)
 
 const form = ref({
   dataSourceKey: '',
-  pageSize: 100
+  pageSize: 10000
 })
 
 const dsOptions = ref([])
@@ -135,13 +135,13 @@ function stopAutoRefresh() {
 // ============================================================
 
 function openForm() {
-  form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 100 }
+  form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 10000 }
   forceMode.value = false
   showForm.value = true
 }
 
 function openForceForm() {
-  form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 100 }
+  form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 10000 }
   forceMode.value = true
   showForm.value = true
 }
@@ -472,11 +472,11 @@ function bizPending(rec) {
             <input
               v-model.number="form.pageSize"
               type="number"
-              min="10"
-              max="500"
+              min="1"
+              max="100000"
               class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <div class="mt-1 text-xs text-slate-400">范围 10 ~ 500</div>
+            <div class="mt-1 text-xs text-slate-400">范围 1 ~ 100000</div>
           </div>
         </div>
 

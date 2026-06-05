@@ -155,7 +155,7 @@ public class SyncTaskService {
      * 无当天任务时创建新记录。</p>
      */
     private SyncTask createOrResetTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
-        int safePageSize = Math.max(1, Math.min(pageSize, 500));
+        int safePageSize = Math.max(1, Math.min(pageSize, 100000));
 
         // 查找当天已有任务
         SyncTask existing = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
@@ -220,7 +220,7 @@ public class SyncTaskService {
     private SyncTask createQueuedTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
         long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
         LocalDateTime now = TimeUtils.now();
-        int safePageSize = Math.max(1, Math.min(pageSize, 500));
+        int safePageSize = Math.max(1, Math.min(pageSize, 100000));
 
         SyncTask task = new SyncTask();
         task.setId(taskId);
