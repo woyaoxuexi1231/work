@@ -75,6 +75,21 @@ public final class SyncSupport {
         private int savedCount;
         private long lastRowId;
 
+        // ====== 耗时指标（毫秒），用于性能分析 ======
+        private long fetchDurationMs;
+        private long transformDurationMs;
+        private long saveDurationMs;
+        private int fetchPageCount;
+        private int saveBatchCount;
+        private long maxFetchPageMs;
+        private long maxSaveBatchMs;
+
+        // ====== saveBatch 子步骤耗时 ======
+        private long cacheLookupDurationMs;
+        private long batchInsertDurationMs;
+        private long globalIdQueryDurationMs;
+        private long batchUpdateDurationMs;
+
         /**
          * 转换为 Map，保证字段顺序固定（便于 JSON 序列化和日志查看）。
          *
@@ -86,7 +101,82 @@ public final class SyncSupport {
             result.put("pulledCount", pulledCount);
             result.put("savedCount", savedCount);
             result.put("lastRowId", lastRowId);
+            result.put("fetchDurationMs", fetchDurationMs);
+            result.put("transformDurationMs", transformDurationMs);
+            result.put("saveDurationMs", saveDurationMs);
+            result.put("fetchPageCount", fetchPageCount);
+            result.put("saveBatchCount", saveBatchCount);
+            result.put("maxFetchPageMs", maxFetchPageMs);
+            result.put("maxSaveBatchMs", maxSaveBatchMs);
+            result.put("cacheLookupDurationMs", cacheLookupDurationMs);
+            result.put("batchInsertDurationMs", batchInsertDurationMs);
+            result.put("globalIdQueryDurationMs", globalIdQueryDurationMs);
+            result.put("batchUpdateDurationMs", batchUpdateDurationMs);
             return result;
+        }
+    }
+
+    /**
+     * 同步耗时指标采集 — 统计拉取/转换/落库各阶段耗时，用于性能分析。
+     * <p>
+     * 拉取线程写入 fetch* 字段，落库线程写入 transform/save* 字段，
+     * 各字段只有单一线程写入，无需加锁。</p>
+     */
+    @Getter
+    public static class SyncMetrics {
+        // ====== 拉取阶段（fetch 线程写入） ======
+        private long fetchDurationMs;
+        private int fetchPageCount;
+        private long maxFetchPageMs;
+
+        // ====== 转换阶段（insert 线程写入） ======
+        private long transformDurationMs;
+
+        // ====== 落库阶段（insert 线程写入） ======
+        private long saveDurationMs;
+        private int saveBatchCount;
+        private long maxSaveBatchMs;
+
+        // ====== saveBatch 内部子步骤 ======
+        private long cacheLookupDurationMs;    // getExistingIds 耗时
+        private long batchInsertDurationMs;    // INSERT 耗时
+        private long globalIdQueryDurationMs;  // 查询 globalId 耗时
+        private long batchUpdateDurationMs;    // UPDATE 耗时
+
+        public void recordFetchPage(long elapsedMs) {
+            fetchDurationMs += elapsedMs;
+            fetchPageCount++;
+            if (elapsedMs > maxFetchPageMs) maxFetchPageMs = elapsedMs;
+        }
+
+        public void recordTransform(long elapsedMs) {
+            transformDurationMs += elapsedMs;
+        }
+
+        public void recordSaveBatch(long elapsedMs) {
+            saveDurationMs += elapsedMs;
+            saveBatchCount++;
+            if (elapsedMs > maxSaveBatchMs) maxSaveBatchMs = elapsedMs;
+        }
+
+        public void recordCacheLookup(long elapsedMs) { cacheLookupDurationMs += elapsedMs; }
+
+        public void recordBatchInsert(long elapsedMs) { batchInsertDurationMs += elapsedMs; }
+
+        public void recordGlobalIdQuery(long elapsedMs) { globalIdQueryDurationMs += elapsedMs; }
+
+        public void recordBatchUpdate(long elapsedMs) { batchUpdateDurationMs += elapsedMs; }
+
+        public Double avgFetchPageMs() {
+            return fetchPageCount > 0 ? (double) fetchDurationMs / fetchPageCount : 0;
+        }
+
+        public Double avgSaveBatchMs() {
+            return saveBatchCount > 0 ? (double) saveDurationMs / saveBatchCount : 0;
+        }
+
+        public long totalDurationMs() {
+            return fetchDurationMs + transformDurationMs + saveDurationMs;
         }
     }
 

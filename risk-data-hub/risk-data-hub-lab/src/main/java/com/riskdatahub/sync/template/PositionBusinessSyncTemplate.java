@@ -6,6 +6,7 @@ import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.cache.ExistingIdsCache;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerPositionBalance;
 import com.riskdatahub.sync.entity.CleanPosition;
 import com.riskdatahub.sync.entity.OmsPositionHolding;
@@ -117,15 +118,18 @@ public class PositionBusinessSyncTemplate
     }
 
     @Override
-    protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets) {
+    protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets, SyncMetrics metrics) {
         if (targets.isEmpty()) return;
 
         String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
+
+        long t0 = System.currentTimeMillis();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                                 .select(CleanPosition::getSourceRowId)
                                 .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanPosition::getSourceRowId).collect(Collectors.toSet()));
+        metrics.recordCacheLookup(System.currentTimeMillis() - t0);
 
         List<CleanPosition> toInsert = new ArrayList<>();
         List<CleanPosition> toUpdate = new ArrayList<>();
@@ -138,12 +142,15 @@ public class PositionBusinessSyncTemplate
         }
 
         if (!toInsert.isEmpty()) {
+            long t1 = System.currentTimeMillis();
             cleanPositionMapper.insert(toInsert);
+            metrics.recordBatchInsert(System.currentTimeMillis() - t1);
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
         }
 
         if (!toUpdate.isEmpty()) {
+            long t2 = System.currentTimeMillis();
             Map<Long, Long> idMap = new HashMap<>();
             cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                             .select(CleanPosition::getGlobalId, CleanPosition::getSourceRowId)
@@ -151,10 +158,13 @@ public class PositionBusinessSyncTemplate
                             .in(CleanPosition::getSourceRowId,
                                     toUpdate.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
+            metrics.recordGlobalIdQuery(System.currentTimeMillis() - t2);
             for (CleanPosition target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
+            long t3 = System.currentTimeMillis();
             cleanPositionMapper.updateById(toUpdate);
+            metrics.recordBatchUpdate(System.currentTimeMillis() - t3);
         }
     }
 

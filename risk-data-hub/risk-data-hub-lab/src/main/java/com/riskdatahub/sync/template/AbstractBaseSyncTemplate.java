@@ -9,6 +9,7 @@ import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncProgressEvent;
 import com.riskdatahub.sync.model.SyncSupport.SyncCounter;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
@@ -127,5 +128,5 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
 
     protected abstract T transform(BusinessSyncContext context, S row);
 
-    protected abstract void saveBatch(BusinessSyncContext context, List<T> targets);
+    protected abstract void saveBatch(BusinessSyncContext context, List<T> targets, SyncMetrics metrics);
 }

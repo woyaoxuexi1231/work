@@ -6,6 +6,7 @@ import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.sync.model.SyncSupport.SyncCounter;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -69,15 +70,16 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
         AtomicBoolean noMoreData = new AtomicBoolean(false);
         AtomicReference<RuntimeException> failure = new AtomicReference<>();
         SyncCounter counter = new SyncCounter();
+        SyncMetrics metrics = new SyncMetrics();
 
         log.info("[同步模板] 业务 {} 开始执行，数据源={}, 类型={}, 分页大小={}, 批次号={}, 任务ID={}",
                 businessCode(), context.getDataSourceKey(), context.getDatasourceType(),
                 context.getPageSize(), context.getBatchNo(), context.getTaskId());
 
         Future<?> fetchFuture = pairExecutor.submit(() ->
-                runFetchThread(context, sharedPage, fetchPermit, insertPermit, counter, noMoreData, failure));
+                runFetchThread(context, sharedPage, fetchPermit, insertPermit, counter, noMoreData, metrics, failure));
         Future<?> insertFuture = pairExecutor.submit(() ->
-                runInsertThread(context, sharedPage, fetchPermit, insertPermit, counter, noMoreData, failure));
+                runInsertThread(context, sharedPage, fetchPermit, insertPermit, counter, noMoreData, metrics, failure));
 
         fetchFuture.get();
         insertFuture.get();
@@ -86,15 +88,32 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
         }
 
         publishBusinessSummaryEvent(context, counter);
-        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}",
+        long totalMs = metrics.totalDurationMs();
+        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}, "
+                        + "耗时={}ms(拉取={}ms/平均={}ms, 转换={}ms, 落库={}ms/平均={}ms, 最慢拉取={}ms, 最慢落库={}ms)",
                 businessCode(), counter.getPageCount(), counter.getPulledCount(),
-                counter.getSavedCount(), counter.getLastRowId());
+                counter.getSavedCount(), counter.getLastRowId(),
+                totalMs, metrics.getFetchDurationMs(), String.format("%.0f", metrics.avgFetchPageMs()),
+                metrics.getTransformDurationMs(), metrics.getSaveDurationMs(),
+                String.format("%.0f", metrics.avgSaveBatchMs()),
+                metrics.getMaxFetchPageMs(), metrics.getMaxSaveBatchMs());
         return new BusinessSyncResult(
                 businessCode(),
                 counter.getPageCount(),
                 counter.getPulledCount(),
                 counter.getSavedCount(),
-                counter.getSavedMaxRowId());
+                counter.getSavedMaxRowId(),
+                metrics.getFetchDurationMs(),
+                metrics.getTransformDurationMs(),
+                metrics.getSaveDurationMs(),
+                metrics.getFetchPageCount(),
+                metrics.getSaveBatchCount(),
+                metrics.getMaxFetchPageMs(),
+                metrics.getMaxSaveBatchMs(),
+                metrics.getCacheLookupDurationMs(),
+                metrics.getBatchInsertDurationMs(),
+                metrics.getGlobalIdQueryDurationMs(),
+                metrics.getBatchUpdateDurationMs());
     }
 
     /**
@@ -110,6 +129,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                                 Semaphore insertPermit,
                                 SyncCounter counter,
                                 AtomicBoolean noMoreData,
+                                SyncMetrics metrics,
                                 AtomicReference<RuntimeException> failure) {
         long cursor = initialCursor(context);
         int pageNo = 0;
@@ -118,7 +138,9 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 fetchPermit.acquire();
                 if (noMoreData.get()) break;
 
+                long fetchStart = System.currentTimeMillis();
                 List<S> rows = fetchPage(context, cursor, context.getPageSize());
+                metrics.recordFetchPage(System.currentTimeMillis() - fetchStart);
                 if (rows.isEmpty()) {
                     noMoreData.set(true);
                     sharedPage.clear();
@@ -171,6 +193,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                                  Semaphore insertPermit,
                                  SyncCounter counter,
                                  AtomicBoolean noMoreData,
+                                 SyncMetrics metrics,
                                  AtomicReference<RuntimeException> failure) {
         try {
             while (failure.get() == null) {
@@ -186,11 +209,16 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 fetchPermit.release();
 
                 // 批量转换落库（此时拉取线程已在拉取下一页，互不干扰）
+                long transformStart = System.currentTimeMillis();
                 List<T> targets = new ArrayList<>(rows.size());
                 for (S row : rows) {
                     targets.add(transform(context, row));
                 }
-                saveBatch(context, targets);
+                metrics.recordTransform(System.currentTimeMillis() - transformStart);
+
+                long saveStart = System.currentTimeMillis();
+                saveBatch(context, targets, metrics);
+                metrics.recordSaveBatch(System.currentTimeMillis() - saveStart);
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }

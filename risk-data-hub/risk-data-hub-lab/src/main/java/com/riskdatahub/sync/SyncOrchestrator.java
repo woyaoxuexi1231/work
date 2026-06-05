@@ -193,7 +193,18 @@ public class SyncOrchestrator {
                     wrapper.set(SyncBusinessRecord::getPageCount, result.getPageCount())
                             .set(SyncBusinessRecord::getPulledCount, result.getPulledCount())
                             .set(SyncBusinessRecord::getSavedCount, result.getSavedCount())
-                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId());
+                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId())
+                            .set(SyncBusinessRecord::getFetchDurationMs, result.getFetchDurationMs())
+                            .set(SyncBusinessRecord::getTransformDurationMs, result.getTransformDurationMs())
+                            .set(SyncBusinessRecord::getSaveDurationMs, result.getSaveDurationMs())
+                            .set(SyncBusinessRecord::getFetchPageCount, result.getFetchPageCount())
+                            .set(SyncBusinessRecord::getSaveBatchCount, result.getSaveBatchCount())
+                            .set(SyncBusinessRecord::getMaxFetchPageMs, result.getMaxFetchPageMs())
+                            .set(SyncBusinessRecord::getMaxSaveBatchMs, result.getMaxSaveBatchMs())
+                            .set(SyncBusinessRecord::getCacheLookupDurationMs, result.getCacheLookupDurationMs())
+                            .set(SyncBusinessRecord::getBatchInsertDurationMs, result.getBatchInsertDurationMs())
+                            .set(SyncBusinessRecord::getGlobalIdQueryDurationMs, result.getGlobalIdQueryDurationMs())
+                            .set(SyncBusinessRecord::getBatchUpdateDurationMs, result.getBatchUpdateDurationMs());
                     syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "SUCCESS"));
                 } else {
                     syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "FAILED")

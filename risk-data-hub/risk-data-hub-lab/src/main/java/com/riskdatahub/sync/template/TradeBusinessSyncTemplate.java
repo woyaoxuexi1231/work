@@ -7,6 +7,7 @@ import com.riskdatahub.dictionary.DictionaryService;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.cache.ExistingIdsCache;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerTradeDeal;
 import com.riskdatahub.sync.entity.CleanTrade;
 import com.riskdatahub.sync.entity.OmsTradeOrder;
@@ -125,15 +126,18 @@ public class TradeBusinessSyncTemplate
     }
 
     @Override
-    protected void saveBatch(BusinessSyncContext context, List<CleanTrade> targets) {
+    protected void saveBatch(BusinessSyncContext context, List<CleanTrade> targets, SyncMetrics metrics) {
         if (targets.isEmpty()) return;
 
         String cacheKey = "sync:existing:clean_trade:" + context.getDataSourceKey();
+
+        long t0 = System.currentTimeMillis();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                                 .select(CleanTrade::getSourceRowId)
                                 .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanTrade::getSourceRowId).collect(Collectors.toSet()));
+        metrics.recordCacheLookup(System.currentTimeMillis() - t0);
 
         List<CleanTrade> toInsert = new ArrayList<>();
         List<CleanTrade> toUpdate = new ArrayList<>();
@@ -146,12 +150,15 @@ public class TradeBusinessSyncTemplate
         }
 
         if (!toInsert.isEmpty()) {
+            long t1 = System.currentTimeMillis();
             cleanTradeMapper.insert(toInsert);
+            metrics.recordBatchInsert(System.currentTimeMillis() - t1);
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList()));
         }
 
         if (!toUpdate.isEmpty()) {
+            long t2 = System.currentTimeMillis();
             Map<Long, Long> idMap = new HashMap<>();
             cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                             .select(CleanTrade::getGlobalId, CleanTrade::getSourceRowId)
@@ -159,10 +166,13 @@ public class TradeBusinessSyncTemplate
                             .in(CleanTrade::getSourceRowId,
                                     toUpdate.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
+            metrics.recordGlobalIdQuery(System.currentTimeMillis() - t2);
             for (CleanTrade target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
+            long t3 = System.currentTimeMillis();
             cleanTradeMapper.updateById(toUpdate);
+            metrics.recordBatchUpdate(System.currentTimeMillis() - t3);
         }
     }
 

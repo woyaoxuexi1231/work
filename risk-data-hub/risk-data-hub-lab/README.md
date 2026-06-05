@@ -204,7 +204,7 @@ risk-data-hub-lab/
 | `clean_position` | 清洗持仓数据 | global_id, source_row_id, account_no, stock_code |
 | `clean_asset` | 清洗资金数据 | global_id, source_row_id, account_no, account_name |
 | `sync_task` | 同步任务 | id, status(QUEUED/RUNNING/SUCCESS/FAILED), progress |
-| `sync_business_record` | 业务同步明细 | task_id, business_code, status, pulled_count, saved_count, last_row_id |
+| `sync_business_record` | 业务同步明细 | task_id, business_code, status, pulled_count, saved_count, last_row_id, fetch_duration_ms, transform_duration_ms, save_duration_ms, max_fetch_page_ms, max_save_batch_ms |
 | `event_message` | 发件箱事件 | event_type, payload, status |
 
 ### 断点续传机制
