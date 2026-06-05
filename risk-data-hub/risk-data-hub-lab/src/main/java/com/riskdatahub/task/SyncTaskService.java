@@ -348,31 +348,72 @@ public class SyncTaskService {
             }
 
             // 预创建每个业务的 SyncBusinessRecord 记录（status=RUNNING），用于实时进度展示
+            // 记录已存在时 UPDATE（force refresh 复用同一 taskId 不会产生重复），
+            // 不存在时 INSERT，保留历史统计记录。
             List<String> businessCodes = syncOrchestrator.getBusinessCodes();
             for (String bizCode : businessCodes) {
-                SyncBusinessRecord record = new SyncBusinessRecord();
-                record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
-                record.setTaskId(id);
-                record.setBusinessCode(bizCode);
-                record.setStatus("RUNNING");
-                record.setPulledCount(0);
-                record.setSavedCount(0);
-                record.setStartedAt(TimeUtils.now());
-                routingMybatisExecutor.run(HubConstants.DS_HUB,
-                        () -> syncBusinessRecordMapper.insert(record));
+                routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                    SyncBusinessRecord existing = syncBusinessRecordMapper.selectOne(
+                            new LambdaQueryWrapper<SyncBusinessRecord>()
+                                    .eq(SyncBusinessRecord::getTaskId, id)
+                                    .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                                    .last("limit 1"));
+                    if (existing != null) {
+                        existing.setStatus("RUNNING");
+                        existing.setPulledCount(0);
+                        existing.setSavedCount(0);
+                        existing.setErrorMessage(null);
+                        existing.setStartedAt(TimeUtils.now());
+                        existing.setFinishedAt(null);
+                        syncBusinessRecordMapper.updateById(existing);
+                    } else {
+                        SyncBusinessRecord record = new SyncBusinessRecord();
+                        record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
+                        record.setTaskId(id);
+                        record.setBusinessCode(bizCode);
+                        record.setStatus("RUNNING");
+                        record.setPulledCount(0);
+                        record.setSavedCount(0);
+                        record.setStartedAt(TimeUtils.now());
+                        syncBusinessRecordMapper.insert(record);
+                    }
+                });
             }
 
-            // 查询每个业务上一次成功同步的游标，用于断点续传
+            // 查询每个业务表最大的 source_row_id，用于断点续传
             Map<String, Long> initialCursors = new HashMap<>();
             for (String bizCode : businessCodes) {
-                SyncBusinessRecord last = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
-                        syncBusinessRecordMapper.selectOne(new LambdaQueryWrapper<SyncBusinessRecord>()
-                                .eq(SyncBusinessRecord::getBusinessCode, bizCode)
-                                .orderByDesc(SyncBusinessRecord::getId)
-                                .last("limit 1")));
-                if (last != null && last.getLastRowId() != null && last.getLastRowId() > 0) {
-                    initialCursors.put(bizCode, last.getLastRowId());
-                    log.info("[SyncTask] 业务 {} 断点续传，从游标 {} 开始", bizCode, last.getLastRowId());
+                Long cursor = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
+                    List<Object> result;
+                    switch (bizCode) {
+                        case "STOCK":
+                            result = cleanStockMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanStock>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        case "TRADE":
+                            result = cleanTradeMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanTrade>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        case "POSITION":
+                            result = cleanPositionMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanPosition>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        case "ASSET":
+                            result = cleanAssetMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanAsset>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        default:
+                            result = java.util.Collections.emptyList();
+                    }
+                    return result.isEmpty() || result.get(0) == null ? 0L : Long.valueOf(result.get(0).toString());
+                });
+                if (cursor > 0) {
+                    initialCursors.put(bizCode, cursor);
+                    log.info("[SyncTask] 业务 {} 断点续传，从游标 {} 开始", bizCode, cursor);
                 }
             }
 
@@ -410,6 +451,7 @@ public class SyncTaskService {
                 task.setTotalPulledCount(finalPulled);
                 task.setTotalSavedCount(finalSaved);
                 task.setProgress(100);
+                task.setRunning(false);
             });
 
             log.info("[SyncTask] done id={}, pulled={}, saved={}", id, totalPulled, totalSaved);
@@ -423,6 +465,7 @@ public class SyncTaskService {
                 task.setMessage("同步任务失败");
                 task.setErrorMessage(e.getMessage());
                 task.setFinishedAt(TimeUtils.now());
+                task.setRunning(false);
             });
 
             // 然后尝试更新业务的 SyncBusinessRecord 为 FAILED（可能无记录，忽略失败）

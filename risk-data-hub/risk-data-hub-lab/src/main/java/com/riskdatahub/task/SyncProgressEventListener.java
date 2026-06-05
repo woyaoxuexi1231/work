@@ -46,9 +46,11 @@ public class SyncProgressEventListener {
     @EventListener
     public void handleProgress(SyncProgressEvent event) {
         // 节流：每秒最多写一次，避免频繁写库
+        // 但 pulledCount == savedCount（终态）时强制写入，避免前端永远看到"堆积中"
+        boolean isFinal = event.getPulledCount() == event.getSavedCount();
         long now = System.currentTimeMillis();
         Long lastWrite = lastDbWriteTimes.get(event.getTaskId());
-        if (lastWrite != null && now - lastWrite < 1000) {
+        if (!isFinal && lastWrite != null && now - lastWrite < 1000) {
             return;
         }
         lastDbWriteTimes.put(event.getTaskId(), now);

@@ -101,8 +101,8 @@ public final class SyncSupport {
     public static class SyncCounter {
         @Setter
         private int pageCount;
-        private int pulledCount;
-        private int savedCount;
+        private volatile int pulledCount;
+        private volatile int savedCount;
         @Setter
         private long lastRowId;
         private long savedMaxRowId;

@@ -148,6 +148,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
 
                 if (rows.size() < context.getPageSize()) {
                     noMoreData.set(true);
+                    insertPermit.release();
                     break;
                 }
             }
