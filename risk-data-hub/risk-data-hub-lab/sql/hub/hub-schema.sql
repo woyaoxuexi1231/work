@@ -169,6 +169,8 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics (
     -- 速率
     rows_per_second        DOUBLE DEFAULT 0 COMMENT '本页处理速率(条/秒)',
 
+    batch_started_at TIMESTAMP COMMENT '本批开始处理时间',
+    batch_finished_at TIMESTAMP COMMENT '本批处理完成时间',
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_batch_record(record_id)
 );

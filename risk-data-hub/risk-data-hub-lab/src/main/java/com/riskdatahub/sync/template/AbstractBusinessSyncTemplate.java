@@ -176,7 +176,13 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 if (chunk.isEnd()) {
                     break;
                 }
+                long tookAt = System.currentTimeMillis();
+                long queueWaitMs = tookAt - chunk.getCreatedAt();
+                long batchStartTime = tookAt;
                 List<S> rows = chunk.getRows();
+                log.info("[诊断] 业务 {} 第{}批 createdAt={}, tookAt={}, queueWait={}ms",
+                        businessCode(), chunk.getPageNo(),
+                        chunk.getCreatedAt(), tookAt, queueWaitMs);
 
                 // 预分配本批所有 Leaf ID（避免逐次 synchronized 竞争）
                 preAllocateBatchIds(getIdTag(), rows.size(), metrics);
@@ -198,14 +204,22 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                     counter.incrementSavedCount();
                 }
                 counter.updateSavedMaxRowId(sourceRowId(rows.get(rows.size() - 1)));
+                long tAfterSave = System.currentTimeMillis();
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), chunk.getPageNo(), counter.getSavedCount());
                 publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
+                long tAfterProgress = System.currentTimeMillis();
 
-                long queueWaitMs = System.currentTimeMillis() - chunk.getCreatedAt();
                 recordBatchMetrics(context, chunk.getPageNo(), rows.size(),
                         chunk.getFetchDurationMs(), queueWaitMs,
-                        transformElapsed, saveElapsed, metrics);
+                        transformElapsed, saveElapsed, metrics, batchStartTime, System.currentTimeMillis());
+                long tAfterRecord = System.currentTimeMillis();
+
+                if (tAfterProgress - tAfterSave > 1000 || tAfterRecord - tAfterProgress > 1000) {
+                    log.warn("[诊断] 业务 {} 第{}批 批间耗时: progress={}ms, record={}ms",
+                            businessCode(), chunk.getPageNo(),
+                            tAfterProgress - tAfterSave, tAfterRecord - tAfterProgress);
+                }
             }
         } catch (Exception e) {
             recordFailure(queue, failure, new IllegalStateException(

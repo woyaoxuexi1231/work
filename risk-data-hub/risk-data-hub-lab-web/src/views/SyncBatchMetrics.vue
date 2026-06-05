@@ -41,6 +41,15 @@ function fmtMs(ms) {
   return Math.floor(ms / 60000) + 'm' + Math.floor((ms % 60000) / 1000) + 's'
 }
 
+function fmtTime(t) {
+  if (!t) return ''
+  const d = new Date(t)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return hh + ':' + mm + ':' + ss
+}
+
 function slowClass(ms) {
   if (!ms || ms < 1000) return ''
   if (ms < 3000) return 'text-amber-600'
@@ -84,11 +93,12 @@ function avgPageMs(total, count) {
 
       <!-- 步骤说明 -->
       <div class="px-5 py-2.5 border-b border-slate-100 text-[11px] text-slate-400 leading-relaxed">
-        <b class="text-sky-600">①拉取</b>=上游查询 ｜ <b>排队</b>=队列等待(瓶颈在此) ｜
+        <b class="text-sky-600">①拉取</b>=上游查询 ｜ <b>排队</b>=队列等待 ｜
         <b class="text-emerald-600">②转换</b>=字段映射 ｜ <b>ID生成</b>=Leaf批量获ID ｜
         <b class="text-indigo-600">落库</b>=写入总时 ｜ <b>查重</b>=判存 ｜ <b>拆分</b>=分组 ｜
         <b>INSERT</b>=新增 ｜ <b>写缓存</b>=同步Redis ｜
-        <b>查ID</b>=查主键 ｜ <b>UPDATE</b>=更新 ｜ <b>设ID</b>=设主键
+        <b>查ID</b>=查主键 ｜ <b>设ID</b>=设主键 ｜ <b>UPDATE</b>=更新 ｜
+        <b>行数(增/改)</b>=总行数(新增行数/更新行数)
       </div>
 
       <!-- 表格区域（左右可滑动） -->
@@ -97,7 +107,8 @@ function avgPageMs(total, count) {
           <thead>
             <tr class="bg-slate-50 text-slate-500 text-xs border-b border-slate-200">
               <th class="px-3 py-2.5 text-left w-14 sticky left-0 bg-slate-50 z-10">批次</th>
-              <th class="px-3 py-2.5 text-right w-20">行数</th>
+              <th class="px-3 py-2.5 text-left w-28 sticky left-14 bg-slate-50 z-10">起止时间</th>
+              <th class="px-3 py-2.5 text-right w-24">行数(增/改)</th>
               <th class="px-3 py-2.5 text-right w-24 bg-sky-50 text-sky-700 border-x border-sky-200">①拉取</th>
               <th class="px-3 py-2.5 text-right w-24 border-r-2 border-sky-200">排队</th>
               <th class="px-3 py-2.5 text-right w-24 bg-emerald-50 text-emerald-700 border-x border-emerald-200">②转换</th>
@@ -109,6 +120,7 @@ function avgPageMs(total, count) {
               <th class="px-3 py-2.5 text-right w-24">INSERT</th>
               <th class="px-3 py-2.5 text-right w-24">写缓存</th>
               <th class="px-3 py-2.5 text-right w-20">查ID</th>
+              <th class="px-3 py-2.5 text-right w-20">设ID</th>
               <th class="px-3 py-2.5 text-right w-24 border-r-2 border-indigo-200">UPDATE</th>
               <th class="px-3 py-2.5 text-right w-24">总耗时</th>
               <th class="px-3 py-2.5 text-right w-20">速率</th>
@@ -118,7 +130,11 @@ function avgPageMs(total, count) {
             <tr v-for="(bm, idx) in data.records" :key="bm.batchNo"
               class="border-t border-slate-100 hover:bg-slate-50">
               <td class="px-3 py-2.5 font-mono font-semibold text-slate-700 sticky left-0 bg-white z-10">{{ bm.batchNo }}</td>
-              <td class="px-3 py-2.5 text-right font-mono">{{ (bm.pulledCount || 0).toLocaleString() }}</td>
+              <td class="px-3 py-2.5 font-mono text-[10px] text-slate-400 sticky left-14 bg-white z-10">{{ fmtTime(bm.batchStartedAt) }}→{{ fmtTime(bm.batchFinishedAt) }}</td>
+              <td class="px-3 py-2.5 text-right font-mono text-xs">
+                {{ (bm.pulledCount || 0).toLocaleString() }}
+                <span class="text-slate-300">({{ bm.insertCount || 0 }}/{{ bm.updateCount || 0 }})</span>
+              </td>
               <td class="px-3 py-2.5 text-right font-mono bg-sky-50/30 border-x border-sky-200" :class="slowClass(bm.fetchDurationMs)">{{ fmtMs(bm.fetchDurationMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono text-slate-400 border-r-2 border-sky-200">{{ fmtMs(bm.queueWaitMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono bg-emerald-50/30 border-x border-emerald-200" :class="slowClass(bm.transformDurationMs)">{{ fmtMs(bm.transformDurationMs) }}</td>
@@ -130,29 +146,16 @@ function avgPageMs(total, count) {
               <td class="px-3 py-2.5 text-right font-mono" :class="slowClass(bm.insertDurationMs)">{{ fmtMs(bm.insertDurationMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.cacheAddDurationMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.globalIdQueryDurationMs) }}</td>
+              <td class="px-3 py-2.5 text-right font-mono">{{ fmtMs(bm.setIdDurationMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono border-r-2 border-indigo-200" :class="slowClass(bm.updateDurationMs)">{{ fmtMs(bm.updateDurationMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono font-semibold" :class="slowClass(bm.totalPageMs)">{{ fmtMs(bm.totalPageMs) }}</td>
               <td class="px-3 py-2.5 text-right font-mono text-slate-400">{{ bm.rowsPerSecond ? bm.rowsPerSecond.toFixed(0) + '/s' : '-' }}</td>
             </tr>
             <tr v-if="!data.records || data.records.length === 0">
-              <td colspan="16" class="px-3 py-8 text-center text-slate-400">暂无数据</td>
+              <td colspan="18" class="px-3 py-8 text-center text-slate-400">暂无数据</td>
             </tr>
           </tbody>
         </table>
-      </div>
-
-      <!-- 子步骤详情 -->
-      <div v-if="data.records && data.records.length > 0" class="border-t border-slate-100 px-5 py-3">
-        <div class="text-xs text-slate-500 font-medium mb-2">每批附加信息</div>
-        <div class="grid grid-cols-2 gap-2 text-[11px]">
-          <div v-for="bm in data.records" :key="'sub-' + bm.batchNo"
-            class="flex items-center gap-2 text-slate-400">
-            <span class="font-mono text-slate-500 w-6">{{ bm.batchNo }}</span>
-            <span>设ID <b class="text-slate-600">{{ fmtMs(bm.setIdDurationMs) }}</b></span>
-            <span v-if="bm.insertCount"> · 新增 <b class="text-slate-600">{{ bm.insertCount }}</b> 行</span>
-            <span v-if="bm.updateCount"> · 更新 <b class="text-slate-600">{{ bm.updateCount }}</b> 行</span>
-          </div>
-        </div>
       </div>
 
       <!-- 分页 -->

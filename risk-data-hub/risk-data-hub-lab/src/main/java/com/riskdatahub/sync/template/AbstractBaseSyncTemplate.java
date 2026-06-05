@@ -184,7 +184,8 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     protected void recordBatchMetrics(BusinessSyncContext context, int pageNo, int rowCount,
                                        long fetchMs, long queueWaitMs,
                                        long transformMs, long saveMs,
-                                       SyncMetrics metrics) {
+                                       SyncMetrics metrics,
+                                       long batchStartTime, long batchEndTime) {
         Long recordId = context.getBusinessRecordIds().get(businessCode());
         if (batchMetricsMapper == null) {
             log.warn("[同步模板] batchMetricsMapper 未注入，跳过批次耗时记录");
@@ -225,6 +226,8 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
             m.setUpdateCount(metrics.getLastUpdateCount());
             m.setUpdateDurationMs(metrics.getLastBatchUpdateMs());
 
+            m.setBatchStartedAt(new java.sql.Timestamp(batchStartTime).toLocalDateTime());
+            m.setBatchFinishedAt(new java.sql.Timestamp(batchEndTime).toLocalDateTime());
             m.setRowsPerSecond(Math.round(rps * 10) / 10.0);
 
             m.setRecordedAt(now());

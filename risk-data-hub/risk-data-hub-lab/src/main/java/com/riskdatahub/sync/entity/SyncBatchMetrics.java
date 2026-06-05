@@ -39,5 +39,7 @@ public class SyncBatchMetrics {
     // ====== 速率 ======
     private Double rowsPerSecond;         // 本页处理速率（条/秒）
 
+    private LocalDateTime batchStartedAt;
+    private LocalDateTime batchFinishedAt;
     private LocalDateTime recordedAt;
 }

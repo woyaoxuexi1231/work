@@ -203,6 +203,9 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                     break;
                 }
 
+                long queueWaitMs = 0; // 信号量模式没有队列，排队为0
+                long batchStartTime = System.currentTimeMillis();
+
                 // 将数据从共享缓冲区复制出来，立即释放 fetchPermit 让拉取线程继续
                 List<S> rows = new ArrayList<>(sharedPage);
                 sharedPage.clear();
@@ -232,7 +235,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                         businessCode(), counter.getPageCount(), counter.getSavedCount());
                 publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
                 recordBatchMetrics(context, counter.getPageCount(), rows.size(),
-                        0, 0, transformElapsed, saveElapsed, metrics);
+                        0, queueWaitMs, transformElapsed, saveElapsed, metrics, batchStartTime, System.currentTimeMillis());
             }
         } catch (Exception e) {
             recordFailure(fetchPermit, failure, new IllegalStateException(
