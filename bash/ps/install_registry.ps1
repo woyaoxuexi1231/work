@@ -32,7 +32,7 @@ http:
 
 # ==== Pull & Start ====
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:5000 `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:5000 `
   -e TZ=Asia/Shanghai `
   -v "${Data}:/var/lib/registry" `
   -v "${Data}\config.yml:/etc/docker/registry/config.yml" `

@@ -26,6 +26,7 @@ for i in 1 2 3; do
   docker rm -f rabbitmq-node${i} 2>&1 || true
   docker run -d \
     --name rabbitmq-node${i} \
+    --restart unless-stopped \
     --hostname rabbitmq-node${i} \
     --network ${NETWORK} \
     --ip 172.28.0.$((9 + i)) \

@@ -14,7 +14,7 @@ cleanup_container $Container
 
 # ==== Pull & Start ====
 pull_image $Image
-docker run -d --name $Container --restart always -p ${Port}:80 `
+docker run -d --name $Container --restart unless-stopped -p ${Port}:80 `
   -e "REGISTRY_URL=${RegUrl}" `
   -e DELETE_IMAGES=true `
   -e TZ=Asia/Shanghai `
