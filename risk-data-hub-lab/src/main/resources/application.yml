@@ -2,7 +2,7 @@ spring:
   application:
     name: risk-data-hub-lab
   datasource:
-    url: jdbc:mysql://localhost:3306/risk_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    url: jdbc:mysql://host.docker.internal:3306/risk_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: root
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -13,13 +13,13 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
   rabbitmq:
-    host: localhost
+    host: host.docker.internal
     port: 5672
     username: admin
     password: admin
     virtual-host: /
   redis:
-    host: localhost
+    host: host.docker.internal
     port: 6379
     password: 123456
 
@@ -39,7 +39,7 @@ hub:
       - key: trade_oms
         name: 交易系统A库
         datasource-type: TRADE_OMS
-        url: jdbc:mysql://localhost:3306/trade_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        url: jdbc:mysql://host.docker.internal:3306/trade_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
         username: root
         password: 123456
         max-pool-size: 8
@@ -47,7 +47,7 @@ hub:
       - key: trade_broker
         name: 交易系统B库
         datasource-type: TRADE_BROKER
-        url: jdbc:mysql://localhost:3306/trade_broker?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        url: jdbc:mysql://host.docker.internal:3306/trade_broker?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
         username: root
         password: 123456
         max-pool-size: 8

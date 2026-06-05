@@ -2,7 +2,7 @@ spring:
   application:
     name: rabbitmq-0601
   rabbitmq:
-    addresses: localhost:5672,localhost:5673,localhost:5674
+    addresses: host.docker.internal:5672,host.docker.internal:5673,host.docker.internal:5674
     username: admin
     password: admin123
     publisher-confirm-type: correlated

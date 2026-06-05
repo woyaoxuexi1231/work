@@ -11,7 +11,7 @@ dubbo:
     logger: slf4j
 
   registry:
-    address: nacos://localhost:8848
+    address: nacos://host.docker.internal:8848
     password: nacos
     username: nacos
     check: false

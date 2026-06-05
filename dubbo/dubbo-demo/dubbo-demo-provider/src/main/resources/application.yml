@@ -8,7 +8,7 @@ dubbo:
   application:
     name: dubbo-demo-provider
   registry:
-    address: "nacos://localhost:8848?username=nacos&password=nacos"
+    address: "nacos://host.docker.internal:8848?username=nacos&password=nacos"
     check: false
   protocol:
     name: dubbo
