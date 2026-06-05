@@ -1,9 +1,22 @@
-/* ===== Tailwind CSS 入口 ===== */
+/* ============================================================
+   1. Tailwind CSS 入口指令
+   这三个 @tailwind 指令告诉 PostCSS 分别注入 Tailwind 的
+   基础样式（base）、组件样式（components）和工具类（utilities）。
+
+   编译时 Tailwind 只会生成你用到的 CSS，不会全量打包。
+   ============================================================ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ===== 全局基础样式 ===== */
+/* ============================================================
+   2. 全局基础样式
+   Tailwind 的 @tailwind base 已经加了 normalize.css，
+   这里只补充项目自己的全局样式。
+
+   字体：优先用系统原生字体（-apple-system），回退到常见中文字体。
+   背景色：整个应用使用 slate-50（浅灰）作为底色。
+   ============================================================ */
 html,
 body {
   margin: 0;
@@ -14,7 +27,13 @@ body {
   color: #1e293b;
 }
 
-/* ===== 简单动画 ===== */
+/* ============================================================
+   3. 自定义动画
+   这些动画在切换页面或更新数据时使用，让界面过渡更平滑。
+   Tailwind 本身不带这些动画，所以手动定义。
+   ============================================================ */
+
+/* 3a. 淡入 + 上移 — 页面加载时内容从下往上淡入 */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -23,9 +42,19 @@ body {
   animation: fade-in 0.3s ease-out;
 }
 
+/* 3b. 旋转动画 — 用于"加载中"图标 */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 .animate-spin {
   animation: spin 1s linear infinite;
+}
+
+/* 3c. 脉冲动画 — 用于"运行中"状态点的闪烁 */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

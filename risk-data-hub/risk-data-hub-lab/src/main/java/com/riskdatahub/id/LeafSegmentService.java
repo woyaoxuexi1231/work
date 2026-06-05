@@ -129,12 +129,12 @@ public class LeafSegmentService {
      */
     private void switchSegment(SegmentBuffer buffer, String tag) {
         if (buffer.next.ready) {
-            log.info("[Leaf] tag={} 当前号段耗尽，切换到预加载 next buffer: {}-{}", tag, buffer.next.start, buffer.next.end);
+            log.debug("[Leaf] tag={} 当前号段耗尽，切换到预加载 next buffer: {}-{}", tag, buffer.next.start, buffer.next.end);
             buffer.current = buffer.next.copy();
             buffer.next = Segment.empty();
             return;
         }
-        log.info("[Leaf] tag={} 当前无 next buffer，回源数据库申请新号段", tag);
+        log.debug("[Leaf] tag={} 当前无 next buffer，回源数据库申请新号段", tag);
         Segment fresh = fetchSegment(tag);
         buffer.current = fresh;
         buffer.next = Segment.empty();
@@ -150,14 +150,14 @@ public class LeafSegmentService {
         if (!lowWaterMark || buffer.loadingNext || buffer.next.ready) {
             return;
         }
-        log.info("[Leaf] tag={} 当前号段剩余不足 20%，异步预加载下一段", tag);
+        log.debug("[Leaf] tag={} 当前号段剩余不足 20%，异步预加载下一段", tag);
         buffer.loadingNext = true;
         preloadExecutor.submit(() -> {
             Segment next = fetchSegment(tag);
             synchronized (buffer) {
                 buffer.next = next;
                 buffer.loadingNext = false;
-                log.info("[Leaf] tag={} next buffer 预加载完成: {}-{}", tag, next.start, next.end);
+                log.debug("[Leaf] tag={} next buffer 预加载完成: {}-{}", tag, next.start, next.end);
             }
         });
     }
@@ -178,7 +178,7 @@ public class LeafSegmentService {
                     long newMax = oldMax + step;
                     alloc.setMaxId(newMax);
                     leafAllocMapper.updateById(alloc);
-                    log.info("[Leaf] tag={} 从数据库申请新号段: {}-{}，步长={}", tag, oldMax + 1, newMax, step);
+                    log.debug("[Leaf] tag={} 从数据库申请新号段: {}-{}，步长={}", tag, oldMax + 1, newMax, step);
                     return new Segment(oldMax + 1, oldMax + 1, newMax, true);
                 }));
     }

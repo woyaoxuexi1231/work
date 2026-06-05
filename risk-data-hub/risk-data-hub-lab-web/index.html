@@ -1,13 +1,25 @@
 <!doctype html>
+<!--
+  Risk Data Hub Lab — 应用入口 HTML
+
+  这个文件是 Vue 3 单页应用（SPA）的 HTML 模板。
+  整个应用只有一个 HTML 页面，所有页面切换都在浏览器端由 Vue Router 完成。
+
+  <div id="app"> 是 Vue 3 的挂载点，Vue 会将整个应用渲染到这个 div 中。
+  src/main.js 是 JavaScript 入口，负责创建 Vue 应用并挂载。
+-->
 <html lang="zh-CN">
   <head>
+    <!-- 字符编码 -->
     <meta charset="UTF-8" />
-
+    <!-- 移动端视口适配 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Risk Data Hub Lab</title>
   </head>
   <body>
+    <!-- Vue 3 挂载点：Vue 会接管这个 div 并渲染整个应用 -->
     <div id="app"></div>
+    <!-- JavaScript 入口文件 -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

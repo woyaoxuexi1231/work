@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -156,7 +157,41 @@ public class SyncTaskService {
                 task.setStartedAt(TimeUtils.now());
             });
 
-            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, p -> {
+            // 记录每个业务类型的实时进度（线程安全），key=businessCode, value=[pulledCount, savedCount]
+            final ConcurrentHashMap<String, int[]> bizProgress = new ConcurrentHashMap<>();
+            // 上次写入进度的时间戳，用于节流（最多每秒写一次DB，避免压力过大）
+            final long[] lastDbWrite = {0};
+
+            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, progress -> {
+                // 更新内存中的聚合进度
+                bizProgress.put(progress.getBusinessCode(),
+                        new int[]{progress.getPulledCount(), progress.getSavedCount()});
+
+                // 节流：每秒最多写一次 DB，进度写太频繁对用户无意义且浪费连接池
+                long now = System.currentTimeMillis();
+                if (now - lastDbWrite[0] < 1000) return;
+                lastDbWrite[0] = now;
+
+                // 聚合所有业务的拉取/落库总数
+                int aggPulled = 0, aggSaved = 0;
+                for (int[] v : bizProgress.values()) {
+                    aggPulled += v[0];
+                    aggSaved += v[1];
+                }
+                // 复制为 effectively final 变量，lambda 才能捕获
+                int capturedPulled = aggPulled;
+                int capturedSaved = aggSaved;
+
+                // 轻量更新：只写 message 和计数，不走 selectById + updateById（避免一次读开销）
+                routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
+                        syncTaskMapper.update(null, new LambdaUpdateWrapper<SyncTask>()
+                                .eq(SyncTask::getId, id)
+                                .set(SyncTask::getMessage,
+                                        "正在同步 " + progress.getBusinessCode()
+                                                + ": 已拉取 " + progress.getPulledCount()
+                                                + ", 已落库 " + progress.getSavedCount())
+                                .set(SyncTask::getTotalPulledCount, capturedPulled)
+                                .set(SyncTask::getTotalSavedCount, capturedSaved)));
             });
 
             int totalPulled = 0;
