@@ -28,4 +28,7 @@ public class BusinessSyncContext {
 
     /** 同步批次号（SYNC-时间戳） */
     private final String batchNo;
+
+    /** 同步任务 ID（用于进度事件关联 sync_task 记录） */
+    private final Long taskId;
 }

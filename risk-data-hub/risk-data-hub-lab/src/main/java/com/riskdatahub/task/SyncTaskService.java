@@ -1,7 +1,6 @@
 package com.riskdatahub.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.DataSourceManager;
@@ -17,15 +16,18 @@ import com.riskdatahub.task.entity.SyncTask;
 import com.riskdatahub.task.mapper.SyncBusinessRecordMapper;
 import com.riskdatahub.task.mapper.SyncTaskMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 同步任务服务 — 管理同步任务的提交、执行和状态查询。
@@ -40,9 +42,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 @Service
 public class SyncTaskService {
 
+    private static final String LOCK_KEY = "risk-hub:sync:task:lock";    // Redisson 分布式锁 key
     private static final String TAG_SYNC_TASK = "sync_task";              // 同步任务 Leaf 号段标签
     private static final String TAG_SYNC_BUSINESS_RECORD = "sync_business_record"; // 业务记录 Leaf 号段标签
 
+    private final RedissonClient redissonClient;
     private final LeafSegmentService leafSegmentService;
     private final SyncOrchestrator syncOrchestrator;
     private final DataSourceManager dataSourceManager;
@@ -52,7 +56,8 @@ public class SyncTaskService {
     private final RabbitMqSender rabbitMqSender;
     private final ThreadPoolExecutor syncTaskExecutor;
 
-    public SyncTaskService(LeafSegmentService leafSegmentService,
+    public SyncTaskService(RedissonClient redissonClient,
+                           LeafSegmentService leafSegmentService,
                            SyncOrchestrator syncOrchestrator,
                            DataSourceManager dataSourceManager,
                            RoutingMybatisExecutor routingMybatisExecutor,
@@ -60,6 +65,7 @@ public class SyncTaskService {
                            SyncBusinessRecordMapper syncBusinessRecordMapper,
                            RabbitMqSender rabbitMqSender,
                            @Qualifier("syncTaskExecutor") ThreadPoolExecutor syncTaskExecutor) {
+        this.redissonClient = redissonClient;
         this.leafSegmentService = leafSegmentService;
         this.syncOrchestrator = syncOrchestrator;
         this.dataSourceManager = dataSourceManager;
@@ -151,16 +157,34 @@ public class SyncTaskService {
 
     /**
      * 定时扫描并调度 QUEUED 任务（每 3 秒执行一次）。
-     * <p>流程：检查是否有 RUNNING 任务 → 若无则取出最旧的 QUEUED 任务 → 更新为 RUNNING → 提交线程池执行。</p>
+     * <p>流程：检查 Redis 锁 → 锁已释放但 DB 为 RUNNING 则标记 FAILED → 取出最旧 QUEUED →
+     * 更新为 RUNNING → 提交线程池（锁在 runTask 中获取）。</p>
      */
     @Scheduled(fixedDelay = 3000)
     public void scanAndExecute() {
+        RLock lock = redissonClient.getLock(LOCK_KEY);
+        boolean lockHeld = lock.isLocked();
+
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            // 1. 检查是否已有正在运行的任务
-            Long runningCount = syncTaskMapper.selectCount(
+            // 1. 检查 DB 中所有 RUNNING 任务
+            List<SyncTask> runningTasks = syncTaskMapper.selectList(
                     new LambdaQueryWrapper<SyncTask>().eq(SyncTask::getStatus, "RUNNING"));
-            if (runningCount > 0) {
-                return; // 已有任务在运行，跳过本次扫描
+
+            if (!runningTasks.isEmpty()) {
+                if (lockHeld) {
+                    // 锁存在且 DB 有 RUNNING → 任务正常执行中
+                    return;
+                }
+                // 锁已释放但 DB 还是 RUNNING → 任务进程已崩溃，标记 FAILED
+                for (SyncTask task : runningTasks) {
+                    updateTaskFields(task.getId(), t -> {
+                        t.setStatus("FAILED");
+                        t.setMessage("同步任务异常终止（Redisson 锁已释放）");
+                        t.setErrorMessage("Process crashed or watchdog expired");
+                        t.setFinishedAt(TimeUtils.now());
+                    });
+                    log.warn("[SyncTask] 检测到异常终止任务 id={}（锁已释放），已标记 FAILED", task.getId());
+                }
             }
 
             // 2. 取出最旧的 QUEUED 任务（按 ID 升序取第一条）
@@ -169,7 +193,7 @@ public class SyncTaskService {
                     .orderByAsc(SyncTask::getId)
                     .last("limit 1"));
             if (queued == null) {
-                return; // 无待执行任务
+                return;
             }
 
             // 3. 更新为 RUNNING
@@ -181,7 +205,7 @@ public class SyncTaskService {
                 task.setStartedAt(TimeUtils.now());
             });
 
-            // 4. 提交到线程池异步执行
+            // 4. 提交到线程池（锁在 runTask 中获取）
             syncTaskExecutor.submit(() -> runTask(taskId, dsKey, ps));
             log.info("[SyncTask] scanAndExecute 调度任务 id={}, dataSourceKey={}", taskId, dsKey);
         });
@@ -189,53 +213,24 @@ public class SyncTaskService {
 
     /**
      * 异步执行同步任务（在线程池中运行）。
-     * <p>流程：编排同步（含实时进度回调）→ 记录每类业务结果 → SUCCESS/FAILED。
-     * 由 {@link #scanAndExecute()} 调度，无需分布式锁。</p>
+     * <p>流程：获取分布式锁（非阻塞）→ 编排同步 → 记录每类业务结果 → SUCCESS/FAILED → 释放锁。
+     * 锁由 Redisson 看门狗自动续期，进程崩溃后自动释放。</p>
      *
      * @param id             任务 ID
      * @param dataSourceKey  数据源标识
      * @param pageSize       分页大小
      */
     private void runTask(Long id, String dataSourceKey, int pageSize) {
+        RLock lock = redissonClient.getLock(LOCK_KEY);
         try {
-            // 执行同步编排（含实时进度回调）
-            // bizProgress：线程安全地聚合每个业务类型的实时拉取/落库计数
-            // key=businessCode, value=[pulledCount, savedCount]
-            final ConcurrentHashMap<String, int[]> bizProgress = new ConcurrentHashMap<>();
-            // lastDbWrite：节流控制，最多每秒写一次 DB
-            final long[] lastDbWrite = {0};
+            // 非阻塞获取锁，获取不到说明另一个任务已在执行
+            if (!lock.tryLock(0, 30, TimeUnit.MINUTES)) {
+                log.warn("[SyncTask] 无法获取分布式锁，任务 id={} 跳过", id);
+                return;
+            }
 
-            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, progress -> {
-                // 每个业务类型完成一页拉取或落库时，此回调被调用
-                bizProgress.put(progress.getBusinessCode(),
-                        new int[]{progress.getPulledCount(), progress.getSavedCount()});
-
-                // 节流：每秒最多写一次，频繁写 DB 无意义且浪费连接池
-                long now = System.currentTimeMillis();
-                if (now - lastDbWrite[0] < 1000) return;
-                lastDbWrite[0] = now;
-
-                // 聚合所有业务类型的总计数
-                int aggPulled = 0, aggSaved = 0;
-                for (int[] v : bizProgress.values()) {
-                    aggPulled += v[0];
-                    aggSaved += v[1];
-                }
-                // 复制为 effectively final 变量供 lambda 捕获
-                int capturedPulled = aggPulled;
-                int capturedSaved = aggSaved;
-
-                // 轻量更新同步任务进度（只写 message 和计数，不用 select-before-update）
-                routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
-                        syncTaskMapper.update(null, new LambdaUpdateWrapper<SyncTask>()
-                                .eq(SyncTask::getId, id)
-                                .set(SyncTask::getMessage,
-                                        "正在同步 " + progress.getBusinessCode()
-                                                + ": 已拉取 " + progress.getPulledCount()
-                                                + ", 已落库 " + progress.getSavedCount())
-                                .set(SyncTask::getTotalPulledCount, capturedPulled)
-                                .set(SyncTask::getTotalSavedCount, capturedSaved)));
-            });
+            // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理）
+            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id);
 
             // 记录每个业务类型的同步结果明细
             int totalPulled = 0;
@@ -288,6 +283,11 @@ public class SyncTaskService {
                 task.setFinishedAt(TimeUtils.now());
             });
             log.error("[SyncTask] failed id={}", id, e);
+        } finally {
+            // 释放分布式锁（仅当持有锁时才释放）
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
     }
 

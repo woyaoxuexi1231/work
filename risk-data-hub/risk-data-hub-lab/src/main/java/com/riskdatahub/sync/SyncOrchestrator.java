@@ -10,7 +10,6 @@ import com.riskdatahub.sync.mapper.CleanTradeMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncResultDTO;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
-import com.riskdatahub.sync.model.SyncSupport.SyncProgressListener;
 import com.riskdatahub.sync.template.BusinessSyncTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,46 +60,27 @@ public class SyncOrchestrator {
     private final ThreadPoolExecutor syncBusinessExecutor;
 
     /**
-     * 执行同步（无进度监听器版本）。
-     * <p>委托给带监听器的重载版本，传入空实现。</p>
+     * 执行同步。
+     * <p>主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果。
+     * 进度事件由模板内 {@link org.springframework.context.ApplicationEventPublisher} 发布。</p>
      *
      * @param dataSourceKey 数据源标识
      * @param pageSize      分页大小
+     * @param taskId        同步任务 ID（用于进度事件关联）
      * @return 同步结果摘要
      */
-    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize) {
-        return syncByDataSource(dataSourceKey, pageSize, progress -> {
-        });
-    }
-
-    /**
-     * 执行同步（带进度监听器版本）。
-     * <p>主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果。</p>
-     *
-     * @param dataSourceKey    数据源标识
-     * @param pageSize         分页大小
-     * @param progressListener 进度监听器（每页同步完成后回调）
-     * @return 同步结果摘要
-     */
-    public SyncResultDTO syncByDataSource(String dataSourceKey,
-                                          int pageSize,
-                                          SyncProgressListener progressListener) {
-        // ----- 2a. 校验数据源存在且不是中台库 -----
+    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize, Long taskId) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
         int safePageSize = sanitizePageSize(pageSize);
-        // ----- 2b. 构建同步上下文（含批次号） -----
-        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize);
+        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId);
 
-        log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 业务模板数={}",
+        log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 任务ID={}, 业务模板数={}",
                 dataSourceKey, config.getDatasourceType(), safePageSize,
-                context.getBatchNo(), businessSyncTemplates.size());
+                context.getBatchNo(), taskId, businessSyncTemplates.size());
 
         try {
-            // ----- 2c. 并发提交所有业务模板到线程池 -----
-            List<CompletableFuture<BusinessSyncResult>> futures = submitBusinessTemplates(context, progressListener);
-            // ----- 2d. 等待所有业务同步完成 -----
+            List<CompletableFuture<BusinessSyncResult>> futures = submitBusinessTemplates(context);
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
-            // ----- 2e. 汇总结果 -----
             SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
             log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
                     dataSourceKey, context.getBatchNo(), summary.getPulledCount(), summary.getSavedCount());
@@ -141,33 +121,31 @@ public class SyncOrchestrator {
         return Math.max(1, Math.min(pageSize, 500));
     }
 
-    /** 构建同步上下文（含唯一批次号） */
-    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize) {
+    /** 构建同步上下文（含唯一批次号和任务 ID） */
+    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize, Long taskId) {
         return BusinessSyncContext.builder()
                 .dataSourceKey(dataSourceKey)
                 .datasourceType(config.getDatasourceType())
                 .pageSize(pageSize)
                 .batchNo("SYNC-" + System.currentTimeMillis())
+                .taskId(taskId)
                 .build();
     }
 
     /** 并发提交所有业务模板到线程池 */
-    private List<CompletableFuture<BusinessSyncResult>> submitBusinessTemplates(
-            BusinessSyncContext context, SyncProgressListener progressListener) {
+    private List<CompletableFuture<BusinessSyncResult>> submitBusinessTemplates(BusinessSyncContext context) {
         List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
         for (BusinessSyncTemplate template : businessSyncTemplates) {
             futures.add(CompletableFuture.supplyAsync(
-                    () -> executeTemplate(template, context, progressListener), syncBusinessExecutor));
+                    () -> executeTemplate(template, context), syncBusinessExecutor));
         }
         return futures;
     }
 
     /** 执行单个模板，包装异常 */
-    private BusinessSyncResult executeTemplate(BusinessSyncTemplate template,
-                                                BusinessSyncContext context,
-                                                SyncProgressListener progressListener) {
+    private BusinessSyncResult executeTemplate(BusinessSyncTemplate template, BusinessSyncContext context) {
         try {
-            return template.execute(context, progressListener);
+            return template.execute(context);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

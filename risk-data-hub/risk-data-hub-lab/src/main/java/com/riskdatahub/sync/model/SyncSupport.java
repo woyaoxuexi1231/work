@@ -11,8 +11,8 @@ import java.util.Map;
 /**
  * 同步框架通用类型定义容器。
  * <p>
- * 将 {@link PageChunk}、{@link BusinessSyncResult}、{@link SyncProgress}、
- * {@link SyncCounter}、{@link SyncProgressListener} 这些紧耦合的类型收拢在同一命名空间下，
+ * 将 {@link PageChunk}、{@link BusinessSyncResult}、{@link SyncCounter}
+ * 这些紧耦合的类型收拢在同一命名空间下，
  * 避免 sync 包下散落大量零散文件。
  * </p>
  *
@@ -86,46 +86,6 @@ public final class SyncSupport {
             result.put("lastRowId", lastRowId);
             return result;
         }
-    }
-
-    /**
-     * 进度快照 — 拉取线程或落库线程每完成一页就回调一次。
-     * <p>
-     * 供前端轮询接口实时展示"拉到第几页、落了几条"。
-     * </p>
-     */
-    @Data
-    @AllArgsConstructor
-    public static class SyncProgress {
-        private String businessCode;
-        private String stage;
-        private int pageNo;
-        private int pulledCount;
-        private int savedCount;
-        private long lastRowId;
-
-        /**
-         * 转换为有序 Map。
-         *
-         * @return 有序 Map
-         */
-        public Map<String, Object> toMap() {
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("stage", stage);
-            result.put("pageNo", pageNo);
-            result.put("pulledCount", pulledCount);
-            result.put("savedCount", savedCount);
-            result.put("lastRowId", lastRowId);
-            return result;
-        }
-    }
-
-    /**
-     * 同步进度监听器 — Observer 模式，解耦"同步引擎"和"任务状态追踪"。
-     */
-    public interface SyncProgressListener {
-        /** 进度回调 */
-        void onProgress(SyncProgress progress);
     }
 
     /**

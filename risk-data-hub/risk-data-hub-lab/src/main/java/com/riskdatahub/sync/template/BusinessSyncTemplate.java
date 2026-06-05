@@ -2,7 +2,6 @@ package com.riskdatahub.sync.template;
 
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
-import com.riskdatahub.sync.model.SyncSupport.SyncProgressListener;
 
 /**
  * 业务同步模板接口 — 策略模式的核心接口。
@@ -26,10 +25,9 @@ public interface BusinessSyncTemplate {
     /**
      * 执行同步流程：拉取 → 转换 → 落库。
      *
-     * @param context          同步上下文
-     * @param progressListener 进度监听器
+     * @param context 同步上下文
      * @return 同步结果汇总
      * @throws Exception 同步过程中任意异常
      */
-    BusinessSyncResult execute(BusinessSyncContext context, SyncProgressListener progressListener) throws Exception;
+    BusinessSyncResult execute(BusinessSyncContext context) throws Exception;
 }
