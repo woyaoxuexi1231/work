@@ -129,22 +129,10 @@ public class SyncTaskService {
      */
     public SyncTask forceRefresh(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = validateDataSource(dataSourceKey);
+        log.warn("[SyncTask] 强制刷新已提交，将在后台清除数据 dataSourceKey={}", dataSourceKey);
 
-        log.warn("[SyncTask] 强制刷新开始，将清除全部业务数据 dataSourceKey={}", dataSourceKey);
-
-        // 1. 清空 4 张清洗表
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            cleanStockMapper.delete(new LambdaQueryWrapper<CleanStock>().apply("1=1"));
-            cleanTradeMapper.delete(new LambdaQueryWrapper<CleanTrade>().apply("1=1"));
-            cleanPositionMapper.delete(new LambdaQueryWrapper<CleanPosition>().apply("1=1"));
-            cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
-        });
-
-        // 2. 清除 Redis 缓存
-        syncCacheHelper.clearByPattern("sync:existing:*");
-
-        // 3. 创建或重置当天任务
-        return createOrResetTask(dataSourceKey, config, pageSize, "强制刷新任务已提交，等待执行");
+        // 立即返回，数据清除移到 runTask 后台执行
+        return createOrResetTask(dataSourceKey, config, pageSize, "强制刷新-清除数据中");
     }
 
     /**
@@ -186,6 +174,11 @@ public class SyncTaskService {
                 existing.setRunning(true);
                 syncTaskMapper.updateById(existing);
             });
+            // 同时清理该任务下业务记录的 errorMessage，防止前端仍显示上次失败信息
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
+                    syncBusinessRecordMapper.update(null, new LambdaUpdateWrapper<SyncBusinessRecord>()
+                            .eq(SyncBusinessRecord::getTaskId, taskId)
+                            .set(SyncBusinessRecord::getErrorMessage, (String) null)));
             log.info("[SyncTask] resetTask id={}, dataSourceKey={}, status={}->QUEUED", taskId, dataSourceKey, existing.getStatus());
             return existing;
         }
@@ -347,6 +340,9 @@ public class SyncTaskService {
                 return;
             }
 
+            // 检查是否需要强制刷新清数据（消息以"强制刷新"开头，且数据表非空时执行）
+            doForceCleanIfNeeded(id);
+
             // 预创建每个业务的 SyncBusinessRecord 记录（status=RUNNING），用于实时进度展示
             // 记录已存在时 UPDATE（force refresh 复用同一 taskId 不会产生重复），
             // 不存在时 INSERT，保留历史统计记录。
@@ -442,6 +438,13 @@ public class SyncTaskService {
                 task.setRunning(false);
             });
 
+            // 任务成功执行完后清除"强制刷新"标记
+            updateTaskFields(id, task -> {
+                if (task.getMessage() != null && task.getMessage().startsWith("强制刷新")) {
+                    task.setMessage("同步任务完成");
+                }
+            });
+
             log.info("[SyncTask] done id={}, pulled={}, saved={}", id, totalPulled, totalSaved);
             // 发送同步完成消息到 RabbitMQ
             rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
@@ -498,5 +501,34 @@ public class SyncTaskService {
                 syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()
                         .eq(SyncBusinessRecord::getTaskId, taskId)
                         .orderByAsc(SyncBusinessRecord::getBusinessCode)));
+    }
+
+    /**
+     * 检查是否是强制刷新任务，是则清除全部清洗数据和 Redis 缓存。
+     * <p>根据 SyncTask.message 是否以"强制刷新"开头来判断。</p>
+     */
+    private void doForceCleanIfNeeded(Long taskId) {
+        try {
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                SyncTask task = syncTaskMapper.selectById(taskId);
+                if (task == null || task.getMessage() == null
+                        || !task.getMessage().startsWith("强制刷新")) {
+                    return;
+                }
+                log.warn("[SyncTask] 强制刷新清除数据中 taskId={}", taskId);
+                cleanStockMapper.delete(new LambdaQueryWrapper<CleanStock>().apply("1=1"));
+                cleanTradeMapper.delete(new LambdaQueryWrapper<CleanTrade>().apply("1=1"));
+                cleanPositionMapper.delete(new LambdaQueryWrapper<CleanPosition>().apply("1=1"));
+                cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
+                syncCacheHelper.clearByPattern("sync:existing:*");
+                // 改一下消息避免下次 runTask 重复清除
+                task.setMessage("强制刷新-同步执行中");
+                task.setStatus("RUNNING");
+                syncTaskMapper.updateById(task);
+                log.warn("[SyncTask] 强制刷新数据清除完成 taskId={}", taskId);
+            });
+        } catch (Exception e) {
+            log.error("[SyncTask] 强制刷新清除数据失败 taskId={}", taskId, e);
+        }
     }
 }
