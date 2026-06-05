@@ -1,16 +1,13 @@
 <!--
   MainLayout — Risk Data Hub Lab 主布局
-  顶部导航 + 内容区
+  顶部导航菜单，无需登录/登出
 -->
 <script setup>
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
 const route = useRoute()
-const userStore = useUserStore()
-
 const activeMenu = computed(() => route.path)
 
 const navItems = [
@@ -22,7 +19,6 @@ const navItems = [
 ]
 
 function handleNav(path) { router.push(path) }
-async function handleLogout() { await userStore.logout(); router.push('/login') }
 </script>
 
 <template>
@@ -39,24 +35,6 @@ async function handleLogout() { await userStore.logout(); router.push('/login') 
           <span>{{ item.label }}</span>
         </el-menu-item>
       </el-menu>
-
-      <div class="header-right">
-        <el-dropdown @command="handleLogout">
-          <span class="user-info">
-            <el-icon><UserFilled /></el-icon>
-            <span>{{ userStore.userInfo?.username || '管理员' }}</span>
-            <el-icon><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout" divided>
-                <el-icon><SwitchButton /></el-icon>
-                退出登录
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
     </el-header>
 
     <el-main class="layout-main">
@@ -75,8 +53,5 @@ async function handleLogout() { await userStore.logout(); router.push('/login') 
 .header-left { display: flex; align-items: center; gap: 10px; margin-right: 32px; }
 .logo-text { font-size: 20px; font-weight: 700; color: #303133; }
 .header-menu { flex: 1; border-bottom: none !important; }
-.header-right { margin-left: auto; }
-.user-info { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #606266; padding: 8px 14px; border-radius: 8px; transition: background 0.25s; }
-.user-info:hover { background: #f0f2f5; }
 .layout-main { background: var(--risk-bg); padding: 24px; }
 </style>

@@ -1,16 +1,9 @@
 /**
- * 路由配置 — Risk Data Hub Lab
+ * 路由配置 — Risk Data Hub Lab（无认证，后端全部 POST + 请求体）
  */
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { getToken } from '@/api/request'
 
 const routes = [
-  {
-    path: '/login',
-    name: 'Login',
-    component: () => import('../views/Login.vue'),
-    meta: { noAuth: true }
-  },
   {
     path: '/',
     component: () => import('../layout/MainLayout.vue'),
@@ -51,11 +44,5 @@ const routes = [
 ]
 
 const router = createRouter({ history: createWebHashHistory(), routes })
-
-router.beforeEach((to, from, next) => {
-  if (to.meta.noAuth) return next()
-  if (!getToken()) { console.log('[Router] 未登录'); return next('/login') }
-  next()
-})
 
 export default router

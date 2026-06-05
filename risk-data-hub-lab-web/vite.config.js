@@ -12,16 +12,8 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/risk-api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
-      },
-      '/login': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
-      },
-      '/logout': {
-        target: 'http://localhost:8080',
+      '/api': {
+        target: 'http://localhost:8501',
         changeOrigin: true
       }
     }
