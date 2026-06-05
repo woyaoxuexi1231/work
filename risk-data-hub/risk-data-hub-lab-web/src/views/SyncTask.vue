@@ -11,7 +11,7 @@
 -->
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getSyncTask, startSync, listDatasources, getSyncDetails } from '@/api/index.js'
+import { getSyncTask, startSync, forceRefresh, listDatasources, getSyncDetails } from '@/api/index.js'
 
 // ============================================================
 // 数据状态
@@ -28,6 +28,7 @@ const taskError = ref('')
 
 const showForm = ref(false)
 const submitting = ref(false)
+const forceMode = ref(false)
 
 const form = ref({
   dataSourceKey: '',
@@ -135,6 +136,13 @@ function stopAutoRefresh() {
 
 function openForm() {
   form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 100 }
+  forceMode.value = false
+  showForm.value = true
+}
+
+function openForceForm() {
+  form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 100 }
+  forceMode.value = true
   showForm.value = true
 }
 
@@ -142,11 +150,15 @@ async function handleStart() {
   if (!form.value.dataSourceKey) return
   submitting.value = true
   try {
-    await startSync(form.value.dataSourceKey, form.value.pageSize)
+    if (forceMode.value) {
+      await forceRefresh(form.value.dataSourceKey, form.value.pageSize)
+    } else {
+      await startSync(form.value.dataSourceKey, form.value.pageSize)
+    }
     showForm.value = false
     await loadTask()
   } catch (e) {
-    taskError.value = '启动同步失败: ' + e.message
+    taskError.value = (forceMode.value ? '强制刷新' : '启动同步') + '失败: ' + e.message
   } finally {
     submitting.value = false
   }
@@ -224,6 +236,12 @@ function bizPending(rec) {
             :disabled="loading"
           >
             {{ loading ? '刷新中...' : '刷新' }}
+          </button>
+          <button
+            @click="openForceForm"
+            class="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+          >
+            强制刷新
           </button>
           <button
             @click="openForm"
@@ -416,7 +434,21 @@ function bizPending(rec) {
       @click.self="showForm = false"
     >
       <div class="bg-white rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
-        <h3 class="text-lg font-semibold text-slate-800 mb-5">发起同步</h3>
+        <h3 class="text-lg font-semibold text-slate-800 mb-5">{{ forceMode ? '强制刷新' : '发起同步' }}</h3>
+
+        <!-- 强制刷新警告 -->
+        <div
+          v-if="forceMode"
+          class="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm"
+        >
+          <div class="font-medium mb-1">此操作将清除以下数据：</div>
+          <ul class="list-disc list-inside space-y-0.5 text-xs">
+            <li>中台库全部清洗数据（clean_stock / clean_trade / clean_position / clean_asset）</li>
+            <li>所有同步任务记录（sync_task / sync_business_record）</li>
+            <li>Redis 中的已同步 ID 缓存</li>
+          </ul>
+          <div class="mt-1.5 font-medium">然后重新全量同步一次。</div>
+        </div>
 
         <div class="space-y-4">
           <div>
@@ -458,9 +490,10 @@ function bizPending(rec) {
           <button
             @click="handleStart"
             :disabled="!form.dataSourceKey || submitting"
-            class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            class="px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            :class="forceMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'"
           >
-            {{ submitting ? '启动中...' : '开始同步' }}
+            {{ submitting ? '提交中...' : forceMode ? '确认强制刷新' : '开始同步' }}
           </button>
         </div>
       </div>

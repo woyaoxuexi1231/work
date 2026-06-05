@@ -110,3 +110,14 @@ export function getCleanedTrades() {
 export function getSyncDetails(taskId) {
   return request.post('/api-hub-sync-detail', { taskId })
 }
+
+/**
+ * 强制刷新 — 清除 risk_hub 全部业务数据和任务记录，然后重新全量同步
+ * @param {string} dataSourceKey 要同步的数据源标识
+ * @param {number} pageSize 每页拉取条数，默认 100
+ * 后端路径：POST /api-hub-sync-force-refresh
+ * 响应 data：刚创建的同步任务对象 { id, status, progress, message, ... }
+ */
+export function forceRefresh(dataSourceKey, pageSize = 100) {
+  return request.post('/api-hub-sync-force-refresh', { dataSourceKey, pageSize })
+}

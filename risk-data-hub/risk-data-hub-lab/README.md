@@ -164,12 +164,23 @@ curl -X POST http://localhost:8501/api-hub-sync \
 |------|------|------|
 | POST | /api-hub-overview | 系统总览（拓扑、表统计、Leaf 状态） |
 | POST | /api-hub-sync | 提交同步任务 |
+| POST | /api-hub-sync-force-refresh | 强制刷新 — 清除全部数据后重新全量同步 |
 | POST | /api-hub-sync-task | 当前同步任务状态 |
 | POST | /api-hub-cleaned-trades | 最近 30 条清洗交易记录 |
 | POST | /api-datasource-list | 列出所有数据源 |
 | POST | /api-datasource-get | 查看单个数据源（Body: {"key":"xxx"}） |
 | POST | /api-datasource-register | 注册新数据源 |
 | POST | /api-datasource-remove | 删除数据源（Body: {"key":"xxx"}） |
+
+### 7. 强制刷新
+
+```bash
+curl -X POST http://localhost:8501/api-hub-sync-force-refresh \
+  -H "Content-Type: application/json" \
+  -d '{"dataSourceKey":"trade_oms","pageSize":100}'
+```
+
+该接口会清空中台库的全部清洗数据、同步任务记录和 Redis 缓存，然后从指定数据源重新全量同步。适用于需要从头开始重建中台数据的场景。
 
 ## Python 脚本
 
