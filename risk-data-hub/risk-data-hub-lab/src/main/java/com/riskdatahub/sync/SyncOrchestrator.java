@@ -1,0 +1,192 @@
+package com.riskdatahub.sync;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.riskdatahub.common.constant.HubConstants;
+import com.riskdatahub.datasource.DataSourceManager;
+import com.riskdatahub.datasource.RoutingMybatisExecutor;
+import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
+import com.riskdatahub.sync.entity.CleanTrade;
+import com.riskdatahub.sync.mapper.CleanTradeMapper;
+import com.riskdatahub.sync.model.BusinessSyncContext;
+import com.riskdatahub.sync.model.SyncResultDTO;
+import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
+import com.riskdatahub.sync.model.SyncSupport.SyncProgressListener;
+import com.riskdatahub.sync.template.BusinessSyncTemplate;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+
+/**
+ * 同步编排引擎 — ETL 同步的核心入口。
+ * <p>
+ * <b>策略模式（Strategy Pattern）：</b>
+ * {@code businessSyncTemplates} 为 Spring 自动注入的所有 {@link BusinessSyncTemplate} 实现类
+ * （Stock / Trade / Position / Asset）。新增业务类型只需新建实现类，无需修改本类。
+ * </p>
+ * <p>
+ * <b>执行流程：</b>
+ * <ol>
+ *   <li>校验数据源类型（中台库不能作为同步来源）</li>
+ *   <li>创建同步上下文（数据源 key、类型、分页大小、批次号）</li>
+ *   <li>并发派发 4 类业务（STOCK / TRADE / POSITION / ASSET）</li>
+ *   <li>每类业务内部使用生产者-消费者双线程：拉取上游 → 转换 → 落库中台</li>
+ *   <li>合并所有业务结果并返回摘要</li>
+ * </ol>
+ * </p>
+ *
+ * @author risk-data-hub
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SyncOrchestrator {
+
+    private final DataSourceManager dataSourceManager;
+    private final RoutingMybatisExecutor routingMybatisExecutor;
+    private final CleanTradeMapper cleanTradeMapper;
+
+    /** Spring 自动注入所有 BusinessSyncTemplate 实现类（策略模式） */
+    private final List<BusinessSyncTemplate> businessSyncTemplates;
+
+    /** 4 线程池，每类业务一个 Future */
+    @Qualifier("syncBusinessExecutor")
+    private final ThreadPoolExecutor syncBusinessExecutor;
+
+    /**
+     * 执行同步（无进度监听器）。
+     *
+     * @param dataSourceKey 数据源标识
+     * @param pageSize      每页大小
+     * @return 同步结果
+     */
+    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize) {
+        return syncByDataSource(dataSourceKey, pageSize, progress -> {
+        });
+    }
+
+    /**
+     * 执行同步（带进度监听器）。
+     * <p>
+     * 校验数据源 → 并发派发 4 类业务模板 → 合并结果。
+     * </p>
+     *
+     * @param dataSourceKey    数据源标识
+     * @param pageSize         每页大小
+     * @param progressListener 进度监听器
+     * @return 同步结果汇总
+     */
+    public SyncResultDTO syncByDataSource(String dataSourceKey,
+                                          int pageSize,
+                                          SyncProgressListener progressListener) {
+        DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
+        int safePageSize = sanitizePageSize(pageSize);
+        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize);
+
+        log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 业务模板数={}",
+                dataSourceKey, config.getDatasourceType(), safePageSize,
+                context.getBatchNo(), businessSyncTemplates.size());
+
+        try {
+            List<CompletableFuture<BusinessSyncResult>> futures = submitBusinessTemplates(context, progressListener);
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
+            SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
+            log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
+                    dataSourceKey, context.getBatchNo(), summary.getPulledCount(), summary.getSavedCount());
+            return summary;
+        } catch (Exception e) {
+            log.error("[同步编排] 同步失败 dataSourceKey={}, 错误={}", dataSourceKey, e.getMessage(), e);
+            throw new IllegalStateException("同步任务执行失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 查询最近 30 条清洗后的交易记录。
+     *
+     * @return 清洗交易记录列表
+     */
+    public List<CleanTrade> cleanedTrades() {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB,
+                () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
+                        .orderByDesc(CleanTrade::getGlobalId)
+                        .last("limit 30")));
+    }
+
+    /** 校验数据源存在且不是中台库 */
+    private DataSourceConfigDTO requireSyncableConfig(String dataSourceKey) {
+        DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
+        if (config == null) {
+            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
+        }
+        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
+            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
+        }
+        return config;
+    }
+
+    /** 限制分页大小在 [1, 500] 区间 */
+    private int sanitizePageSize(int pageSize) {
+        return Math.max(1, Math.min(pageSize, 500));
+    }
+
+    /** 构建同步上下文 */
+    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize) {
+        return BusinessSyncContext.builder()
+                .dataSourceKey(dataSourceKey)
+                .datasourceType(config.getDatasourceType())
+                .pageSize(pageSize)
+                .batchNo("SYNC-" + System.currentTimeMillis())
+                .build();
+    }
+
+    /** 并发提交所有业务模板到线程池 */
+    private List<CompletableFuture<BusinessSyncResult>> submitBusinessTemplates(
+            BusinessSyncContext context, SyncProgressListener progressListener) {
+        List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
+        for (BusinessSyncTemplate template : businessSyncTemplates) {
+            futures.add(CompletableFuture.supplyAsync(
+                    () -> executeTemplate(template, context, progressListener), syncBusinessExecutor));
+        }
+        return futures;
+    }
+
+    /** 执行单个模板，包装异常 */
+    private BusinessSyncResult executeTemplate(BusinessSyncTemplate template,
+                                                BusinessSyncContext context,
+                                                SyncProgressListener progressListener) {
+        try {
+            return template.execute(context, progressListener);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** 汇总所有模板的执行结果 */
+    private SyncResultDTO summarizeResults(BusinessSyncContext context,
+                                           DataSourceConfigDTO config,
+                                           int pageSize,
+                                           List<CompletableFuture<BusinessSyncResult>> futures) throws Exception {
+        Map<String, BusinessSyncResult> businessResults = new LinkedHashMap<>();
+        int totalPulled = 0;
+        int totalSaved = 0;
+        int maxPageCount = 0;
+        for (CompletableFuture<BusinessSyncResult> future : futures) {
+            BusinessSyncResult result = future.get();
+            businessResults.put(result.getBusinessCode(), result);
+            totalPulled += result.getPulledCount();
+            totalSaved += result.getSavedCount();
+            maxPageCount = Math.max(maxPageCount, result.getPageCount());
+        }
+        return new SyncResultDTO(
+                context.getDataSourceKey(), config.getName(), config.getDatasourceType(),
+                pageSize, context.getBatchNo(), maxPageCount,
+                totalPulled, totalSaved, businessResults);
+    }
+}
