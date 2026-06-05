@@ -39,16 +39,16 @@ hub:
       - key: trade_oms
         name: 交易系统A库
         datasource-type: TRADE_OMS
-        url: jdbc:mysql://host.docker.internal:3306/readonly_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
-        username: root
+        url: jdbc:mysql://host.docker.internal:3306/trade_oms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        username: readonly_oms
         password: 123456
         max-pool-size: 8
         min-idle: 1
       - key: trade_broker
         name: 交易系统B库
         datasource-type: TRADE_BROKER
-        url: jdbc:mysql://host.docker.internal:3306/readonly_broker?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
-        username: root
+        url: jdbc:mysql://host.docker.internal:3306/trade_broker?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+        username: readonly_broker
         password: 123456
         max-pool-size: 8
         min-idle: 1
