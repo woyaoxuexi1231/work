@@ -1,6 +1,7 @@
 package com.riskdatahub.sync.cache;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
  *
  * @author risk-data-hub
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SyncCacheHelper {
@@ -26,22 +28,36 @@ public class SyncCacheHelper {
     private final RedissonClient redissonClient;
 
     public Set<Long> getExistingIds(String cacheKey, Supplier<Set<Long>> dbLoader) {
-        RSet<Long> cached = redissonClient.getSet(cacheKey);
-        if (cached.isExists()) {
-            return cached.readAll();
+        try {
+            RSet<Long> cached = redissonClient.getSet(cacheKey);
+            if (cached.isExists()) {
+                return cached.readAll();
+            }
+        } catch (Exception e) {
+            log.error("[SyncCache] Redis 读取失败({}), 降级到 DB 加载 cacheKey={}", e.getMessage(), cacheKey);
         }
+        // Redis 不可用时降级到 DB 加载
         Set<Long> ids = dbLoader.get();
-        if (!ids.isEmpty()) {
-            cached.addAll(ids);
-            cached.expire(1, TimeUnit.HOURS);
+        try {
+            if (!ids.isEmpty()) {
+                RSet<Long> cached = redissonClient.getSet(cacheKey);
+                cached.addAll(ids);
+                cached.expire(1, TimeUnit.HOURS);
+            }
+        } catch (Exception e) {
+            log.error("[SyncCache] Redis 写入失败({}), 跳过缓存 cacheKey={}", e.getMessage(), cacheKey);
         }
         return ids;
     }
 
     public void addNewIds(String cacheKey, List<Long> newIds) {
         if (newIds.isEmpty()) return;
-        RSet<Long> cached = redissonClient.getSet(cacheKey);
-        cached.addAll(newIds);
+        try {
+            RSet<Long> cached = redissonClient.getSet(cacheKey);
+            cached.addAll(newIds);
+        } catch (Exception e) {
+            log.error("[SyncCache] addNewIds 失败({}), cacheKey={}", e.getMessage(), cacheKey);
+        }
     }
 
     public void clearCache(String cacheKey) {
