@@ -1,6 +1,6 @@
 package com.mlm.common.exception;
 
-import com.mlm.web.config.GlobalExceptionHandler;
+
 
 /**
  * Pipeline 状态流异常 — 非法状态跳转、项目不存在等

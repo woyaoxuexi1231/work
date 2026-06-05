@@ -13,7 +13,7 @@ import org.apache.ibatis.annotations.Mapper;
  * @author mlm
  * @see StageMember 阶段成员实体
  * @see com.mlm.common.util.StagePermissionUtil
- * @see com.mlm.web.controller.StageMemberController
+ * @see com.mlm.stage.controller.StageMemberController
  */
 @Mapper
 public interface StageMemberMapper extends BaseMapper<StageMember> {

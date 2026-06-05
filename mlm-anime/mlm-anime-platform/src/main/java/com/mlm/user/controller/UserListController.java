@@ -1,6 +1,6 @@
 package com.mlm.user.controller;
 
-import com.mlm.common.dto.ApiResult;
+import com.mlm.common.result.ApiResult;
 import com.mlm.user.entity.User;
 import com.mlm.user.mapper.UserMapper;
 import org.slf4j.Logger;

@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
  * 模型配置实体 — 对应数据库 model_config 表
  * <p>
  * 存储各 AI 厂商的接入配置，包括 API 端点、密钥、轮询参数等。
- * 配置通过 {@link com.mlm.web.config.DataInitializer} 在首次启动时初始化，
+ * 配置通过 {@link com.mlm.config.DataInitializer} 在首次启动时初始化，
  * 或在管理后台进行增删改查。
  * <p>
  * 【安全说明】

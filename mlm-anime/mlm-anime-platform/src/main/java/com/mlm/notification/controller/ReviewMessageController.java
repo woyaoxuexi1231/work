@@ -1,6 +1,6 @@
 package com.mlm.notification.controller;
 
-import com.mlm.common.dto.ApiResult;
+import com.mlm.common.result.ApiResult;
 import com.mlm.common.dto.NotificationCountVO;
 import com.mlm.notification.entity.ReviewMessage;
 import com.mlm.notification.service.ReviewMessageService;
