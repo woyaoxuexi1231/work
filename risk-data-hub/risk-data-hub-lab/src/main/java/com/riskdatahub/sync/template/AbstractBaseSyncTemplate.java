@@ -89,17 +89,6 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
                                                SyncMetrics metrics) {
         if (taskId == null) return;
         SyncProgressEvent event = new SyncProgressEvent(taskId, businessCode, pulledCount, savedCount);
-        event.setFetchDurationMs(metrics.getFetchDurationMs());
-        event.setTransformDurationMs(metrics.getTransformDurationMs());
-        event.setSaveDurationMs(metrics.getSaveDurationMs());
-        event.setFetchPageCount(metrics.getFetchPageCount());
-        event.setSaveBatchCount(metrics.getSaveBatchCount());
-        event.setMaxFetchPageMs(metrics.getMaxFetchPageMs());
-        event.setMaxSaveBatchMs(metrics.getMaxSaveBatchMs());
-        event.setCacheLookupDurationMs(metrics.getCacheLookupDurationMs());
-        event.setBatchInsertDurationMs(metrics.getBatchInsertDurationMs());
-        event.setGlobalIdQueryDurationMs(metrics.getGlobalIdQueryDurationMs());
-        event.setBatchUpdateDurationMs(metrics.getBatchUpdateDurationMs());
         eventPublisher.publishEvent(event);
     }
 
@@ -158,11 +147,10 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
      */
     protected void preAllocateBatchIds(String tag, int count, SyncMetrics metrics) {
         batchIdQueue.clear();
-        long start = System.currentTimeMillis();
+        metrics.stampIdGenStarted();
         long[] ids = leafSegmentService.nextIdBatch(tag, count);
-        long elapsed = System.currentTimeMillis() - start;
+        metrics.stampIdGenFinished();
         for (long id : ids) batchIdQueue.add(id);
-        metrics.recordIdGen(elapsed, count);
     }
 
     /** 从预分配队列中取下一个 ID，队列为空时回源 Leaf */
@@ -177,15 +165,17 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
      */
     protected abstract String getIdTag();
 
+    /** long 时间戳 → LocalDateTime */
+    private java.time.LocalDateTime toLdt(long ms) {
+        return ms > 0 ? new java.sql.Timestamp(ms).toLocalDateTime() : null;
+    }
+
     /**
      * 记录单批落库耗时到 sync_batch_metrics 表。
      * <p>由 runInsertThread 每处理完一页后调用。</p>
      */
     protected void recordBatchMetrics(BusinessSyncContext context, int pageNo, int rowCount,
-                                       long fetchMs, long queueWaitMs,
-                                       long transformMs, long saveMs,
-                                       SyncMetrics metrics,
-                                       long batchStartTime, long batchEndTime) {
+                                       SyncMetrics metrics) {
         Long recordId = context.getBusinessRecordIds().get(businessCode());
         if (batchMetricsMapper == null) {
             log.warn("[同步模板] batchMetricsMapper 未注入，跳过批次耗时记录");
@@ -196,39 +186,31 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
             return;
         }
         try {
-            long totalMs = fetchMs + queueWaitMs + transformMs + saveMs;
-            double rps = totalMs > 0 ? (double) rowCount / totalMs * 1000 : 0;
-
             SyncBatchMetrics m = new SyncBatchMetrics();
             m.setId(leafSegmentService.nextId("sync_batch_metrics"));
             m.setRecordId(recordId);
             m.setBatchNo(pageNo);
             m.setPulledCount(rowCount);
             m.setSavedCount(rowCount);
-            m.setInsertCount(0);
-            m.setUpdateCount(0);
+            m.setInsertCount(metrics.getInsertCount());
+            m.setUpdateCount(metrics.getUpdateCount());
 
-            m.setFetchDurationMs(fetchMs > 0 ? fetchMs : 0);
-            m.setQueueWaitMs(queueWaitMs > 0 ? queueWaitMs : 0);
-            m.setTransformDurationMs(transformMs);
-            m.setIdGenDurationMs(metrics.getLastIdGenMs());
-            m.setSaveDurationMs(saveMs);
-            m.setTotalPageMs(totalMs);
-
-            // 子步骤使用当批值（resetBatchSubTimings 每批清零），不是累计值
-            m.setCacheLookupDurationMs(metrics.getLastCacheLookupMs());
-            m.setSplitCheckMs(metrics.getLastSplitCheckMs());
-            m.setInsertCount(metrics.getLastInsertCount());
-            m.setInsertDurationMs(metrics.getLastBatchInsertMs());
-            m.setCacheAddDurationMs(metrics.getLastCacheAddMs());
-            m.setGlobalIdQueryDurationMs(metrics.getLastGlobalIdQueryMs());
-            m.setSetIdDurationMs(metrics.getLastSetIdMs());
-            m.setUpdateCount(metrics.getLastUpdateCount());
-            m.setUpdateDurationMs(metrics.getLastBatchUpdateMs());
-
-            m.setBatchStartedAt(new java.sql.Timestamp(batchStartTime).toLocalDateTime());
-            m.setBatchFinishedAt(new java.sql.Timestamp(batchEndTime).toLocalDateTime());
-            m.setRowsPerSecond(Math.round(rps * 10) / 10.0);
+            // 写入时间戳（由前端自行计算耗时）
+            m.setFetchStartedAt(toLdt(metrics.getFetchStartedAt()));
+            m.setFetchQueuedAt(toLdt(metrics.getFetchQueuedAt()));
+            m.setProcessStartedAt(toLdt(metrics.getProcessStartedAt()));
+            m.setIdGenStartedAt(toLdt(metrics.getIdGenStartedAt()));
+            m.setIdGenFinishedAt(toLdt(metrics.getIdGenFinishedAt()));
+            m.setTransformStartedAt(toLdt(metrics.getTransformStartedAt()));
+            m.setTransformFinishedAt(toLdt(metrics.getTransformFinishedAt()));
+            m.setSaveStartedAt(toLdt(metrics.getSaveStartedAt()));
+            m.setCacheLookupFinishedAt(toLdt(metrics.getCacheLookupFinishedAt()));
+            m.setInsertFinishedAt(toLdt(metrics.getInsertFinishedAt()));
+            m.setCacheAddFinishedAt(toLdt(metrics.getCacheAddFinishedAt()));
+            m.setGlobalIdQueryFinishedAt(toLdt(metrics.getGlobalIdQueryFinishedAt()));
+            m.setSetIdFinishedAt(toLdt(metrics.getSetIdFinishedAt()));
+            m.setUpdateFinishedAt(toLdt(metrics.getUpdateFinishedAt()));
+            m.setSaveFinishedAt(toLdt(metrics.getSaveFinishedAt()));
 
             m.setRecordedAt(now());
             batchMetricsMapper.insert(m);

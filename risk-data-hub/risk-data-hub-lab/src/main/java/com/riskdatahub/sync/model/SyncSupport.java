@@ -134,38 +134,29 @@ public final class SyncSupport {
      */
     @Getter
     public static class SyncMetrics {
-        // ====== 拉取阶段（fetch 线程写入） ======
+        // ====== 拉取统计（日志用，不持久化） ======
         private long fetchDurationMs;
         private int fetchPageCount;
         private long maxFetchPageMs;
 
-        // ====== 转换阶段（insert 线程写入） ======
-        private long transformDurationMs;
-        private long idGenDurationMs;        // Leaf ID 生成总耗时
-        private long lastIdGenMs;            // 当批 ID 生成耗时
-        private int lastIdGenCount;          // 当批生成 ID 数量
-
-        // ====== 落库阶段（insert 线程写入） ======
-        private long saveDurationMs;
-        private int saveBatchCount;
-        private long maxSaveBatchMs;
-
-        // ====== saveBatch 内部子步骤（累计值，用于 sync_business_record） ======
-        private long cacheLookupDurationMs;
-        private long batchInsertDurationMs;
-        private long globalIdQueryDurationMs;
-        private long batchUpdateDurationMs;
-
-        // ====== saveBatch 内部子步骤（当批值，用于 sync_batch_metrics） ======
-        private long lastCacheLookupMs;
-        private long lastSplitCheckMs;        // 拆分 toInsert/toUpdate 耗时
-        private int lastInsertCount;
-        private long lastBatchInsertMs;
-        private long lastCacheAddMs;          // addNewIds 写入缓存耗时
-        private long lastGlobalIdQueryMs;     // 查 globalId 耗时
-        private long lastSetIdMs;             // 设置 globalId 耗时
-        private int lastUpdateCount;
-        private long lastBatchUpdateMs;
+        // ====== 时间戳（被 recordBatchMetrics 读取写入 sync_batch_metrics） ======
+        private long fetchStartedAt;
+        private long fetchQueuedAt;
+        private long processStartedAt;
+        private long idGenStartedAt;
+        private long idGenFinishedAt;
+        private long transformStartedAt;
+        private long transformFinishedAt;
+        private long saveStartedAt;
+        private long cacheLookupFinishedAt;
+        private long insertFinishedAt;
+        private long cacheAddFinishedAt;
+        private long globalIdQueryFinishedAt;
+        private long setIdFinishedAt;
+        private long updateFinishedAt;
+        private long saveFinishedAt;
+        private int insertCount;
+        private int updateCount;
 
         public void recordFetchPage(long elapsedMs) {
             fetchDurationMs += elapsedMs;
@@ -173,77 +164,28 @@ public final class SyncSupport {
             if (elapsedMs > maxFetchPageMs) maxFetchPageMs = elapsedMs;
         }
 
-        public void recordTransform(long elapsedMs) {
-            transformDurationMs += elapsedMs;
-        }
-
-        public void recordIdGen(long elapsedMs, int count) {
-            idGenDurationMs += elapsedMs;
-            lastIdGenMs = elapsedMs;
-            lastIdGenCount = count;
-        }
-
-        public void recordSaveBatch(long elapsedMs) {
-            saveDurationMs += elapsedMs;
-            saveBatchCount++;
-            if (elapsedMs > maxSaveBatchMs) maxSaveBatchMs = elapsedMs;
-        }
-
-        public void recordCacheLookup(long elapsedMs) {
-            cacheLookupDurationMs += elapsedMs;
-            lastCacheLookupMs = elapsedMs;
-        }
-
-        public void recordSplitCheck(long elapsedMs) {
-            lastSplitCheckMs = elapsedMs;
-        }
-
-        public void recordBatchInsert(long elapsedMs, long cacheAddMs, int insertCount) {
-            batchInsertDurationMs += elapsedMs;
-            lastBatchInsertMs = elapsedMs;
-            lastCacheAddMs = cacheAddMs;
-            lastInsertCount = insertCount;
-        }
-
-        public void recordGlobalIdQuery(long elapsedMs) {
-            globalIdQueryDurationMs += elapsedMs;
-            lastGlobalIdQueryMs = elapsedMs;
-        }
-
-        public void recordBatchUpdate(long queryIdMs, long setIdMs, long updateMs, int updateCount) {
-            globalIdQueryDurationMs += queryIdMs;
-            batchUpdateDurationMs += updateMs;
-            lastGlobalIdQueryMs = queryIdMs;
-            lastSetIdMs = setIdMs;
-            lastBatchUpdateMs = updateMs;
-            lastUpdateCount = updateCount;
-        }
-
-        /** 重置当批子步骤值（每批 saveBatch 前调用） */
-        public void resetBatchSubTimings() {
-            lastCacheLookupMs = 0;
-            lastSplitCheckMs = 0;
-            lastInsertCount = 0;
-            lastBatchInsertMs = 0;
-            lastCacheAddMs = 0;
-            lastGlobalIdQueryMs = 0;
-            lastSetIdMs = 0;
-            lastUpdateCount = 0;
-            lastBatchUpdateMs = 0;
-            lastIdGenMs = 0;
-            lastIdGenCount = 0;
-        }
+        public void stampFetchStarted() { fetchStartedAt = System.currentTimeMillis(); }
+        public void stampFetchQueued() { fetchQueuedAt = System.currentTimeMillis(); }
+        public void stampProcessStarted() { processStartedAt = System.currentTimeMillis(); }
+        public void stampIdGenStarted() { idGenStartedAt = System.currentTimeMillis(); }
+        public void stampIdGenFinished() { idGenFinishedAt = System.currentTimeMillis(); }
+        public void stampTransformStarted() { transformStartedAt = System.currentTimeMillis(); }
+        public void stampTransformFinished() { transformFinishedAt = System.currentTimeMillis(); }
+        public void stampSaveStarted() { saveStartedAt = System.currentTimeMillis(); }
+        public void stampCacheLookupFinished() { cacheLookupFinishedAt = System.currentTimeMillis(); }
+        public void stampInsertFinished(int cnt) { insertFinishedAt = System.currentTimeMillis(); insertCount = cnt; }
+        public void stampCacheAddFinished() { cacheAddFinishedAt = System.currentTimeMillis(); }
+        public void stampGlobalIdQueryFinished() { globalIdQueryFinishedAt = System.currentTimeMillis(); }
+        public void stampSetIdFinished() { setIdFinishedAt = System.currentTimeMillis(); }
+        public void stampUpdateFinished(int cnt) { updateFinishedAt = System.currentTimeMillis(); updateCount = cnt; }
+        public void stampSaveFinished() { saveFinishedAt = System.currentTimeMillis(); }
 
         public Double avgFetchPageMs() {
             return fetchPageCount > 0 ? (double) fetchDurationMs / fetchPageCount : 0;
         }
 
-        public Double avgSaveBatchMs() {
-            return saveBatchCount > 0 ? (double) saveDurationMs / saveBatchCount : 0;
-        }
-
         public long totalDurationMs() {
-            return fetchDurationMs + transformDurationMs + saveDurationMs;
+            return fetchDurationMs;
         }
     }
 

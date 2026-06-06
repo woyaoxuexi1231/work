@@ -21,25 +21,22 @@ public class SyncBatchMetrics {
     private Integer insertCount;
     private Integer updateCount;
 
-    // ====== 各阶段耗时（毫秒） ======
-    private Long fetchDurationMs;         // 本页拉取耗时
-    private Long queueWaitMs;             // 在队列中等待耗时（fetch完成→insert开始处理）
-    private Long transformDurationMs;     // 转换耗时（所有行转换累加）
-    private Long idGenDurationMs;         // 中 Leaf ID 生成耗时
-    private Long cacheLookupDurationMs;   // ④查重：查已有sourceRowId耗时
-    private Long splitCheckMs;            // ⑤拆分：将数据分为insert/update两类的耗时
-    private Long saveDurationMs;          // ⑥落库：saveBatch总耗时（= ④+⑤+⑥INSERT+⑥INSERT写缓存+⑥UPDATE+…）
-    private Long insertDurationMs;        // ⑥INSERT：批量新增耗时
-    private Long cacheAddDurationMs;      // ⑥写缓存：新增后写入Redis缓存耗时
-    private Long globalIdQueryDurationMs; // ⑦查ID：查询已有行的globalId耗时
-    private Long setIdDurationMs;         // ⑦设ID：将globalId设到实体上的耗时
-    private Long updateDurationMs;        // ⑧UPDATE：批量更新耗时
-    private Long totalPageMs;             // 本页总耗时（拉取→转换→落库，不含排队）
+    // ====== 各阶段时间戳（由外部自行计算耗时） ======
+    private LocalDateTime fetchStartedAt;      // 拉取开始
+    private LocalDateTime fetchQueuedAt;       // 拉取完成(入队)
+    private LocalDateTime processStartedAt;    // 开始处理(出队)
+    private LocalDateTime idGenStartedAt;      // ID生成开始
+    private LocalDateTime idGenFinishedAt;     // ID生成完成
+    private LocalDateTime transformStartedAt;  // 转换开始
+    private LocalDateTime transformFinishedAt; // 转换完成
+    private LocalDateTime saveStartedAt;       // 落库开始
+    private LocalDateTime cacheLookupFinishedAt; // 查缓存完成
+    private LocalDateTime insertFinishedAt;    // 新增写入完成
+    private LocalDateTime cacheAddFinishedAt;  // 写缓存完成
+    private LocalDateTime globalIdQueryFinishedAt; // 查主键完成
+    private LocalDateTime setIdFinishedAt;     // 设主键完成
+    private LocalDateTime updateFinishedAt;    // 更新写入完成
+    private LocalDateTime saveFinishedAt;      // 落库完成(本批结束)
 
-    // ====== 速率 ======
-    private Double rowsPerSecond;         // 本页处理速率（条/秒）
-
-    private LocalDateTime batchStartedAt;
-    private LocalDateTime batchFinishedAt;
     private LocalDateTime recordedAt;
 }

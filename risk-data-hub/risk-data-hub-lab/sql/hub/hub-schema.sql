@@ -151,26 +151,23 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics (
     insert_count INT DEFAULT 0 COMMENT '本页新增行数',
     update_count INT DEFAULT 0 COMMENT '本页更新行数',
 
-    -- 各阶段耗时（毫秒）
-    fetch_duration_ms        BIGINT DEFAULT 0 COMMENT '①拉取：上游查询耗时',
-    queue_wait_ms            BIGINT DEFAULT 0 COMMENT '②排队：队列等待耗时',
-    transform_duration_ms    BIGINT DEFAULT 0 COMMENT '③转换：字段映射耗时',
-    id_gen_duration_ms       BIGINT DEFAULT 0 COMMENT '③转换-ID生成：Leaf批量获取ID耗时',
-    cache_lookup_duration_ms BIGINT DEFAULT 0 COMMENT '④查重：查已有sourceRowId耗时',
-    split_check_ms           BIGINT DEFAULT 0 COMMENT '⑤拆分：数据分为insert/update耗时',
-    save_duration_ms         BIGINT DEFAULT 0 COMMENT '⑥落库：saveBatch总耗时',
-    insert_duration_ms       BIGINT DEFAULT 0 COMMENT '⑥INSERT：批量新增耗时',
-    cache_add_duration_ms    BIGINT DEFAULT 0 COMMENT '⑥写缓存：新增后写入Redis耗时',
-    global_id_query_duration_ms BIGINT DEFAULT 0 COMMENT '⑦查ID：查询已有行的globalId耗时',
-    set_id_duration_ms       BIGINT DEFAULT 0 COMMENT '⑦设ID：设置globalId到实体耗时',
-    update_duration_ms       BIGINT DEFAULT 0 COMMENT '⑧UPDATE：批量更新耗时',
-    total_page_ms            BIGINT DEFAULT 0 COMMENT '本页总耗时(排队+拉取+转换+落库)',
+    -- 各阶段时间戳（由外部自行计算耗时，TIMESTAMP(3)精确到毫秒）
+    fetch_started_at            TIMESTAMP(3) NULL COMMENT '拉取开始',
+    fetch_queued_at             TIMESTAMP(3) NULL COMMENT '拉取完成(入队)',
+    process_started_at          TIMESTAMP(3) NULL COMMENT '开始处理(出队)',
+    id_gen_started_at           TIMESTAMP(3) NULL COMMENT 'ID生成开始',
+    id_gen_finished_at          TIMESTAMP(3) NULL COMMENT 'ID生成完成',
+    transform_started_at        TIMESTAMP(3) NULL COMMENT '转换开始',
+    transform_finished_at       TIMESTAMP(3) NULL COMMENT '转换完成',
+    save_started_at             TIMESTAMP(3) NULL COMMENT '落库开始',
+    cache_lookup_finished_at    TIMESTAMP(3) NULL COMMENT '查缓存完成',
+    insert_finished_at          TIMESTAMP(3) NULL COMMENT '新增写入完成',
+    cache_add_finished_at       TIMESTAMP(3) NULL COMMENT '写缓存完成',
+    global_id_query_finished_at TIMESTAMP(3) NULL COMMENT '查主键完成',
+    set_id_finished_at          TIMESTAMP(3) NULL COMMENT '设主键完成',
+    update_finished_at          TIMESTAMP(3) NULL COMMENT '更新写入完成',
+    save_finished_at            TIMESTAMP(3) NULL COMMENT '落库完成(本批结束)',
 
-    -- 速率
-    rows_per_second        DOUBLE DEFAULT 0 COMMENT '本页处理速率(条/秒)',
-
-    batch_started_at TIMESTAMP COMMENT '本批开始处理时间',
-    batch_finished_at TIMESTAMP COMMENT '本批处理完成时间',
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_batch_record(record_id)
 );

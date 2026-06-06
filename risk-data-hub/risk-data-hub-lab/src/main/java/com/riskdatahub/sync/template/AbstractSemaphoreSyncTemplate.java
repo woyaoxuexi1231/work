@@ -88,32 +88,19 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
         }
 
         publishBusinessSummaryEvent(context, counter);
-        long totalMs = metrics.totalDurationMs();
-        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}, "
-                        + "耗时={}ms(拉取={}ms/平均={}ms, 转换={}ms, 落库={}ms/平均={}ms, 最慢拉取={}ms, 最慢落库={}ms)",
+        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}, 拉取耗时={}ms({}页, 均{}ms)",
                 businessCode(), counter.getPageCount(), counter.getPulledCount(),
                 counter.getSavedCount(), counter.getLastRowId(),
-                totalMs, metrics.getFetchDurationMs(), String.format("%.0f", metrics.avgFetchPageMs()),
-                metrics.getTransformDurationMs(), metrics.getSaveDurationMs(),
-                String.format("%.0f", metrics.avgSaveBatchMs()),
-                metrics.getMaxFetchPageMs(), metrics.getMaxSaveBatchMs());
+                metrics.getFetchDurationMs(), metrics.getFetchPageCount(),
+                String.format("%.0f", metrics.avgFetchPageMs()));
         return new BusinessSyncResult(
                 businessCode(),
                 counter.getPageCount(),
                 counter.getPulledCount(),
                 counter.getSavedCount(),
                 counter.getSavedMaxRowId(),
-                metrics.getFetchDurationMs(),
-                metrics.getTransformDurationMs(),
-                metrics.getSaveDurationMs(),
-                metrics.getFetchPageCount(),
-                metrics.getSaveBatchCount(),
-                metrics.getMaxFetchPageMs(),
-                metrics.getMaxSaveBatchMs(),
-                metrics.getCacheLookupDurationMs(),
-                metrics.getBatchInsertDurationMs(),
-                metrics.getGlobalIdQueryDurationMs(),
-                metrics.getBatchUpdateDurationMs());
+                0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0);
     }
 
     /**
@@ -203,8 +190,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                     break;
                 }
 
-                long queueWaitMs = 0; // 信号量模式没有队列，排队为0
-                long batchStartTime = System.currentTimeMillis();
+                // 信号量模式没有队列，无排队时间
 
                 // 将数据从共享缓冲区复制出来，立即释放 fetchPermit 让拉取线程继续
                 List<S> rows = new ArrayList<>(sharedPage);
@@ -214,19 +200,16 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 // 批量转换落库（此时拉取线程已在拉取下一页，互不干扰）
                 preAllocateBatchIds(getIdTag(), rows.size(), metrics);
 
-                long transformStart = System.currentTimeMillis();
+                metrics.stampTransformStarted();
                 List<T> targets = new ArrayList<>(rows.size());
                 for (S row : rows) {
                     targets.add(transform(context, row));
                 }
-                long transformElapsed = System.currentTimeMillis() - transformStart;
-                metrics.recordTransform(transformElapsed);
+                metrics.stampTransformFinished();
 
-                metrics.resetBatchSubTimings();
-                long saveStart = System.currentTimeMillis();
+                metrics.stampSaveStarted();
                 saveBatch(context, targets, metrics);
-                long saveElapsed = System.currentTimeMillis() - saveStart;
-                metrics.recordSaveBatch(saveElapsed);
+                metrics.stampSaveFinished();
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }
@@ -234,8 +217,8 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), counter.getPageCount(), counter.getSavedCount());
                 publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
-                recordBatchMetrics(context, counter.getPageCount(), rows.size(),
-                        0, queueWaitMs, transformElapsed, saveElapsed, metrics, batchStartTime, System.currentTimeMillis());
+                recordBatchMetrics(context, counter.getPageCount(), rows.size(), metrics);
+                metrics.stampProcessStarted();
             }
         } catch (Exception e) {
             recordFailure(fetchPermit, failure, new IllegalStateException(

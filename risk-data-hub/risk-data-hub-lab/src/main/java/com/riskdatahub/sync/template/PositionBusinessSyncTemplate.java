@@ -134,10 +134,7 @@ public class PositionBusinessSyncTemplate
                                 .select(CleanPosition::getSourceRowId)
                                 .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanPosition::getSourceRowId).collect(Collectors.toSet()));
-        long cacheLookupMs = System.currentTimeMillis() - t0;
-        metrics.recordCacheLookup(cacheLookupMs);
-
-        long tSplit = System.currentTimeMillis();
+        metrics.stampCacheLookupFinished();
         List<CleanPosition> toInsert = new ArrayList<>();
         List<CleanPosition> toUpdate = new ArrayList<>();
         for (CleanPosition target : targets) {
@@ -147,22 +144,17 @@ public class PositionBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
-        long splitMs = System.currentTimeMillis() - tSplit;
-        metrics.recordSplitCheck(splitMs);
+
 
         if (!toInsert.isEmpty()) {
-            long t1 = System.currentTimeMillis();
             cleanPositionMapper.insert(toInsert);
-            long insertMs = System.currentTimeMillis() - t1;
-            long tCacheAdd = System.currentTimeMillis();
+            metrics.stampInsertFinished(toInsert.size());
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
-            long cacheAddMs = System.currentTimeMillis() - tCacheAdd;
-            metrics.recordBatchInsert(insertMs, cacheAddMs, toInsert.size());
+            metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {
-            long t2 = System.currentTimeMillis();
             Map<Long, Long> idMap = new HashMap<>();
             cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                             .select(CleanPosition::getGlobalId, CleanPosition::getSourceRowId)
@@ -170,16 +162,13 @@ public class PositionBusinessSyncTemplate
                             .in(CleanPosition::getSourceRowId,
                                     toUpdate.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
-            long queryIdMs = System.currentTimeMillis() - t2;
-            long tSetId = System.currentTimeMillis();
+            metrics.stampGlobalIdQueryFinished();
             for (CleanPosition target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
-            long setIdMs = System.currentTimeMillis() - tSetId;
-            long t3 = System.currentTimeMillis();
+            metrics.stampSetIdFinished();
             cleanPositionMapper.updateById(toUpdate);
-            long updateMs = System.currentTimeMillis() - t3;
-            metrics.recordBatchUpdate(queryIdMs, setIdMs, updateMs, toUpdate.size());
+            metrics.stampUpdateFinished(toUpdate.size());
         }
     }
 

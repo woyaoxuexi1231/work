@@ -83,32 +83,19 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         }
 
         publishBusinessSummaryEvent(context, counter);
-        long totalMs = metrics.totalDurationMs();
-        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}, "
-                        + "耗时={}ms(拉取={}ms/平均={}ms, 转换={}ms, 落库={}ms/平均={}ms, 最慢拉取={}ms, 最慢落库={}ms)",
+        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}, 拉取耗时={}ms({}页, 均{}ms)",
                 businessCode(), counter.getPageCount(), counter.getPulledCount(),
                 counter.getSavedCount(), counter.getLastRowId(),
-                totalMs, metrics.getFetchDurationMs(), String.format("%.0f", metrics.avgFetchPageMs()),
-                metrics.getTransformDurationMs(), metrics.getSaveDurationMs(),
-                String.format("%.0f", metrics.avgSaveBatchMs()),
-                metrics.getMaxFetchPageMs(), metrics.getMaxSaveBatchMs());
+                metrics.getFetchDurationMs(), metrics.getFetchPageCount(),
+                String.format("%.0f", metrics.avgFetchPageMs()));
         return new BusinessSyncResult(
                 businessCode(),
                 counter.getPageCount(),
                 counter.getPulledCount(),
                 counter.getSavedCount(),
                 counter.getSavedMaxRowId(),
-                metrics.getFetchDurationMs(),
-                metrics.getTransformDurationMs(),
-                metrics.getSaveDurationMs(),
-                metrics.getFetchPageCount(),
-                metrics.getSaveBatchCount(),
-                metrics.getMaxFetchPageMs(),
-                metrics.getMaxSaveBatchMs(),
-                metrics.getCacheLookupDurationMs(),
-                metrics.getBatchInsertDurationMs(),
-                metrics.getGlobalIdQueryDurationMs(),
-                metrics.getBatchUpdateDurationMs());
+                0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0);
     }
 
     /**
@@ -124,9 +111,9 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         int pageNo = 0;
         try {
             while (failure.get() == null) {
-                long fetchStart = System.currentTimeMillis();
+                metrics.stampFetchStarted();
                 List<S> rows = fetchPage(context, cursor, context.getPageSize());
-                long fetchElapsed = System.currentTimeMillis() - fetchStart;
+                long fetchElapsed = System.currentTimeMillis() - metrics.getFetchStartedAt();
                 metrics.recordFetchPage(fetchElapsed);
                 if (rows.isEmpty()) {
                     break;
@@ -140,6 +127,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 pageNo++;
                 counter.setPageCount(pageNo);
                 counter.setLastRowId(cursor);
+                metrics.stampFetchQueued();
                 counter.addPulledCount(rows.size());
                 PageChunk<S> chunk = PageChunk.data(pageNo, rows);
                 chunk.setFetchDurationMs(fetchElapsed);
@@ -176,50 +164,31 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 if (chunk.isEnd()) {
                     break;
                 }
-                long tookAt = System.currentTimeMillis();
-                long queueWaitMs = tookAt - chunk.getCreatedAt();
-                long batchStartTime = tookAt;
+                metrics.stampProcessStarted();
                 List<S> rows = chunk.getRows();
-                log.info("[诊断] 业务 {} 第{}批 createdAt={}, tookAt={}, queueWait={}ms",
-                        businessCode(), chunk.getPageNo(),
-                        chunk.getCreatedAt(), tookAt, queueWaitMs);
 
-                // 预分配本批所有 Leaf ID（避免逐次 synchronized 竞争）
+                // 预分配本批所有 Leaf ID
                 preAllocateBatchIds(getIdTag(), rows.size(), metrics);
 
-                long transformStart = System.currentTimeMillis();
+                metrics.stampTransformStarted();
                 List<T> targets = new ArrayList<>(rows.size());
                 for (S row : rows) {
                     targets.add(transform(context, row));
                 }
-                long transformElapsed = System.currentTimeMillis() - transformStart;
-                metrics.recordTransform(transformElapsed);
+                metrics.stampTransformFinished();
 
-                metrics.resetBatchSubTimings();
-                long saveStart = System.currentTimeMillis();
+                metrics.stampSaveStarted();
                 saveBatch(context, targets, metrics);
-                long saveElapsed = System.currentTimeMillis() - saveStart;
-                metrics.recordSaveBatch(saveElapsed);
+                metrics.stampSaveFinished();
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }
                 counter.updateSavedMaxRowId(sourceRowId(rows.get(rows.size() - 1)));
-                long tAfterSave = System.currentTimeMillis();
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), chunk.getPageNo(), counter.getSavedCount());
                 publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
-                long tAfterProgress = System.currentTimeMillis();
 
-                recordBatchMetrics(context, chunk.getPageNo(), rows.size(),
-                        chunk.getFetchDurationMs(), queueWaitMs,
-                        transformElapsed, saveElapsed, metrics, batchStartTime, System.currentTimeMillis());
-                long tAfterRecord = System.currentTimeMillis();
-
-                if (tAfterProgress - tAfterSave > 1000 || tAfterRecord - tAfterProgress > 1000) {
-                    log.warn("[诊断] 业务 {} 第{}批 批间耗时: progress={}ms, record={}ms",
-                            businessCode(), chunk.getPageNo(),
-                            tAfterProgress - tAfterSave, tAfterRecord - tAfterProgress);
-                }
+                recordBatchMetrics(context, chunk.getPageNo(), rows.size(), metrics);
             }
         } catch (Exception e) {
             recordFailure(queue, failure, new IllegalStateException(

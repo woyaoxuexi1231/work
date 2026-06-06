@@ -133,10 +133,7 @@ public class AssetBusinessSyncTemplate
                                 .select(CleanAsset::getSourceRowId)
                                 .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet()));
-        long cacheLookupMs = System.currentTimeMillis() - t0;
-        metrics.recordCacheLookup(cacheLookupMs);
-
-        long tSplit = System.currentTimeMillis();
+        metrics.stampCacheLookupFinished();
         List<CleanAsset> toInsert = new ArrayList<>();
         List<CleanAsset> toUpdate = new ArrayList<>();
         for (CleanAsset target : targets) {
@@ -146,22 +143,17 @@ public class AssetBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
-        long splitMs = System.currentTimeMillis() - tSplit;
-        metrics.recordSplitCheck(splitMs);
+
 
         if (!toInsert.isEmpty()) {
-            long t1 = System.currentTimeMillis();
             cleanAssetMapper.insert(toInsert);
-            long insertMs = System.currentTimeMillis() - t1;
-            long tCacheAdd = System.currentTimeMillis();
+            metrics.stampInsertFinished(toInsert.size());
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList()));
-            long cacheAddMs = System.currentTimeMillis() - tCacheAdd;
-            metrics.recordBatchInsert(insertMs, cacheAddMs, toInsert.size());
+            metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {
-            long t2 = System.currentTimeMillis();
             Map<Long, Long> idMap = new HashMap<>();
             cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
                             .select(CleanAsset::getGlobalId, CleanAsset::getSourceRowId)
@@ -169,16 +161,13 @@ public class AssetBusinessSyncTemplate
                             .in(CleanAsset::getSourceRowId,
                                     toUpdate.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
-            long queryIdMs = System.currentTimeMillis() - t2;
-            long tSetId = System.currentTimeMillis();
+            metrics.stampGlobalIdQueryFinished();
             for (CleanAsset target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
-            long setIdMs = System.currentTimeMillis() - tSetId;
-            long t3 = System.currentTimeMillis();
+            metrics.stampSetIdFinished();
             cleanAssetMapper.updateById(toUpdate);
-            long updateMs = System.currentTimeMillis() - t3;
-            metrics.recordBatchUpdate(queryIdMs, setIdMs, updateMs, toUpdate.size());
+            metrics.stampUpdateFinished(toUpdate.size());
         }
     }
 
