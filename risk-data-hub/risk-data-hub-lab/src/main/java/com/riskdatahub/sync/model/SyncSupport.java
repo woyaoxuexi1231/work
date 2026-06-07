@@ -108,6 +108,10 @@ public final class SyncSupport {
         private LocalDateTime idGenFinishedAt;
         private LocalDateTime transformStartedAt;
         private LocalDateTime transformFinishedAt;
+        private LocalDateTime existingQueryStartedAt;
+        private LocalDateTime existingQueryFinishedAt;
+        private LocalDateTime splitStartedAt;
+        private LocalDateTime splitFinishedAt;
         private LocalDateTime insertStartedAt;
         private LocalDateTime insertFinishedAt;
         private LocalDateTime updateStartedAt;
@@ -129,6 +133,10 @@ public final class SyncSupport {
         public void stampIdGenFinished() { idGenFinishedAt = TimeUtils.now(); }
         public void stampTransformStarted() { transformStartedAt = TimeUtils.now(); }
         public void stampTransformFinished() { transformFinishedAt = TimeUtils.now(); }
+        public void stampExistingQueryStarted() { existingQueryStartedAt = TimeUtils.now(); }
+        public void stampExistingQueryFinished() { existingQueryFinishedAt = TimeUtils.now(); }
+        public void stampSplitStarted() { splitStartedAt = TimeUtils.now(); }
+        public void stampSplitFinished() { splitFinishedAt = TimeUtils.now(); }
         public void stampInsertStarted() { insertStartedAt = TimeUtils.now(); }
         public void stampInsertFinished(int cnt) { insertFinishedAt = TimeUtils.now(); insertCount = cnt; }
         public void stampUpdateStarted() { updateStartedAt = TimeUtils.now(); }

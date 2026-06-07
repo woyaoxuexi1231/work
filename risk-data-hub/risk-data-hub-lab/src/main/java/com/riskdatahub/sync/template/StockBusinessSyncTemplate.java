@@ -130,12 +130,15 @@ public class StockBusinessSyncTemplate
 
         // 查询本页数据中已存在的记录 → sourceRowId → globalId
         Set<Long> batchIds = targets.stream().map(CleanStock::getSourceRowId).collect(Collectors.toSet());
+        metrics.stampExistingQueryStarted();
         Map<Long, Long> existingMap = cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
                         .select(CleanStock::getSourceRowId, CleanStock::getGlobalId)
                         .in(CleanStock::getSourceRowId, batchIds)
                         .eq(CleanStock::getSourceSystem, context.getDataSourceKey()))
                 .stream().collect(Collectors.toMap(CleanStock::getSourceRowId, CleanStock::getGlobalId));
+        metrics.stampExistingQueryFinished();
 
+        metrics.stampSplitStarted();
         List<CleanStock> toInsert = new ArrayList<>();
         List<CleanStock> toUpdate = new ArrayList<>();
         for (CleanStock target : targets) {
@@ -147,6 +150,7 @@ public class StockBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
+        metrics.stampSplitFinished();
         if (!toInsert.isEmpty()) {
             metrics.stampInsertStarted();
             cleanStockMapper.insert(toInsert);

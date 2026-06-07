@@ -123,12 +123,15 @@ public class PositionBusinessSyncTemplate
 
         // 查询本页数据中已存在的记录
         Set<Long> batchIds = targets.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toSet());
+        metrics.stampExistingQueryStarted();
         Map<Long, Long> existingMap = cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                         .select(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)
                         .in(CleanPosition::getSourceRowId, batchIds)
                         .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
                 .stream().collect(Collectors.toMap(CleanPosition::getSourceRowId, CleanPosition::getGlobalId));
+        metrics.stampExistingQueryFinished();
 
+        metrics.stampSplitStarted();
         List<CleanPosition> toInsert = new ArrayList<>();
         List<CleanPosition> toUpdate = new ArrayList<>();
         for (CleanPosition target : targets) {
@@ -140,6 +143,7 @@ public class PositionBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
+        metrics.stampSplitFinished();
 
         if (!toInsert.isEmpty()) {
             metrics.stampInsertStarted();

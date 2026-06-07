@@ -133,11 +133,15 @@ public class TradeBusinessSyncTemplate
 
         // 查询本页数据中已存在的记录
         Set<Long> batchIds = targets.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toSet());
+        metrics.stampExistingQueryStarted();
         Map<Long, Long> existingMap = cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                         .select(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)
                         .in(CleanTrade::getSourceRowId, batchIds)
                         .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
                 .stream().collect(Collectors.toMap(CleanTrade::getSourceRowId, CleanTrade::getGlobalId));
+        metrics.stampExistingQueryFinished();
+
+        metrics.stampSplitStarted();
         List<CleanTrade> toInsert = new ArrayList<>();
         List<CleanTrade> toUpdate = new ArrayList<>();
         for (CleanTrade target : targets) {
@@ -149,6 +153,7 @@ public class TradeBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
+        metrics.stampSplitFinished();
 
 
         if (!toInsert.isEmpty()) {

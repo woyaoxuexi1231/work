@@ -122,13 +122,16 @@ public class AssetBusinessSyncTemplate
 
         // 查询本页数据中已存在的记录
         Set<Long> batchIds = targets.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet());
+        metrics.stampExistingQueryStarted();
         Map<Long, Long> existingMap = cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
                         .select(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)
                         .in(CleanAsset::getSourceRowId, batchIds)
                         .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
                 .stream().collect(Collectors.toMap(CleanAsset::getSourceRowId, CleanAsset::getGlobalId));
+        metrics.stampExistingQueryFinished();
 
         // 筛选出待插入和待更新的数据
+        metrics.stampSplitStarted();
         List<CleanAsset> toInsert = new ArrayList<>();
         List<CleanAsset> toUpdate = new ArrayList<>();
         for (CleanAsset target : targets) {
@@ -140,6 +143,7 @@ public class AssetBusinessSyncTemplate
                 toInsert.add(target);
             }
         }
+        metrics.stampSplitFinished();
 
         if (!toInsert.isEmpty()) {
             metrics.stampInsertStarted();
