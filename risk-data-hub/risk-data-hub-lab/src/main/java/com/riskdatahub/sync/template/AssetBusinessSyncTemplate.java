@@ -127,7 +127,6 @@ public class AssetBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_asset:" + context.getDataSourceKey();
 
-        long t0 = System.currentTimeMillis();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
                                 .select(CleanAsset::getSourceRowId)

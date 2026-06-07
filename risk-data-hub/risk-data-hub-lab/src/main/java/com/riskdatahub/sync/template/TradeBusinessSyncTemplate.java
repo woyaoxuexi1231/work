@@ -136,13 +136,11 @@ public class TradeBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_trade:" + context.getDataSourceKey();
 
-        long t0 = System.currentTimeMillis();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                                 .select(CleanTrade::getSourceRowId)
                                 .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanTrade::getSourceRowId).collect(Collectors.toSet()));
-        long cacheLookupMs = System.currentTimeMillis() - t0;
         metrics.stampCacheLookupFinished();
         List<CleanTrade> toInsert = new ArrayList<>();
         List<CleanTrade> toUpdate = new ArrayList<>();

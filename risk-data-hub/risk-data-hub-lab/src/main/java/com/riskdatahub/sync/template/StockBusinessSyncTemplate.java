@@ -135,7 +135,6 @@ public class StockBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_stock:" + context.getDataSourceKey();
 
-        long t0 = System.currentTimeMillis();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
                                 .select(CleanStock::getSourceRowId)
@@ -143,7 +142,6 @@ public class StockBusinessSyncTemplate
                         .stream().map(CleanStock::getSourceRowId).collect(Collectors.toSet()));
         metrics.stampCacheLookupFinished();
 
-        long tSplit = System.currentTimeMillis();
         List<CleanStock> toInsert = new ArrayList<>();
         List<CleanStock> toUpdate = new ArrayList<>();
         for (CleanStock target : targets) {

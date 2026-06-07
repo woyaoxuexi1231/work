@@ -200,34 +200,6 @@ function bizProgress(rec) {
 function bizPending(rec) {
   return Math.max(0, (rec.pulledCount || 0) - (rec.savedCount || 0))
 }
-
-
-
-function fmtMs(ms) {
-  if (!ms && ms !== 0) return '-'
-  if (ms < 1000) return ms + 'ms'
-  if (ms < 60000) return (ms / 1000).toFixed(1) + 's'
-  return Math.floor(ms / 60000) + 'm' + Math.floor((ms % 60000) / 1000) + 's'
-}
-
-function fmtRate(rec) {
-  const total = (rec.saveDurationMs || 0) + (rec.fetchDurationMs || 0) + (rec.transformDurationMs || 0)
-  if (total === 0) return '-'
-  const rowsPerSec = Math.round((rec.pulledCount || 0) / (total / 1000))
-  return rowsPerSec + '条/s'
-}
-
-function bizTotalMs(rec) {
-  return (rec.fetchDurationMs || 0) + (rec.transformDurationMs || 0) + (rec.saveDurationMs || 0)
-}
-
-function bizAvgFetchMs(rec) {
-  return rec.fetchPageCount ? (rec.fetchDurationMs || 0) / rec.fetchPageCount : 0
-}
-
-function bizAvgSaveMs(rec) {
-  return rec.saveBatchCount ? (rec.saveDurationMs || 0) / rec.saveBatchCount : 0
-}
 </script>
 
 <template>

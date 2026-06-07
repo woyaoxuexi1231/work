@@ -128,7 +128,6 @@ public class PositionBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
 
-        long t0 = System.currentTimeMillis();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                                 .select(CleanPosition::getSourceRowId)

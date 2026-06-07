@@ -1,10 +1,12 @@
 package com.riskdatahub.sync.model;
 
+import com.riskdatahub.common.util.TimeUtils;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,38 +30,29 @@ public final class SyncSupport {
     /**
      * 分页数据块 — 在拉取线程和落库线程之间传递的"页"单位。
      * <p>
+     * {@link #metrics} 随页传递，拉取/落库线程通过 {@link SyncMetrics} 打点时间戳，持久化时再写入 DB。
      * 使用哨兵模式（{@link #end()}）标记数据结束，消费者只需判断 {@link #isEnd()} 即可优雅终止。
      * </p>
      *
      * @param <S> 源数据类型
      */
     @Data
-    @AllArgsConstructor
     public static class PageChunk<S> {
         private int pageNo;
         private List<S> rows;
         private boolean end;
-        private long createdAt;
-        private long fetchDurationMs;
+        private SyncMetrics metrics;
 
         public PageChunk(int pageNo, List<S> rows, boolean end) {
             this.pageNo = pageNo;
             this.rows = rows;
             this.end = end;
-            this.createdAt = System.currentTimeMillis();
-            this.fetchDurationMs = 0;
         }
 
-        /**
-         * 构造包含数据的页块（记录创建时间戳，用于计算队列等待耗时）。
-         *
-         * @param pageNo 页码
-         * @param rows   数据行
-         * @param <S>    数据类型
-         * @return 数据页块
-         */
-        public static <S> PageChunk<S> data(int pageNo, List<S> rows) {
-            return new PageChunk<>(pageNo, rows, false);
+        public static <S> PageChunk<S> data(int pageNo, List<S> rows, SyncMetrics metrics) {
+            PageChunk<S> chunk = new PageChunk<>(pageNo, rows, false);
+            chunk.setMetrics(metrics);
+            return chunk;
         }
 
         /**
@@ -74,7 +67,7 @@ public final class SyncSupport {
     }
 
     /**
-     * 单个业务类型的同步结果汇总 — 不可变值对象。
+     * 单个业务类型的同步结果汇总。
      */
     @Data
     @AllArgsConstructor
@@ -85,108 +78,67 @@ public final class SyncSupport {
         private int savedCount;
         private long lastRowId;
 
-        // ====== 耗时指标（毫秒），用于性能分析 ======
-        private long fetchDurationMs;
-        private long transformDurationMs;
-        private long saveDurationMs;
-        private int fetchPageCount;
-        private int saveBatchCount;
-        private long maxFetchPageMs;
-        private long maxSaveBatchMs;
-
-        // ====== saveBatch 子步骤耗时 ======
-        private long cacheLookupDurationMs;
-        private long batchInsertDurationMs;
-        private long globalIdQueryDurationMs;
-        private long batchUpdateDurationMs;
-
-        /**
-         * 转换为 Map，保证字段顺序固定（便于 JSON 序列化和日志查看）。
-         *
-         * @return 有序 Map
-         */
         public Map<String, Object> toMap() {
             Map<String, Object> result = new LinkedHashMap<>();
+            result.put("businessCode", businessCode);
             result.put("pageCount", pageCount);
             result.put("pulledCount", pulledCount);
             result.put("savedCount", savedCount);
             result.put("lastRowId", lastRowId);
-            result.put("fetchDurationMs", fetchDurationMs);
-            result.put("transformDurationMs", transformDurationMs);
-            result.put("saveDurationMs", saveDurationMs);
-            result.put("fetchPageCount", fetchPageCount);
-            result.put("saveBatchCount", saveBatchCount);
-            result.put("maxFetchPageMs", maxFetchPageMs);
-            result.put("maxSaveBatchMs", maxSaveBatchMs);
-            result.put("cacheLookupDurationMs", cacheLookupDurationMs);
-            result.put("batchInsertDurationMs", batchInsertDurationMs);
-            result.put("globalIdQueryDurationMs", globalIdQueryDurationMs);
-            result.put("batchUpdateDurationMs", batchUpdateDurationMs);
             return result;
         }
     }
 
     /**
-     * 同步耗时指标采集 — 统计拉取/转换/落库各阶段耗时，用于性能分析。
-     * <p>
-     * 拉取线程写入 fetch* 字段，落库线程写入 transform/save* 字段，
-     * 各字段只有单一线程写入，无需加锁。</p>
+     * 批次时间节点采集 — 拉取/落库全流程唯一打点入口，持久化前由模板转为 {@link com.riskdatahub.sync.entity.SyncBatchMetrics}。
      */
-    @Getter
+    @Data
     public static class SyncMetrics {
-        // ====== 拉取统计（日志用，不持久化） ======
-        private long fetchDurationMs;
-        private int fetchPageCount;
-        private long maxFetchPageMs;
+        private Integer batchNo;
+        private Integer pulledCount;
+        private Integer savedCount;
+        private Integer insertCount;
+        private Integer updateCount;
 
-        // ====== 时间戳（被 recordBatchMetrics 读取写入 sync_batch_metrics） ======
-        private long fetchStartedAt;
-        private long fetchQueuedAt;
-        private long processStartedAt;
-        private long idGenStartedAt;
-        private long idGenFinishedAt;
-        private long transformStartedAt;
-        private long transformFinishedAt;
-        private long saveStartedAt;
-        private long cacheLookupFinishedAt;
-        private long insertFinishedAt;
-        private long cacheAddFinishedAt;
-        private long globalIdQueryFinishedAt;
-        private long setIdFinishedAt;
-        private long updateFinishedAt;
-        private long saveFinishedAt;
-        private int insertCount;
-        private int updateCount;
+        private LocalDateTime fetchStartedAt;
+        private LocalDateTime fetchQueuedAt;
+        private LocalDateTime processStartedAt;
+        private LocalDateTime idGenStartedAt;
+        private LocalDateTime idGenFinishedAt;
+        private LocalDateTime transformStartedAt;
+        private LocalDateTime transformFinishedAt;
+        private LocalDateTime saveStartedAt;
+        private LocalDateTime cacheLookupFinishedAt;
+        private LocalDateTime insertFinishedAt;
+        private LocalDateTime cacheAddFinishedAt;
+        private LocalDateTime globalIdQueryFinishedAt;
+        private LocalDateTime setIdFinishedAt;
+        private LocalDateTime updateFinishedAt;
+        private LocalDateTime saveFinishedAt;
 
-        public void recordFetchPage(long elapsedMs) {
-            fetchDurationMs += elapsedMs;
-            fetchPageCount++;
-            if (elapsedMs > maxFetchPageMs) maxFetchPageMs = elapsedMs;
+        public static SyncMetrics forPage(int pageNo, int rowCount) {
+            SyncMetrics m = new SyncMetrics();
+            m.setBatchNo(pageNo);
+            m.setPulledCount(rowCount);
+            m.setSavedCount(rowCount);
+            return m;
         }
 
-        public void stampFetchStarted() { fetchStartedAt = System.currentTimeMillis(); }
-        public void stampFetchQueued() { fetchQueuedAt = System.currentTimeMillis(); }
-        public void stampProcessStarted() { processStartedAt = System.currentTimeMillis(); }
-        public void stampIdGenStarted() { idGenStartedAt = System.currentTimeMillis(); }
-        public void stampIdGenFinished() { idGenFinishedAt = System.currentTimeMillis(); }
-        public void stampTransformStarted() { transformStartedAt = System.currentTimeMillis(); }
-        public void stampTransformFinished() { transformFinishedAt = System.currentTimeMillis(); }
-        public void stampSaveStarted() { saveStartedAt = System.currentTimeMillis(); }
-        public void stampCacheLookupFinished() { cacheLookupFinishedAt = System.currentTimeMillis(); }
-        public void stampInsertFinished(int cnt) { insertFinishedAt = System.currentTimeMillis(); insertCount = cnt; }
-        public void stampCacheAddFinished() { cacheAddFinishedAt = System.currentTimeMillis(); }
-        public void stampGlobalIdQueryFinished() { globalIdQueryFinishedAt = System.currentTimeMillis(); }
-        public void stampSetIdFinished() { setIdFinishedAt = System.currentTimeMillis(); }
-        public void stampUpdateFinished(int cnt) { updateFinishedAt = System.currentTimeMillis(); updateCount = cnt; }
-        public void stampSaveFinished() { saveFinishedAt = System.currentTimeMillis(); }
-
-        public Double avgFetchPageMs() {
-            return fetchPageCount > 0 ? (double) fetchDurationMs / fetchPageCount : 0;
-        }
-
-        public long totalDurationMs() {
-            return fetchDurationMs;
-        }
+        public void stampFetchStarted() { fetchStartedAt = TimeUtils.now(); }
+        public void stampFetchQueued() { fetchQueuedAt = TimeUtils.now(); }
+        public void stampProcessStarted() { processStartedAt = TimeUtils.now(); }
+        public void stampIdGenStarted() { idGenStartedAt = TimeUtils.now(); }
+        public void stampIdGenFinished() { idGenFinishedAt = TimeUtils.now(); }
+        public void stampTransformStarted() { transformStartedAt = TimeUtils.now(); }
+        public void stampTransformFinished() { transformFinishedAt = TimeUtils.now(); }
+        public void stampSaveStarted() { saveStartedAt = TimeUtils.now(); }
+        public void stampCacheLookupFinished() { cacheLookupFinishedAt = TimeUtils.now(); }
+        public void stampInsertFinished(int cnt) { insertFinishedAt = TimeUtils.now(); insertCount = cnt; }
+        public void stampCacheAddFinished() { cacheAddFinishedAt = TimeUtils.now(); }
+        public void stampGlobalIdQueryFinished() { globalIdQueryFinishedAt = TimeUtils.now(); }
+        public void stampSetIdFinished() { setIdFinishedAt = TimeUtils.now(); }
+        public void stampUpdateFinished(int cnt) { updateFinishedAt = TimeUtils.now(); updateCount = cnt; }
+        public void stampSaveFinished() { saveFinishedAt = TimeUtils.now(); }
     }
 
     /**

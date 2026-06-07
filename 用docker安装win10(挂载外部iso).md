@@ -42,8 +42,8 @@ docker run -d `
   -e DISK_SIZE=40G `
   -p 3389:3389 `
   -p 8006:8006 `
-  -v "C:\Users\15434\Desktop\iso\Windows-ch-origin.iso:/boot.iso" `
-  -v "C:\Users\15434\Desktop\share:/shared" `
+  -v D:\dev-env\Windows-ch-origin.iso:/boot.iso `
+  -v C:\Users\15434\Desktop\share:/shared `
   dockurr/windows
 ```
 

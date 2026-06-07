@@ -18,25 +18,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * 同步模板骨架类 — 有界队列生产者-消费者模式 + 模板方法模式。
- * <p>
- * <b>模板方法模式：</b>{@code execute()} 用 {@code final} 修饰，固定同步流程：
- * 拉取 → 转换 → 落库 → 标记已同步。子类通过覆盖 5 个抽象方法定制每个步骤的具体实现。
- * </p>
- * <p>
- * <b>生产者-消费者模式：</b>每类业务内部使用两个线程：
- * <ul>
- *   <li>拉取线程（生产者）：从上游分页拉取未同步数据，放入有界队列</li>
- *   <li>落库线程（消费者）：从队列读取数据，逐条转换并写入中台库</li>
- * </ul>
- * 队列容量为 4，拉取过快时 put() 阻塞，通过背压控制内存上限。
- * </p>
- *
- * @param <S> 上游源数据类型
- * @param <T> 中台目标实体类型
- * @author risk-data-hub
- */
 @Slf4j
 public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyncTemplate<S, T> {
 
@@ -47,34 +28,20 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
     }
 
-    /**
-     * 模板方法 — final 禁止子类重写，确保所有业务类型的同步流程一致。
-     * <p>
-     * 执行流程：
-     * <ol>
-     *   <li>创建容量为 4 的有界阻塞队列（背压控制）</li>
-     *   <li>向 pairExecutor 提交拉取线程和落库线程</li>
-     *   <li>等待两个线程都完成（Future.get() 阻塞等待）</li>
-     *   <li>检查是否有异常（failure 信号旗），有则抛出</li>
-     *   <li>发布同步完成事件（发件箱模式）</li>
-     * </ol>
-     * </p>
-     */
     @Override
     public final BusinessSyncResult execute(BusinessSyncContext context) throws Exception {
         BlockingQueue<PageChunk<S>> queue = new ArrayBlockingQueue<>(4);
         AtomicReference<RuntimeException> failure = new AtomicReference<>();
         SyncCounter counter = new SyncCounter();
-        SyncMetrics metrics = new SyncMetrics();
 
         log.info("[同步模板] 业务 {} 开始执行，数据源={}, 类型={}, 分页大小={}, 批次号={}, 任务ID={}",
                 businessCode(), context.getDataSourceKey(), context.getDatasourceType(),
                 context.getPageSize(), context.getBatchNo(), context.getTaskId());
 
         Future<?> fetchFuture = pairExecutor.submit(() ->
-                runFetchThread(context, queue, counter, metrics, failure));
+                runFetchThread(context, queue, counter, failure));
         Future<?> insertFuture = pairExecutor.submit(() ->
-                runInsertThread(context, queue, counter, metrics, failure));
+                runInsertThread(context, queue, counter, failure));
 
         fetchFuture.get();
         insertFuture.get();
@@ -83,38 +50,28 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         }
 
         publishBusinessSummaryEvent(context, counter);
-        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}, 拉取耗时={}ms({}页, 均{}ms)",
+        log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}",
                 businessCode(), counter.getPageCount(), counter.getPulledCount(),
-                counter.getSavedCount(), counter.getLastRowId(),
-                metrics.getFetchDurationMs(), metrics.getFetchPageCount(),
-                String.format("%.0f", metrics.avgFetchPageMs()));
+                counter.getSavedCount(), counter.getLastRowId());
         return new BusinessSyncResult(
                 businessCode(),
                 counter.getPageCount(),
                 counter.getPulledCount(),
                 counter.getSavedCount(),
-                counter.getSavedMaxRowId(),
-                0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0);
+                counter.getSavedMaxRowId());
     }
 
-    /**
-     * 拉取线程（生产者）：基于游标分页查询，通过有界队列传递给落库线程。
-     * <p>游标推进防御死循环：如果最后一条记录的 ID 不超过当前游标，立即终止。</p>
-     */
     private void runFetchThread(BusinessSyncContext context,
                                 BlockingQueue<PageChunk<S>> queue,
                                 SyncCounter counter,
-                                SyncMetrics metrics,
                                 AtomicReference<RuntimeException> failure) {
         long cursor = initialCursor(context);
         int pageNo = 0;
         try {
             while (failure.get() == null) {
+                SyncMetrics metrics = new SyncMetrics();
                 metrics.stampFetchStarted();
                 List<S> rows = fetchPage(context, cursor, context.getPageSize());
-                long fetchElapsed = System.currentTimeMillis() - metrics.getFetchStartedAt();
-                metrics.recordFetchPage(fetchElapsed);
                 if (rows.isEmpty()) {
                     break;
                 }
@@ -127,11 +84,12 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 pageNo++;
                 counter.setPageCount(pageNo);
                 counter.setLastRowId(cursor);
+                metrics.setBatchNo(pageNo);
+                metrics.setPulledCount(rows.size());
+                metrics.setSavedCount(rows.size());
                 metrics.stampFetchQueued();
                 counter.addPulledCount(rows.size());
-                PageChunk<S> chunk = PageChunk.data(pageNo, rows);
-                chunk.setFetchDurationMs(fetchElapsed);
-                queue.put(chunk);
+                queue.put(PageChunk.data(pageNo, rows, metrics));
                 log.info("[同步模板] 业务 {} 第 {} 页拉取完成，行数={}, 当前游标={}",
                         businessCode(), pageNo, rows.size(), counter.getLastRowId());
                 publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());
@@ -149,14 +107,9 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         }
     }
 
-    /**
-     * 落库线程（消费者）：从队列读取数据，转换并写入中台库。
-     * <p>收到哨兵 end() 对象后退出循环（优雅终止）。</p>
-     */
     private void runInsertThread(BusinessSyncContext context,
                                  BlockingQueue<PageChunk<S>> queue,
                                  SyncCounter counter,
-                                 SyncMetrics metrics,
                                  AtomicReference<RuntimeException> failure) {
         try {
             while (failure.get() == null) {
@@ -164,10 +117,10 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 if (chunk.isEnd()) {
                     break;
                 }
+                SyncMetrics metrics = chunk.getMetrics();
                 metrics.stampProcessStarted();
                 List<S> rows = chunk.getRows();
 
-                // 预分配本批所有 Leaf ID
                 preAllocateBatchIds(getIdTag(), rows.size(), metrics);
 
                 metrics.stampTransformStarted();
@@ -186,9 +139,8 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 counter.updateSavedMaxRowId(sourceRowId(rows.get(rows.size() - 1)));
                 log.info("[同步模板] 业务 {} 第 {} 页落库完成，累计落库数={}",
                         businessCode(), chunk.getPageNo(), counter.getSavedCount());
-                publishProgressWithMetrics(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount(), metrics);
-
-                recordBatchMetrics(context, chunk.getPageNo(), rows.size(), metrics);
+                publishProgress(context.getTaskId(), businessCode(), counter.getPulledCount(), counter.getSavedCount());
+                recordBatchMetrics(context, metrics);
             }
         } catch (Exception e) {
             recordFailure(queue, failure, new IllegalStateException(
@@ -196,11 +148,6 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         }
     }
 
-    /**
-     * 记录故障信号并通知对端线程终止。
-     * <p>CAS 保证"第一个失败"的线程写入自己的异常作为根因，
-     * 后续失败不再覆盖。clear + offer(end) 确保对端不会永远阻塞在 take() 上。</p>
-     */
     private void recordFailure(BlockingQueue<PageChunk<S>> queue,
                                AtomicReference<RuntimeException> failure,
                                RuntimeException exception) {
@@ -211,7 +158,6 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         }
     }
 
-    /** 发送结束哨兵到队列 */
     private void publishEnd(BlockingQueue<PageChunk<S>> queue) {
         try {
             queue.put(PageChunk.end());
