@@ -85,18 +85,29 @@ function buildRecord(raw) {
     }
   }
 
+  // 找出本批最大耗时，用于相对着色
+  const durations = Object.values(pairDuration).filter(v => v !== null)
+  const maxDur = durations.length > 0 ? Math.max(...durations) : 0
+
   let prevTs = null
   let prevLabel = null
   const nodes = NODES.map((n, idx) => {
     const ts = toTs(raw[n.key])
     const orderOk = ts === null || prevTs === null || ts >= prevTs
+    const dur = pairDuration[n.key] ?? null
     const node = {
       idx: idx + 1,
       key: n.key,
       label: n.label,
       time: raw[n.key] || null,
       ts,
-      duration: pairDuration[n.key] ?? null,
+      duration: dur,
+      durLevel: dur !== null && maxDur > 0
+        ? dur / maxDur >= 0.8 ? 'peak'
+          : dur / maxDur >= 0.5 ? 'slow'
+            : dur / maxDur >= 0.2 ? 'normal'
+              : 'fast'
+        : null,
       orderOk,
       orderIssue: !orderOk ? `早于「${prevLabel}」` : null,
     }
@@ -201,8 +212,14 @@ function fmtTime(t) {
                 <td class="px-4 py-2 font-mono text-slate-800 tracking-tight">
                   {{ fmtTime(node.time) }}
                 </td>
-                <td class="px-4 py-2 text-right font-mono text-xs"
-                  :class="node.duration !== null ? 'text-indigo-600 font-semibold' : 'text-slate-200'"
+                <td class="px-4 py-2 text-right font-mono text-xs font-semibold"
+                  :class="{
+                    'text-emerald-600': node.durLevel === 'fast',
+                    'text-indigo-600': node.durLevel === 'normal',
+                    'text-amber-600': node.durLevel === 'slow',
+                    'text-red-600': node.durLevel === 'peak',
+                    'text-slate-200': !node.durLevel
+                  }"
                 >
                   {{ fmtDuration(node.duration) }}
                 </td>

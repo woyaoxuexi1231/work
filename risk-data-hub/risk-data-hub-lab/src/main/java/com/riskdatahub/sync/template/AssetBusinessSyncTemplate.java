@@ -127,6 +127,7 @@ public class AssetBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_asset:" + context.getDataSourceKey();
 
+        // 查询已存在的 ID
         metrics.stampCacheLookupStarted();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
@@ -135,6 +136,7 @@ public class AssetBusinessSyncTemplate
                         .stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet()));
         metrics.stampCacheLookupFinished();
 
+        // 筛选出待插入和待更新的数据
         List<CleanAsset> toInsert = new ArrayList<>();
         List<CleanAsset> toUpdate = new ArrayList<>();
         for (CleanAsset target : targets) {
@@ -146,11 +148,14 @@ public class AssetBusinessSyncTemplate
         }
 
 
+
         if (!toInsert.isEmpty()) {
+            // 批量插入需要新增的数据
             metrics.stampInsertStarted();
             cleanAssetMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
 
+            // 缓存新增的 ID
             metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList()));
