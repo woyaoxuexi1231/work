@@ -6,7 +6,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 # ==== 配置 ====
 C="milvus-standalone"; MI="milvusdb/milvus:${MILVUS_VERSION:-v2.6.7}"
 P="${MILVUS_PORT:-19530}"; ATTU_P="${ATTU_PORT:-3000}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/milvus-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/milvus-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"

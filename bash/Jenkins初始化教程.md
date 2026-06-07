@@ -33,7 +33,7 @@ bash component_install_jenkins_data_docker.sh
 **挂载版**（直接读文件）：
 
 ```
-C:\Users\15434\Desktop\docker-data\jenkins-data\secrets\initialAdminPassword
+C:\Users\code\Desktop\docker-data\jenkins-data\secrets\initialAdminPassword
 ```
 
 **非挂载版**（进容器读）：

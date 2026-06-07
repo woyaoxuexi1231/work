@@ -7,7 +7,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 C="minio"; I="minio/minio:${MINIO_VERSION:-latest}"
 AP="${MINIO_API_PORT:-9000}"; CP="${MINIO_CONSOLE_PORT:-9001}"
 U="${MINIO_ROOT_USER:-minioadmin}"; PASS="${MINIO_ROOT_PASSWORD:-minioadmin}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/minio-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/minio-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"

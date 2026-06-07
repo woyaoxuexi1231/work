@@ -6,7 +6,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 # ==== 配置 ====
 C="redis"; I="redis:${REDIS_VERSION:-7.2}"; P="${REDIS_PORT:-6379}"
 PASS="${REDIS_PASSWORD:-123456}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/redis-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/redis-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"

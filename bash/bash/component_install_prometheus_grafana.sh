@@ -6,7 +6,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 # ==== 配置 ====
 PROM_P="${PROMETHEUS_PORT:-9090}"; GRAF_P="${GRAFANA_PORT:-3000}"
 U="${GRAFANA_USER:-admin}"; PASS="${GRAFANA_PASSWORD:-admin123}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/monitor-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/monitor-data"
 
 # ==== 前置检查 ====
 check_docker

@@ -53,7 +53,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 所有数据统一挂载到 Windows 路径：
 
 ```
-C:\Users\15434\Desktop\docker-data\<组件名>-data\
+C:\Users\code\Desktop\docker-data\<组件名>-data\
 ```
 
 ---
@@ -70,7 +70,7 @@ C="redis"                                    # 容器名
 I="redis:${REDIS_VERSION:-7.2}"              # 镜像（带环境变量覆盖）
 P="${REDIS_PORT:-6379}"                      # 端口（带环境变量覆盖）
 PASS="${REDIS_PASSWORD:-123456}"             # 凭据（带环境变量覆盖）
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/redis-data"   # 数据目录
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/redis-data"   # 数据目录
 ```
 
 命名规则：
@@ -186,7 +186,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 # ==== 配置 ====
 C="redis"; I="redis:${REDIS_VERSION:-7.2}"; P="${REDIS_PORT:-6379}"
 PASS="${REDIS_PASSWORD:-123456}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/redis-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/redis-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
@@ -224,7 +224,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 # ==== 配置 ====
 C="mysql"; I="mysql:${MYSQL_VERSION:-8.1}"; P="${MYSQL_PORT:-3306}"
 PASS="${MYSQL_ROOT_PASSWORD:-123456}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/mysql-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/mysql-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
@@ -271,7 +271,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 
 # ==== 配置 ====
 C="jenkins"; I="jenkins/jenkins:lts"; P="${JENKINS_PORT:-8080}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/jenkins-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/jenkins-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
@@ -320,7 +320,7 @@ done_banner "Jenkins | http://localhost:${P}"
 - [ ] 第二行是 `# 组件名 版本 | Port: XXX | ...`
 - [ ] `source "${SCRIPT_DIR}/lib/common.sh"` 正确引用公共库
 - [ ] 配置变量用大写单字母：`C`、`I`、`P`、`PASS`、`DATA`
-- [ ] `DATA` 路径为 `/c/Users/15434/Desktop/docker-data/<组件>-data`
+- [ ] `DATA` 路径为 `/c/Users/code/Desktop/docker-data/<组件>-data`
 - [ ] 镜像版本、端口、密码都支持环境变量覆盖（`${ENV_VAR:-默认值}`）
 - [ ] 七段结构完整：配置 → 前置检查 → 数据目录 → (配置) → 拉取 → 启动 → (验证) → 完成
 - [ ] `docker run` 包含 `-e TZ=Asia/Shanghai`
@@ -336,7 +336,7 @@ done_banner "Jenkins | http://localhost:${P}"
 所有可配置参数必须支持环境变量覆盖：
 
 ```
-${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}  # 数据根目录
+${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}  # 数据根目录
 ${MYSQL_PORT:-3306}                                       # 端口
 ${MYSQL_ROOT_PASSWORD:-123456}                            # 密码
 ${MYSQL_VERSION:-8.1}                                     # 镜像版本

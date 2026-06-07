@@ -6,7 +6,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 # ==== 配置 ====
 C="mysql"; I="mysql:${MYSQL_VERSION:-8.1}"; P="${MYSQL_PORT:-3306}"
 PASS="${MYSQL_ROOT_PASSWORD:-123456}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/mysql-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/mysql-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"

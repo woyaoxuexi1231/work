@@ -1,5 +1,5 @@
 # Common functions for Docker component installers
-$DataRoot = "C:\Users\15434\Desktop\docker-data"
+$DataRoot = "C:\Users\code\Desktop\docker-data"
 
 function log_info($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [INFO] $msg" }
 function log_warn($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [WARN] $msg" -ForegroundColor Yellow }

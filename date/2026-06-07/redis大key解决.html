@@ -1,399 +1,518 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redis 大 Key 解决方案演示</title>
-    <!-- Tailwind CSS -->
+    <title>Redis 大 Key 治理全方案 | 演示与实战</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
               redis: '#DC382D',
-              dark: '#1e293b',
-              darker: '#0f172a'
-            },
-            animation: {
-              'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              dark: '#0f172a',
+              panel: '#1e293b',
+              accent: '#3b82f6'
             }
           }
         }
       }
     </script>
     <style>
-        /* 自定义滚动条 */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
         .terminal-text { font-family: 'Courier New', Courier, monospace; }
-        .block-ui { pointer-events: none; opacity: 0.5; filter: grayscale(100%); }
+        pre code { font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; line-height: 1.6; }
+        .code-block { position: relative; }
+        .copy-btn { position: absolute; top: 0.5rem; right: 0.5rem; opacity: 0; transition: opacity 0.2s; }
+        .code-block:hover .copy-btn { opacity: 1; }
     </style>
 </head>
-<body class="bg-darker text-slate-300 min-h-screen flex flex-col">
+<body class="bg-dark text-slate-300 min-h-screen flex flex-col overflow-x-hidden">
 
 <!-- Header -->
-<header class="bg-dark border-b border-slate-700 p-4 shadow-lg sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto flex justify-between items-center">
+<header class="bg-panel/80 backdrop-blur-md border-b border-slate-700 p-4 sticky top-0 z-50">
+    <div class="max-w-[1600px] mx-auto flex justify-between items-center">
         <div class="flex items-center gap-3">
-            <i class="fa-brands fa-redhat text-redis text-3xl"></i>
+            <div class="w-10 h-10 bg-redis rounded-lg flex items-center justify-center text-white shadow-lg shadow-red-900/20">
+                <i class="fa-solid fa-database text-xl"></i>
+            </div>
             <div>
-                <h1 class="text-xl font-bold text-white">Redis BigKey 解决方案演示</h1>
-                <p class="text-xs text-slate-400">可视化理解阻塞风险与优化策略</p>
+                <h1 class="text-xl font-bold text-white tracking-tight">Redis BigKey 治理全方案</h1>
+                <p class="text-xs text-slate-400">Discovery • Solution • Prevention • Practice</p>
             </div>
         </div>
-        <div class="flex items-center gap-2 text-sm">
-            <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-            <span id="status-indicator">Redis 服务正常</span>
-        </div>
+        <nav class="hidden md:flex gap-6 text-sm font-medium">
+            <a href="#demo" class="hover:text-redis transition-colors">交互演示</a>
+            <a href="#playground" class="hover:text-orange-400 transition-colors"><i class="fa-solid fa-flask mr-1"></i>实战演练</a>
+            <a href="#discovery" class="hover:text-accent transition-colors">如何发现</a>
+            <a href="#solutions" class="hover:text-green-400 transition-colors">解决方案</a>
+        </nav>
     </div>
 </header>
 
-<main class="flex-grow max-w-6xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<main class="flex-grow max-w-[1600px] mx-auto w-full p-4 lg:p-6 grid grid-cols-1 xl:grid-cols-12 gap-6">
 
-    <!-- Left: Control Panel -->
-    <div class="lg:col-span-1 space-y-6">
-        <!-- Scenario Card -->
-        <div class="bg-dark rounded-xl border border-slate-700 p-5 shadow-xl">
-            <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <i class="fa-solid fa-flask text-blue-400"></i> 场景模拟
-            </h2>
+    <!-- LEFT COLUMN: Interactive Demo (Sticky) -->
+    <div id="demo" class="xl:col-span-5 space-y-6 xl:sticky xl:top-24 xl:h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-2 scrollbar-hide">
+        <div class="bg-panel rounded-xl border border-slate-700 p-5 shadow-2xl flex flex-col h-full max-h-[600px]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-play-circle text-accent"></i> 实时模拟实验室
+                </h2>
+                <span id="timer" class="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-1 rounded">0ms</span>
+            </div>
 
-            <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <button onclick="runDemo('bad')" class="group p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-red-500 hover:bg-red-900/20 transition-all text-left">
+                    <div class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i> DEL (阻塞)</div>
+                    <div class="text-[10px] text-slate-500 group-hover:text-slate-400">同步删除，主线程卡死</div>
+                </button>
+                <button onclick="runDemo('unlink')" class="group p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-green-500 hover:bg-green-900/20 transition-all text-left">
+                    <div class="text-green-400 font-bold text-sm mb-1"><i class="fa-solid fa-link-slash mr-1"></i> UNLINK</div>
+                    <div class="text-[10px] text-slate-500 group-hover:text-slate-400">Redis 4.0+ 异步删除</div>
+                </button>
+                <button onclick="runDemo('split')" class="group p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-blue-500 hover:bg-blue-900/20 transition-all text-left">
+                    <div class="text-blue-400 font-bold text-sm mb-1"><i class="fa-solid fa-layer-group mr-1"></i> 拆分 Key</div>
+                    <div class="text-[10px] text-slate-500 group-hover:text-slate-400">Hash -> Multi String</div>
+                </button>
+                <button onclick="runDemo('scan')" class="group p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-purple-500 hover:bg-purple-900/20 transition-all text-left">
+                    <div class="text-purple-400 font-bold text-sm mb-1"><i class="fa-solid fa-broom mr-1"></i> 渐进式删</div>
+                    <div class="text-[10px] text-slate-500 group-hover:text-slate-400">HSCAN + HDEL 循环</div>
+                </button>
+            </div>
+
+            <div class="flex-grow bg-slate-900/50 rounded-lg border border-slate-800 p-4 relative overflow-hidden flex flex-col justify-between">
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">当前大 Key 类型</label>
-                    <select id="key-type" class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-white focus:ring-2 focus:ring-redis outline-none">
-                        <option value="string">String (50MB JSON)</option>
-                        <option value="hash" selected>Hash (100万 字段)</option>
-                        <option value="set">Set (50万 成员)</option>
-                        <option value="zset">ZSet (50万 成员)</option>
-                    </select>
+                    <div class="text-[10px] uppercase text-slate-500 mb-1 tracking-wider">Main Thread</div>
+                    <div id="main-thread" class="h-8 bg-slate-800 rounded relative overflow-hidden border border-slate-700">
+                        <div id="thread-bar" class="absolute left-0 top-0 bottom-0 bg-green-500/20 w-0 transition-all duration-75"></div>
+                        <div class="absolute inset-0 flex items-center px-3 z-10">
+                            <i id="thread-icon" class="fa-solid fa-check text-green-500 text-xs mr-2"></i>
+                            <span id="thread-status" class="text-xs text-green-500 font-mono">IDLE</span>
+                        </div>
+                    </div>
                 </div>
-
-                <div class="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                    <div class="flex justify-between text-xs mb-1">
-                        <span>内存占用估算</span>
-                        <span class="text-redis font-bold">~85.4 MB</span>
+                <div class="mt-4">
+                    <div class="flex justify-between text-[10px] uppercase text-slate-500 mb-1 tracking-wider">
+                        <span>Memory Allocation</span>
+                        <span id="mem-size">~85MB</span>
                     </div>
-                    <div class="w-full bg-slate-700 rounded-full h-2">
-                        <div class="bg-redis h-2 rounded-full" style="width: 75%"></div>
-                    </div>
+                    <div id="memory-grid" class="grid grid-cols-10 gap-1 h-24"></div>
                 </div>
             </div>
-        </div>
 
-        <!-- Action Buttons -->
-        <div class="bg-dark rounded-xl border border-slate-700 p-5 shadow-xl space-y-3">
-            <h2 class="text-lg font-semibold text-white mb-2">执行操作</h2>
-
-            <button onclick="runDemo('bad')" class="w-full group relative overflow-hidden rounded-lg bg-slate-800 p-3 transition-all hover:bg-red-900/30 border border-slate-700 hover:border-red-500/50">
-                <div class="flex items-center gap-3">
-                    <div class="bg-red-500/20 p-2 rounded-md text-red-400 group-hover:text-red-300">
-                        <i class="fa-solid fa-bomb"></i>
-                    </div>
-                    <div class="text-left">
-                        <div class="font-bold text-white">直接 DEL (错误示范)</div>
-                        <div class="text-xs text-slate-400">同步删除，阻塞主线程</div>
-                    </div>
+            <div class="mt-4 bg-black rounded-lg border border-slate-800 h-32 overflow-hidden flex flex-col">
+                <div class="bg-slate-900 px-3 py-1 text-[10px] text-slate-500 border-b border-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-terminal"></i> OUTPUT LOG
                 </div>
-            </button>
-
-            <div class="relative py-2">
-                <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-700"></div></div>
-                <div class="relative flex justify-center"><span class="bg-dark px-2 text-xs text-slate-500">推荐方案</span></div>
+                <div id="console-output" class="flex-grow p-2 overflow-y-auto terminal-text text-xs space-y-0.5">
+                    <div class="text-slate-600">// Ready to simulate...</div>
+                </div>
             </div>
-
-            <button onclick="runDemo('unlink')" class="w-full group rounded-lg bg-slate-800 p-3 transition-all hover:bg-green-900/30 border border-slate-700 hover:border-green-500/50">
-                <div class="flex items-center gap-3">
-                    <div class="bg-green-500/20 p-2 rounded-md text-green-400">
-                        <i class="fa-solid fa-link-slash"></i>
-                    </div>
-                    <div class="text-left">
-                        <div class="font-bold text-white">UNLINK (Redis 4.0+)</div>
-                        <div class="text-xs text-slate-400">后台异步删除，不阻塞</div>
-                    </div>
-                </div>
-            </button>
-
-            <button onclick="runDemo('split')" class="w-full group rounded-lg bg-slate-800 p-3 transition-all hover:bg-blue-900/30 border border-slate-700 hover:border-blue-500/50">
-                <div class="flex items-center gap-3">
-                    <div class="bg-blue-500/20 p-2 rounded-md text-blue-400">
-                        <i class="fa-solid fa-layer-group"></i>
-                    </div>
-                    <div class="text-left">
-                        <div class="font-bold text-white">拆分 BigKey</div>
-                        <div class="text-xs text-slate-400">user:1:info -> user:1:base + :ext</div>
-                    </div>
-                </div>
-            </button>
-
-            <button onclick="runDemo('scan')" class="w-full group rounded-lg bg-slate-800 p-3 transition-all hover:bg-purple-900/30 border border-slate-700 hover:border-purple-500/50">
-                <div class="flex items-center gap-3">
-                    <div class="bg-purple-500/20 p-2 rounded-md text-purple-400">
-                        <i class="fa-solid fa-magnifying-glass-chart"></i>
-                    </div>
-                    <div class="text-left">
-                        <div class="font-bold text-white">渐进式删除 (HSCAN)</div>
-                        <div class="text-xs text-slate-400">分批删除，平滑释放内存</div>
-                    </div>
-                </div>
-            </button>
         </div>
     </div>
 
-    <!-- Right: Visualization & Logs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
+    <!-- RIGHT COLUMN: Detailed Guide -->
+    <div class="xl:col-span-7 space-y-8 pb-20">
 
-        <!-- Visualizer -->
-        <div class="bg-dark rounded-xl border border-slate-700 p-6 shadow-xl flex-grow min-h-[300px] flex flex-col">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-white font-semibold"><i class="fa-solid fa-server mr-2"></i>Redis 内部状态</h3>
-                <span id="timer" class="text-xs font-mono text-slate-500">耗时: 0ms</span>
+        <!-- NEW: Playground Section -->
+        <section id="playground" class="bg-gradient-to-br from-orange-900/20 to-panel p-6 rounded-xl border border-orange-500/30 shadow-2xl">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center text-xl shadow-lg shadow-orange-500/20">
+                    <i class="fa-solid fa-vial"></i>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-white">实战演练场 (Playground)</h2>
+                    <p class="text-sm text-orange-200/70">⚠️ 仅限测试/开发环境执行！严禁在生产环境直接运行！</p>
+                </div>
             </div>
 
-            <!-- Main Thread Visualization -->
-            <div class="mb-6">
-                <div class="text-xs text-slate-400 mb-2 uppercase tracking-wider">Main Thread (单线程模型)</div>
-                <div id="main-thread" class="h-16 bg-slate-800 rounded-lg border border-slate-700 relative overflow-hidden flex items-center px-4 transition-colors duration-300">
-                    <div id="thread-bar" class="absolute left-0 top-0 bottom-0 bg-green-500/20 w-0 transition-all duration-100 ease-linear"></div>
-                    <div id="thread-icon" class="relative z-10 text-green-400 text-xl">
-                        <i class="fa-solid fa-check"></i>
+            <div class="space-y-6">
+                <!-- Step 1: Generate -->
+                <div>
+                    <h3 class="text-white font-bold mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs">1</span>
+                        制造一个大 Key (Hash 类型, 100万字段)
+                    </h3>
+
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <!-- Python Script -->
+                        <div class="code-block bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                            <div class="bg-slate-900 px-3 py-1.5 text-xs text-slate-400 flex justify-between items-center border-b border-slate-800">
+                                <span><i class="fa-brands fa-python mr-1"></i> gen_bigkey.py</span>
+                                <button onclick="copyCode('py-code')" class="text-slate-500 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                            </div>
+                            <pre class="p-3 overflow-x-auto"><code id="py-code" class="text-green-300">import redis
+import time
+
+r = redis.Redis(host='localhost', port=6379)
+KEY = "test:bigkey:hash"
+COUNT = 1_000_000
+
+print(f"🚀 Generating {COUNT} fields...")
+start = time.time()
+
+# 使用 pipeline 批量写入，速度更快
+pipe = r.pipeline()
+for i in range(COUNT):
+    pipe.hset(KEY, f"field:{i}", f"value_{i}" * 10)
+    if i % 10000 == 0 and i > 0:
+        pipe.execute()
+        print(f"  Progress: {i:,}")
+
+pipe.execute()
+print(f"✅ Done in {time.time()-start:.2f}s")
+print(f"📏 Size: {r.memory_usage(KEY)} bytes")</code></pre>
+                        </div>
+
+                        <!-- Shell Script -->
+                        <div class="code-block bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                            <div class="bg-slate-900 px-3 py-1.5 text-xs text-slate-400 flex justify-between items-center border-b border-slate-800">
+                                <span><i class="fa-solid fa-terminal mr-1"></i> gen_bigkey.sh (无需Python)</span>
+                                <button onclick="copyCode('sh-code')" class="text-slate-500 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                            </div>
+                            <pre class="p-3 overflow-x-auto"><code id="sh-code" class="text-yellow-300"># 生成100万条 HSET 命令并通过管道传入 redis-cli
+# 约需 30-60 秒，取决于机器性能
+
+echo "🚀 Generating big key via shell..."
+for i in $(seq 1 1000000); do
+  echo "HSET test:bigkey:hash field:$i value_$i"
+done | redis-cli --pipe
+
+echo "✅ Done. Verifying..."
+redis-cli HLEN test:bigkey:hash
+redis-cli MEMORY USAGE test:bigkey:hash</code></pre>
+                        </div>
                     </div>
-                    <span id="thread-status" class="relative z-10 ml-3 text-sm font-medium text-green-400">空闲 (等待指令...)</span>
                 </div>
-            </div>
 
-            <!-- Memory Visualization -->
-            <div>
-                <div class="text-xs text-slate-400 mb-2 uppercase tracking-wider">内存空间 (Memory)</div>
-                <div id="memory-grid" class="grid grid-cols-10 gap-1 h-32">
-                    <!-- Grid items generated by JS -->
-                </div>
-                <div class="flex justify-between text-xs mt-2 text-slate-500">
-                    <span>已用: <span id="mem-used" class="text-slate-300">2.4 GB</span></span>
-                    <span>碎片率: 1.02</span>
-                </div>
-            </div>
-        </div>
+                <!-- Step 2: Verify -->
+                <div>
+                    <h3 class="text-white font-bold mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs">2</span>
+                        验证 & 体感测试
+                    </h3>
+                    <div class="code-block bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                        <div class="bg-slate-900 px-3 py-1.5 text-xs text-slate-400 flex justify-between items-center border-b border-slate-800">
+                            <span><i class="fa-solid fa-magnifying-glass mr-1"></i> 在 redis-cli 中执行以下命令</span>
+                            <button onclick="copyCode('verify-code')" class="text-slate-500 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                        </div>
+                        <pre class="p-3 overflow-x-auto"><code id="verify-code" class="text-blue-300"># 1. 确认大小 (预期返回 ~1000000)
+HLEN test:bigkey:hash
 
-        <!-- Terminal Log -->
-        <div class="bg-black rounded-xl border border-slate-800 p-4 shadow-inner h-64 overflow-hidden flex flex-col">
-            <div class="flex items-center gap-2 mb-2 border-b border-slate-800 pb-2">
-                <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                <span class="text-xs text-slate-500 ml-2">redis-cli monitor</span>
+# 2. 确认内存占用 (预期返回 ~80,000,000+ bytes ≈ 80MB)
+MEMORY USAGE test:bigkey:hash
+
+# 3. ⚡ 体感测试: 先开一个终端持续 PING，观察延迟
+#    终端A: redis-cli --latency-history -i 1
+#    终端B: 执行下面的 DEL，观察终端A的延迟飙升
+DEL test:bigkey:hash
+
+# 4. 🔄 重新生成后，对比 UNLINK 的效果
+UNLINK test:bigkey:hash
+#    观察终端A的延迟是否几乎无变化</code></pre>
+                    </div>
+                </div>
+
+                <!-- Expected Result -->
+                <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50">
+                    <h4 class="text-sm font-bold text-white mb-2"><i class="fa-solid fa-chart-line mr-2 text-orange-400"></i>预期现象对比</h4>
+                    <div class="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                            <div class="text-red-400 font-bold mb-1">执行 DEL 时 (--latency-history)</div>
+                            <div class="terminal-text text-slate-400 bg-black p-2 rounded">
+                                min: 0, max: <span class="text-red-400 font-bold">1,842</span>, avg: 614.33<br>
+                                <span class="text-red-500">↑ 最大延迟飙到 1.8秒!</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-green-400 font-bold mb-1">执行 UNLINK 时 (--latency-history)</div>
+                            <div class="terminal-text text-slate-400 bg-black p-2 rounded">
+                                min: 0, max: <span class="text-green-400 font-bold">1</span>, avg: 0.12<br>
+                                <span class="text-green-500">↑ 几乎无感知，最大仅1ms</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div id="console-output" class="flex-grow overflow-y-auto terminal-text text-sm space-y-1">
-                <div class="text-slate-500">// 准备就绪，请点击左侧按钮开始演示...</div>
+        </section>
+
+        <!-- Intro -->
+        <section class="bg-gradient-to-r from-slate-800 to-panel p-6 rounded-xl border border-slate-700">
+            <h2 class="text-2xl font-bold text-white mb-2">什么是 BigKey？为什么危险？</h2>
+            <p class="text-slate-400 leading-relaxed mb-4">
+                BigKey 通常指 <strong>String 类型 > 10KB</strong> 或 <strong>集合类型元素超过 5000 个</strong> 的键。
+                由于 Redis 是单线程模型（处理命令），对 BigKey 的读写或删除操作会长时间占用 CPU，导致其他请求排队超时，甚至引发集群节点故障转移。
+            </p>
+            <div class="grid grid-cols-3 gap-4 text-center">
+                <div class="bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                    <i class="fa-solid fa-hourglass-half text-red-400 text-xl mb-2"></i>
+                    <div class="text-xs font-bold text-white">阻塞主线程</div>
+                </div>
+                <div class="bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                    <i class="fa-solid fa-network-wired text-orange-400 text-xl mb-2"></i>
+                    <div class="text-xs font-bold text-white">网络拥塞</div>
+                </div>
+                <div class="bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                    <i class="fa-solid fa-memory text-yellow-400 text-xl mb-2"></i>
+                    <div class="text-xs font-bold text-white">内存不均</div>
+                </div>
             </div>
-        </div>
+        </section>
+
+        <!-- Phase 1: Discovery -->
+        <section id="discovery" class="space-y-4">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center font-bold">1</span>
+                <h3 class="text-xl font-bold text-white">如何发现 BigKey</h3>
+            </div>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-panel p-5 rounded-xl border border-slate-700 hover:border-accent/50 transition-colors">
+                    <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-magnifying-glass text-accent"></i> redis-cli --bigkeys
+                    </h4>
+                    <p class="text-sm text-slate-400 mb-3">官方自带工具，扫描整个实例，给出每种数据类型的最大 Key 统计。</p>
+                    <div class="bg-slate-950 p-3 rounded text-xs terminal-text text-green-400 overflow-x-auto">
+                        $ redis-cli -h 127.0.0.1 -p 6379 --bigkeys<br>
+                        Biggest string found 'user:json:992' has 5.2MB
+                    </div>
+                    <div class="mt-2 text-xs text-yellow-500"><i class="fa-solid fa-triangle-exclamation"></i> 生产环境慎用，会有性能损耗</div>
+                </div>
+                <div class="bg-panel p-5 rounded-xl border border-slate-700 hover:border-accent/50 transition-colors">
+                    <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-file-code text-accent"></i> RDB 离线分析
+                    </h4>
+                    <p class="text-sm text-slate-400 mb-3">使用 <code>rdb</code> 或 <code>redis-rdb-tools</code> 解析备份文件，生成 CSV 报表，最安全。</p>
+                    <div class="bg-slate-950 p-3 rounded text-xs terminal-text text-blue-300 overflow-x-auto">
+                        $ rdb -c memory dump.rdb > result.csv
+                    </div>
+                    <div class="mt-2 text-xs text-green-500"><i class="fa-solid fa-check"></i> 推荐：不影响线上服务</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Phase 2: Solutions -->
+        <section id="solutions" class="space-y-4">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="w-8 h-8 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center font-bold">2</span>
+                <h3 class="text-xl font-bold text-white">删除与优化方案</h3>
+            </div>
+            <div class="space-y-4">
+                <div class="bg-panel rounded-xl border-l-4 border-green-500 overflow-hidden">
+                    <div class="p-5">
+                        <div class="flex justify-between items-start">
+                            <h4 class="text-lg font-bold text-white">方案 A: UNLINK (首选)</h4>
+                            <span class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">Redis ≥ 4.0</span>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-2">
+                            <code>UNLINK key</code> 命令仅在主线程中移除键的引用（O(1)），实际的内存释放交给后台线程异步处理。
+                        </p>
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-slate-950 p-3 rounded border border-slate-800">
+                                <div class="text-xs text-slate-500 mb-1">❌ 错误做法</div>
+                                <code class="text-red-400 text-sm">DEL my_big_hash</code>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded border border-green-900/30">
+                                <div class="text-xs text-green-600 mb-1">✅ 正确做法</div>
+                                <code class="text-green-400 text-sm">UNLINK my_big_hash</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-panel rounded-xl border-l-4 border-purple-500 overflow-hidden">
+                    <div class="p-5">
+                        <div class="flex justify-between items-start">
+                            <h4 class="text-lg font-bold text-white">方案 B: 渐进式删除 (兼容旧版)</h4>
+                            <span class="text-xs bg-purple-900 text-purple-300 px-2 py-1 rounded">All Versions</span>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-2">
+                            对于 Hash/Set/ZSet，使用 <code>HSCAN/SSCAN</code> 分批获取成员，然后分批 <code>HDEL</code>。避免一次性删除造成的长尾延迟。
+                        </p>
+                        <div class="mt-3 bg-slate-950 p-3 rounded border border-slate-800 text-xs terminal-text text-slate-300">
+                            <span class="text-purple-400">local</span> cursor = "0"<br>
+                            <span class="text-purple-400">repeat</span><br>
+                            &nbsp;&nbsp;<span class="text-purple-400">local</span> res = redis.call("HSCAN", KEYS[1], cursor, "COUNT", 100)<br>
+                            &nbsp;&nbsp;cursor = res[1]<br>
+                            &nbsp;&nbsp;<span class="text-purple-400">if</span> #res[2] > 0 <span class="text-purple-400">then</span><br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;redis.call("HDEL", KEYS[1], unpack(res[2]))<br>
+                            &nbsp;&nbsp;<span class="text-purple-400">end</span><br>
+                            <span class="text-purple-400">until</span> cursor == "0"
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-panel rounded-xl border-l-4 border-blue-500 overflow-hidden">
+                    <div class="p-5">
+                        <h4 class="text-lg font-bold text-white mb-2">方案 C: 架构拆分 (治本)</h4>
+                        <p class="text-sm text-slate-400 mb-4">
+                            将一个大 Key 拆分为多个小 Key。例如将一个包含用户所有信息的 Hash 拆分为：<br>
+                            <code class="text-blue-300">user:{id}:base</code> (基本信息) + <code class="text-blue-300">user:{id}:orders</code> (订单列表)
+                        </p>
+                        <div class="flex items-center justify-center gap-4 text-sm">
+                            <div class="bg-red-900/20 border border-red-800 px-4 py-2 rounded text-red-300 line-through opacity-60">
+                                Hash user:1001 (100w fields)
+                            </div>
+                            <i class="fa-solid fa-arrow-right text-slate-600"></i>
+                            <div class="flex flex-col gap-2">
+                                <div class="bg-blue-900/20 border border-blue-800 px-3 py-1 rounded text-blue-300">String user:1001:info</div>
+                                <div class="bg-blue-900/20 border border-blue-800 px-3 py-1 rounded text-blue-300">ZSet user:1001:timeline</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Phase 3: Prevention -->
+        <section id="prevention" class="space-y-4">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="w-8 h-8 rounded-full bg-yellow-500/20 text-yellow-400 flex items-center justify-center font-bold">3</span>
+                <h3 class="text-xl font-bold text-white">预防与规范</h3>
+            </div>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-panel p-4 rounded-xl border border-slate-700">
+                    <h4 class="font-bold text-white mb-2"><i class="fa-solid fa-ruler-combined text-yellow-500 mr-2"></i>设定阈值监控</h4>
+                    <ul class="text-sm text-slate-400 list-disc pl-4 space-y-1">
+                        <li>String 类型控制在 <strong>10KB</strong> 以内</li>
+                        <li>Hash/List/Set/ZSet 元素数量控制在 <strong>5000</strong> 以内</li>
+                        <li>部署 Prometheus + Redis Exporter 监控内存使用率</li>
+                    </ul>
+                </div>
+                <div class="bg-panel p-4 rounded-xl border border-slate-700">
+                    <h4 class="font-bold text-white mb-2"><i class="fa-solid fa-shield-halved text-yellow-500 mr-2"></i>代码审查规范</h4>
+                    <ul class="text-sm text-slate-400 list-disc pl-4 space-y-1">
+                        <li>禁止使用 <code>HGETALL</code> / <code>SMEMBERS</code> 等全量读取命令</li>
+                        <li>强制使用 <code>HSCAN</code> 或指定字段读取</li>
+                        <li>设置合理的 TTL，避免无用大 Key 永久驻留</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
     </div>
 </main>
 
-<footer class="border-t border-slate-800 p-4 text-center text-xs text-slate-600">
-    Redis BigKey Solution Demo &copy; 2026 | Generated for Educational Purpose
+<footer class="border-t border-slate-800 bg-panel p-6 text-center text-xs text-slate-600">
+    <p>Redis BigKey Governance Guide &copy; 2026 | Designed for DevOps & Backend Engineers</p>
 </footer>
 
 <script>
-  // State
-  let isRunning = false;
-  const consoleEl = document.getElementById('console-output');
-  const threadBar = document.getElementById('thread-bar');
-  const threadStatus = document.getElementById('thread-status');
-  const threadIcon = document.getElementById('thread-icon');
-  const mainThreadEl = document.getElementById('main-thread');
-  const memUsedEl = document.getElementById('mem-used');
-  const timerEl = document.getElementById('timer');
-  const memoryGrid = document.getElementById('memory-grid');
+  // === Copy to Clipboard ===
+  function copyCode(elementId) {
+    const code = document.getElementById(elementId).innerText;
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = event.currentTarget;
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-check text-green-400"></i>';
+      setTimeout(() => btn.innerHTML = originalHTML, 1500);
+    });
+  }
 
-  // Init Memory Grid
+  // === Simulation Logic ===
+  let isRunning = false;
+  const els = {
+    console: document.getElementById('console-output'),
+    threadBar: document.getElementById('thread-bar'),
+    threadStatus: document.getElementById('thread-status'),
+    threadIcon: document.getElementById('thread-icon'),
+    mainThread: document.getElementById('main-thread'),
+    memGrid: document.getElementById('memory-grid'),
+    timer: document.getElementById('timer')
+  };
+
   function initMemory() {
-    memoryGrid.innerHTML = '';
+    els.memGrid.innerHTML = '';
     for(let i=0; i<40; i++) {
       const div = document.createElement('div');
-      div.className = `rounded-sm transition-all duration-500 ${i < 5 ? 'bg-redis shadow-[0_0_10px_rgba(220,56,45,0.5)]' : 'bg-slate-700'}`;
-      div.id = `mem-block-${i}`;
-      memoryGrid.appendChild(div);
+      div.className = `rounded-sm transition-all duration-500 ${i < 5 ? 'bg-redis shadow-[0_0_8px_rgba(220,56,45,0.6)]' : 'bg-slate-800'}`;
+      div.id = `mem-${i}`;
+      els.memGrid.appendChild(div);
     }
   }
   initMemory();
 
-  // Logger
-  function log(msg, type = 'info') {
+  function log(msg, type='info') {
     const div = document.createElement('div');
-    const time = new Date().toLocaleTimeString('zh-CN', {hour12:false}) + '.' + Math.floor(Math.random()*999);
-
-    let colorClass = 'text-slate-300';
-    if(type === 'error') colorClass = 'text-red-400';
-    if(type === 'success') colorClass = 'text-green-400';
-    if(type === 'warn') colorClass = 'text-yellow-400';
-    if(type === 'cmd') colorClass = 'text-blue-300 font-bold';
-
-    div.innerHTML = `<span class="text-slate-600">[${time}]</span> <span class="${colorClass}">${msg}</span>`;
-    consoleEl.appendChild(div);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
+    const colors = { info: 'text-slate-400', cmd: 'text-blue-400', warn: 'text-yellow-400', error: 'text-red-400', success: 'text-green-400' };
+    div.className = colors[type] || colors.info;
+    div.textContent = `> ${msg}`;
+    els.console.appendChild(div);
+    els.console.scrollTop = els.console.scrollHeight;
   }
 
-  // UI Helpers
-  function setThreadState(state, progress = 0) {
+  function setThread(state, progress=0) {
     if(state === 'busy') {
-      mainThreadEl.className = "h-16 bg-red-900/20 rounded-lg border border-red-500/50 relative overflow-hidden flex items-center px-4 transition-colors duration-300";
-      threadBar.className = "absolute left-0 top-0 bottom-0 bg-red-500/80 transition-all duration-100 ease-linear";
-      threadBar.style.width = `${progress}%`;
-      threadIcon.className = "relative z-10 text-white text-xl animate-pulse-fast";
-      threadIcon.innerHTML = '<i class="fa-solid fa-spinner"></i>';
-      threadStatus.className = "relative z-10 ml-3 text-sm font-medium text-white";
-      threadStatus.innerText = "⚠️ 阻塞中 (Blocking)...";
-      document.body.style.cursor = 'wait';
+      els.mainThread.className = "h-8 bg-red-900/30 rounded relative overflow-hidden border border-red-500/50";
+      els.threadBar.className = "absolute left-0 top-0 bottom-0 bg-red-500 transition-all duration-100";
+      els.threadBar.style.width = `${progress}%`;
+      els.threadIcon.className = "fa-solid fa-spinner animate-spin text-red-500 text-xs mr-2";
+      els.threadStatus.className = "text-xs text-red-400 font-mono font-bold";
+      els.threadStatus.innerText = "BLOCKED";
     } else if (state === 'idle') {
-      mainThreadEl.className = "h-16 bg-slate-800 rounded-lg border border-slate-700 relative overflow-hidden flex items-center px-4 transition-colors duration-300";
-      threadBar.style.width = '0%';
-      threadIcon.className = "relative z-10 text-green-400 text-xl";
-      threadIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
-      threadStatus.className = "relative z-10 ml-3 text-sm font-medium text-green-400";
-      threadStatus.innerText = "空闲 (等待指令...)";
-      document.body.style.cursor = 'default';
-    } else if (state === 'bg_work') {
-      // Background work doesn't block main thread visually in this demo
-      threadStatus.innerText = "空闲 (后台线程工作中...)";
-      threadStatus.className = "relative z-10 ml-3 text-sm font-medium text-blue-400";
+      els.mainThread.className = "h-8 bg-slate-800 rounded relative overflow-hidden border border-slate-700";
+      els.threadBar.style.width = '0%';
+      els.threadIcon.className = "fa-solid fa-check text-green-500 text-xs mr-2";
+      els.threadStatus.className = "text-xs text-green-500 font-mono";
+      els.threadStatus.innerText = "IDLE";
     }
   }
 
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  // Simulation Logic
   async function runDemo(type) {
-    if(isRunning) { log("请等待当前操作完成...", "warn"); return; }
+    if(isRunning) return;
     isRunning = true;
-
-    // Reset UI
     initMemory();
-    log("----------------------------------------", "info");
-    const startTime = performance.now();
+    els.console.innerHTML = '';
+    const start = performance.now();
 
     try {
-      if(type === 'bad') await simulateBadDel();
-      if(type === 'unlink') await simulateUnlink();
-      if(type === 'split') await simulateSplit();
-      if(type === 'scan') await simulateScan();
-    } catch(e) {
-      log("Error: " + e.message, "error");
-    }
-
-    const endTime = performance.now();
-    timerEl.innerText = `耗时: ${(endTime - startTime).toFixed(0)}ms`;
-    isRunning = false;
-    setThreadState('idle');
-  }
-
-  // 1. BAD: Direct DEL
-  async function simulateBadDel() {
-    log("CLIENT: DEL big_key:hash", "cmd");
-    log("SERVER: 开始同步删除 1,000,000 个字段...", "warn");
-
-    setThreadState('busy', 10);
-    await sleep(300);
-    setThreadState('busy', 40);
-    log("⚠️ WARNING: 主线程被阻塞！其他请求超时！", "error");
-    await sleep(1500); // Simulate long blocking
-
-    setThreadState('busy', 90);
-    await sleep(500);
-
-    // Clear memory visual
-    for(let i=0; i<5; i++) {
-      document.getElementById(`mem-block-${i}`).className = "rounded-sm bg-slate-800 border border-slate-700 border-dashed";
-    }
-    memUsedEl.innerText = "2.3 GB";
-
-    setThreadState('idle');
-    log("SERVER: (integer) 1 (耗时 2.3s)", "success");
-    log("❌ 结果: 导致线上服务卡顿 2.3秒", "error");
-  }
-
-  // 2. GOOD: UNLINK
-  async function simulateUnlink() {
-    log("CLIENT: UNLINK big_key:hash", "cmd");
-    log("SERVER: 仅从 Keyspace 移除引用 (O(1))", "info");
-
-    setThreadState('busy', 100);
-    await sleep(50); // Very fast
-
-    // Visually remove from keyspace but keep in memory grid temporarily
-    document.getElementById(`mem-block-0`).className = "rounded-sm bg-yellow-500/50 animate-pulse";
-    setThreadState('idle');
-    log("SERVER: (integer) 1 (耗时 0.05ms)", "success");
-
-    log("🔄 BACKGROUND: 后台线程开始异步释放内存...", "info");
-    setThreadState('bg_work');
-
-    await sleep(1000);
-    // Now clear memory
-    for(let i=0; i<5; i++) {
-      document.getElementById(`mem-block-${i}`).className = "rounded-sm bg-slate-800 border border-slate-700 border-dashed transition-all duration-1000";
-    }
-    memUsedEl.innerText = "2.3 GB";
-    setThreadState('idle');
-    log("✅ 结果: 客户端无感知，内存平滑释放", "success");
-  }
-
-  // 3. GOOD: SPLIT
-  async function simulateSplit() {
-    log("💡 策略: 将 big_key 拆分为多个小 key", "info");
-    log("CLIENT: HGETALL big_key:hash (禁止!)", "warn");
-    log("CLIENT: 写入时拆分 -> user:1:base, user:1:orders...", "cmd");
-
-    // Visual transformation
-    const block0 = document.getElementById(`mem-block-0`);
-    block0.className = "rounded-sm bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]";
-    block0.title = "user:1:base";
-
-    // Create new small blocks
-    for(let i=5; i<9; i++) {
-      const b = document.getElementById(`mem-block-${i}`);
-      b.className = "rounded-sm bg-blue-400/60 scale-75 transition-all duration-500";
-      await sleep(200);
-    }
-
-    log("SERVER: 访问 base 信息仅需 O(1)", "success");
-    log("✅ 结果: 读写性能提升，避免单次操作过大", "success");
-  }
-
-  // 4. GOOD: SCAN + DEL
-  async function simulateScan() {
-    log("CLIENT: HSCAN big_key:hash 0 COUNT 100", "cmd");
-    log("SERVER: 返回 100 个字段 + cursor", "info");
-
-    let cursor = 0;
-    let totalDeleted = 0;
-
-    while(cursor < 5) {
-      setThreadState('busy', 20); // Short burst
-      await sleep(100);
-      setThreadState('idle');
-
-      log(`CLIENT: HDEL big_key:hash field_${cursor*100}... (batch)`, "cmd");
-
-      // Visual deletion of one block segment
-      if(cursor < 5) {
-        document.getElementById(`mem-block-${cursor}`).className = "rounded-sm bg-slate-800 border border-slate-700 border-dashed transition-all";
+      if(type === 'bad') {
+        log("Executing: DEL big_key", "cmd");
+        setThread('busy', 10);
+        await sleep(200);
+        log("WARNING: Main thread blocked!", "error");
+        setThread('busy', 60);
+        await sleep(1200);
+        for(let i=0;i<5;i++) document.getElementById(`mem-${i}`).className = "rounded-sm bg-slate-800 border border-slate-700 border-dashed";
+        setThread('idle');
+        log("Done. (Took 1.4s)", "success");
+      } else if(type === 'unlink') {
+        log("Executing: UNLINK big_key", "cmd");
+        setThread('busy', 100);
+        await sleep(50);
+        setThread('idle');
+        log("Key removed from keyspace (O(1))", "success");
+        log("Background thread: freeing memory...", "info");
+        await sleep(800);
+        for(let i=0;i<5;i++) document.getElementById(`mem-${i}`).className = "rounded-sm bg-slate-800 border border-slate-700 border-dashed transition-all duration-1000";
+        log("Memory freed asynchronously.", "success");
+      } else if(type === 'split') {
+        log("Architecture Change: Splitting Key...", "warn");
+        document.getElementById('mem-0').className = "rounded-sm bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]";
+        for(let i=5; i<9; i++) {
+          await sleep(200);
+          document.getElementById(`mem-${i}`).className = "rounded-sm bg-blue-400/60 scale-75 transition-all";
+        }
+        log("BigKey transformed into 4 small keys.", "success");
+      } else if(type === 'scan') {
+        log("Executing: HSCAN + HDEL loop", "cmd");
+        for(let i=0; i<5; i++) {
+          setThread('busy', 30);
+          await sleep(80);
+          setThread('idle');
+          document.getElementById(`mem-${i}`).className = "rounded-sm bg-slate-800 border border-slate-700 border-dashed";
+          log(`Batch ${i+1}: Deleted 200 fields`, "info");
+          await sleep(200);
+        }
+        log("Progressive deletion complete.", "success");
       }
+    } catch(e) { console.error(e); }
 
-      totalDeleted += 100;
-      cursor++;
-      await sleep(300); // Gap between batches allowing other commands
-    }
-
-    memUsedEl.innerText = "2.3 GB";
-    log(`✅ 结果: 分 5 批删除完毕，主线程最大阻塞 < 1ms`, "success");
+    els.timer.innerText = `${(performance.now() - start).toFixed(0)}ms`;
+    isRunning = false;
   }
 </script>
 </body>

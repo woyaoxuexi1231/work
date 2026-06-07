@@ -8,7 +8,7 @@ I="apache/rocketmq:${ROCKETMQ_VERSION:-5.3.2}"
 NS="rmqnamesrv"; BR="rmqbroker"; DB="rmqdashboard"
 NS_P="${NAMESRV_PORT:-9876}"; BR_P="${BROKER_PORT_2:-10911}"; DB_P="${ROCKETMQ_DASHBOARD_PORT:-8888}"
 NET="rmq"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/rocketmq-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/rocketmq-data"
 
 # ==== 前置检查 ====
 check_docker

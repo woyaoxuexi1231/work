@@ -7,7 +7,7 @@ set -euo pipefail; SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; s
 C="rabbitmq"; I="rabbitmq:${RMQ_VERSION:-3.13}-management"
 AP="${RMQ_PORT:-5672}"; MP="${RMQ_MGMT_PORT:-15672}"
 U="${RABBITMQ_USER:-admin}"; PASS="${RABBITMQ_PASSWORD:-admin}"
-DATA="${DOCKER_DATA_ROOT:-/c/Users/15434/Desktop/docker-data}/rabbitmq-data"
+DATA="${DOCKER_DATA_ROOT:-/c/Users/code/Desktop/docker-data}/rabbitmq-data"
 
 # ==== 前置检查 ====
 check_docker; check_container_exists "${C}" && exit 0; cleanup_container "${C}"
