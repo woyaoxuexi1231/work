@@ -108,7 +108,6 @@ public final class SyncSupport {
         private LocalDateTime idGenFinishedAt;
         private LocalDateTime transformStartedAt;
         private LocalDateTime transformFinishedAt;
-        private LocalDateTime saveStartedAt;
         private LocalDateTime cacheLookupStartedAt;
         private LocalDateTime cacheLookupFinishedAt;
         private LocalDateTime insertStartedAt;
@@ -121,7 +120,6 @@ public final class SyncSupport {
         private LocalDateTime setIdFinishedAt;
         private LocalDateTime updateStartedAt;
         private LocalDateTime updateFinishedAt;
-        private LocalDateTime saveFinishedAt;
 
         public static SyncMetrics forPage(int pageNo, int rowCount) {
             SyncMetrics m = new SyncMetrics();
@@ -139,7 +137,6 @@ public final class SyncSupport {
         public void stampIdGenFinished() { idGenFinishedAt = TimeUtils.now(); }
         public void stampTransformStarted() { transformStartedAt = TimeUtils.now(); }
         public void stampTransformFinished() { transformFinishedAt = TimeUtils.now(); }
-        public void stampSaveStarted() { saveStartedAt = TimeUtils.now(); }
         public void stampCacheLookupStarted() { cacheLookupStartedAt = TimeUtils.now(); }
         public void stampCacheLookupFinished() { cacheLookupFinishedAt = TimeUtils.now(); }
         public void stampInsertStarted() { insertStartedAt = TimeUtils.now(); }
@@ -152,7 +149,6 @@ public final class SyncSupport {
         public void stampSetIdFinished() { setIdFinishedAt = TimeUtils.now(); }
         public void stampUpdateStarted() { updateStartedAt = TimeUtils.now(); }
         public void stampUpdateFinished(int cnt) { updateFinishedAt = TimeUtils.now(); updateCount = cnt; }
-        public void stampSaveFinished() { saveFinishedAt = TimeUtils.now(); }
     }
 
     /**

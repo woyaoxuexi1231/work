@@ -20,7 +20,6 @@ const NODES = [
   { key: 'idGenFinishedAt', label: 'ID生成完成' },
   { key: 'transformStartedAt', label: '转换开始' },
   { key: 'transformFinishedAt', label: '转换完成' },
-  { key: 'saveStartedAt', label: '落库开始' },
   { key: 'cacheLookupStartedAt', label: '查缓存开始' },
   { key: 'cacheLookupFinishedAt', label: '查缓存完成' },
   { key: 'insertStartedAt', label: '新增写入开始' },
@@ -33,7 +32,19 @@ const NODES = [
   { key: 'setIdFinishedAt', label: '设主键完成' },
   { key: 'updateStartedAt', label: '更新写入开始' },
   { key: 'updateFinishedAt', label: '更新写入完成' },
-  { key: 'saveFinishedAt', label: '落库完成(本批结束)' },
+]
+
+const DURATION_PAIRS = [
+  { start: 'fetchStartedAt', end: 'fetchFinishedAt' },
+  { start: 'fetchQueuedAt', end: 'fetchQueuedFinishedAt' },
+  { start: 'idGenStartedAt', end: 'idGenFinishedAt' },
+  { start: 'transformStartedAt', end: 'transformFinishedAt' },
+  { start: 'cacheLookupStartedAt', end: 'cacheLookupFinishedAt' },
+  { start: 'insertStartedAt', end: 'insertFinishedAt' },
+  { start: 'cacheAddStartedAt', end: 'cacheAddFinishedAt' },
+  { start: 'globalIdQueryStartedAt', end: 'globalIdQueryFinishedAt' },
+  { start: 'setIdStartedAt', end: 'setIdFinishedAt' },
+  { start: 'updateStartedAt', end: 'updateFinishedAt' },
 ]
 
 onMounted(() => loadPage(1))
@@ -64,6 +75,16 @@ function toTs(t) {
 }
 
 function buildRecord(raw) {
+  // 计算每对开始→结束的耗时（毫秒），只挂在结束节点上
+  const pairDuration = {}
+  for (const p of DURATION_PAIRS) {
+    const startTs = toTs(raw[p.start])
+    const endTs = toTs(raw[p.end])
+    if (startTs !== null && endTs !== null && endTs >= startTs) {
+      pairDuration[p.end] = endTs - startTs
+    }
+  }
+
   let prevTs = null
   let prevLabel = null
   const nodes = NODES.map((n, idx) => {
@@ -75,6 +96,7 @@ function buildRecord(raw) {
       label: n.label,
       time: raw[n.key] || null,
       ts,
+      duration: pairDuration[n.key] ?? null,
       orderOk,
       orderIssue: !orderOk ? `早于「${prevLabel}」` : null,
     }
@@ -90,6 +112,15 @@ function buildRecord(raw) {
     hasOrderIssue: nodes.some(n => n.orderOk === false),
     missingCount: nodes.filter(n => !n.time).length,
   }
+}
+
+function fmtDuration(ms) {
+  if (ms === null || ms === undefined) return '—'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  return `${m}m${s}s`
 }
 
 function fmtTime(t) {
@@ -122,7 +153,7 @@ function fmtTime(t) {
 
       <div class="bg-white border border-slate-200 rounded-xl shadow-sm px-5 py-3 flex items-center gap-6 text-sm text-slate-500">
         <span>共 <b class="text-slate-700">{{ data.total || 0 }}</b> 批</span>
-        <span class="text-xs text-slate-400">仅展示各节点原始时间戳，暂不计算耗时</span>
+        <span class="text-xs text-slate-400">每对开始→结束自动计算耗时，缺失或倒序的节点不计算</span>
       </div>
 
       <div
@@ -154,6 +185,7 @@ function fmtTime(t) {
                 <th class="px-4 py-2 text-left w-10">#</th>
                 <th class="px-4 py-2 text-left w-44">节点</th>
                 <th class="px-4 py-2 text-left">时间戳</th>
+                <th class="px-4 py-2 text-right w-28">耗时</th>
                 <th class="px-4 py-2 text-left w-32">状态</th>
               </tr>
             </thead>
@@ -168,6 +200,11 @@ function fmtTime(t) {
                 <td class="px-4 py-2 text-slate-700">{{ node.label }}</td>
                 <td class="px-4 py-2 font-mono text-slate-800 tracking-tight">
                   {{ fmtTime(node.time) }}
+                </td>
+                <td class="px-4 py-2 text-right font-mono text-xs"
+                  :class="node.duration !== null ? 'text-indigo-600 font-semibold' : 'text-slate-200'"
+                >
+                  {{ fmtDuration(node.duration) }}
                 </td>
                 <td class="px-4 py-2 text-xs">
                   <span v-if="!node.time" class="text-slate-300">缺失</span>

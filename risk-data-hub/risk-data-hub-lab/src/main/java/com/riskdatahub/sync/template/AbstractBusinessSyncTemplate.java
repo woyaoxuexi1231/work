@@ -131,9 +131,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 }
                 metrics.stampTransformFinished();
 
-                metrics.stampSaveStarted();
                 saveBatch(context, targets, metrics);
-                metrics.stampSaveFinished();
 
                 for (S row : rows) {
                     counter.incrementSavedCount();

@@ -171,7 +171,6 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics
     id_gen_finished_at          TIMESTAMP(3) NULL COMMENT 'ID生成完成',
     transform_started_at        TIMESTAMP(3) NULL COMMENT '转换开始',
     transform_finished_at       TIMESTAMP(3) NULL COMMENT '转换完成',
-    save_started_at             TIMESTAMP(3) NULL COMMENT '落库开始',
     cache_lookup_started_at     TIMESTAMP(3) NULL COMMENT '查缓存开始',
     cache_lookup_finished_at    TIMESTAMP(3) NULL COMMENT '查缓存完成',
     insert_started_at           TIMESTAMP(3) NULL COMMENT '新增写入开始',
@@ -184,8 +183,6 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics
     set_id_finished_at          TIMESTAMP(3) NULL COMMENT '设主键完成',
     update_started_at           TIMESTAMP(3) NULL COMMENT '更新写入开始',
     update_finished_at          TIMESTAMP(3) NULL COMMENT '更新写入完成',
-    save_finished_at            TIMESTAMP(3) NULL COMMENT '落库完成(本批结束)',
-
     recorded_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_batch_record (record_id)
 );
