@@ -135,6 +135,7 @@ public class StockBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_stock:" + context.getDataSourceKey();
 
+        metrics.stampCacheLookupStarted();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
                                 .select(CleanStock::getSourceRowId)
@@ -152,8 +153,10 @@ public class StockBusinessSyncTemplate
             }
         }
         if (!toInsert.isEmpty()) {
+            metrics.stampInsertStarted();
             cleanStockMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
+            metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanStock::getSourceRowId).collect(Collectors.toList()));
             metrics.stampCacheAddFinished();
@@ -161,6 +164,7 @@ public class StockBusinessSyncTemplate
 
         if (!toUpdate.isEmpty()) {
             Map<Long, Long> idMap = new HashMap<>();
+            metrics.stampGlobalIdQueryStarted();
             cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
                             .select(CleanStock::getGlobalId, CleanStock::getSourceRowId)
                             .eq(CleanStock::getSourceSystem, context.getDataSourceKey())
@@ -168,10 +172,12 @@ public class StockBusinessSyncTemplate
                                     toUpdate.stream().map(CleanStock::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
             metrics.stampGlobalIdQueryFinished();
+            metrics.stampSetIdStarted();
             for (CleanStock target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
             metrics.stampSetIdFinished();
+            metrics.stampUpdateStarted();
             cleanStockMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());
         }

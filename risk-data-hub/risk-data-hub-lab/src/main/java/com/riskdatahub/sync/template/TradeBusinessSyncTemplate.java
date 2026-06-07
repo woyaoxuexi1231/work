@@ -136,6 +136,7 @@ public class TradeBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_trade:" + context.getDataSourceKey();
 
+        metrics.stampCacheLookupStarted();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                                 .select(CleanTrade::getSourceRowId)
@@ -154,8 +155,10 @@ public class TradeBusinessSyncTemplate
 
 
         if (!toInsert.isEmpty()) {
+            metrics.stampInsertStarted();
             cleanTradeMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
+            metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList()));
             metrics.stampCacheAddFinished();
@@ -163,6 +166,7 @@ public class TradeBusinessSyncTemplate
 
         if (!toUpdate.isEmpty()) {
             Map<Long, Long> idMap = new HashMap<>();
+            metrics.stampGlobalIdQueryStarted();
             cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
                             .select(CleanTrade::getGlobalId, CleanTrade::getSourceRowId)
                             .eq(CleanTrade::getSourceSystem, context.getDataSourceKey())
@@ -170,10 +174,12 @@ public class TradeBusinessSyncTemplate
                                     toUpdate.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
             metrics.stampGlobalIdQueryFinished();
+            metrics.stampSetIdStarted();
             for (CleanTrade target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
             metrics.stampSetIdFinished();
+            metrics.stampUpdateStarted();
             cleanTradeMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());
         }

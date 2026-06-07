@@ -103,6 +103,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 metrics.setBatchNo(pageNo);
                 metrics.setPulledCount(rows.size());
                 metrics.setSavedCount(rows.size());
+                metrics.stampFetchFinished();
                 metrics.stampFetchQueued();
                 pendingMetrics.set(metrics);
 
@@ -162,6 +163,7 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 metrics.stampSaveStarted();
                 saveBatch(context, targets, metrics);
                 metrics.stampSaveFinished();
+                metrics.stampProcessFinished();
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }

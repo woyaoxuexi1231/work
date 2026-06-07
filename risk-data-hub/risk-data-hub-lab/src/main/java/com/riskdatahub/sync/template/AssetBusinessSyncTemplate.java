@@ -127,12 +127,14 @@ public class AssetBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_asset:" + context.getDataSourceKey();
 
+        metrics.stampCacheLookupStarted();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
                                 .select(CleanAsset::getSourceRowId)
                                 .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
                         .stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet()));
         metrics.stampCacheLookupFinished();
+
         List<CleanAsset> toInsert = new ArrayList<>();
         List<CleanAsset> toUpdate = new ArrayList<>();
         for (CleanAsset target : targets) {
@@ -145,8 +147,11 @@ public class AssetBusinessSyncTemplate
 
 
         if (!toInsert.isEmpty()) {
+            metrics.stampInsertStarted();
             cleanAssetMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
+
+            metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList()));
             metrics.stampCacheAddFinished();
@@ -154,6 +159,8 @@ public class AssetBusinessSyncTemplate
 
         if (!toUpdate.isEmpty()) {
             Map<Long, Long> idMap = new HashMap<>();
+
+            metrics.stampGlobalIdQueryStarted();
             cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
                             .select(CleanAsset::getGlobalId, CleanAsset::getSourceRowId)
                             .eq(CleanAsset::getSourceSystem, context.getDataSourceKey())
@@ -161,10 +168,14 @@ public class AssetBusinessSyncTemplate
                                     toUpdate.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
             metrics.stampGlobalIdQueryFinished();
+
+            metrics.stampSetIdStarted();
             for (CleanAsset target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
             metrics.stampSetIdFinished();
+
+            metrics.stampUpdateStarted();
             cleanAssetMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());
         }

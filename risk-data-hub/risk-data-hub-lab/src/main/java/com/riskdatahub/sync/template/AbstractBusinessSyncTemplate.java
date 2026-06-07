@@ -87,6 +87,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 metrics.setBatchNo(pageNo);
                 metrics.setPulledCount(rows.size());
                 metrics.setSavedCount(rows.size());
+                metrics.stampFetchFinished();
                 metrics.stampFetchQueued();
                 counter.addPulledCount(rows.size());
                 queue.put(PageChunk.data(pageNo, rows, metrics));
@@ -114,11 +115,11 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         try {
             while (failure.get() == null) {
                 PageChunk<S> chunk = queue.take();
+                SyncMetrics metrics = chunk.getMetrics();
+                metrics.stampFetchQueuedFinished();
                 if (chunk.isEnd()) {
                     break;
                 }
-                SyncMetrics metrics = chunk.getMetrics();
-                metrics.stampProcessStarted();
                 List<S> rows = chunk.getRows();
 
                 preAllocateBatchIds(getIdTag(), rows.size(), metrics);
@@ -133,6 +134,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
                 metrics.stampSaveStarted();
                 saveBatch(context, targets, metrics);
                 metrics.stampSaveFinished();
+
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }

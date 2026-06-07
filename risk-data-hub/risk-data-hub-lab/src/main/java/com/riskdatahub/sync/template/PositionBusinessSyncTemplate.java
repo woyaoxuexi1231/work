@@ -128,6 +128,7 @@ public class PositionBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
 
+        metrics.stampCacheLookupStarted();
         Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                                 .select(CleanPosition::getSourceRowId)
@@ -146,8 +147,10 @@ public class PositionBusinessSyncTemplate
 
 
         if (!toInsert.isEmpty()) {
+            metrics.stampInsertStarted();
             cleanPositionMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
+            metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
                     toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
             metrics.stampCacheAddFinished();
@@ -155,6 +158,7 @@ public class PositionBusinessSyncTemplate
 
         if (!toUpdate.isEmpty()) {
             Map<Long, Long> idMap = new HashMap<>();
+            metrics.stampGlobalIdQueryStarted();
             cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
                             .select(CleanPosition::getGlobalId, CleanPosition::getSourceRowId)
                             .eq(CleanPosition::getSourceSystem, context.getDataSourceKey())
@@ -162,10 +166,12 @@ public class PositionBusinessSyncTemplate
                                     toUpdate.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList())))
                     .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
             metrics.stampGlobalIdQueryFinished();
+            metrics.stampSetIdStarted();
             for (CleanPosition target : toUpdate) {
                 target.setGlobalId(idMap.get(target.getSourceRowId()));
             }
             metrics.stampSetIdFinished();
+            metrics.stampUpdateStarted();
             cleanPositionMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());
         }

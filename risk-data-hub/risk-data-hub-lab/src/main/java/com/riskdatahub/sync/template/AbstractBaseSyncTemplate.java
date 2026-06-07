@@ -94,8 +94,8 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         batchIdQueue.clear();
         metrics.stampIdGenStarted();
         long[] ids = leafSegmentService.nextIdBatch(tag, count);
-        metrics.stampIdGenFinished();
         for (long id : ids) batchIdQueue.add(id);
+        metrics.stampIdGenFinished();
     }
 
     protected long nextId(String tag) {
@@ -134,18 +134,26 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         row.setInsertCount(m.getInsertCount());
         row.setUpdateCount(m.getUpdateCount());
         row.setFetchStartedAt(m.getFetchStartedAt());
+        row.setFetchFinishedAt(m.getFetchFinishedAt());
         row.setFetchQueuedAt(m.getFetchQueuedAt());
         row.setProcessStartedAt(m.getProcessStartedAt());
+        row.setProcessFinishedAt(m.getProcessFinishedAt());
         row.setIdGenStartedAt(m.getIdGenStartedAt());
         row.setIdGenFinishedAt(m.getIdGenFinishedAt());
         row.setTransformStartedAt(m.getTransformStartedAt());
         row.setTransformFinishedAt(m.getTransformFinishedAt());
         row.setSaveStartedAt(m.getSaveStartedAt());
+        row.setCacheLookupStartedAt(m.getCacheLookupStartedAt());
         row.setCacheLookupFinishedAt(m.getCacheLookupFinishedAt());
+        row.setInsertStartedAt(m.getInsertStartedAt());
         row.setInsertFinishedAt(m.getInsertFinishedAt());
+        row.setCacheAddStartedAt(m.getCacheAddStartedAt());
         row.setCacheAddFinishedAt(m.getCacheAddFinishedAt());
+        row.setGlobalIdQueryStartedAt(m.getGlobalIdQueryStartedAt());
         row.setGlobalIdQueryFinishedAt(m.getGlobalIdQueryFinishedAt());
+        row.setSetIdStartedAt(m.getSetIdStartedAt());
         row.setSetIdFinishedAt(m.getSetIdFinishedAt());
+        row.setUpdateStartedAt(m.getUpdateStartedAt());
         row.setUpdateFinishedAt(m.getUpdateFinishedAt());
         row.setSaveFinishedAt(m.getSaveFinishedAt());
         return row;

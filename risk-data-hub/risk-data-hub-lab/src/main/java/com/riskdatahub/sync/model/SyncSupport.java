@@ -101,18 +101,27 @@ public final class SyncSupport {
         private Integer updateCount;
 
         private LocalDateTime fetchStartedAt;
+        private LocalDateTime fetchFinishedAt;
         private LocalDateTime fetchQueuedAt;
+        private LocalDateTime fetchQueuedFinishedAt;
         private LocalDateTime processStartedAt;
+        private LocalDateTime processFinishedAt;
         private LocalDateTime idGenStartedAt;
         private LocalDateTime idGenFinishedAt;
         private LocalDateTime transformStartedAt;
         private LocalDateTime transformFinishedAt;
         private LocalDateTime saveStartedAt;
+        private LocalDateTime cacheLookupStartedAt;
         private LocalDateTime cacheLookupFinishedAt;
+        private LocalDateTime insertStartedAt;
         private LocalDateTime insertFinishedAt;
+        private LocalDateTime cacheAddStartedAt;
         private LocalDateTime cacheAddFinishedAt;
+        private LocalDateTime globalIdQueryStartedAt;
         private LocalDateTime globalIdQueryFinishedAt;
+        private LocalDateTime setIdStartedAt;
         private LocalDateTime setIdFinishedAt;
+        private LocalDateTime updateStartedAt;
         private LocalDateTime updateFinishedAt;
         private LocalDateTime saveFinishedAt;
 
@@ -125,18 +134,27 @@ public final class SyncSupport {
         }
 
         public void stampFetchStarted() { fetchStartedAt = TimeUtils.now(); }
+        public void stampFetchFinished() { fetchFinishedAt = TimeUtils.now(); }
         public void stampFetchQueued() { fetchQueuedAt = TimeUtils.now(); }
+        public void stampFetchQueuedFinished() { fetchQueuedFinishedAt = TimeUtils.now(); }
         public void stampProcessStarted() { processStartedAt = TimeUtils.now(); }
+        public void stampProcessFinished() { processFinishedAt = TimeUtils.now(); }
         public void stampIdGenStarted() { idGenStartedAt = TimeUtils.now(); }
         public void stampIdGenFinished() { idGenFinishedAt = TimeUtils.now(); }
         public void stampTransformStarted() { transformStartedAt = TimeUtils.now(); }
         public void stampTransformFinished() { transformFinishedAt = TimeUtils.now(); }
         public void stampSaveStarted() { saveStartedAt = TimeUtils.now(); }
+        public void stampCacheLookupStarted() { cacheLookupStartedAt = TimeUtils.now(); }
         public void stampCacheLookupFinished() { cacheLookupFinishedAt = TimeUtils.now(); }
+        public void stampInsertStarted() { insertStartedAt = TimeUtils.now(); }
         public void stampInsertFinished(int cnt) { insertFinishedAt = TimeUtils.now(); insertCount = cnt; }
+        public void stampCacheAddStarted() { cacheAddStartedAt = TimeUtils.now(); }
         public void stampCacheAddFinished() { cacheAddFinishedAt = TimeUtils.now(); }
+        public void stampGlobalIdQueryStarted() { globalIdQueryStartedAt = TimeUtils.now(); }
         public void stampGlobalIdQueryFinished() { globalIdQueryFinishedAt = TimeUtils.now(); }
+        public void stampSetIdStarted() { setIdStartedAt = TimeUtils.now(); }
         public void stampSetIdFinished() { setIdFinishedAt = TimeUtils.now(); }
+        public void stampUpdateStarted() { updateStartedAt = TimeUtils.now(); }
         public void stampUpdateFinished(int cnt) { updateFinishedAt = TimeUtils.now(); updateCount = cnt; }
         public void stampSaveFinished() { saveFinishedAt = TimeUtils.now(); }
     }

@@ -20,18 +20,26 @@ public class SyncBatchMetrics {
     private Integer updateCount;
 
     private LocalDateTime fetchStartedAt;
+    private LocalDateTime fetchFinishedAt;
     private LocalDateTime fetchQueuedAt;
     private LocalDateTime processStartedAt;
+    private LocalDateTime processFinishedAt;
     private LocalDateTime idGenStartedAt;
     private LocalDateTime idGenFinishedAt;
     private LocalDateTime transformStartedAt;
     private LocalDateTime transformFinishedAt;
     private LocalDateTime saveStartedAt;
+    private LocalDateTime cacheLookupStartedAt;
     private LocalDateTime cacheLookupFinishedAt;
+    private LocalDateTime insertStartedAt;
     private LocalDateTime insertFinishedAt;
+    private LocalDateTime cacheAddStartedAt;
     private LocalDateTime cacheAddFinishedAt;
+    private LocalDateTime globalIdQueryStartedAt;
     private LocalDateTime globalIdQueryFinishedAt;
+    private LocalDateTime setIdStartedAt;
     private LocalDateTime setIdFinishedAt;
+    private LocalDateTime updateStartedAt;
     private LocalDateTime updateFinishedAt;
     private LocalDateTime saveFinishedAt;
 
