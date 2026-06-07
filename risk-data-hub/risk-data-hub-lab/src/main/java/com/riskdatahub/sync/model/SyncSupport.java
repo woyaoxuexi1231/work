@@ -114,10 +114,6 @@ public final class SyncSupport {
         private LocalDateTime insertFinishedAt;
         private LocalDateTime cacheAddStartedAt;
         private LocalDateTime cacheAddFinishedAt;
-        private LocalDateTime globalIdQueryStartedAt;
-        private LocalDateTime globalIdQueryFinishedAt;
-        private LocalDateTime setIdStartedAt;
-        private LocalDateTime setIdFinishedAt;
         private LocalDateTime updateStartedAt;
         private LocalDateTime updateFinishedAt;
 
@@ -143,10 +139,6 @@ public final class SyncSupport {
         public void stampInsertFinished(int cnt) { insertFinishedAt = TimeUtils.now(); insertCount = cnt; }
         public void stampCacheAddStarted() { cacheAddStartedAt = TimeUtils.now(); }
         public void stampCacheAddFinished() { cacheAddFinishedAt = TimeUtils.now(); }
-        public void stampGlobalIdQueryStarted() { globalIdQueryStartedAt = TimeUtils.now(); }
-        public void stampGlobalIdQueryFinished() { globalIdQueryFinishedAt = TimeUtils.now(); }
-        public void stampSetIdStarted() { setIdStartedAt = TimeUtils.now(); }
-        public void stampSetIdFinished() { setIdFinishedAt = TimeUtils.now(); }
         public void stampUpdateStarted() { updateStartedAt = TimeUtils.now(); }
         public void stampUpdateFinished(int cnt) { updateFinishedAt = TimeUtils.now(); updateCount = cnt; }
     }

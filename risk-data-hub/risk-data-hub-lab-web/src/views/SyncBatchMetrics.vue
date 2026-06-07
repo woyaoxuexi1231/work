@@ -26,10 +26,6 @@ const NODES = [
   { key: 'insertFinishedAt', label: '新增写入完成' },
   { key: 'cacheAddStartedAt', label: '写缓存开始' },
   { key: 'cacheAddFinishedAt', label: '写缓存完成' },
-  { key: 'globalIdQueryStartedAt', label: '查主键开始' },
-  { key: 'globalIdQueryFinishedAt', label: '查主键完成' },
-  { key: 'setIdStartedAt', label: '设主键开始' },
-  { key: 'setIdFinishedAt', label: '设主键完成' },
   { key: 'updateStartedAt', label: '更新写入开始' },
   { key: 'updateFinishedAt', label: '更新写入完成' },
 ]
@@ -42,8 +38,6 @@ const DURATION_PAIRS = [
   { start: 'cacheLookupStartedAt', end: 'cacheLookupFinishedAt' },
   { start: 'insertStartedAt', end: 'insertFinishedAt' },
   { start: 'cacheAddStartedAt', end: 'cacheAddFinishedAt' },
-  { start: 'globalIdQueryStartedAt', end: 'globalIdQueryFinishedAt' },
-  { start: 'setIdStartedAt', end: 'setIdFinishedAt' },
   { start: 'updateStartedAt', end: 'updateFinishedAt' },
 ]
 

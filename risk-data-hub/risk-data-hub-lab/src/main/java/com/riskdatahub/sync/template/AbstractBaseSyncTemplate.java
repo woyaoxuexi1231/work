@@ -147,10 +147,6 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         row.setInsertFinishedAt(m.getInsertFinishedAt());
         row.setCacheAddStartedAt(m.getCacheAddStartedAt());
         row.setCacheAddFinishedAt(m.getCacheAddFinishedAt());
-        row.setGlobalIdQueryStartedAt(m.getGlobalIdQueryStartedAt());
-        row.setGlobalIdQueryFinishedAt(m.getGlobalIdQueryFinishedAt());
-        row.setSetIdStartedAt(m.getSetIdStartedAt());
-        row.setSetIdFinishedAt(m.getSetIdFinishedAt());
         row.setUpdateStartedAt(m.getUpdateStartedAt());
         row.setUpdateFinishedAt(m.getUpdateFinishedAt());
         return row;

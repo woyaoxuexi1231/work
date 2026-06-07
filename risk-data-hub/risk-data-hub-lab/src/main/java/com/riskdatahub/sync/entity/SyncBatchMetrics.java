@@ -33,10 +33,6 @@ public class SyncBatchMetrics {
     private LocalDateTime insertFinishedAt;
     private LocalDateTime cacheAddStartedAt;
     private LocalDateTime cacheAddFinishedAt;
-    private LocalDateTime globalIdQueryStartedAt;
-    private LocalDateTime globalIdQueryFinishedAt;
-    private LocalDateTime setIdStartedAt;
-    private LocalDateTime setIdFinishedAt;
     private LocalDateTime updateStartedAt;
     private LocalDateTime updateFinishedAt;
 

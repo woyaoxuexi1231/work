@@ -58,4 +58,4 @@ hub:
 
 sync:
   cache:
-    strategy: bloom-filter
+    strategy: batched-sscan

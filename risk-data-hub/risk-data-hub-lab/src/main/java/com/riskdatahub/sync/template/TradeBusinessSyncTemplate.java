@@ -24,7 +24,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -137,16 +136,18 @@ public class TradeBusinessSyncTemplate
         String cacheKey = "sync:existing:clean_trade:" + context.getDataSourceKey();
 
         metrics.stampCacheLookupStarted();
-        Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
+        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
-                                .select(CleanTrade::getSourceRowId)
+                                .select(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)
                                 .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
-                        .stream().map(CleanTrade::getSourceRowId).collect(Collectors.toSet()));
+                        .stream().collect(Collectors.toMap(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)));
         metrics.stampCacheLookupFinished();
         List<CleanTrade> toInsert = new ArrayList<>();
         List<CleanTrade> toUpdate = new ArrayList<>();
         for (CleanTrade target : targets) {
-            if (existingIds.contains(target.getSourceRowId())) {
+            Long globalId = existingMap.get(target.getSourceRowId());
+            if (globalId != null) {
+                target.setGlobalId(globalId);
                 toUpdate.add(target);
             } else {
                 toInsert.add(target);
@@ -160,25 +161,11 @@ public class TradeBusinessSyncTemplate
             metrics.stampInsertFinished(toInsert.size());
             metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList()));
+                    toInsert.stream().collect(Collectors.toMap(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)));
             metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {
-            Map<Long, Long> idMap = new HashMap<>();
-            metrics.stampGlobalIdQueryStarted();
-            cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
-                            .select(CleanTrade::getGlobalId, CleanTrade::getSourceRowId)
-                            .eq(CleanTrade::getSourceSystem, context.getDataSourceKey())
-                            .in(CleanTrade::getSourceRowId,
-                                    toUpdate.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toList())))
-                    .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
-            metrics.stampGlobalIdQueryFinished();
-            metrics.stampSetIdStarted();
-            for (CleanTrade target : toUpdate) {
-                target.setGlobalId(idMap.get(target.getSourceRowId()));
-            }
-            metrics.stampSetIdFinished();
             metrics.stampUpdateStarted();
             cleanTradeMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());

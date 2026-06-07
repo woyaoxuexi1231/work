@@ -22,7 +22,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -129,22 +128,23 @@ public class PositionBusinessSyncTemplate
         String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
 
         metrics.stampCacheLookupStarted();
-        Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
+        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
-                                .select(CleanPosition::getSourceRowId)
+                                .select(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)
                                 .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
-                        .stream().map(CleanPosition::getSourceRowId).collect(Collectors.toSet()));
+                        .stream().collect(Collectors.toMap(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)));
         metrics.stampCacheLookupFinished();
         List<CleanPosition> toInsert = new ArrayList<>();
         List<CleanPosition> toUpdate = new ArrayList<>();
         for (CleanPosition target : targets) {
-            if (existingIds.contains(target.getSourceRowId())) {
+            Long globalId = existingMap.get(target.getSourceRowId());
+            if (globalId != null) {
+                target.setGlobalId(globalId);
                 toUpdate.add(target);
             } else {
                 toInsert.add(target);
             }
         }
-
 
         if (!toInsert.isEmpty()) {
             metrics.stampInsertStarted();
@@ -152,25 +152,11 @@ public class PositionBusinessSyncTemplate
             metrics.stampInsertFinished(toInsert.size());
             metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList()));
+                    toInsert.stream().collect(Collectors.toMap(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)));
             metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {
-            Map<Long, Long> idMap = new HashMap<>();
-            metrics.stampGlobalIdQueryStarted();
-            cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
-                            .select(CleanPosition::getGlobalId, CleanPosition::getSourceRowId)
-                            .eq(CleanPosition::getSourceSystem, context.getDataSourceKey())
-                            .in(CleanPosition::getSourceRowId,
-                                    toUpdate.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toList())))
-                    .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
-            metrics.stampGlobalIdQueryFinished();
-            metrics.stampSetIdStarted();
-            for (CleanPosition target : toUpdate) {
-                target.setGlobalId(idMap.get(target.getSourceRowId()));
-            }
-            metrics.stampSetIdFinished();
             metrics.stampUpdateStarted();
             cleanPositionMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());

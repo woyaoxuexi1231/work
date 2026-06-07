@@ -22,7 +22,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -127,20 +126,22 @@ public class AssetBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_asset:" + context.getDataSourceKey();
 
-        // 查询已存在的 ID
+        // 查询已存在的 sourceRowId → globalId 映射
         metrics.stampCacheLookupStarted();
-        Set<Long> existingIds = existingIdsCache.getExistingIds(cacheKey, () ->
+        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
                 cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
-                                .select(CleanAsset::getSourceRowId)
+                                .select(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)
                                 .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
-                        .stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet()));
+                        .stream().collect(Collectors.toMap(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)));
         metrics.stampCacheLookupFinished();
 
         // 筛选出待插入和待更新的数据
         List<CleanAsset> toInsert = new ArrayList<>();
         List<CleanAsset> toUpdate = new ArrayList<>();
         for (CleanAsset target : targets) {
-            if (existingIds.contains(target.getSourceRowId())) {
+            Long globalId = existingMap.get(target.getSourceRowId());
+            if (globalId != null) {
+                target.setGlobalId(globalId);
                 toUpdate.add(target);
             } else {
                 toInsert.add(target);
@@ -158,28 +159,11 @@ public class AssetBusinessSyncTemplate
             // 缓存新增的 ID
             metrics.stampCacheAddStarted();
             existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList()));
+                    toInsert.stream().collect(Collectors.toMap(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)));
             metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {
-            Map<Long, Long> idMap = new HashMap<>();
-
-            metrics.stampGlobalIdQueryStarted();
-            cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
-                            .select(CleanAsset::getGlobalId, CleanAsset::getSourceRowId)
-                            .eq(CleanAsset::getSourceSystem, context.getDataSourceKey())
-                            .in(CleanAsset::getSourceRowId,
-                                    toUpdate.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toList())))
-                    .forEach(e -> idMap.put(e.getSourceRowId(), e.getGlobalId()));
-            metrics.stampGlobalIdQueryFinished();
-
-            metrics.stampSetIdStarted();
-            for (CleanAsset target : toUpdate) {
-                target.setGlobalId(idMap.get(target.getSourceRowId()));
-            }
-            metrics.stampSetIdFinished();
-
             metrics.stampUpdateStarted();
             cleanAssetMapper.updateById(toUpdate);
             metrics.stampUpdateFinished(toUpdate.size());

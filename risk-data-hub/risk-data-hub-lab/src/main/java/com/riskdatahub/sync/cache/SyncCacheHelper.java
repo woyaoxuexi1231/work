@@ -1,20 +1,17 @@
 package com.riskdatahub.sync.cache;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RSet;
+import org.redisson.api.RMap;
 import org.redisson.api.RedissonClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /**
- * Redis 缓存辅助 — 缓存已同步的 source_row_id，避免每次同步都查库判断存在性。
+ * Redis 缓存辅助 — 缓存已同步的 sourceRowId → globalId 映射。
  * <p>
  * 缓存 key 格式：{@code sync:existing:{tableName}:{sourceSystem}}
  * </p>
@@ -29,25 +26,24 @@ public class SyncCacheHelper implements ExistingIdsCache {
     private final RedissonClient redissonClient;
 
     public SyncCacheHelper(RedissonClient redissonClient) {
-        log.info("[SyncCache] 使用 Redis 缓存");
+        log.info("[SyncCache] 使用 Redis 缓存 (Map)");
         this.redissonClient = redissonClient;
     }
 
-    public Set<Long> getExistingIds(String cacheKey, Supplier<Set<Long>> dbLoader) {
+    public Map<Long, Long> getExistingIds(String cacheKey, Supplier<Map<Long, Long>> dbLoader) {
         try {
-            RSet<Long> cached = redissonClient.getSet(cacheKey);
+            RMap<Long, Long> cached = redissonClient.getMap(cacheKey);
             if (cached.isExists()) {
-                return cached.readAll();
+                return cached.readAllMap();
             }
         } catch (Exception e) {
             log.error("[SyncCache] Redis 读取失败({}), 降级到 DB 加载 cacheKey={}", e.getMessage(), cacheKey);
         }
-        // Redis 不可用时降级到 DB 加载
-        Set<Long> ids = dbLoader.get();
+        Map<Long, Long> ids = dbLoader.get();
         try {
             if (!ids.isEmpty()) {
-                RSet<Long> cached = redissonClient.getSet(cacheKey);
-                cached.addAll(ids);
+                RMap<Long, Long> cached = redissonClient.getMap(cacheKey);
+                cached.putAll(ids);
                 cached.expire(1, TimeUnit.HOURS);
             }
         } catch (Exception e) {
@@ -56,25 +52,20 @@ public class SyncCacheHelper implements ExistingIdsCache {
         return ids;
     }
 
-    public void addNewIds(String cacheKey, List<Long> newIds) {
+    public void addNewIds(String cacheKey, Map<Long, Long> newIds) {
         if (newIds.isEmpty()) return;
         try {
-            RSet<Long> cached = redissonClient.getSet(cacheKey);
-            cached.addAll(newIds);
+            RMap<Long, Long> cached = redissonClient.getMap(cacheKey);
+            cached.putAll(newIds);
         } catch (Exception e) {
             log.error("[SyncCache] addNewIds 失败({}), cacheKey={}", e.getMessage(), cacheKey);
         }
     }
 
     public void clearCache(String cacheKey) {
-        redissonClient.getSet(cacheKey).delete();
+        redissonClient.getMap(cacheKey).delete();
     }
 
-    /**
-     * 按模式批量删除缓存 key（如 {@code sync:existing:*}）。
-     *
-     * @param pattern Redis key 模式，支持 {@code *} 通配符
-     */
     public void clearByPattern(String pattern) {
         redissonClient.getKeys().deleteByPattern(pattern);
     }

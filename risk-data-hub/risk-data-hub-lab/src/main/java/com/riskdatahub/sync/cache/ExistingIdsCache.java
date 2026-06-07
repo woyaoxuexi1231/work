@@ -1,7 +1,7 @@
 package com.riskdatahub.sync.cache;
 
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.function.Supplier;
 
 /**
@@ -20,21 +20,21 @@ import java.util.function.Supplier;
 public interface ExistingIdsCache {
 
     /**
-     * 获取已存在的 sourceRowId 集合。
+     * 获取已存在的 sourceRowId → globalId 映射。
      *
      * @param cacheKey 缓存 key
      * @param dbLoader 缓存未命中时从 DB 加载的回调
-     * @return 已存在的 ID 集合（仅需支持 {@code contains()}）
+     * @return 已存在的 ID 映射（sourceRowId → globalId）
      */
-    Set<Long> getExistingIds(String cacheKey, Supplier<Set<Long>> dbLoader);
+    Map<Long, Long> getExistingIds(String cacheKey, Supplier<Map<Long, Long>> dbLoader);
 
     /**
-     * 新增一批 ID 到缓存。
+     * 新增一批 sourceRowId → globalId 映射到缓存。
      *
      * @param cacheKey 缓存 key
-     * @param newIds   新增的 sourceRowId 列表
+     * @param newIds   新增的映射（sourceRowId → globalId）
      */
-    void addNewIds(String cacheKey, List<Long> newIds);
+    void addNewIds(String cacheKey, Map<Long, Long> newIds);
 
     /**
      * 清除指定缓存。
