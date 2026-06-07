@@ -27,12 +27,8 @@ public class SyncBatchMetrics {
     private LocalDateTime idGenFinishedAt;
     private LocalDateTime transformStartedAt;
     private LocalDateTime transformFinishedAt;
-    private LocalDateTime cacheLookupStartedAt;
-    private LocalDateTime cacheLookupFinishedAt;
     private LocalDateTime insertStartedAt;
     private LocalDateTime insertFinishedAt;
-    private LocalDateTime cacheAddStartedAt;
-    private LocalDateTime cacheAddFinishedAt;
     private LocalDateTime updateStartedAt;
     private LocalDateTime updateFinishedAt;
 

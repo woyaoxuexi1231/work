@@ -5,7 +5,6 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerPositionBalance;
 import com.riskdatahub.sync.entity.CleanPosition;
@@ -41,7 +40,6 @@ import java.util.stream.Collectors;
 public class PositionBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<PositionBusinessSyncTemplate.PositionRow, CleanPosition> {
 
-    private final ExistingIdsCache existingIdsCache;
     private final CleanPositionMapper cleanPositionMapper;
     private final OmsPositionHoldingMapper omsPositionHoldingMapper;
     private final BrokerPositionBalanceMapper brokerPositionBalanceMapper;
@@ -50,12 +48,10 @@ public class PositionBusinessSyncTemplate
                                         LeafSegmentService leafSegmentService,
                                         MessageOutboxService messageOutboxService,
                                         @Qualifier("positionPairExecutor") ThreadPoolExecutor pairExecutor,
-                                        ExistingIdsCache existingIdsCache,
                                         CleanPositionMapper cleanPositionMapper,
                                         OmsPositionHoldingMapper omsPositionHoldingMapper,
                                         BrokerPositionBalanceMapper brokerPositionBalanceMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
-        this.existingIdsCache = existingIdsCache;
         this.cleanPositionMapper = cleanPositionMapper;
         this.omsPositionHoldingMapper = omsPositionHoldingMapper;
         this.brokerPositionBalanceMapper = brokerPositionBalanceMapper;
@@ -125,15 +121,14 @@ public class PositionBusinessSyncTemplate
     protected void saveBatch(BusinessSyncContext context, List<CleanPosition> targets, SyncMetrics metrics) {
         if (targets.isEmpty()) return;
 
-        String cacheKey = "sync:existing:clean_position:" + context.getDataSourceKey();
+        // 查询本页数据中已存在的记录
+        Set<Long> batchIds = targets.stream().map(CleanPosition::getSourceRowId).collect(Collectors.toSet());
+        Map<Long, Long> existingMap = cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
+                        .select(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)
+                        .in(CleanPosition::getSourceRowId, batchIds)
+                        .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
+                .stream().collect(Collectors.toMap(CleanPosition::getSourceRowId, CleanPosition::getGlobalId));
 
-        metrics.stampCacheLookupStarted();
-        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
-                cleanPositionMapper.selectList(new LambdaQueryWrapper<CleanPosition>()
-                                .select(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)
-                                .eq(CleanPosition::getSourceSystem, context.getDataSourceKey()))
-                        .stream().collect(Collectors.toMap(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)));
-        metrics.stampCacheLookupFinished();
         List<CleanPosition> toInsert = new ArrayList<>();
         List<CleanPosition> toUpdate = new ArrayList<>();
         for (CleanPosition target : targets) {
@@ -150,10 +145,6 @@ public class PositionBusinessSyncTemplate
             metrics.stampInsertStarted();
             cleanPositionMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
-            metrics.stampCacheAddStarted();
-            existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().collect(Collectors.toMap(CleanPosition::getSourceRowId, CleanPosition::getGlobalId)));
-            metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {

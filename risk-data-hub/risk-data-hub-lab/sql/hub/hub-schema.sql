@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS clean_stock
     turnover_amount DECIMAL(18, 2) NOT NULL,
     clean_batch     VARCHAR(64)    NOT NULL,
     created_at      TIMESTAMP      NOT NULL,
-    UNIQUE KEY uk_stock_source (source_system, source_row_id)
+    UNIQUE KEY uk_stock_source (source_row_id, source_system)
 );
 
 CREATE TABLE IF NOT EXISTS clean_trade
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS clean_trade
     clean_batch       VARCHAR(64)    NOT NULL,
     trade_time        TIMESTAMP      NOT NULL,
     created_at        TIMESTAMP      NOT NULL,
-    UNIQUE KEY uk_trade_source (source_system, source_row_id)
+    UNIQUE KEY uk_trade_source (source_row_id, source_system)
 );
 
 CREATE TABLE IF NOT EXISTS clean_position
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS clean_position
     stat_day      VARCHAR(16)    NOT NULL,
     clean_batch   VARCHAR(64)    NOT NULL,
     created_at    TIMESTAMP      NOT NULL,
-    UNIQUE KEY uk_position_source (source_system, source_row_id)
+    UNIQUE KEY uk_position_source (source_row_id, source_system)
 );
 
 CREATE TABLE IF NOT EXISTS clean_asset
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS clean_asset
     stat_day       VARCHAR(16)    NOT NULL,
     clean_batch    VARCHAR(64)    NOT NULL,
     created_at     TIMESTAMP      NOT NULL,
-    UNIQUE KEY uk_asset_source (source_system, source_row_id)
+    UNIQUE KEY uk_asset_source (source_row_id, source_system)
 );
 
 CREATE TABLE IF NOT EXISTS event_message
@@ -171,12 +171,8 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics
     id_gen_finished_at          TIMESTAMP(3) NULL COMMENT 'ID生成完成',
     transform_started_at        TIMESTAMP(3) NULL COMMENT '转换开始',
     transform_finished_at       TIMESTAMP(3) NULL COMMENT '转换完成',
-    cache_lookup_started_at     TIMESTAMP(3) NULL COMMENT '查缓存开始',
-    cache_lookup_finished_at    TIMESTAMP(3) NULL COMMENT '查缓存完成',
     insert_started_at           TIMESTAMP(3) NULL COMMENT '新增写入开始',
     insert_finished_at          TIMESTAMP(3) NULL COMMENT '新增写入完成',
-    cache_add_started_at        TIMESTAMP(3) NULL COMMENT '写缓存开始',
-    cache_add_finished_at       TIMESTAMP(3) NULL COMMENT '写缓存完成',
     update_started_at           TIMESTAMP(3) NULL COMMENT '更新写入开始',
     update_finished_at          TIMESTAMP(3) NULL COMMENT '更新写入完成',
     recorded_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

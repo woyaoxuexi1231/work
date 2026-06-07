@@ -5,7 +5,6 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerStockQuote;
 import com.riskdatahub.sync.entity.CleanStock;
@@ -46,7 +45,6 @@ import java.util.stream.Collectors;
 public class StockBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<StockBusinessSyncTemplate.StockRow, CleanStock> {
 
-    private final ExistingIdsCache existingIdsCache;
     private final CleanStockMapper cleanStockMapper;
     private final OmsStockSnapshotMapper omsStockSnapshotMapper;
     private final BrokerStockQuoteMapper brokerStockQuoteMapper;
@@ -55,12 +53,10 @@ public class StockBusinessSyncTemplate
                                      LeafSegmentService leafSegmentService,
                                      MessageOutboxService messageOutboxService,
                                      @Qualifier("stockPairExecutor") ThreadPoolExecutor pairExecutor,
-                                     ExistingIdsCache existingIdsCache,
                                      CleanStockMapper cleanStockMapper,
                                      OmsStockSnapshotMapper omsStockSnapshotMapper,
                                      BrokerStockQuoteMapper brokerStockQuoteMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
-        this.existingIdsCache = existingIdsCache;
         this.cleanStockMapper = cleanStockMapper;
         this.omsStockSnapshotMapper = omsStockSnapshotMapper;
         this.brokerStockQuoteMapper = brokerStockQuoteMapper;
@@ -132,15 +128,13 @@ public class StockBusinessSyncTemplate
     protected void saveBatch(BusinessSyncContext context, List<CleanStock> targets, SyncMetrics metrics) {
         if (targets.isEmpty()) return;
 
-        String cacheKey = "sync:existing:clean_stock:" + context.getDataSourceKey();
-
-        metrics.stampCacheLookupStarted();
-        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
-                cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
-                                .select(CleanStock::getSourceRowId, CleanStock::getGlobalId)
-                                .eq(CleanStock::getSourceSystem, context.getDataSourceKey()))
-                        .stream().collect(Collectors.toMap(CleanStock::getSourceRowId, CleanStock::getGlobalId)));
-        metrics.stampCacheLookupFinished();
+        // 查询本页数据中已存在的记录 → sourceRowId → globalId
+        Set<Long> batchIds = targets.stream().map(CleanStock::getSourceRowId).collect(Collectors.toSet());
+        Map<Long, Long> existingMap = cleanStockMapper.selectList(new LambdaQueryWrapper<CleanStock>()
+                        .select(CleanStock::getSourceRowId, CleanStock::getGlobalId)
+                        .in(CleanStock::getSourceRowId, batchIds)
+                        .eq(CleanStock::getSourceSystem, context.getDataSourceKey()))
+                .stream().collect(Collectors.toMap(CleanStock::getSourceRowId, CleanStock::getGlobalId));
 
         List<CleanStock> toInsert = new ArrayList<>();
         List<CleanStock> toUpdate = new ArrayList<>();
@@ -157,10 +151,6 @@ public class StockBusinessSyncTemplate
             metrics.stampInsertStarted();
             cleanStockMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
-            metrics.stampCacheAddStarted();
-            existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().collect(Collectors.toMap(CleanStock::getSourceRowId, CleanStock::getGlobalId)));
-            metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {

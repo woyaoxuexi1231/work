@@ -5,7 +5,6 @@ import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerFundAccount;
 import com.riskdatahub.sync.entity.CleanAsset;
@@ -41,7 +40,6 @@ import java.util.stream.Collectors;
 public class AssetBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<AssetBusinessSyncTemplate.AssetRow, CleanAsset> {
 
-    private final ExistingIdsCache existingIdsCache;
     private final CleanAssetMapper cleanAssetMapper;
     private final OmsCashAssetMapper omsCashAssetMapper;
     private final BrokerFundAccountMapper brokerFundAccountMapper;
@@ -50,12 +48,10 @@ public class AssetBusinessSyncTemplate
                                      LeafSegmentService leafSegmentService,
                                      MessageOutboxService messageOutboxService,
                                      @Qualifier("assetPairExecutor") ThreadPoolExecutor pairExecutor,
-                                     ExistingIdsCache existingIdsCache,
                                      CleanAssetMapper cleanAssetMapper,
                                      OmsCashAssetMapper omsCashAssetMapper,
                                      BrokerFundAccountMapper brokerFundAccountMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
-        this.existingIdsCache = existingIdsCache;
         this.cleanAssetMapper = cleanAssetMapper;
         this.omsCashAssetMapper = omsCashAssetMapper;
         this.brokerFundAccountMapper = brokerFundAccountMapper;
@@ -124,16 +120,13 @@ public class AssetBusinessSyncTemplate
     protected void saveBatch(BusinessSyncContext context, List<CleanAsset> targets, SyncMetrics metrics) {
         if (targets.isEmpty()) return;
 
-        String cacheKey = "sync:existing:clean_asset:" + context.getDataSourceKey();
-
-        // 查询已存在的 sourceRowId → globalId 映射
-        metrics.stampCacheLookupStarted();
-        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
-                cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
-                                .select(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)
-                                .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
-                        .stream().collect(Collectors.toMap(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)));
-        metrics.stampCacheLookupFinished();
+        // 查询本页数据中已存在的记录
+        Set<Long> batchIds = targets.stream().map(CleanAsset::getSourceRowId).collect(Collectors.toSet());
+        Map<Long, Long> existingMap = cleanAssetMapper.selectList(new LambdaQueryWrapper<CleanAsset>()
+                        .select(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)
+                        .in(CleanAsset::getSourceRowId, batchIds)
+                        .eq(CleanAsset::getSourceSystem, context.getDataSourceKey()))
+                .stream().collect(Collectors.toMap(CleanAsset::getSourceRowId, CleanAsset::getGlobalId));
 
         // 筛选出待插入和待更新的数据
         List<CleanAsset> toInsert = new ArrayList<>();
@@ -148,19 +141,10 @@ public class AssetBusinessSyncTemplate
             }
         }
 
-
-
         if (!toInsert.isEmpty()) {
-            // 批量插入需要新增的数据
             metrics.stampInsertStarted();
             cleanAssetMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
-
-            // 缓存新增的 ID
-            metrics.stampCacheAddStarted();
-            existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().collect(Collectors.toMap(CleanAsset::getSourceRowId, CleanAsset::getGlobalId)));
-            metrics.stampCacheAddFinished();
         }
 
         if (!toUpdate.isEmpty()) {

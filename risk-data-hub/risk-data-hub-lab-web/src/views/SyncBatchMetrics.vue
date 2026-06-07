@@ -20,12 +20,8 @@ const NODES = [
   { key: 'idGenFinishedAt', label: 'ID生成完成' },
   { key: 'transformStartedAt', label: '转换开始' },
   { key: 'transformFinishedAt', label: '转换完成' },
-  { key: 'cacheLookupStartedAt', label: '查缓存开始' },
-  { key: 'cacheLookupFinishedAt', label: '查缓存完成' },
   { key: 'insertStartedAt', label: '新增写入开始' },
   { key: 'insertFinishedAt', label: '新增写入完成' },
-  { key: 'cacheAddStartedAt', label: '写缓存开始' },
-  { key: 'cacheAddFinishedAt', label: '写缓存完成' },
   { key: 'updateStartedAt', label: '更新写入开始' },
   { key: 'updateFinishedAt', label: '更新写入完成' },
 ]
@@ -35,9 +31,7 @@ const DURATION_PAIRS = [
   { start: 'fetchQueuedAt', end: 'fetchQueuedFinishedAt' },
   { start: 'idGenStartedAt', end: 'idGenFinishedAt' },
   { start: 'transformStartedAt', end: 'transformFinishedAt' },
-  { start: 'cacheLookupStartedAt', end: 'cacheLookupFinishedAt' },
   { start: 'insertStartedAt', end: 'insertFinishedAt' },
-  { start: 'cacheAddStartedAt', end: 'cacheAddFinishedAt' },
   { start: 'updateStartedAt', end: 'updateFinishedAt' },
 ]
 

@@ -6,7 +6,6 @@ import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.dictionary.DictionaryService;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.cache.ExistingIdsCache;
 import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerTradeDeal;
 import com.riskdatahub.sync.entity.CleanTrade;
@@ -45,7 +44,6 @@ public class TradeBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<TradeBusinessSyncTemplate.TradeRow, CleanTrade> {
 
     private final DictionaryService dictionaryService;
-    private final ExistingIdsCache existingIdsCache;
     private final CleanTradeMapper cleanTradeMapper;
     private final OmsTradeOrderMapper omsTradeOrderMapper;
     private final BrokerTradeDealMapper brokerTradeDealMapper;
@@ -55,13 +53,11 @@ public class TradeBusinessSyncTemplate
                                      MessageOutboxService messageOutboxService,
                                      @Qualifier("tradePairExecutor") ThreadPoolExecutor pairExecutor,
                                      DictionaryService dictionaryService,
-                                     ExistingIdsCache existingIdsCache,
                                      CleanTradeMapper cleanTradeMapper,
                                      OmsTradeOrderMapper omsTradeOrderMapper,
                                      BrokerTradeDealMapper brokerTradeDealMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
         this.dictionaryService = dictionaryService;
-        this.existingIdsCache = existingIdsCache;
         this.cleanTradeMapper = cleanTradeMapper;
         this.omsTradeOrderMapper = omsTradeOrderMapper;
         this.brokerTradeDealMapper = brokerTradeDealMapper;
@@ -135,13 +131,13 @@ public class TradeBusinessSyncTemplate
 
         String cacheKey = "sync:existing:clean_trade:" + context.getDataSourceKey();
 
-        metrics.stampCacheLookupStarted();
-        Map<Long, Long> existingMap = existingIdsCache.getExistingIds(cacheKey, () ->
-                cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
-                                .select(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)
-                                .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
-                        .stream().collect(Collectors.toMap(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)));
-        metrics.stampCacheLookupFinished();
+        // 查询本页数据中已存在的记录
+        Set<Long> batchIds = targets.stream().map(CleanTrade::getSourceRowId).collect(Collectors.toSet());
+        Map<Long, Long> existingMap = cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
+                        .select(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)
+                        .in(CleanTrade::getSourceRowId, batchIds)
+                        .eq(CleanTrade::getSourceSystem, context.getDataSourceKey()))
+                .stream().collect(Collectors.toMap(CleanTrade::getSourceRowId, CleanTrade::getGlobalId));
         List<CleanTrade> toInsert = new ArrayList<>();
         List<CleanTrade> toUpdate = new ArrayList<>();
         for (CleanTrade target : targets) {
@@ -159,10 +155,7 @@ public class TradeBusinessSyncTemplate
             metrics.stampInsertStarted();
             cleanTradeMapper.insert(toInsert);
             metrics.stampInsertFinished(toInsert.size());
-            metrics.stampCacheAddStarted();
-            existingIdsCache.addNewIds(cacheKey,
-                    toInsert.stream().collect(Collectors.toMap(CleanTrade::getSourceRowId, CleanTrade::getGlobalId)));
-            metrics.stampCacheAddFinished();
+
         }
 
         if (!toUpdate.isEmpty()) {
