@@ -14,9 +14,8 @@ const loading = ref(true)
 const NODES = [
   { key: 'fetchStartedAt', label: '拉取开始' },
   { key: 'fetchFinishedAt', label: '拉取完成' },
-  { key: 'fetchQueuedAt', label: '拉取完成(入队)' },
-  { key: 'processStartedAt', label: '开始处理(出队)' },
-  { key: 'processFinishedAt', label: '处理完成' },
+  { key: 'fetchQueuedAt', label: '入队开始' },
+  { key: 'fetchQueuedFinishedAt', label: '入队完成' },
   { key: 'idGenStartedAt', label: 'ID生成开始' },
   { key: 'idGenFinishedAt', label: 'ID生成完成' },
   { key: 'transformStartedAt', label: '转换开始' },

@@ -104,8 +104,6 @@ public final class SyncSupport {
         private LocalDateTime fetchFinishedAt;
         private LocalDateTime fetchQueuedAt;
         private LocalDateTime fetchQueuedFinishedAt;
-        private LocalDateTime processStartedAt;
-        private LocalDateTime processFinishedAt;
         private LocalDateTime idGenStartedAt;
         private LocalDateTime idGenFinishedAt;
         private LocalDateTime transformStartedAt;
@@ -137,8 +135,6 @@ public final class SyncSupport {
         public void stampFetchFinished() { fetchFinishedAt = TimeUtils.now(); }
         public void stampFetchQueued() { fetchQueuedAt = TimeUtils.now(); }
         public void stampFetchQueuedFinished() { fetchQueuedFinishedAt = TimeUtils.now(); }
-        public void stampProcessStarted() { processStartedAt = TimeUtils.now(); }
-        public void stampProcessFinished() { processFinishedAt = TimeUtils.now(); }
         public void stampIdGenStarted() { idGenStartedAt = TimeUtils.now(); }
         public void stampIdGenFinished() { idGenFinishedAt = TimeUtils.now(); }
         public void stampTransformStarted() { transformStartedAt = TimeUtils.now(); }

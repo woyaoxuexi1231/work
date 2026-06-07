@@ -300,17 +300,17 @@
     <!-- ==================== DEFENSE ==================== -->
     <section class="bg-gradient-to-br from-green-900/20 to-panel rounded-xl border border-safe/30 p-6 md:p-8" id="defense">
         <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-            <i class="fa-solid fa-shield-halved text-safe"></i> Java 防御方案全览
+            <i class="fa-solid fa-shield-halved text-safe"></i> Java 防御方案全览：知其然更知其所以然
         </h2>
 
         <div class="bg-slate-900/80 p-5 rounded-lg border border-safe/20 mb-6">
             <p class="text-slate-300 leading-relaxed text-sm">
-                Java 生态中 SQL 注入防御的核心原则：<strong class="text-white">永远不要拼接 SQL 字符串</strong>。根据使用的数据访问技术，选择对应的参数化方案。PreparedStatement 在协议层面将 SQL 模板与参数分离，MySQL 服务端先编译模板再绑定数据，注入载荷只会被当作纯字符串值处理。
+                所有安全方案的本质都是同一个：<strong class="text-white">在协议或解析层面，将「SQL 代码结构」与「用户数据」彻底分离</strong>。不同的 Java 技术栈只是实现这一分离的手段不同。理解了底层原理，就能判断任何新写法是否安全。
             </p>
         </div>
 
         <!-- Fix 1: JDBC PreparedStatement -->
-        <div class="mb-6">
+        <div class="mb-8">
             <h3 class="text-white font-bold mb-3 flex items-center gap-2 text-sm">
                 <i class="fa-brands fa-java text-java mr-1"></i> 方案 A：原生 JDBC PreparedStatement
             </h3>
@@ -334,14 +334,26 @@ AND password=?"</span>;
                     ResultSet rs = ps.executeQuery();
                 </div>
             </div>
-            <div class="mt-3 text-xs text-yellow-500 bg-yellow-900/10 p-3 rounded border border-yellow-900/20">
-                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                <strong>关键点：</strong>JDBC 用 <code class="text-white">?</code> 作为占位符（不是 %s）。<code>setString()</code> 会自动处理转义和类型安全。<strong class="text-white">绝对不要</strong>写成 <code>"WHERE username='" + "?" + "'"'</code>——把 ? 放在引号内会变成字面量问号。
+
+            <!-- WHY IT'S SAFE -->
+            <div class="mt-4 bg-green-900/10 border border-green-900/30 rounded-lg p-4 space-y-3">
+                <div class="text-green-400 font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-microchip"></i> 为什么这是安全的？（MySQL 协议层分离）
+                </div>
+                <div class="text-sm text-slate-400 space-y-2">
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">两阶段执行模型：</strong><code>prepareStatement()</code> 时，JDBC 驱动向 MySQL 发送 <code>COM_STMT_PREPARE</code> 命令，MySQL 服务端此时就<strong>编译并缓存了 SQL 执行计划</strong>。此时 SQL 结构已经固定，<code>?</code> 被标记为纯数据槽位。</p>
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">二进制参数绑定：</strong><code>setString()</code> + <code>executeQuery()</code> 时，驱动发送 <code>COM_STMT_EXECUTE</code>，参数以<strong>独立的二进制数据包</strong>传输，永远不会被拼接到 SQL 字符串中。MySQL 直接将数据填入已编译的槽位。</p>
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">即使输入 ' OR '1'='1：</strong>它也只是作为 username 字段的完整字符串值参与等值比较，不可能改变 WHERE 子句的逻辑结构。因为 SQL 结构在参数到达之前就已经编译完成了。</p>
+                </div>
+                <div class="text-xs text-yellow-500 bg-yellow-900/10 p-3 rounded border border-yellow-900/20 mt-3">
+                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                    <strong>常见误区：</strong>绝对不要写成 <code>"WHERE username='" + "?" + "'"'</code>——把 ? 放在引号内，MySQL 会将其视为字面量问号字符，而非参数槽位，预编译完全失效。
+                </div>
             </div>
         </div>
 
         <!-- Fix 2: MyBatis -->
-        <div class="mb-6">
+        <div class="mb-8">
             <h3 class="text-white font-bold mb-3 flex items-center gap-2 text-sm">
                 <i class="fa-solid fa-feather text-blue-400 mr-1"></i> 方案 B：MyBatis #{} vs ${}
             </h3>
@@ -363,23 +375,39 @@ AND password=?"</span>;
                     &lt;/select&gt;
                 </div>
             </div>
-            <div class="mt-3 text-xs text-slate-400 bg-slate-900/50 p-3 rounded border border-slate-700">
-                <i class="fa-solid fa-info-circle text-blue-400 mr-1"></i>
-                <strong class="text-white">${} 的唯一合法用途：</strong>动态表名、列名、ORDER BY 字段等<strong>不能用占位符</strong>的位置。此时必须加白名单校验，绝不能直接传入用户输入。
+
+            <!-- WHY IT'S SAFE -->
+            <div class="mt-4 bg-green-900/10 border border-green-900/30 rounded-lg p-4 space-y-3">
+                <div class="text-green-400 font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-microchip"></i> 为什么 #{} 是安全的而 ${} 不是？
+                </div>
+                <div class="text-sm text-slate-400 space-y-2">
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">${} 的本质是文本替换：</strong>MyBatis 在构建 SQL 字符串阶段，就把 <code>${username}</code> 的值<strong>直接拼接</strong>进 SQL 文本。这与 Java 代码中用 <code>+</code> 拼接没有任何区别。拼接完成后才交给 JDBC，此时注入载荷已经成为 SQL 代码的一部分。</p>
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">#{} 的本质是 PreparedStatement 封装：</strong>MyBatis 解析 XML 时，将 <code>#{username}</code> 替换为 <code>?</code> 占位符，生成 <code>WHERE username = ?</code>。然后通过 JDBC 的 <code>PreparedStatement.setXxx()</code> 绑定参数。<strong>最终走的仍然是方案 A 的两阶段预编译协议。</strong></p>
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">一句话总结：</strong><code>#{}</code> = PreparedStatement（安全），<code>${}</code> = Statement + 字符串拼接（危险）。MyBatis 本身不创造安全性，它只是 JDBC 的语法糖。</p>
+                </div>
+                <div class="text-xs text-slate-400 bg-slate-900/50 p-3 rounded border border-slate-700 mt-3">
+                    <i class="fa-solid fa-info-circle text-blue-400 mr-1"></i>
+                    <strong class="text-white">${} 的唯一合法用途：</strong>动态表名、列名、ORDER BY 字段等 SQL 语法上不允许使用占位符的位置。此时必须加白名单校验（如枚举匹配），绝不能直接传入用户输入。
+                </div>
             </div>
         </div>
 
         <!-- Fix 3: JPA/Hibernate -->
-        <div class="mb-6">
+        <div class="mb-8">
             <h3 class="text-white font-bold mb-3 flex items-center gap-2 text-sm">
                 <i class="fa-solid fa-leaf text-green-400 mr-1"></i> 方案 C：JPA / Hibernate
             </h3>
             <div class="grid md:grid-cols-2 gap-4">
                 <div class="sql-box mono text-xs leading-relaxed border-red-900/30">
-                    <div class="text-red-400 text-[10px] uppercase mb-2">❌ HQL/JPQL 拼接</div>
+                    <div class="text-red-400 text-[10px] uppercase mb-2">❌ HQL/JPQL/Native SQL 拼接</div>
                     String hql = <span class="str">"FROM User WHERE username='"</span>
                     + username + <span class="str">"'"</span>;
                     List&lt;User&gt; list = session.createQuery(hql).list();
+
+                    <span class="cmt">// Native SQL 同理</span>
+                    session.createNativeQuery(<span class="str">"SELECT * FROM users
+WHERE name='"</span> + name + <span class="str">"'"</span>);
                 </div>
                 <div class="sql-box mono text-xs leading-relaxed border-green-900/30">
                     <div class="text-green-400 text-[10px] uppercase mb-2">✅ 命名参数 / Criteria API</div>
@@ -387,34 +415,98 @@ AND password=?"</span>;
                     List&lt;User&gt; list = session.createQuery(hql)
                     .setParameter(<span class="str">"name"</span>, username)
                     .list();
+
+                    <span class="cmt">// Criteria API 天然免疫</span>
+                    CriteriaBuilder cb = em.getCriteriaBuilder();
+                    CriteriaQuery&lt;User&gt; q = cb.createQuery(User.class);
+                    Root&lt;User&gt; root = q.from(User.class);
+                    q.where(cb.equal(root.get(<span class="str">"username"</span>), username));
                 </div>
             </div>
-            <div class="mt-3 text-xs text-slate-400 bg-slate-900/50 p-3 rounded border border-slate-700">
-                <i class="fa-solid fa-info-circle text-blue-400 mr-1"></i>
-                <strong class="text-white">注意：</strong>HQL/JPQL 拼接同样存在注入！Hibernate 的 <code>createQuery()</code> 不自动防注入，只有 <code>setParameter()</code> 才安全。Criteria API / Specification 天然安全。
+
+            <!-- WHY IT'S SAFE -->
+            <div class="mt-4 bg-green-900/10 border border-green-900/30 rounded-lg p-4 space-y-3">
+                <div class="text-green-400 font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-microchip"></i> 为什么 setParameter 安全而 HQL 拼接不安全？
+                </div>
+                <div class="text-sm text-slate-400 space-y-2">
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">HQL/JPQL 拼接 = 双重注入风险：</strong>HQL 是 Hibernate 自定义的查询语言。拼接后的 HQL 字符串先被 Hibernate 的 HQL Parser 解析为 AST（抽象语法树），再翻译成 SQL。如果用户输入改变了 HQL 的 AST 结构，Hibernate 会把恶意语义忠实地翻译成对应的 SQL。<strong>ORM 层不会替你过滤注入，它只是忠实的翻译官。</strong></p>
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">setParameter() 的传递链：</strong>调用 <code>setParameter("name", value)</code> 时，Hibernate 将参数存入内部参数列表。当最终执行时，Hibernate 生成的 SQL 中使用 <code>?</code> 占位符，并通过 JDBC <code>PreparedStatement.setXxx()</code> 绑定。<strong>最终仍然回归到方案 A 的预编译协议。</strong></p>
+                    <p><i class="fa-solid fa-arrow-right text-green-500 mr-2 text-xs"></i><strong class="text-white">Criteria API 为何天然安全：</strong>它根本不构建查询字符串。查询结构通过 Java 对象方法调用（<code>cb.equal()</code>, <code>root.get()</code>）在内存中组装为 AST。用户输入只作为方法参数传入，<strong>从物理上就不存在「拼接字符串」这个动作</strong>，注入无从发生。</p>
+                </div>
+                <div class="text-xs text-red-400 bg-red-900/10 p-3 rounded border border-red-900/20 mt-3">
+                    <i class="fa-solid fa-skull-crossbones mr-1"></i>
+                    <strong>高危认知陷阱：</strong>很多开发者认为「用了 Hibernate/JPA 就自动防注入」。事实上，只要代码中出现 <code>createQuery(string)</code> 或 <code>createNativeQuery(string)</code> 且 string 包含拼接，注入风险与裸 JDBC 完全相同。
+                </div>
             </div>
         </div>
 
-        <!-- Defense Checklist -->
+        <!-- Unified Principle Summary -->
+        <div class="bg-slate-900/80 p-5 rounded-lg border border-slate-700 mb-6">
+            <h4 class="text-white font-bold text-sm mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-diagram-project text-mysql mr-1"></i> 三种方案的统一本质
+            </h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left">
+                    <thead class="text-slate-500 uppercase border-b border-slate-700">
+                    <tr>
+                        <th class="py-2 pr-4">技术栈</th>
+                        <th class="py-2 pr-4">安全写法</th>
+                        <th class="py-2 pr-4">底层实际做的事</th>
+                        <th class="py-2">安全性来源</th>
+                    </tr>
+                    </thead>
+                    <tbody class="text-slate-400">
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">JDBC</td>
+                        <td class="py-2 pr-4 mono text-green-300">? + setString()</td>
+                        <td class="py-2 pr-4">COM_STMT_PREPARE + COM_STMT_EXECUTE</td>
+                        <td class="py-2">MySQL 协议层分离</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">MyBatis</td>
+                        <td class="py-2 pr-4 mono text-green-300">#{} </td>
+                        <td class="py-2 pr-4">转换为 ? → 调用 PreparedStatement</td>
+                        <td class="py-2">委托给 JDBC 预编译</td>
+                    </tr>
+                    <tr class="border-b border-slate-800">
+                        <td class="py-2 pr-4 text-white">JPA/Hibernate</td>
+                        <td class="py-2 pr-4 mono text-green-300">setParameter()</td>
+                        <td class="py-2 pr-4">生成带 ? 的 SQL → 调用 PreparedStatement</td>
+                        <td class="py-2">委托给 JDBC 预编译</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 pr-4 text-white">Criteria API</td>
+                        <td class="py-2 pr-4 mono text-green-300">cb.equal()...</td>
+                        <td class="py-2 pr-4">对象组装 AST → 生成带 ? 的 SQL → PreparedStatement</td>
+                        <td class="py-2">无字符串拼接 + 预编译</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-500 mt-3 italic">结论：Java 生态中所有安全的 SQL 操作，最终都归结为 JDBC PreparedStatement 的预编译协议。任何绕过这条路径的写法，都需要额外证明其安全性。</p>
+        </div>
+
+        <!-- Defense Checklist & Anti-patterns -->
         <div class="grid md:grid-cols-2 gap-4">
             <div class="bg-slate-900/50 p-4 rounded border border-slate-700">
                 <h4 class="text-white font-bold text-sm mb-3"><i class="fa-solid fa-list-check text-safe mr-2"></i>Java 项目安全检查清单</h4>
                 <ul class="text-xs text-slate-400 space-y-2">
                     <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>全局搜索 <code class="mono text-slate-300">createStatement()</code> → 全部替换为 PreparedStatement</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>全局搜索 MyBatis <code class="mono text-slate-300">${}</code> → 确认是否可改为 <code class="mono text-slate-300">#{}</code></li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>全局搜索 MyBatis <code class="mono text-slate-300">${}</code> → 确认是否可改为 <code class="mono text-slate-300">#{}</code>，不可改则加白名单</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>全局搜索 <code class="mono text-slate-300">createQuery(</code> / <code class="mono text-slate-300">createNativeQuery(</code> → 检查是否有字符串拼接</li>
                     <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>检查 JDBC URL 中的 <code class="mono text-slate-300">allowMultiQueries=true</code> → 非必要则移除</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>HQL/原生 SQL 查询全部使用 setParameter()</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>集成 SonarQube / SpotBugs SQL 注入规则到 CI</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-safe mt-0.5"></i>集成 SonarQube / SpotBugs SQL 注入规则到 CI 流水线</li>
                 </ul>
             </div>
             <div class="bg-slate-900/50 p-4 rounded border border-slate-700">
                 <h4 class="text-white font-bold text-sm mb-3"><i class="fa-solid fa-ban text-red-400 mr-2"></i>Java 中这些方法不能防注入</h4>
                 <ul class="text-xs text-slate-400 space-y-2">
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i><code class="mono text-slate-300">StringEscapeUtils.escapeSql()</code> — Apache Commons Lang 已废弃此方法，不可靠</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>手动 replace("'","\\'") — GBK 等多字节编码可绕过</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>Spring MVC @RequestParam 参数校验 — 只验格式，不防注入</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>ORM 框架本身 — MyBatis ${} 和 HQL 拼接仍有漏洞</li>
-                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>WAF / 黑名单过滤 — 仅作为纵深防御的辅助层</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i><code class="mono text-slate-300">StringEscapeUtils.escapeSql()</code> — Apache Commons Lang 已废弃，多字节编码可绕过</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>手动 <code class="mono text-slate-300">replace("'","\\'")</code> — GBK/BIG5 编码下可用宽字节注入绕过</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>Spring <code class="mono text-slate-300">@Valid</code> / <code class="mono text-slate-300">@Pattern</code> — 只验格式，合法格式的 payload 仍可注入</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>认为「用了 ORM 就安全」— MyBatis ${} 和 HQL 拼接同样有漏洞</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-0.5"></i>WAF / 黑名单过滤 — 仅作为纵深防御辅助层，不能作为唯一防线</li>
                 </ul>
             </div>
         </div>

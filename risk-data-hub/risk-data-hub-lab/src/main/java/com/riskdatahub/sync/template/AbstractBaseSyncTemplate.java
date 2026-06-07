@@ -136,8 +136,7 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         row.setFetchStartedAt(m.getFetchStartedAt());
         row.setFetchFinishedAt(m.getFetchFinishedAt());
         row.setFetchQueuedAt(m.getFetchQueuedAt());
-        row.setProcessStartedAt(m.getProcessStartedAt());
-        row.setProcessFinishedAt(m.getProcessFinishedAt());
+        row.setFetchQueuedFinishedAt(m.getFetchQueuedFinishedAt());
         row.setIdGenStartedAt(m.getIdGenStartedAt());
         row.setIdGenFinishedAt(m.getIdGenFinishedAt());
         row.setTransformStartedAt(m.getTransformStartedAt());

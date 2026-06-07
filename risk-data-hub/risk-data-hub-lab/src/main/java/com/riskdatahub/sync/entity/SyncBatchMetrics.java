@@ -22,8 +22,7 @@ public class SyncBatchMetrics {
     private LocalDateTime fetchStartedAt;
     private LocalDateTime fetchFinishedAt;
     private LocalDateTime fetchQueuedAt;
-    private LocalDateTime processStartedAt;
-    private LocalDateTime processFinishedAt;
+    private LocalDateTime fetchQueuedFinishedAt;
     private LocalDateTime idGenStartedAt;
     private LocalDateTime idGenFinishedAt;
     private LocalDateTime transformStartedAt;

@@ -115,11 +115,11 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
         try {
             while (failure.get() == null) {
                 PageChunk<S> chunk = queue.take();
-                SyncMetrics metrics = chunk.getMetrics();
-                metrics.stampFetchQueuedFinished();
                 if (chunk.isEnd()) {
                     break;
                 }
+                SyncMetrics metrics = chunk.getMetrics();
+                metrics.stampFetchQueuedFinished();
                 List<S> rows = chunk.getRows();
 
                 preAllocateBatchIds(getIdTag(), rows.size(), metrics);
