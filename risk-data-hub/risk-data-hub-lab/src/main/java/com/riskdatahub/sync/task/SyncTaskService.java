@@ -2,25 +2,27 @@ package com.riskdatahub.sync.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.common.util.TimeUtils;
+import com.riskdatahub.config.SyncThreadPoolConfig;
 import com.riskdatahub.datasource.DataSourceManager;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.RabbitMqSender;
-import com.riskdatahub.config.SyncThreadPoolConfig;
-import com.riskdatahub.sync.SyncOrchestrator;
+import com.riskdatahub.sync.SyncEngine;
 import com.riskdatahub.sync.entity.CleanAsset;
 import com.riskdatahub.sync.entity.CleanPosition;
-import com.riskdatahub.sync.entity.SyncBatchMetrics;
-import com.riskdatahub.sync.mapper.SyncBatchMetricsMapper;
 import com.riskdatahub.sync.entity.CleanStock;
 import com.riskdatahub.sync.entity.CleanTrade;
+import com.riskdatahub.sync.entity.SyncBatchMetrics;
 import com.riskdatahub.sync.mapper.CleanAssetMapper;
 import com.riskdatahub.sync.mapper.CleanPositionMapper;
 import com.riskdatahub.sync.mapper.CleanStockMapper;
 import com.riskdatahub.sync.mapper.CleanTradeMapper;
+import com.riskdatahub.sync.mapper.SyncBatchMetricsMapper;
 import com.riskdatahub.sync.model.SyncResultDTO;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.sync.task.entity.SyncBusinessRecord;
@@ -40,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * 同步任务服务 — 管理同步任务的提交、执行和状态查询。
@@ -54,13 +57,13 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class SyncTaskService {
 
-    private static final String LOCK_KEY = "risk-hub:sync:task:lock";    // Redisson 分布式锁 key
-    private static final String TAG_SYNC_TASK = "sync_task";              // 同步任务 Leaf 号段标签
-    private static final String TAG_SYNC_BUSINESS_RECORD = "sync_business_record"; // 业务记录 Leaf 号段标签
+    private static final String LOCK_KEY = "risk-hub:sync:task:lock";
+    private static final String TAG_SYNC_TASK = "sync_task";
+    private static final String TAG_SYNC_BUSINESS_RECORD = "sync_business_record";
 
     private final RedissonClient redissonClient;
     private final LeafSegmentService leafSegmentService;
-    private final SyncOrchestrator syncOrchestrator;
+    private final SyncEngine syncEngine;
     private final DataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final SyncTaskMapper syncTaskMapper;
@@ -77,7 +80,7 @@ public class SyncTaskService {
 
     public SyncTaskService(RedissonClient redissonClient,
                            LeafSegmentService leafSegmentService,
-                           SyncOrchestrator syncOrchestrator,
+                           SyncEngine syncEngine,
                            DataSourceManager dataSourceManager,
                            RoutingMybatisExecutor routingMybatisExecutor,
                            SyncTaskMapper syncTaskMapper,
@@ -91,7 +94,7 @@ public class SyncTaskService {
                            SyncThreadPoolConfig syncThreadPoolConfig) {
         this.redissonClient = redissonClient;
         this.leafSegmentService = leafSegmentService;
-        this.syncOrchestrator = syncOrchestrator;
+        this.syncEngine = syncEngine;
         this.dataSourceManager = dataSourceManager;
         this.routingMybatisExecutor = routingMybatisExecutor;
         this.syncTaskMapper = syncTaskMapper;
@@ -104,16 +107,12 @@ public class SyncTaskService {
         this.cleanAssetMapper = cleanAssetMapper;
     }
 
+    // ==================== Task 提交 ====================
+
     /**
      * 提交异步同步任务。
      * <p>每天只保留一条同步任务记录。如果当天已有任务（非 RUNNING 状态），重置为 QUEUED 重新执行；
      * 如果任务正在运行则拒绝提交。无当天任务时创建新记录。</p>
-     *
-     * @param dataSourceKey 数据源标识
-     * @param pageSize      每页大小
-     * @return 同步任务对象
-     * @throws IllegalArgumentException 数据源不存在或为中台库
-     * @throws IllegalStateException    当天已有正在运行的任务
      */
     public SyncTask startTask(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = validateDataSource(dataSourceKey);
@@ -122,33 +121,18 @@ public class SyncTaskService {
 
     /**
      * 强制刷新 — 清除 risk_hub 全部清洗数据和 Redis 缓存，然后重新全量同步。
-     * <p>
-     * 不清除 sync_task / sync_business_record 记录，仅重置当天任务状态为 QUEUED。
-     * </p>
-     *
-     * @param dataSourceKey 数据源标识
-     * @param pageSize      每页大小
-     * @return 同步任务对象
+     * <p>不清除 sync_task / sync_business_record 记录，仅重置当天任务状态为 QUEUED。</p>
      */
     public SyncTask forceRefresh(String dataSourceKey, int pageSize) {
         DataSourceConfigDTO config = validateDataSource(dataSourceKey);
         log.warn("[SyncTask] 强制刷新已提交，将在后台清除数据 dataSourceKey={}", dataSourceKey);
-
-        // 立即返回，数据清除移到 runTask 后台执行
         return createOrResetTask(dataSourceKey, config, pageSize, "强制刷新-清除数据中");
     }
 
-    /**
-     * 创建或重置当天的同步任务——每天只保留一条记录。
-     * <p>
-     * 如果当天已有任务且不在运行中，重置为 QUEUED 重新排队；
-     * 如果当天任务正在运行则抛出异常；
-     * 无当天任务时创建新记录。</p>
-     */
+    /** 创建或重置当天的同步任务——每天只保留一条记录。 */
     private SyncTask createOrResetTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
         int safePageSize = Math.max(1, Math.min(pageSize, 100000));
 
-        // 查找当天已有任务
         SyncTask existing = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
                 syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
                         .apply("DATE(submitted_at) = CURDATE()")
@@ -159,7 +143,6 @@ public class SyncTaskService {
             if ("RUNNING".equals(existing.getStatus())) {
                 throw new IllegalStateException("当天同步任务正在运行中，请等待完成后再试");
             }
-            // 重置已有任务为 QUEUED
             Long taskId = existing.getId();
             routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
                 existing.setStatus("QUEUED");
@@ -177,7 +160,6 @@ public class SyncTaskService {
                 existing.setRunning(true);
                 syncTaskMapper.updateById(existing);
             });
-            // 同时清理该任务下业务记录的 errorMessage，防止前端仍显示上次失败信息
             routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
                     syncBusinessRecordMapper.update(null, new LambdaUpdateWrapper<SyncBusinessRecord>()
                             .eq(SyncBusinessRecord::getTaskId, taskId)
@@ -186,13 +168,10 @@ public class SyncTaskService {
             return existing;
         }
 
-        // 无当天任务，创建新记录
         return createQueuedTask(dataSourceKey, config, safePageSize, message);
     }
 
-    /**
-     * 校验数据源存在且不是中台库。
-     */
+    /** 校验数据源存在且不是中台库。 */
     private DataSourceConfigDTO validateDataSource(String dataSourceKey) {
         DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
         if (config == null) {
@@ -204,15 +183,7 @@ public class SyncTaskService {
         return config;
     }
 
-    /**
-     * 创建 QUEUED 状态的同步任务记录。
-     *
-     * @param dataSourceKey 数据源标识
-     * @param config        数据源配置
-     * @param pageSize      分页大小
-     * @param message       任务描述信息
-     * @return 刚创建的同步任务对象
-     */
+    /** 创建 QUEUED 状态的同步任务记录。 */
     private SyncTask createQueuedTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
         long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
         LocalDateTime now = TimeUtils.now();
@@ -235,36 +206,10 @@ public class SyncTaskService {
         return task;
     }
 
-    /**
-     * 查询当前同步任务（最近一条）。
-     * <p>返回最近一条任务记录，无任务时返回 IDLE 状态的空任务。</p>
-     *
-     * @return 当前任务，无任务时返回 status=IDLE 的空任务（非 null）
-     */
-    public SyncTask currentTask() {
-        // 查询最近一条任务记录（按 ID 降序取第一条）
-        SyncTask task = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
-                syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
-                        .orderByDesc(SyncTask::getId)
-                        .last("limit 1")));
-        // 没有任何任务记录时返回 IDLE 空任务，避免前端判空
-        if (task == null) {
-            SyncTask idle = new SyncTask();
-            idle.setStatus("IDLE");
-            idle.setProgress(0);
-            idle.setMessage("暂无同步任务");
-            idle.setRunning(false);
-            return idle;
-        }
-        // 动态计算 running 状态：QUEUED 和 RUNNING 都算"运行中"
-        task.setRunning("QUEUED".equals(task.getStatus()) || "RUNNING".equals(task.getStatus()));
-        return task;
-    }
+    // ==================== 任务调度执行 ====================
 
     /**
      * 定时扫描并调度 QUEUED 任务（每 3 秒执行一次）。
-     * <p>流程：检查 Redis 锁 → 锁已释放但 DB 为 RUNNING 则标记 FAILED → 取出最旧 QUEUED →
-     * 更新为 RUNNING → 提交线程池（锁在 runTask 中获取）。</p>
      */
     @Scheduled(fixedDelay = 3000)
     public void scanAndExecute() {
@@ -280,16 +225,13 @@ public class SyncTaskService {
         boolean lockHeld = lock.isLocked();
 
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            // 1. 检查 DB 中所有 RUNNING 任务
             List<SyncTask> runningTasks = syncTaskMapper.selectList(
                     new LambdaQueryWrapper<SyncTask>().eq(SyncTask::getStatus, "RUNNING"));
 
             if (!runningTasks.isEmpty()) {
                 if (lockHeld) {
-                    // 锁存在且 DB 有 RUNNING → 任务正常执行中
                     return;
                 }
-                // 锁已释放但 DB 还是 RUNNING → 任务进程已崩溃，标记 FAILED
                 for (SyncTask task : runningTasks) {
                     updateTaskFields(task.getId(), t -> {
                         t.setStatus("FAILED");
@@ -301,7 +243,6 @@ public class SyncTaskService {
                 }
             }
 
-            // 2. 取出最旧的 QUEUED 任务（按 ID 升序取第一条）
             SyncTask queued = syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
                     .eq(SyncTask::getStatus, "QUEUED")
                     .orderByAsc(SyncTask::getId)
@@ -310,7 +251,6 @@ public class SyncTaskService {
                 return;
             }
 
-            // 3. 更新为 RUNNING
             Long taskId = queued.getId();
             String dsKey = queued.getDataSourceKey();
             int ps = queued.getPageSize();
@@ -319,7 +259,6 @@ public class SyncTaskService {
                 task.setStartedAt(TimeUtils.now());
             });
 
-            // 4. 提交到线程池（锁在 runTask 中获取）
             syncTaskExecutor.submit(() -> runTask(taskId, dsKey, ps));
             log.info("[SyncTask] scanAndExecute 调度任务 id={}, dataSourceKey={}", taskId, dsKey);
         });
@@ -327,29 +266,18 @@ public class SyncTaskService {
 
     /**
      * 异步执行同步任务（在线程池中运行）。
-     * <p>流程：获取分布式锁（非阻塞）→ 编排同步 → 记录每类业务结果 → SUCCESS/FAILED → 释放锁。
-     * 锁由 Redisson 看门狗自动续期，进程崩溃后自动释放。</p>
-     *
-     * @param id             任务 ID
-     * @param dataSourceKey  数据源标识
-     * @param pageSize       分页大小
      */
     private void runTask(Long id, String dataSourceKey, int pageSize) {
         RLock lock = redissonClient.getLock(LOCK_KEY);
         try {
-            // 非阻塞获取锁，获取不到说明另一个任务已在执行
             if (!lock.tryLock(0, 30, TimeUnit.MINUTES)) {
                 log.warn("[SyncTask] 无法获取分布式锁，任务 id={} 跳过", id);
                 return;
             }
 
-            // 检查是否需要强制刷新清数据（消息以"强制刷新"开头，且数据表非空时执行）
             doForceCleanIfNeeded(id);
 
-            // 预创建每个业务的 SyncBusinessRecord 记录（status=RUNNING），用于实时进度展示
-            // 记录已存在时 UPDATE（force refresh 复用同一 taskId 不会产生重复），
-            // 不存在时 INSERT，保留历史统计记录。
-            List<String> businessCodes = syncOrchestrator.getBusinessCodes();
+            List<String> businessCodes = syncEngine.getBusinessCodes();
             for (String bizCode : businessCodes) {
                 routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
                     SyncBusinessRecord existing = syncBusinessRecordMapper.selectOne(
@@ -379,7 +307,6 @@ public class SyncTaskService {
                 });
             }
 
-            // 查询每个业务表最大的 source_row_id，用于断点续传
             Map<String, Long> initialCursors = new HashMap<>();
             for (String bizCode : businessCodes) {
                 Long cursor = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
@@ -387,22 +314,22 @@ public class SyncTaskService {
                     switch (bizCode) {
                         case "STOCK":
                             result = cleanStockMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanStock>()
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanStock>()
                                             .select("MAX(source_row_id)"));
                             break;
                         case "TRADE":
                             result = cleanTradeMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanTrade>()
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanTrade>()
                                             .select("MAX(source_row_id)"));
                             break;
                         case "POSITION":
                             result = cleanPositionMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanPosition>()
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanPosition>()
                                             .select("MAX(source_row_id)"));
                             break;
                         case "ASSET":
                             result = cleanAssetMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.riskdatahub.sync.entity.CleanAsset>()
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanAsset>()
                                             .select("MAX(source_row_id)"));
                             break;
                         default:
@@ -416,7 +343,6 @@ public class SyncTaskService {
                 }
             }
 
-            // 收集各业务的 recordId，用于批次耗时写入
             Map<String, Long> businessRecordIds = new HashMap<>();
             routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
                 for (SyncBusinessRecord rec : syncBusinessRecordMapper.selectList(
@@ -426,13 +352,10 @@ public class SyncTaskService {
                 }
             });
 
-            // 执行同步编排（进度事件由 SyncProgressEventListener 异步处理，实时更新 SyncBusinessRecord）
-            SyncResultDTO result = syncOrchestrator.syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
+            SyncResultDTO result = syncEngine.syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
 
-            // 统计总数（每个业务的状态已由 SyncOrchestrator.executeTemplate 独立更新）
             int totalPulled = 0;
             int totalSaved = 0;
-
             for (Map.Entry<String, BusinessSyncResult> entry : result.getBusinessResults().entrySet()) {
                 BusinessSyncResult bizResult = entry.getValue();
                 totalPulled += bizResult.getPulledCount();
@@ -451,7 +374,6 @@ public class SyncTaskService {
                 task.setRunning(false);
             });
 
-            // 任务成功执行完后清除"强制刷新"标记
             updateTaskFields(id, task -> {
                 if (task.getMessage() != null && task.getMessage().startsWith("强制刷新")) {
                     task.setMessage("同步任务完成");
@@ -459,11 +381,9 @@ public class SyncTaskService {
             });
 
             log.info("[SyncTask] done id={}, pulled={}, saved={}", id, totalPulled, totalSaved);
-            // 发送同步完成消息到 RabbitMQ
             rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
                     totalPulled, totalSaved);
         } catch (Exception e) {
-            // 优先标记任务为 FAILED（这是最重要的恢复操作，先执行）
             updateTaskFields(id, task -> {
                 task.setStatus("FAILED");
                 task.setMessage("同步任务失败");
@@ -471,27 +391,16 @@ public class SyncTaskService {
                 task.setFinishedAt(TimeUtils.now());
                 task.setRunning(false);
             });
-
-            // 业务记录的状态已由 SyncOrchestrator.executeTemplate 在每个线程中独立更新，无需再次处理
-
             log.error("[SyncTask] failed id={}", id, e);
         } finally {
-            // 释放分布式锁（仅当持有锁时才释放）
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
         }
     }
 
-    /**
-     * 更新同步任务的部分字段。
-     * <p>先 selectById 查询 → 回调修改 → updateById 写回。
-     * 只修改回调中 set 的字段，其余字段保持不变。</p>
-     *
-     * @param taskId  任务 ID
-     * @param updater 字段修改回调，接收当前任务实体，修改需要的字段
-     */
-    private void updateTaskFields(Long taskId, java.util.function.Consumer<SyncTask> updater) {
+    /** 更新同步任务的部分字段。 */
+    private void updateTaskFields(Long taskId, Consumer<SyncTask> updater) {
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
             SyncTask task = syncTaskMapper.selectById(taskId);
             if (task == null) {
@@ -503,32 +412,7 @@ public class SyncTaskService {
         });
     }
 
-    /**
-     * 查询指定同步任务的各业务执行详情。
-     *
-     * @param taskId 同步任务 ID
-     * @return 业务执行记录列表（按 businessCode 排序）
-     */
-    public com.baomidou.mybatisplus.core.metadata.IPage<SyncBatchMetrics> getBatchMetrics(Long recordId, int page, int size) {
-        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
-                batchMetricsMapper.selectPage(
-                        new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size),
-                        new LambdaQueryWrapper<SyncBatchMetrics>()
-                                .eq(SyncBatchMetrics::getRecordId, recordId)
-                                .orderByAsc(SyncBatchMetrics::getBatchNo)));
-    }
-
-    public List<SyncBusinessRecord> getBusinessRecords(Long taskId) {
-        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
-                syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()
-                        .eq(SyncBusinessRecord::getTaskId, taskId)
-                        .orderByAsc(SyncBusinessRecord::getBusinessCode)));
-    }
-
-    /**
-     * 检查是否是强制刷新任务，是则清除全部清洗数据和 Redis 缓存。
-     * <p>根据 SyncTask.message 是否以"强制刷新"开头来判断。</p>
-     */
+    /** 检查是否是强制刷新任务，是则清除全部清洗数据和 Redis 缓存。 */
     private void doForceCleanIfNeeded(Long taskId) {
         try {
             routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
@@ -542,7 +426,6 @@ public class SyncTaskService {
                 cleanTradeMapper.delete(new LambdaQueryWrapper<CleanTrade>().apply("1=1"));
                 cleanPositionMapper.delete(new LambdaQueryWrapper<CleanPosition>().apply("1=1"));
                 cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
-                // 改一下消息避免下次 runTask 重复清除
                 task.setMessage("强制刷新-同步执行中");
                 task.setStatus("RUNNING");
                 syncTaskMapper.updateById(task);
@@ -551,5 +434,61 @@ public class SyncTaskService {
         } catch (Exception e) {
             log.error("[SyncTask] 强制刷新清除数据失败 taskId={}", taskId, e);
         }
+    }
+
+    // ==================== 查询接口 ====================
+
+    /**
+     * 查询当前同步任务（最近一条）。
+     * <p>返回最近一条任务记录，无任务时返回 IDLE 状态的空任务。</p>
+     */
+    public SyncTask currentTask() {
+        SyncTask task = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
+                        .orderByDesc(SyncTask::getId)
+                        .last("limit 1")));
+        if (task == null) {
+            SyncTask idle = new SyncTask();
+            idle.setStatus("IDLE");
+            idle.setProgress(0);
+            idle.setMessage("暂无同步任务");
+            idle.setRunning(false);
+            return idle;
+        }
+        task.setRunning("QUEUED".equals(task.getStatus()) || "RUNNING".equals(task.getStatus()));
+        return task;
+    }
+
+    /**
+     * 查询最近 30 条清洗交易记录。
+     * <p>按 globalId 降序排列，取前 30 条。</p>
+     */
+    public List<CleanTrade> cleanedTrades() {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB,
+                () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
+                        .orderByDesc(CleanTrade::getGlobalId)
+                        .last("limit 30")));
+    }
+
+    /**
+     * 查询指定业务记录的批次耗时明细。
+     */
+    public IPage<SyncBatchMetrics> getBatchMetrics(Long recordId, int page, int size) {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                batchMetricsMapper.selectPage(
+                        new Page<>(page, size),
+                        new LambdaQueryWrapper<SyncBatchMetrics>()
+                                .eq(SyncBatchMetrics::getRecordId, recordId)
+                                .orderByAsc(SyncBatchMetrics::getBatchNo)));
+    }
+
+    /**
+     * 查询指定同步任务的各业务执行详情。
+     */
+    public List<SyncBusinessRecord> getBusinessRecords(Long taskId) {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()
+                        .eq(SyncBusinessRecord::getTaskId, taskId)
+                        .orderByAsc(SyncBusinessRecord::getBusinessCode)));
     }
 }

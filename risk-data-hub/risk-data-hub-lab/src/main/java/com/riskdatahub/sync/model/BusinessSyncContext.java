@@ -1,5 +1,6 @@
 package com.riskdatahub.sync.model;
 
+import com.riskdatahub.sync.SyncEngine;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -9,7 +10,7 @@ import java.util.Map;
 /**
  * 同步上下文 — 携带当前同步任务的参数。
  * <p>
- * 不可变对象（Immutable Object），在多线程环境下（{@link com.riskdatahub.sync.SyncOrchestrator}
+ * 不可变对象（Immutable Object），在多线程环境下（{@link SyncEngine}
  * 并发派发多个 Future），每个线程读到的是同一份上下文，不会出现某个线程修改了 pageSize
  * 导致其他线程行为变化。
  * </p>

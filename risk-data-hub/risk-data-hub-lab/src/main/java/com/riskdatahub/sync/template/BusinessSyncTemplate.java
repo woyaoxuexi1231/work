@@ -1,5 +1,6 @@
 package com.riskdatahub.sync.template;
 
+import com.riskdatahub.sync.SyncEngine;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 
@@ -7,7 +8,7 @@ import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
  * 业务同步模板接口 — 策略模式的核心接口。
  * <p>
  * 不同业务类型（股票/交易/持仓/资金）实现此接口，通过 Spring 自动注入到
- * {@link com.riskdatahub.sync.SyncOrchestrator#businessSyncTemplates} 列表中。
+ * {@link SyncEngine#businessSyncTemplates} 列表中。
  * 新增一种业务同步时，只需新建一个 {@code @Service} 实现类，无需修改编排代码（开闭原则）。
  * </p>
  *

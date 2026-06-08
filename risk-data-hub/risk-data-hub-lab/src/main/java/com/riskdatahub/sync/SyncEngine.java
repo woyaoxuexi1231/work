@@ -1,6 +1,7 @@
 package com.riskdatahub.sync;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.DataSourceManager;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
@@ -13,7 +14,6 @@ import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.sync.template.BusinessSyncTemplate;
 import com.riskdatahub.sync.task.entity.SyncBusinessRecord;
 import com.riskdatahub.sync.task.mapper.SyncBusinessRecordMapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -50,29 +50,42 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
-public class SyncOrchestrator {
+public class SyncEngine {
 
     private final DataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
-    private final CleanTradeMapper cleanTradeMapper;
     private final SyncBusinessRecordMapper syncBusinessRecordMapper;
-
-    /** Spring 自动注入所有 BusinessSyncTemplate 实现类（策略模式） */
+    /**
+     * Spring 自动注入所有 BusinessSyncTemplate 实现类（策略模式）
+     */
     private final List<BusinessSyncTemplate> businessSyncTemplates;
-
-    /** 4 线程池，每类业务一个 Future */
-    @Qualifier("syncBusinessExecutor")
+    /**
+     * 4 线程池，每类业务一个 Future
+     */
     private final ThreadPoolExecutor syncBusinessExecutor;
+
+    public SyncEngine(DataSourceManager dataSourceManager,
+                      RoutingMybatisExecutor routingMybatisExecutor,
+                      SyncBusinessRecordMapper syncBusinessRecordMapper,
+                      List<BusinessSyncTemplate> businessSyncTemplates,
+                      @Qualifier("syncBusinessExecutor") ThreadPoolExecutor syncBusinessExecutor) {
+        this.dataSourceManager = dataSourceManager;
+        this.routingMybatisExecutor = routingMybatisExecutor;
+        this.syncBusinessRecordMapper = syncBusinessRecordMapper;
+        this.businessSyncTemplates = businessSyncTemplates;
+        this.syncBusinessExecutor = syncBusinessExecutor;
+    }
+
+    // ==================== 主流程 ====================
 
     /**
      * 执行同步。
      * <p>主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果。
      * 进度事件由模板内 {@link org.springframework.context.ApplicationEventPublisher} 发布。</p>
      *
-     * @param dataSourceKey 数据源标识
-     * @param pageSize      分页大小
-     * @param taskId        同步任务 ID（用于进度事件关联）
+     * @param dataSourceKey  数据源标识
+     * @param pageSize       分页大小
+     * @param taskId         同步任务 ID（用于进度事件关联）
      * @param initialCursors 每个业务的上一次成功游标（businessCode → lastRowId），用于断点续传
      * @return 同步结果摘要
      */
@@ -100,32 +113,11 @@ public class SyncOrchestrator {
         }
     }
 
-    /**
-     * 查询最近 30 条清洗交易记录。
-     * <p>按 globalId 降序排列，取前 30 条。</p>
-     *
-     * @return 清洗交易记录列表
-     */
-    public List<CleanTrade> cleanedTrades() {
-        return routingMybatisExecutor.query(HubConstants.DS_HUB,
-                () -> cleanTradeMapper.selectList(new LambdaQueryWrapper<CleanTrade>()
-                        .orderByDesc(CleanTrade::getGlobalId)
-                        .last("limit 30")));
-    }
+    // ---------- 私有辅助：校验 ----------
 
     /**
-     * 获取所有业务编码列表。
-     * <p>用于 SyncTaskService 在同步开始前预创建 SyncBusinessRecord 记录。</p>
-     *
-     * @return 业务编码列表（STOCK / TRADE / POSITION / ASSET）
+     * 校验数据源存在且不是中台库
      */
-    public List<String> getBusinessCodes() {
-        return businessSyncTemplates.stream()
-                .map(BusinessSyncTemplate::businessCode)
-                .collect(Collectors.toList());
-    }
-
-    /** 校验数据源存在且不是中台库 */
     private DataSourceConfigDTO requireSyncableConfig(String dataSourceKey) {
         DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
         if (config == null) {
@@ -137,12 +129,18 @@ public class SyncOrchestrator {
         return config;
     }
 
-    /** 限制分页大小在 [1, 100000] 区间 */
+    /**
+     * 限制分页大小在 [1, 100000] 区间
+     */
     private int sanitizePageSize(int pageSize) {
         return Math.max(1, Math.min(pageSize, 100000));
     }
 
-    /** 构建同步上下文（含唯一批次号、任务 ID、断点续传游标和业务记录 ID 映射） */
+    // ---------- 私有辅助：上下文构建 ----------
+
+    /**
+     * 构建同步上下文（含唯一批次号、任务 ID、断点续传游标和业务记录 ID 映射）
+     */
     private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize,
                                              Long taskId, Map<String, Long> initialCursors,
                                              Map<String, Long> businessRecordIds) {
@@ -157,7 +155,11 @@ public class SyncOrchestrator {
                 .build();
     }
 
-    /** 并发提交所有业务模板到线程池 */
+    // ---------- 私有辅助：并发派发 ----------
+
+    /**
+     * 并发提交所有业务模板到线程池
+     */
     private List<CompletableFuture<BusinessSyncResult>> submitBusinessTemplates(BusinessSyncContext context) {
         List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
         for (BusinessSyncTemplate template : businessSyncTemplates) {
@@ -167,7 +169,9 @@ public class SyncOrchestrator {
         return futures;
     }
 
-    /** 执行单个模板，每个业务独立更新自己的 SyncBusinessRecord 状态 */
+    /**
+     * 执行单个模板，每个业务独立更新自己的 SyncBusinessRecord 状态
+     */
     private BusinessSyncResult executeTemplate(BusinessSyncTemplate template, BusinessSyncContext context) {
         Long taskId = context.getTaskId();
         String bizCode = template.businessCode();
@@ -185,6 +189,9 @@ public class SyncOrchestrator {
         }
     }
 
+    /**
+     * 更新 SyncBusinessRecord 状态
+     */
     private void updateRecordStatus(Long taskId, String bizCode, String status, BusinessSyncResult result) {
         try {
             routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
@@ -208,7 +215,11 @@ public class SyncOrchestrator {
         }
     }
 
-    /** 汇总所有模板的执行结果 */
+    // ---------- 私有辅助：汇总 ----------
+
+    /**
+     * 汇总所有模板的执行结果
+     */
     private SyncResultDTO summarizeResults(BusinessSyncContext context,
                                            DataSourceConfigDTO config,
                                            int pageSize,
@@ -228,5 +239,19 @@ public class SyncOrchestrator {
                 context.getDataSourceKey(), config.getName(), config.getDatasourceType(),
                 pageSize, context.getBatchNo(), maxPageCount,
                 totalPulled, totalSaved, businessResults);
+    }
+
+    // ==================== 查询接口 ====================
+
+    /**
+     * 获取所有业务编码列表。
+     * <p>用于 SyncTaskService 在同步开始前预创建 SyncBusinessRecord 记录。</p>
+     *
+     * @return 业务编码列表（STOCK / TRADE / POSITION / ASSET）
+     */
+    public List<String> getBusinessCodes() {
+        return businessSyncTemplates.stream()
+                .map(BusinessSyncTemplate::businessCode)
+                .collect(Collectors.toList());
     }
 }

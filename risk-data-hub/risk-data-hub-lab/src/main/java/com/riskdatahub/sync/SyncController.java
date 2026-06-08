@@ -22,7 +22,7 @@ import javax.validation.constraints.NotNull;
 import java.util.List;
 
 /**
- * 同步任务控制器 — 提供同步任务提交、状态查询和清洗记录查看功能。
+ * 同步任务控制器 — 提交同步任务、强制刷新。
  *
  * @author risk-data-hub
  */
@@ -31,14 +31,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SyncController {
 
-    private final SyncOrchestrator syncOrchestrator;
     private final SyncTaskService syncTaskService;
 
     /**
      * 提交异步同步任务。
-     *
-     * @param request 同步请求参数（数据源标识 + 分页大小）
-     * @return 刚创建的同步任务
      */
     @PostMapping("/api-hub-sync")
     public ApiResult<SyncTask> sync(@Valid @RequestBody SyncRequest request) {
@@ -49,9 +45,6 @@ public class SyncController {
 
     /**
      * 强制刷新 — 清除 risk_hub 全部业务数据，然后重新全量同步。
-     *
-     * @param request 同步请求参数（数据源标识 + 分页大小）
-     * @return 刚创建的同步任务
      */
     @PostMapping("/api-hub-sync-force-refresh")
     public ApiResult<SyncTask> forceRefresh(@Valid @RequestBody SyncRequest request) {
@@ -61,80 +54,13 @@ public class SyncController {
     }
 
     /**
-     * 查询当前同步任务状态。
-     *
-     * @return 最近一条同步任务的状态
-     */
-    @PostMapping("/api-hub-sync-task")
-    public ApiResult<SyncTask> syncTask() {
-        return ApiResult.ok(syncTaskService.currentTask(), "SYNC_TASK_STATUS");
-    }
-
-    /**
-     * 查询最近 30 条清洗后的交易记录。
-     *
-     * @return 清洗交易记录列表
-     */
-    @PostMapping("/api-hub-cleaned-trades")
-    public ApiResult<List<CleanTrade>> cleanedTrades() {
-        return ApiResult.ok(syncOrchestrator.cleanedTrades());
-    }
-
-    /**
-     * 查询指定同步任务的各业务执行详情。
-     *
-     * @param request 包含 taskId 的请求体
-     * @return 业务执行记录列表（按 businessCode 排序）
-     */
-    @PostMapping("/api-hub-sync-detail")
-    public ApiResult<List<SyncBusinessRecord>> syncDetail(@Valid @RequestBody DetailRequest request) {
-        return ApiResult.ok(
-                syncTaskService.getBusinessRecords(request.getTaskId()),
-                "SYNC_BUSINESS_DETAIL");
-    }
-
-    /**
-     * 查询指定业务记录的批次耗时明细。
-     */
-    @PostMapping("/api-hub-batch-metrics")
-    public ApiResult<IPage<SyncBatchMetrics>> batchMetrics(@Valid @RequestBody BatchMetricsRequest request) {
-        return ApiResult.ok(
-                syncTaskService.getBatchMetrics(request.getRecordId(), request.getPage(), request.getSize()),
-                "SYNC_BATCH_METRICS");
-    }
-
-    /**
-     * 同步业务详情请求体。
-     */
-    @Data
-    public static class DetailRequest {
-        @NotNull(message = "任务 ID 不能为空")
-        private Long taskId;
-    }
-
-    /**
-     * 批次耗时请求体。
-     */
-    @Data
-    public static class BatchMetricsRequest {
-        @NotNull(message = "记录 ID 不能为空")
-        private Long recordId;
-        private int page = 1;
-        @Min(1) @Max(200)
-        private int size = 50;
-    }
-
-    /**
-     * 同步任务请求体 — 封装数据源 key 和分页大小。
+     * 同步任务请求体。
      */
     @Data
     public static class SyncRequest {
-
-        /** 数据源唯一标识 */
         @NotBlank(message = "数据源 key 不能为空")
         private String dataSourceKey;
 
-        /** 每页记录数，默认 10000，最大 100000 */
         @Min(value = 1, message = "分页大小最小为 1")
         @Max(value = 100000, message = "分页大小最大为 100000")
         private int pageSize = 10000;
