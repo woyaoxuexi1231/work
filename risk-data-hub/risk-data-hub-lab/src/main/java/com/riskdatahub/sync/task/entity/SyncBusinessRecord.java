@@ -1,4 +1,4 @@
-package com.riskdatahub.task.entity;
+package com.riskdatahub.sync.task.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;

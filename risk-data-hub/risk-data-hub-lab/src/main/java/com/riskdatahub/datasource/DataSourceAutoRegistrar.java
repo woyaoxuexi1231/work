@@ -1,6 +1,5 @@
-package com.riskdatahub.config;
+package com.riskdatahub.datasource;
 
-import com.riskdatahub.datasource.DataSourceManager;
 import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

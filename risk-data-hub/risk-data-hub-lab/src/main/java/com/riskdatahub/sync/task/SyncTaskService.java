@@ -1,4 +1,4 @@
-package com.riskdatahub.task;
+package com.riskdatahub.sync.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -23,10 +23,10 @@ import com.riskdatahub.sync.mapper.CleanStockMapper;
 import com.riskdatahub.sync.mapper.CleanTradeMapper;
 import com.riskdatahub.sync.model.SyncResultDTO;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
-import com.riskdatahub.task.entity.SyncBusinessRecord;
-import com.riskdatahub.task.entity.SyncTask;
-import com.riskdatahub.task.mapper.SyncBusinessRecordMapper;
-import com.riskdatahub.task.mapper.SyncTaskMapper;
+import com.riskdatahub.sync.task.entity.SyncBusinessRecord;
+import com.riskdatahub.sync.task.entity.SyncTask;
+import com.riskdatahub.sync.task.mapper.SyncBusinessRecordMapper;
+import com.riskdatahub.sync.task.mapper.SyncTaskMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;

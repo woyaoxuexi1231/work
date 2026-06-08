@@ -1,5 +1,6 @@
 package com.riskdatahub.common.util;
 
+import com.riskdatahub.sync.task.SyncTaskService;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.springframework.stereotype.Component;
@@ -10,7 +11,7 @@ import java.util.function.Supplier;
 /**
  * 分布式锁操作模板 — 封装 Redisson 锁的获取与释放，消除重复的 try-finally 模板代码。
  * <p>
- * {@link com.riskdatahub.task.SyncTaskService} 中的锁操作逻辑使用此类统一管理。
+ * {@link SyncTaskService} 中的锁操作逻辑使用此类统一管理。
  * </p>
  * <p>
  * <b>用法示例：</b>

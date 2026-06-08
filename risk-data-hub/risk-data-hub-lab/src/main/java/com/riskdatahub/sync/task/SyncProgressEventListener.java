@@ -1,13 +1,13 @@
-package com.riskdatahub.task;
+package com.riskdatahub.sync.task;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.sync.model.SyncProgressEvent;
-import com.riskdatahub.task.entity.SyncBusinessRecord;
-import com.riskdatahub.task.entity.SyncTask;
-import com.riskdatahub.task.mapper.SyncBusinessRecordMapper;
-import com.riskdatahub.task.mapper.SyncTaskMapper;
+import com.riskdatahub.sync.task.entity.SyncBusinessRecord;
+import com.riskdatahub.sync.task.entity.SyncTask;
+import com.riskdatahub.sync.task.mapper.SyncBusinessRecordMapper;
+import com.riskdatahub.sync.task.mapper.SyncTaskMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

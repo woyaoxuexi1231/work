@@ -1,6 +1,5 @@
-package com.riskdatahub.config;
+package com.riskdatahub.datasource;
 
-import com.riskdatahub.datasource.DynamicRoutingDataSource;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.context.annotation.Bean;

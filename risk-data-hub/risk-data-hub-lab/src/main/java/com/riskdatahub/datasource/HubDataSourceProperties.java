@@ -1,4 +1,4 @@
-package com.riskdatahub.config;
+package com.riskdatahub.datasource;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

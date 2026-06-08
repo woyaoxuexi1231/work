@@ -36,16 +36,22 @@
 **场景**：查询每个商品的名称、价格，以及该商品所属分类的平均价格。
 
 ```sql
-SELECT
-    p.name,
-    p.price,
-    (SELECT ROUND(AVG(p2.price), 2)
-     FROM products p2
-     WHERE p2.category_id = p.category_id
-    ) AS category_avg_price
-FROM products p
-ORDER BY p.category_id, p.price DESC
-LIMIT 20;
+# 相关子查询：子查询用到了外部的列 → 每行外层数据都要重新计算子查询。
+# 相关子查询是指子查询中引用了外部查询的列，子查询的执行依赖于外部查询的每一行。
+# 换句话说，子查询和外层查询是“相关”的，无法脱离外层独立执行。
+# WHERE 已经限定 ip.category_id 等于外部传进来的具体值（例如 3），此时所有参与计算的行 category_id 都是 3。
+# 这种情况下加 GROUP BY ip.category_id 只会产生唯一一个分组，有没有它，AVG(ip.price) 返回的都是同一个平均值。
+select p.name,
+       p.price,
+       (select avg(ip.price) from products ip where ip.category_id = p.category_id) as avg_price
+from products p;
+
+
+explain
+select p.name,
+       p.price,
+       avg(p.price) over (partition by p.category_id) as avg_price
+from products p;
 ```
 
 **要点**：
@@ -80,16 +86,36 @@ LIMIT 20;
 **场景**：查询评分高于该商品所属分类平均评分的商品。
 
 ```sql
-SELECT name, rating, category_id
+# 关联标量子查询（直观但可能慢）
+explain SELECT *
 FROM products p
-WHERE rating > (
-    SELECT AVG(p2.rating)
-    FROM products p2
-    WHERE p2.category_id = p.category_id
-      AND p2.rating > 0          -- 排除无评分的商品
+WHERE rating > (SELECT AVG(p2.rating)
+                FROM products p2
+                WHERE p2.category_id = p.category_id
+                  AND p2.rating > 0 -- 排除无评分的商品
 )
 ORDER BY category_id, rating DESC
 LIMIT 20;
+
+
+# 先算好平均分再 JOIN（推荐，更高效）
+explain SELECT p.*
+FROM products p
+         JOIN (SELECT category_id, AVG(rating) AS avg_rating
+               FROM products
+               GROUP BY category_id) t ON p.category_id = t.category_id AND p.rating > t.avg_rating
+ORDER BY category_id, rating DESC
+LIMIT 20;
+
+# 窗口函数
+explain SELECT *
+FROM (SELECT *,
+             AVG(rating) OVER (PARTITION BY category_id) AS avg_rating
+      FROM products) t
+WHERE rating > avg_rating
+ORDER BY category_id, rating DESC
+LIMIT 20;
+
 ```
 
 **要点**：
@@ -97,6 +123,8 @@ LIMIT 20;
 - 子查询引用外层 `p.category_id` → **相关子查询**。
 - 每行外层数据都会驱动一次子查询执行。
 - 数据量大时建议用 `JOIN` + `GROUP BY` 改写（后续练习会涉及）。
+
+
 
 ---
 
