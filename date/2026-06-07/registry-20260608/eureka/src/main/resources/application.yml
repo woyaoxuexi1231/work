@@ -8,9 +8,9 @@ spring:
 # Eureka Client 配置
 eureka:
   client:
-    # Eureka Server 地址 (Docker 安装默认 8761 端口)
+    # Eureka Server 地址 (双节点集群，逗号分隔)
     service-url:
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/,http://localhost:8762/eureka/}
     # 是否注册到 Eureka Server
     register-with-eureka: true
     # 是否从 Eureka Server 拉取注册表

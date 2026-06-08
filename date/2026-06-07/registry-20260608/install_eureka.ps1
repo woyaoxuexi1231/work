@@ -1,32 +1,83 @@
-# Eureka Server | Port: 8761 | Dashboard: http://localhost:8761
+# Eureka 2-Node Cluster | AP (自我保护模式) 测试环境
+# eureka1:8761  eureka2:8762
 . "$PSScriptRoot/lib/common.ps1"
 
-$Container = "eureka"; $Image = "springcloud/eureka:$($env:EUREKA_VERSION -replace '^$','2021.0.9')"
-$Port      = if ($env:EUREKA_PORT) { $env:EUREKA_PORT } else { "8761" }
-$Data      = "${DataRoot}\eureka-data"
+$Prefix   = "eureka"
+$Image    = "springcloud/eureka:$($env:EUREKA_VERSION -replace '^$','2021.0.9')"
+$Port1    = if ($env:EUREKA_PORT1) { [int]$env:EUREKA_PORT1 } else { 8761 }
+$Port2    = if ($env:EUREKA_PORT2) { [int]$env:EUREKA_PORT2 } else { 8762 }
+$Data     = "${DataRoot}\eureka-data"
 
 check_docker
-if (check_container_exists $Container) { exit 0 }
-cleanup_container $Container
-New-Item -ItemType Directory -Force -Path "$Data\logs" | Out-Null
+
+# ---- 清理旧容器 ----
+cleanup_container "${Prefix}1"
+cleanup_container "${Prefix}2"
+
+# ---- 创建目录 ----
+New-Item -ItemType Directory -Force -Path "$Data\eureka1\logs","$Data\eureka2\logs" | Out-Null
+
+# ---- 生成 docker-compose.yml ----
+$ComposePath = "$Data\docker-compose.yml"
+$ComposeContent = @"
+version: '3.8'
+services:
+  ${Prefix}1:
+    image: ${Image}
+    container_name: ${Prefix}1
+    restart: unless-stopped
+    ports:
+      - "${Port1}:8761"
+    environment:
+      - eureka.client.serviceUrl.defaultZone=http://${Prefix}2:8761/eureka/
+      - eureka.client.registerWithEureka=true
+      - eureka.client.fetchRegistry=true
+      - eureka.server.enableSelfPreservation=true
+      - eureka.server.renewalPercentThreshold=0.85
+      - TZ=Asia/Shanghai
+    volumes:
+      - ${Data}\eureka1\logs:/var/log
+
+  ${Prefix}2:
+    image: ${Image}
+    container_name: ${Prefix}2
+    restart: unless-stopped
+    ports:
+      - "${Port2}:8761"
+    environment:
+      - eureka.client.serviceUrl.defaultZone=http://${Prefix}1:8761/eureka/
+      - eureka.client.registerWithEureka=true
+      - eureka.client.fetchRegistry=true
+      - eureka.server.enableSelfPreservation=true
+      - eureka.server.renewalPercentThreshold=0.85
+      - TZ=Asia/Shanghai
+    volumes:
+      - ${Data}\eureka2\logs:/var/log
+"@
+
+$ComposeContent | Out-File -FilePath $ComposePath -Encoding UTF8
 
 pull_image $Image
-docker run -d --name $Container --restart unless-stopped -p ${Port}:8761 `
-  -e "EUREKA_SERVER=http://localhost:8761/eureka/" `
-  -e "eureka.client.registerWithEureka=false" `
-  -e "eureka.client.fetchRegistry=false" `
-  -e "eureka.server.enableSelfPreservation=true" `
-  -e TZ=Asia/Shanghai `
-  -v "${Data}\logs:/var/log" `
-  $Image
-wait_for_container $Container 90
+docker-compose -f $ComposePath up -d
 
-# 等待 Eureka Server 启动完成 (Dashboard 可访问)
-for ($i = 1; $i -le 45; $i++) {
-    $resp = try { Invoke-WebRequest -Uri "http://localhost:${Port}/" -UseBasicParsing -TimeoutSec 3 } catch { $null }
-    if ($resp -and $resp.StatusCode -eq 200) { break }
-    Start-Sleep 2
+# ---- 等待两个节点启动 ----
+for ($n = 1; $n -le 2; $n++) {
+    $name = "${Prefix}${n}"
+    $port = if ($n -eq 1) { $Port1 } else { $Port2 }
+    wait_for_container $name 90
+    Write-Host "  Waiting for ${name} (port ${port})..." -ForegroundColor Yellow
+    for ($j = 1; $j -le 45; $j++) {
+        $resp = try { Invoke-WebRequest -Uri "http://localhost:${port}/" -UseBasicParsing -TimeoutSec 3 } catch { $null }
+        if ($resp -and $resp.StatusCode -eq 200) { break }
+        Start-Sleep 2
+    }
 }
 
-done_banner "Eureka | Port: $Port | Data: $Data"
-Write-Host "  Dashboard: http://localhost:${Port}/" -ForegroundColor Cyan
+done_banner "Eureka Cluster (2 nodes) | AP Self-Preservation Testable"
+Write-Host "  Dashboard 1: http://localhost:${Port1}/" -ForegroundColor Cyan
+Write-Host "  Dashboard 2: http://localhost:${Port2}/" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  AP Self-Preservation Test:" -ForegroundColor Green
+Write-Host "    - 正常: 客户端停止心跳 -> 30s 后被剔除" -ForegroundColor Gray
+Write-Host "    - 自我保护: 大量客户端停止心跳 -> 触发阈值，保留所有实例 (不剔除)" -ForegroundColor Gray
+Write-Host "    - 模拟: docker stop eureka2 -> 观察 eureka1 Dashboard 是否进入自我保护" -ForegroundColor Gray

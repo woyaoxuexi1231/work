@@ -1,5 +1,8 @@
 package com.example.id20260608.snowflake;
 
+import sun.misc.Unsafe;
+
+import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
@@ -78,7 +81,7 @@ public class RingBufferSnowflake {
 
         // CAS消费
         int currentRead;
-        long id;
+        long id = 0;
         do {
             currentRead = readIndex;
             if (available <= 0) {
@@ -160,15 +163,15 @@ public class RingBufferSnowflake {
     }
 
     // ---------- CAS操作 ----------
-    private static final sun.misc.Unsafe U;
+    private static final Unsafe U;
     private static final long READ_INDEX_OFFSET;
     private static final long WRITE_INDEX_OFFSET;
 
     static {
         try {
-            java.lang.reflect.Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            Field field = Unsafe.class.getDeclaredField("theUnsafe");
             field.setAccessible(true);
-            U = (sun.misc.Unsafe) field.get(null);
+            U = (Unsafe) field.get(null);
             READ_INDEX_OFFSET = U.objectFieldOffset(
                 RingBufferSnowflake.class.getDeclaredField("readIndex"));
             WRITE_INDEX_OFFSET = U.objectFieldOffset(
