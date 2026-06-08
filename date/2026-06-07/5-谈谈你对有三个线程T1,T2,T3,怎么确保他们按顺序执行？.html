@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线程顺序执行 T1→T2→T3 | 并发编程面试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', sans-serif; }
+        code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* 代码块样式 */
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 0.75rem;
+            overflow-x: auto;
+        }
+        .token-keyword { color: #c084fc; }
+        .token-class { color: #67e8f9; }
+        .token-method { color: #fbbf24; }
+        .token-comment { color: #64748b; font-style: italic; }
+        .token-string { color: #86efac; }
+
+        /* 动画 */
+        .step-line::before {
+            content: '';
+            position: absolute;
+            left: 19px;
+            top: 40px;
+            bottom: -20px;
+            width: 2px;
+            background: linear-gradient(to bottom, #3b82f6, transparent);
+        }
+        .step-item:last-child .step-line::before { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen selection:bg-blue-100">
+
+<!-- Header -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50 backdrop-blur-sm bg-white/90">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-layer-group text-blue-600 text-xl"></i>
+            <span class="font-bold text-lg">Concurrency<span class="text-slate-400 font-normal">Lab</span></span>
+        </div>
+        <div class="text-xs font-mono bg-slate-100 px-3 py-1 rounded-full text-slate-500 hidden sm:block">
+            Thread Ordering Problem
+        </div>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-16">
+
+    <!-- 问题定义 -->
+    <section class="text-center max-w-3xl mx-auto">
+        <h1 class="text-4xl md:text-5xl font-extrabold mb-6 tracking-tight">
+            如何确保 <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">T1 → T2 → T3</span> 顺序执行？
+        </h1>
+        <p class="text-lg text-slate-500 leading-relaxed">
+            面试官考察的不是“怎么创建线程”，而是你对<strong class="text-slate-800">线程间通信机制</strong>的理解深度。
+            从原生 API 到 JUC 工具类，共有 4 种标准解法。
+        </p>
+    </section>
+
+    <!-- 方案对比概览 -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-default group">
+            <div class="text-3xl font-black text-slate-200 group-hover:text-blue-100 transition-colors mb-2">01</div>
+            <h3 class="font-bold text-slate-900">join()</h3>
+            <p class="text-xs text-slate-500 mt-1">最直观 / 串行化</p>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors cursor-default group">
+            <div class="text-3xl font-black text-slate-200 group-hover:text-purple-100 transition-colors mb-2">02</div>
+            <h3 class="font-bold text-slate-900">CountDownLatch</h3>
+            <p class="text-xs text-slate-500 mt-1">JUC 首选 / 一次性</p>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors cursor-default group">
+            <div class="text-3xl font-black text-slate-200 group-hover:text-emerald-100 transition-colors mb-2">03</div>
+            <h3 class="font-bold text-slate-900">CompletableFuture</h3>
+            <p class="text-xs text-slate-500 mt-1">现代异步 / 链式编排</p>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-orange-300 transition-colors cursor-default group">
+            <div class="text-3xl font-black text-slate-200 group-hover:text-orange-100 transition-colors mb-2">04</div>
+            <h3 class="font-bold text-slate-900">LockSupport</h3>
+            <p class="text-xs text-slate-500 mt-1">底层原语 / 精准控制</p>
+        </div>
+    </section>
+
+    <!-- 详细方案解析 -->
+    <section class="space-y-8">
+
+        <!-- 方案1: Join -->
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+            <div class="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">Basic</span>
+                        <h2 class="text-xl font-bold">方案一：Thread.join() 串行等待</h2>
+                    </div>
+                    <p class="text-slate-500 text-sm">在主线程中依次启动并 join，本质是将并行退化为串行。简单但失去了多线程的意义。</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs mono text-slate-400">
+                    <i class="fa-solid fa-star text-yellow-400"></i> 推荐指数: ★★☆☆☆
+                </div>
+            </div>
+            <div class="grid md:grid-cols-2">
+                <div class="p-6 bg-slate-50/50 border-r border-slate-100 flex items-center justify-center">
+                    <!-- 可视化 -->
+                    <div class="flex items-center gap-3 mono text-sm">
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="w-16 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-blue-200">Main</div>
+                            <div class="w-0.5 h-8 bg-slate-300"></div>
+                            <div class="text-[10px] text-slate-400">start+join</div>
+                        </div>
+                        <i class="fa-solid fa-arrow-right text-slate-300"></i>
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="w-16 h-10 bg-indigo-500 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-indigo-200">T1</div>
+                            <div class="w-0.5 h-8 bg-slate-300"></div>
+                            <div class="text-[10px] text-slate-400">run()</div>
+                        </div>
+                        <i class="fa-solid fa-arrow-right text-slate-300"></i>
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="w-16 h-10 bg-violet-500 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-violet-200">T2</div>
+                            <div class="w-0.5 h-8 bg-slate-300"></div>
+                            <div class="text-[10px] text-slate-400">run()</div>
+                        </div>
+                        <i class="fa-solid fa-arrow-right text-slate-300"></i>
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="w-16 h-10 bg-fuchsia-500 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-fuchsia-200">T3</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="code-block p-5 text-sm leading-relaxed rounded-none md:rounded-l-none">
+<pre><span class="token-class">Thread</span> t1 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> System.out.println(<span class="token-string">"T1"</span>));
+<span class="token-class">Thread</span> t2 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> System.out.println(<span class="token-string">"T2"</span>));
+<span class="token-class">Thread</span> t3 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> System.out.println(<span class="token-string">"T3"</span>));
+
+t1.<span class="token-method">start</span>();
+t1.<span class="token-method">join</span>();  <span class="token-comment">// 主线程阻塞，等T1结束</span>
+
+t2.<span class="token-method">start</span>();
+t2.<span class="token-method">join</span>();  <span class="token-comment">// 等T1结束后才启动T2</span>
+
+t3.<span class="token-method">start</span>();
+t3.<span class="token-method">join</span>();</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- 方案2: CountDownLatch -->
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+            <div class="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 uppercase">Recommended</span>
+                        <h2 class="text-xl font-bold">方案二：CountDownLatch 门闩机制</h2>
+                    </div>
+                    <p class="text-slate-500 text-sm">每个线程持有下一个线程的门闩。T2 等待 T1 的 latch，T3 等待 T2 的 latch。<strong class="text-slate-800">面试标准答案。</strong></p>
+                </div>
+                <div class="flex items-center gap-2 text-xs mono text-slate-400">
+                    <i class="fa-solid fa-star text-yellow-400"></i> 推荐指数: ★★★★★
+                </div>
+            </div>
+            <div class="code-block m-6 text-sm leading-relaxed">
+<pre><span class="token-comment">// 为每个线程创建独立的门闩，初始值为1</span>
+<span class="token-class">CountDownLatch</span> latch1 = <span class="token-keyword">new</span> <span class="token-class">CountDownLatch</span>(<span class="token-string">1</span>);
+<span class="token-class">CountDownLatch</span> latch2 = <span class="token-keyword">new</span> <span class="token-class">CountDownLatch</span>(<span class="token-string">1</span>);
+
+<span class="token-class">Thread</span> t1 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> {
+    System.out.println(<span class="token-string">"T1 Running"</span>);
+    latch1.<span class="token-method">countDown</span>(); <span class="token-comment">// 释放T2的等待</span>
+});
+
+<span class="token-class">Thread</span> t2 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> {
+    <span class="token-keyword">try</span> { latch1.<span class="token-method">await</span>(); } <span class="token-keyword">catch</span> (<span class="token-class">InterruptedException</span> e) {}
+    System.out.println(<span class="token-string">"T2 Running"</span>);
+    latch2.<span class="token-method">countDown</span>(); <span class="token-comment">// 释放T3的等待</span>
+});
+
+<span class="token-class">Thread</span> t3 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> {
+    <span class="token-keyword">try</span> { latch2.<span class="token-method">await</span>(); } <span class="token-keyword">catch</span> (<span class="token-class">InterruptedException</span> e) {}
+    System.out.println(<span class="token-string">"T3 Running"</span>);
+});
+
+<span class="token-comment">// 注意：启动顺序可以任意，因为await保证了执行顺序</span>
+t3.<span class="token-method">start</span>();
+t1.<span class="token-method">start</span>();
+t2.<span class="token-method">start</span>();</pre>
+            </div>
+        </div>
+
+        <!-- 方案3: CompletableFuture -->
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+            <div class="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 uppercase">Modern Java</span>
+                        <h2 class="text-xl font-bold">方案三：CompletableFuture 链式编排</h2>
+                    </div>
+                    <p class="text-slate-500 text-sm">Java 8+ 函数式编程风格。代码最优雅，语义最清晰，适合复杂异步流水线。</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs mono text-slate-400">
+                    <i class="fa-solid fa-star text-yellow-400"></i> 推荐指数: ★★★★☆
+                </div>
+            </div>
+            <div class="code-block m-6 text-sm leading-relaxed">
+<pre><span class="token-class">CompletableFuture</span>.<span class="token-method">runAsync</span>(() -> System.out.println(<span class="token-string">"T1"</span>))
+    .<span class="token-method">thenRunAsync</span>(() -> System.out.println(<span class="token-string">"T2"</span>))
+    .<span class="token-method">thenRunAsync</span>(() -> System.out.println(<span class="token-string">"T3"</span>))
+    .<span class="token-method">join</span>(); <span class="token-comment">// 可选：等待整个链路完成</span></pre>
+            </div>
+        </div>
+
+        <!-- 方案4: LockSupport -->
+        <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+            <div class="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 uppercase">Advanced</span>
+                        <h2 class="text-xl font-bold">方案四：LockSupport 精准唤醒</h2>
+                    </div>
+                    <p class="text-slate-500 text-sm">AQS 的底层基石。park/unpark 不依赖对象锁，且 unpark 可以先于 park 调用，避免死锁风险。</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs mono text-slate-400">
+                    <i class="fa-solid fa-star text-yellow-400"></i> 推荐指数: ★★★☆☆
+                </div>
+            </div>
+            <div class="code-block m-6 text-sm leading-relaxed">
+<pre><span class="token-class">Thread</span> t1, t2, t3;
+
+t1 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> {
+    System.out.println(<span class="token-string">"T1"</span>);
+    <span class="token-class">LockSupport</span>.<span class="token-method">unpark</span>(t2); <span class="token-comment">// 精准唤醒T2</span>
+});
+
+t2 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> {
+    <span class="token-class">LockSupport</span>.<span class="token-method">park</span>();     <span class="token-comment">// 阻塞自己</span>
+    System.out.println(<span class="token-string">"T2"</span>);
+    <span class="token-class">LockSupport</span>.<span class="token-method">unpark</span>(t3); <span class="token-comment">// 精准唤醒T3</span>
+});
+
+t3 = <span class="token-keyword">new</span> <span class="token-class">Thread</span>(() -> {
+    <span class="token-class">LockSupport</span>.<span class="token-method">park</span>();
+    System.out.println(<span class="token-string">"T3"</span>);
+});
+
+<span class="token-comment">// 必须先声明引用，启动顺序任意</span>
+t1.<span class="token-method">start</span>(); t2.<span class="token-method">start</span>(); t3.<span class="token-method">start</span>();</pre>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- 选型决策树 -->
+    <section class="bg-slate-900 text-white rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+
+        <h2 class="text-2xl font-bold mb-8 relative z-10">🧭 面试选型决策指南</h2>
+
+        <div class="grid md:grid-cols-2 gap-8 relative z-10">
+            <ul class="space-y-4">
+                <li class="flex items-start gap-3">
+                    <i class="fa-solid fa-check text-green-400 mt-1"></i>
+                    <div>
+                        <strong class="block text-white mb-1">简单演示 / 脚本任务</strong>
+                        <span class="text-slate-400 text-sm">直接用 <code>join()</code>，代码最少，无需额外依赖。</span>
+                    </div>
+                </li>
+                <li class="flex items-start gap-3">
+                    <i class="fa-solid fa-check text-green-400 mt-1"></i>
+                    <div>
+                        <strong class="block text-white mb-1">生产环境 / 并发协调</strong>
+                        <span class="text-slate-400 text-sm">首选 <code>CountDownLatch</code>，语义明确，JUC 标准组件。</span>
+                    </div>
+                </li>
+            </ul>
+            <ul class="space-y-4">
+                <li class="flex items-start gap-3">
+                    <i class="fa-solid fa-check text-green-400 mt-1"></i>
+                    <div>
+                        <strong class="block text-white mb-1">异步流水线 / 结果聚合</strong>
+                        <span class="text-slate-400 text-sm">用 <code>CompletableFuture</code>，支持异常处理和返回值传递。</span>
+                    </div>
+                </li>
+                <li class="flex items-start gap-3">
+                    <i class="fa-solid fa-check text-green-400 mt-1"></i>
+                    <div>
+                        <strong class="block text-white mb-1">框架开发 / 极致性能</strong>
+                        <span class="text-slate-400 text-sm">用 <code>LockSupport</code>，它是 ReentrantLock 和 CountDownLatch 的底层实现。</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+
+        <div class="mt-10 p-4 bg-white/5 border border-white/10 rounded-xl relative z-10">
+            <p class="text-sm text-slate-300 leading-relaxed">
+                <i class="fa-solid fa-circle-exclamation text-amber-400 mr-2"></i>
+                <strong>避坑提示：</strong>不要尝试用 <code>sleep()</code> 或 <code>volatile</code> 标志位来保证顺序！sleep 时间不可靠，volatile 只保证可见性不保证原子性和有序性，在 CPU 重排序下依然会乱序。
+            </p>
+        </div>
+    </section>
+
+</main>
+
+<footer class="max-w-6xl mx-auto px-6 py-10 text-center text-slate-400 text-sm border-t border-slate-200 mt-12">
+    <p>© 2026 Concurrency Lab · Java Thread Coordination Deep Dive</p>
+</footer>
+
+</body>
+</html>

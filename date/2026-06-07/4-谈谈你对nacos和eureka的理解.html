@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nacos vs Eureka | 微服务注册配置中心深度解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', 'Inter', sans-serif; }
+
+        .gradient-text-nacos {
+            background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* 自定义表格样式 */
+        .compare-table th { background: #f8fafc; }
+        .compare-table td, .compare-table th { padding: 1rem; border-bottom: 1px solid #e2e8f0; }
+        .compare-table tr:last-child td { border-bottom: none; }
+
+        /* 架构图节点动画 */
+        .node-pulse { animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-blue-100">
+
+<!-- Header -->
+<header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-cubes text-blue-600 text-xl"></i>
+            <span class="font-bold text-lg tracking-tight">Microservice<span class="text-slate-400 font-normal">Registry</span></span>
+        </div>
+        <nav class="hidden md:flex gap-6 text-sm font-medium text-slate-500">
+            <a href="#definition" class="hover:text-blue-600 transition-colors">核心定义</a>
+            <a href="#comparison" class="hover:text-blue-600 transition-colors">Nacos vs Eureka</a>
+            <a href="#principles" class="hover:text-blue-600 transition-colors">底层原理</a>
+        </nav>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-20">
+
+    <!-- Hero / Definition -->
+    <section id="definition" class="text-center max-w-4xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider mb-6 border border-blue-100">
+            Alibaba Cloud Native
+        </div>
+        <h1 class="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
+            Nacos 是什么？<br>
+            <span class="gradient-text-nacos">注册 + 配置</span> 双引擎
+        </h1>
+        <p class="text-lg text-slate-500 leading-relaxed max-w-2xl mx-auto">
+            Nacos (Dynamic Naming and Configuration Service) 是阿里开源的微服务基础设施。
+            它不仅是 <strong>Eureka 的高性能替代者</strong>，更整合了 <strong>Spring Cloud Config</strong> 的功能，实现了“服务发现+动态配置”的一站式管理。
+        </p>
+    </section>
+
+    <!-- Comparison Table -->
+    <section id="comparison" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-8 border-b border-slate-100">
+            <h2 class="text-2xl font-bold flex items-center gap-3">
+                <i class="fa-solid fa-scale-balanced text-indigo-500"></i> Nacos vs Eureka 核心差异
+            </h2>
+            <p class="text-slate-500 mt-2 text-sm">面试时请重点强调 CAP 模型、健康检查机制和性能表现这三个维度。</p>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full compare-table text-left text-sm">
+                <thead>
+                <tr class="text-slate-400 font-semibold uppercase tracking-wider text-xs">
+                    <th class="w-1/4 pl-8">对比维度</th>
+                    <th class="w-[37.5%] text-red-500"><i class="fa-brands fa-java mr-2"></i>Eureka (Netflix)</th>
+                    <th class="w-[37.5%] text-blue-600"><i class="fa-solid fa-cube mr-2"></i>Nacos (Alibaba)</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                <tr>
+                    <td class="pl-8 font-bold text-slate-700">CAP 模型</td>
+                    <td class="text-slate-600">仅支持 <strong>AP</strong> (高可用优先)</td>
+                    <td class="text-slate-800 font-medium">支持 <strong>AP / CP</strong> 切换<br><span class="text-xs text-slate-400">(临时实例AP，持久实例CP)</span></td>
+                </tr>
+                <tr>
+                    <td class="pl-8 font-bold text-slate-700">健康检查</td>
+                    <td class="text-slate-600">客户端心跳 (Client Heartbeat)</td>
+                    <td class="text-slate-800 font-medium">心跳 + TCP/HTTP 主动探测<br><span class="text-xs text-slate-400">(服务端双重检测)</span></td>
+                </tr>
+                <tr>
+                    <td class="pl-8 font-bold text-slate-700">配置管理</td>
+                    <td class="text-slate-600 text-red-400"><i class="fa-solid fa-xmark"></i> 不支持</td>
+                    <td class="text-slate-800 font-medium text-green-600"><i class="fa-solid fa-check"></i> 原生支持动态推送</td>
+                </tr>
+                <tr>
+                    <td class="pl-8 font-bold text-slate-700">负载均衡</td>
+                    <td class="text-slate-600">Ribbon (客户端)</td>
+                    <td class="text-slate-800 font-medium">Ribbon / LoadBalancer + 权重</td>
+                </tr>
+                <tr>
+                    <td class="pl-8 font-bold text-slate-700">雪崩保护</td>
+                    <td class="text-slate-600">自我保护模式 (阈值触发)</td>
+                    <td class="text-slate-800 font-medium">无自我保护，依赖快速剔除</td>
+                </tr>
+                <tr>
+                    <td class="pl-8 font-bold text-slate-700">性能与规模</td>
+                    <td class="text-slate-600">万级实例瓶颈，GC 频繁</td>
+                    <td class="text-slate-800 font-medium">十万级实例，异步推送优化</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Core Principles Grid -->
+    <section id="principles">
+        <h2 class="text-2xl font-bold mb-8 px-2">核心原理拆解</h2>
+
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- 1. AP/CP 双模切换 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-toggle-on"></i>
+                    </div>
+                    <h3 class="font-bold text-lg">AP/CP 模式智能切换</h3>
+                </div>
+                <p class="text-slate-500 text-sm leading-relaxed mb-4">
+                    Nacos 根据实例类型自动选择一致性协议：
+                </p>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex items-start gap-2">
+                        <span class="mt-1 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                        <div><strong class="text-slate-800">临时实例 (Ephemeral=true):</strong> 采用 <code>Distro</code> 协议 (AP)。数据存储在内存，节点间异步复制，允许短暂不一致，保证高可用。</div>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
+                        <div><strong class="text-slate-800">持久实例 (Ephemeral=false):</strong> 采用 <code>Raft</code> 协议 (CP)。数据持久化到 DB/Derby，强一致性选举 Leader，适合 DNS/K8s 场景。</div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- 2. 服务发现机制 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-radar"></i>
+                    </div>
+                    <h3 class="font-bold text-lg">推拉结合的服务发现</h3>
+                </div>
+                <p class="text-slate-500 text-sm leading-relaxed mb-4">
+                    兼顾实时性与容错能力，避免纯推或纯拉的缺陷：
+                </p>
+                <div class="bg-slate-50 rounded-xl p-4 text-xs mono text-slate-600 space-y-2 border border-slate-100">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-down text-emerald-500"></i>
+                        <span><strong>Pull:</strong> 客户端每 6s 定时拉取全量列表作为兜底</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-up text-blue-500"></i>
+                        <span><strong>Push:</strong> 服务端 UDP 推送变更 (延迟 &lt; 1s)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-heart-pulse text-red-400"></i>
+                        <span><strong>Check:</strong> 服务端主动 TCP 探活 + 客户端心跳</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 配置中心原理 -->
+            <div class="md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
+
+                <div class="flex flex-col md:flex-row gap-8 relative z-10">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-xl bg-white/10 text-blue-400 flex items-center justify-center text-lg">
+                                <i class="fa-solid fa-sliders"></i>
+                            </div>
+                            <h3 class="font-bold text-lg">动态配置长轮询 (Long Polling)</h3>
+                        </div>
+                        <p class="text-slate-300 text-sm leading-relaxed mb-4">
+                            Nacos 摒弃了传统的短轮询和资源浪费的 WebSocket，采用<strong>长轮询机制</strong>实现准实时推送：
+                        </p>
+                        <ol class="space-y-3 text-sm text-slate-300 list-decimal list-inside">
+                            <li>客户端发起 HTTP 请求，携带当前配置 MD5</li>
+                            <li>服务端比对 MD5，若相同则<strong>挂起请求 29.5s</strong> (不立即返回)</li>
+                            <li>期间若有配置变更 → 立即响应新值</li>
+                            <li>若 29.5s 内无变更 → 返回 304 Not Modified</li>
+                            <li>客户端收到响应后立即发起下一次长轮询</li>
+                        </ol>
+                    </div>
+                    <div class="flex-1 bg-black/30 rounded-xl p-5 border border-white/10 flex items-center justify-center">
+                        <div class="text-center space-y-3">
+                            <div class="inline-block px-4 py-2 bg-blue-600/20 text-blue-300 rounded-lg text-xs mono border border-blue-500/30">
+                                GET /listener?md5=xxx
+                            </div>
+                            <div class="flex items-center justify-center gap-2 text-slate-500 text-xs">
+                                <i class="fa-solid fa-clock"></i> Hold 29.5s
+                            </div>
+                            <div class="inline-block px-4 py-2 bg-emerald-600/20 text-emerald-300 rounded-lg text-xs mono border border-emerald-500/30">
+                                Response: New Config (or 304)
+                            </div>
+                            <div class="text-[10px] text-slate-500 mt-2">
+                                比短轮询节省 95% 无效请求<br>比 WebSocket 兼容性好且无需额外连接
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interview Summary -->
+    <section class="bg-blue-50 border border-blue-100 rounded-3xl p-8 md:p-10">
+        <h2 class="text-xl font-bold text-blue-900 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-microphone-lines"></i> 面试一句话总结
+        </h2>
+        <p class="text-blue-800/80 leading-loose text-lg italic">
+            "Nacos 是阿里开源的注册中心与配置中心二合一组件。相比 Eureka，它最大的优势在于<strong>同时支持 AP/CP 模型</strong>、<strong>原生集成配置管理</strong>以及<strong>更高的性能上限</strong>。其服务发现采用推拉结合+双重健康检查，配置更新采用长轮询机制，在保证实时性的同时大幅降低了服务器压力。在 Spring Cloud Alibaba 生态中，它是替代 Eureka+Config 的首选方案。"
+        </p>
+    </section>
+
+</main>
+
+<footer class="max-w-6xl mx-auto px-6 py-10 text-center text-slate-400 text-sm border-t border-slate-200 mt-12">
+    <p>© 2026 Microservice Architecture Deep Dive · Nacos Internals</p>
+</footer>
+
+</body>
+</html>

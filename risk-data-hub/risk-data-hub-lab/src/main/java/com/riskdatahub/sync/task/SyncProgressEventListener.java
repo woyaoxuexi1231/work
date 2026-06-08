@@ -1,5 +1,6 @@
 package com.riskdatahub.sync.task;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
@@ -13,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -56,14 +58,6 @@ public class SyncProgressEventListener {
         lastDbWriteTimes.put(event.getTaskId(), now);
 
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            // 更新 sync_task.message 概要信息
-            syncTaskMapper.update(null, new LambdaUpdateWrapper<SyncTask>()
-                    .eq(SyncTask::getId, event.getTaskId())
-                    .set(SyncTask::getMessage,
-                            "正在同步 " + event.getBusinessCode()
-                                    + ": 已拉取 " + event.getPulledCount()
-                                    + ", 已落库 " + event.getSavedCount()));
-
             // 更新 sync_business_record 实时明细
             LambdaUpdateWrapper<SyncBusinessRecord> wrapper = new LambdaUpdateWrapper<SyncBusinessRecord>()
                     .eq(SyncBusinessRecord::getTaskId, event.getTaskId())
@@ -71,6 +65,25 @@ public class SyncProgressEventListener {
                     .set(SyncBusinessRecord::getPulledCount, event.getPulledCount())
                     .set(SyncBusinessRecord::getSavedCount, event.getSavedCount());
             syncBusinessRecordMapper.update(null, wrapper);
+
+            // 计算总进度：所有业务 saved 之和 / pulled 之和，取百分比
+            List<SyncBusinessRecord> records = syncBusinessRecordMapper.selectList(
+                    new LambdaQueryWrapper<SyncBusinessRecord>()
+                            .eq(SyncBusinessRecord::getTaskId, event.getTaskId()));
+            int totalPulled = records.stream().mapToInt(r -> r.getPulledCount() != null ? r.getPulledCount() : 0).sum();
+            int totalSaved = records.stream().mapToInt(r -> r.getSavedCount() != null ? r.getSavedCount() : 0).sum();
+            int progress = totalPulled > 0 ? Math.min(99, (totalSaved * 100) / totalPulled) : 0;
+
+            // 更新 sync_task 的概要信息、总数、进度
+            syncTaskMapper.update(null, new LambdaUpdateWrapper<SyncTask>()
+                    .eq(SyncTask::getId, event.getTaskId())
+                    .set(SyncTask::getMessage,
+                            "正在同步 " + event.getBusinessCode()
+                                    + ": 已拉取 " + event.getPulledCount()
+                                    + ", 已落库 " + event.getSavedCount())
+                    .set(SyncTask::getTotalPulledCount, totalPulled)
+                    .set(SyncTask::getTotalSavedCount, totalSaved)
+                    .set(SyncTask::getProgress, progress));
         });
     }
 }

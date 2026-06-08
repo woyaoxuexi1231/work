@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MVC 请求生命周期 — 从前端到后端全流程</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'flow': 'flow 1.2s ease-in-out infinite alternate',
+                        'fade-in': 'fadeIn 0.6s ease-out forwards',
+                        'fade-in-up': 'fadeInUp 0.6s ease-out forwards',
+                        'pulse-dot': 'pulseDot 2s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        flow: {
+                            '0%': { transform: 'translateX(0)' },
+                            '100%': { transform: 'translateX(6px)' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        pulseDot: {
+                            '0%, 100%': { opacity: '0.3', transform: 'scale(0.8)' },
+                            '50%': { opacity: '1', transform: 'scale(1.2)' },
+                        },
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+        /* Arrow flow line */
+        .flow-arrow::after {
+            content: '↓';
+            display: block;
+            text-align: center;
+            font-size: 1.5rem;
+            line-height: 1;
+            color: #6366f1;
+            margin: 0.5rem 0;
+            animation: flow 1.2s ease-in-out infinite alternate;
+        }
+
+        /* Step card hover */
+        .step-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+        }
+        .step-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
+
+        /* Badge pulse */
+        .badge-pulse {
+            animation: pulseDot 2s ease-in-out infinite;
+        }
+
+        /* Code snippet style */
+        .code-snip {
+            background: #1e1e2e;
+            color: #cdd6f4;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        .code-snip .keyword { color: #cba6f7; }
+        .code-snip .string { color: #a6e3a1; }
+        .code-snip .annotation { color: #f38ba8; }
+        .code-snip .comment { color: #6c7086; font-style: italic; }
+        .code-snip .method { color: #89b4fa; }
+        .code-snip .variable { color: #f9e2af; }
+        .code-snip .type { color: #fab387; }
+
+        /* Glass card */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+        }
+
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            .glass-card {
+                background: rgba(30, 30, 46, 0.7);
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+            .step-card:hover {
+                box-shadow: 0 12px 40px rgba(99, 102, 241, 0.08);
+                border-color: rgba(147, 153, 245, 0.15);
+            }
+            body { background: #0f0f1a; }
+            .bg-grid { background-image: radial-gradient(rgba(99, 102, 241, 0.06) 1px, transparent 1px); background-size: 30px 30px; }
+        }
+
+        /* Background grid pattern (light) */
+        .bg-grid {
+            background-image: radial-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 3px; }
+
+        /* Branch section (exceptional path) */
+        .branch-line {
+            border-left: 3px dashed #f97316;
+            padding-left: 1rem;
+            margin-left: 0.5rem;
+        }
+
+        /* SVG arrow connector */
+        .connector-svg {
+            display: flex;
+            justify-content: center;
+            padding: 0.25rem 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f0f1a] bg-grid min-h-screen">
+
+<!-- ======================================================================== -->
+<!-- Hero Header -->
+<!-- ======================================================================== -->
+<header class="relative overflow-hidden pt-12 pb-10 md:pt-20 md:pb-14">
+    <!-- Decorative blobs -->
+    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] opacity-20 dark:opacity-10 pointer-events-none"
+         style="background: radial-gradient(circle at 30% 40%, #6366f1 0%, #a855f7 50%, transparent 70%); filter: blur(60px);">
+    </div>
+
+    <div class="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
+        <!-- Tag -->
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-sm font-medium mb-6 shadow-sm border border-indigo-100 dark:border-indigo-800/30">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse-dot"></span>
+            后端面试 · 经典问题
+        </div>
+
+        <h1 class="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-tight">
+            MVC 请求生命周期
+        </h1>
+        <p class="mt-4 text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed">
+            一个请求从前端发起，到拿到结果，后端经历了什么？
+            <span class="block mt-1 text-sm text-gray-400 dark:text-gray-500">基于 Spring MVC 源码级分析 · 附本项目实战对照</span>
+        </p>
+
+        <!-- Quick stats -->
+        <div class="mt-8 flex flex-wrap justify-center gap-3 text-sm">
+            <span class="px-3 py-1.5 rounded-lg bg-white/60 dark:bg-white/5 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700/50 shadow-sm">
+                🧩 <strong class="text-gray-700 dark:text-gray-200">10</strong> 个核心阶段
+            </span>
+            <span class="px-3 py-1.5 rounded-lg bg-white/60 dark:bg-white/5 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700/50 shadow-sm">
+                ⚡ <strong class="text-gray-700 dark:text-gray-200">6</strong> 个关键组件
+            </span>
+            <span class="px-3 py-1.5 rounded-lg bg-white/60 dark:bg-white/5 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700/50 shadow-sm">
+                🛡️ <strong class="text-gray-700 dark:text-gray-200">2</strong> 条异常路径
+            </span>
+        </div>
+    </div>
+</header>
+
+<!-- ======================================================================== -->
+<!-- Container: Flow Diagram -->
+<!-- ======================================================================== -->
+<main class="max-w-4xl mx-auto px-4 sm:px-6 pb-24">
+
+    <!-- Intro card -->
+    <div class="glass-card rounded-2xl p-6 mb-10 text-gray-700 dark:text-gray-300 leading-relaxed">
+        <div class="flex items-start gap-3">
+            <span class="text-2xl shrink-0">💡</span>
+            <div>
+                <p class="font-semibold text-gray-900 dark:text-white">一句话概括</p>
+                <p class="mt-1">
+                    客户端发起 HTTP 请求后，<strong class="text-indigo-600 dark:text-indigo-400">DispatcherServlet</strong>（前端控制器）接管请求，
+                    委派给各个组件协同处理：<strong>HandlerMapping</strong> 路由、<strong>HandlerAdapter</strong> 适配、
+                    <strong>ArgumentResolver</strong> 解析参数、<strong>Controller</strong> 执行业务、
+                    <strong>ResponseBodyAdvice</strong> 统一包装、<strong>HttpMessageConverter</strong> 序列化输出。
+                    全程贯穿 <strong>@ControllerAdvice</strong> 异常拦截。
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 1: 前端发起 HTTP 请求 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.05s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ①
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">前端发起 HTTP 请求</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">Browser / Curl / Axios</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        用户点击、表单提交或前端框架（Vue/React）通过 Ajax 发出 HTTP 请求。
+                        包含请求方法（GET/POST）、URL、Headers（Content-Type、Accept）、Body 等。
+                    </p>
+                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div class="code-snip text-xs">
+                            <span class="comment">// GET 请求示例</span>
+                            <span class="text-gray-500">GET</span> /users?keyword=zhang HTTP/1.1
+                            <span class="text-gray-500">Host:</span> localhost:8080
+                            <span class="text-gray-500">Accept:</span> application/json
+                        </div>
+                        <div class="code-snip text-xs">
+                            <span class="comment">// POST 请求示例</span>
+                            <span class="text-gray-500">POST</span> /users HTTP/1.1
+                            <span class="text-gray-500">Content-Type:</span> application/json
+                            <span class="variable">{</span><span class="string">"name"</span>: <span class="string">"张三"</span><span class="variable">}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 2: DispatcherServlet 接收 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.1s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ②
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">DispatcherServlet 接收请求</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300">前端控制器 · Front Controller</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        Spring MVC 的入口。所有请求经 web.xml（或 Spring Boot 自动注册）映射到
+                        <code class="text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded text-xs font-mono">DispatcherServlet</code>。
+                        其在初始化（<code class="text-xs font-mono">initStrategies()</code>）时装配了所有核心组件。
+                    </p>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-mono border border-indigo-100 dark:border-indigo-800/30">
+                            HandlerMapping
+                        </span>
+                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-mono border border-indigo-100 dark:border-indigo-800/30">
+                            HandlerAdapter
+                        </span>
+                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-mono border border-indigo-100 dark:border-indigo-800/30">
+                            HandlerExceptionResolver
+                        </span>
+                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-mono border border-indigo-100 dark:border-indigo-800/30">
+                            ViewResolver
+                        </span>
+                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-mono border border-indigo-100 dark:border-indigo-800/30">
+                            HttpMessageConverter
+                        </span>
+                    </div>
+                    <div class="mt-3 code-snip text-xs">
+                        <span class="comment">// DemoApplication.java — 启动日志可见组件注册</span>
+                        <span class="annotation">@SpringBootApplication</span>
+                        <span class="keyword">public class</span> <span class="type">DemoApplication</span> {
+                        <span class="keyword">public static void</span> <span class="method">main</span>(String[] args) {
+                        &nbsp;&nbsp;SpringApplication.<span class="method">run</span>(DemoApplication.<span class="keyword">class</span>, args);
+                        <span class="comment">// 日志: RequestMappingHandlerMapping: Mapped "{[/users],methods=[GET]}"</span>
+                        }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 3: HandlerMapping 路由查找 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.15s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ③
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">HandlerMapping 路由查找</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300">URL → Controller 映射</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">DispatcherServlet.doDispatch()</code> 调用
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">getHandler()</code>，
+                        遍历所有 <strong>HandlerMapping</strong> 寻找能处理该 URL 的处理器。
+                        最常用的是 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">RequestMappingHandlerMapping</code>
+                        —— 它维护着 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@RequestMapping</code> / <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@GetMapping</code> 等注解的路由表。
+                    </p>
+                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="code-snip text-xs">
+                            <span class="comment">// 路由表注册结果（启动日志）</span>
+                            <span class="text-gray-500">Mapped</span> "{[/users],methods=[GET]}" <span class="text-gray-500">→</span>
+                            &nbsp;&nbsp;<span class="method">listUsers</span>(...)
+                            <span class="text-gray-500">Mapped</span> "{[/users],methods=[POST]}" <span class="text-gray-500">→</span>
+                            &nbsp;&nbsp;<span class="method">createUser</span>(...)
+                            <span class="text-gray-500">Mapped</span> "{[/users/profile],methods=[GET]}" <span class="text-gray-500">→</span>
+                            &nbsp;&nbsp;<span class="method">profile</span>(...)
+                        </div>
+                        <div class="code-snip text-xs">
+                            <span class="comment">// UserController.java — 路由定义</span>
+                            <span class="annotation">@RestController</span>
+                            <span class="annotation">@RequestMapping</span>(<span class="string">"/users"</span>)
+                            <span class="keyword">public class</span> <span class="type">UserController</span> {
+                            &nbsp;&nbsp;<span class="annotation">@GetMapping</span>
+                            &nbsp;&nbsp;<span class="keyword">public</span> List&lt;User&gt; <span class="method">listUsers</span>(
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span class="annotation">@RequestParam</span>(defaultValue = <span class="string">""</span>) String keyword) { ... }
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 4: HandlerAdapter 适配 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.2s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ④
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">HandlerAdapter 适配执行</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300">适配器模式</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        找到 Handler 之后，<code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">getHandlerAdapter()</code> 根据 Handler 类型选择适配器。
+                        对于 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@Controller</code> / <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@RestController</code>，
+                        选 <strong>RequestMappingHandlerAdapter</strong>。适配器统一了不同 Handler 的调用方式，
+                        然后调用 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">ha.handle()</code> 进入参数解析 + 方法执行阶段。
+                    </p>
+                    <div class="mt-3 flex items-center gap-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/15 border border-indigo-100 dark:border-indigo-800/20 text-xs text-gray-600 dark:text-gray-400">
+                        <span class="text-lg">🔌</span>
+                        <span>HandlerAdapter 是 MVC 中的"适配器模式"体现 —— 不管你的 Controller 是旧式 <code class="text-xs font-mono">Controller</code> 接口、<code class="text-xs font-mono">HttpRequestHandler</code> 还是注解驱动，适配器统一了调用入口。</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 5: ArgumentResolver 参数解析 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.25s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ⑤
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">ArgumentResolver 参数解析</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-300">HTTP → Java 方法参数</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        HandlerAdapter 调用 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">invokeHandlerMethod()</code> 时，
+                        <strong>InvocableHandlerMethod</strong> 遍历所有 <strong>HandlerMethodArgumentResolver</strong>，
+                        对 Controller 方法的每个参数逐个匹配、解析。Spring 内置了 20+ 个解析器，
+                        也支持通过 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">WebMvcConfigurer.addArgumentResolvers()</code> 注册自定义解析器。
+                    </p>
+
+                    <!-- Sub-table: common resolvers -->
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="w-full text-xs border-collapse">
+                            <thead>
+                                <tr class="border-b border-gray-200 dark:border-gray-700/50">
+                                    <th class="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">注解 / 参数</th>
+                                    <th class="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">解析器</th>
+                                    <th class="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">来源</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 dark:divide-gray-800/30">
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                    <td class="py-2 px-2 font-mono text-indigo-600 dark:text-indigo-400">@RequestParam</td>
+                                    <td class="py-2 px-2 text-gray-600 dark:text-gray-400">RequestParamMethodArgumentResolver</td>
+                                    <td class="py-2 px-2"><span class="text-gray-500 text-xs">Spring 内置</span></td>
+                                </tr>
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                    <td class="py-2 px-2 font-mono text-indigo-600 dark:text-indigo-400">@RequestBody</td>
+                                    <td class="py-2 px-2 text-gray-600 dark:text-gray-400">RequestResponseBodyMethodProcessor</td>
+                                    <td class="py-2 px-2"><span class="text-gray-500 text-xs">Spring 内置</span></td>
+                                </tr>
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                    <td class="py-2 px-2 font-mono text-indigo-600 dark:text-indigo-400">@PathVariable</td>
+                                    <td class="py-2 px-2 text-gray-600 dark:text-gray-400">PathVariableMethodArgumentResolver</td>
+                                    <td class="py-2 px-2"><span class="text-gray-500 text-xs">Spring 内置</span></td>
+                                </tr>
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] bg-teal-50/50 dark:bg-teal-900/10">
+                                    <td class="py-2 px-2 font-mono text-teal-600 dark:text-teal-400">@CurrentUser</td>
+                                    <td class="py-2 px-2 text-gray-600 dark:text-gray-400">CurrentUserArgumentResolver</td>
+                                    <td class="py-2 px-2"><span class="px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-xs">自定义 ✨</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-3 code-snip text-xs">
+                        <span class="comment">// 自定义解析器必须先注册到 WebMvcConfigurer！</span>
+                        <span class="annotation">@Configuration</span>
+                        <span class="keyword">public class</span> <span class="type">WebMvcConfig</span> <span class="keyword">implements</span> WebMvcConfigurer {
+                        &nbsp;&nbsp;<span class="annotation">@Override</span>
+                        &nbsp;&nbsp;<span class="keyword">public void</span> <span class="method">addArgumentResolvers</span>(
+                        &nbsp;&nbsp;&nbsp;&nbsp;List&lt;HandlerMethodArgumentResolver&gt; resolvers) {
+                        &nbsp;&nbsp;&nbsp;&nbsp;resolvers.<span class="method">add</span>(<span class="keyword">new</span> <span class="type">CurrentUserArgumentResolver</span>()); <span class="comment">// ✅ 注册</span>
+                        &nbsp;&nbsp;}
+                        }
+                        <span class="comment">// 不注册 → 解析器不生效（面试高频踩坑点）</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 6: Controller 执行业务 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.3s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm !border-l-4 !border-l-indigo-500">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ⑥
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Controller 执行业务逻辑</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300">核心业务层</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        参数解析完成后，通过反射调用 Controller 的目标方法，执行业务逻辑。
+                        方法可能调用 Service / DAO 层处理数据，然后返回结果（如 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">User</code>、<code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">List&lt;User&gt;</code>）。
+                    </p>
+                    <div class="mt-3 code-snip text-xs">
+                        <span class="comment">// UserController.java — Controller 被执行</span>
+                        <span class="annotation">@GetMapping</span>
+                        <span class="keyword">public</span> List&lt;User&gt; <span class="method">listUsers</span>(
+                        &nbsp;&nbsp;<span class="annotation">@RequestParam</span>(defaultValue = <span class="string">""</span>) String keyword) {
+                        &nbsp;&nbsp;log.<span class="method">info</span>(<span class="string">"📥 查询用户列表, keyword={}"</span>, keyword);
+                        &nbsp;&nbsp;<span class="keyword">return</span> Arrays.<span class="method">asList</span>(
+                        &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">new</span> <span class="type">User</span>(1L, <span class="string">"张三"</span>, <span class="string">"zhangsan@example.com"</span>),
+                        &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">new</span> <span class="type">User</span>(2L, <span class="string">"李四"</span>, <span class="string">"lisi@example.com"</span>)
+                        &nbsp;&nbsp;); <span class="comment">// 返回 List&lt;User&gt;</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 7: ReturnValueHandler + ResponseBodyAdvice 返回值处理 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.35s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ⑦
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">ReturnValueHandler + ResponseBodyAdvice</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300">序列化前拦截</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        Controller 方法返回后，<strong>HandlerMethodReturnValueHandler</strong> 处理返回值。
+                        对于 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@ResponseBody</code>（<code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@RestController</code> 自带），
+                        由 <strong>RequestResponseBodyMethodProcessor</strong> 处理。
+                        这里 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">GlobalResponseBodyAdvice</code> 会拦截返回值，
+                        将原始对象（如 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">User</code>）统一包装成
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">ApiResult { code, message, data }</code> 格式。
+                    </p>
+                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="code-snip text-xs">
+                            <span class="comment">// GlobalResponseBodyAdvice.java</span>
+                            <span class="annotation">@RestControllerAdvice</span>
+                            <span class="keyword">public class</span> <span class="type">GlobalResponseBodyAdvice</span>
+                            &nbsp;&nbsp;<span class="keyword">implements</span> ResponseBodyAdvice&lt;Object&gt; {
+                            &nbsp;&nbsp;<span class="annotation">@Override</span>
+                            &nbsp;&nbsp;<span class="keyword">public</span> Object <span class="method">beforeBodyWrite</span>(...) {
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span> <span class="type">ApiResult</span>.<span class="method">success</span>(body); <span class="comment">// 统一包装</span>
+                            &nbsp;&nbsp;}
+                            }
+                        </div>
+                        <div class="code-snip text-xs">
+                            <span class="comment">// 包装前（Controller 返回）</span>
+                            { <span class="string">"id"</span>: 1, <span class="string">"name"</span>: <span class="string">"张三"</span>, ... }
+                            <span class="comment">// 包装后（前端收到的格式）</span>
+                            {
+                            &nbsp;&nbsp;<span class="string">"code"</span>: 200,
+                            &nbsp;&nbsp;<span class="string">"message"</span>: <span class="string">"success"</span>,
+                            &nbsp;&nbsp;<span class="string">"data"</span>: { <span class="string">"id"</span>: 1, <span class="string">"name"</span>: <span class="string">"张三"</span> }
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 8: HttpMessageConverter 序列化 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.4s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
+                    ⑧
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">HttpMessageConverter 内容协商与序列化</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-300">序列化 · 内容协商</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">RequestResponseBodyMethodProcessor</code> 调用
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">writeWithMessageConverters()</code>，
+                        遍历所有已注册的 <strong>HttpMessageConverter</strong>，
+                        根据 <strong>Accept 请求头</strong>（内容协商 Content Negotiation）和返回值类型，
+                        选择第一个 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">canWrite()</code> 返回 true 的 Converter 进行序列化。
+                    </p>
+
+                    <!-- Converter table -->
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="w-full text-xs border-collapse">
+                            <thead>
+                                <tr class="border-b border-gray-200 dark:border-gray-700/50">
+                                    <th class="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">Converter</th>
+                                    <th class="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">支持的 MediaType</th>
+                                    <th class="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">说明</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 dark:divide-gray-800/30">
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                    <td class="py-2 px-2 font-mono text-indigo-600 dark:text-indigo-400">MappingJackson2HttpMessageConverter</td>
+                                    <td class="py-2 px-2"><code class="text-xs">application/json</code></td>
+                                    <td class="py-2 px-2 text-gray-500 text-xs">默认 JSON 序列化 ✅</td>
+                                </tr>
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                    <td class="py-2 px-2 font-mono text-indigo-600 dark:text-indigo-400">StringHttpMessageConverter</td>
+                                    <td class="py-2 px-2"><code class="text-xs">text/plain</code></td>
+                                    <td class="py-2 px-2 text-gray-500 text-xs">字符串处理</td>
+                                </tr>
+                                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] bg-pink-50/50 dark:bg-pink-900/10">
+                                    <td class="py-2 px-2 font-mono text-pink-600 dark:text-pink-400">CsvHttpMessageConverter <span class="text-[10px] text-pink-400">✨自定义</span></td>
+                                    <td class="py-2 px-2"><code class="text-xs">text/csv</code></td>
+                                    <td class="py-2 px-2 text-gray-500 text-xs">Accept: text/csv 时触发</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-3 flex items-center gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/15 border border-amber-100 dark:border-amber-800/20 text-xs text-gray-600 dark:text-gray-400">
+                        <span class="text-lg">🌐</span>
+                        <div>
+                            <strong class="text-amber-700 dark:text-amber-300">内容协商演示：</strong>
+                            <code class="font-mono">curl -H "Accept: text/csv" http://localhost:8080/negotiation/users</code>
+                            → 返回 CSV 格式！同一个 URL，不同 Accept 头得到不同格式。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ↓ Connector -->
+    <div class="connector-svg py-2">
+        <svg width="24" height="32" viewBox="0 0 24 32" fill="none" class="text-indigo-400">
+            <path d="M12 0V28M12 28L4 20M12 28L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="28" r="2.5" fill="currentColor" class="animate-pulse-dot"/>
+        </svg>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Stage 9: HTTP 响应返回 -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.45s;">
+        <div class="step-card bg-white dark:bg-[#1a1a2e] rounded-2xl p-6 md:p-7 shadow-sm !border-l-4 !border-l-green-500">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-green-200 dark:shadow-green-900/30">
+                    ✓
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">HTTP 响应返回前端</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300">正常结束</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        序列化后的字节流写入 HTTP 响应体，带上 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">Content-Type</code>、
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">HTTP Status</code>（200/201/400/500）等响应头，
+                        通过 Servlet 容器（Tomcat）返回给客户端。前端（浏览器 / Axios / Curl）拿到响应结果进行渲染或处理。
+                    </p>
+                    <div class="mt-3 code-snip text-xs">
+                        <span class="comment">// 前端收到的最终 HTTP 响应</span>
+                        HTTP/1.1 <span class="text-green-400">200 OK</span>
+                        Content-Type: application/json
+                        <span class="text-gray-500">...</span>
+                        {
+                        &nbsp;&nbsp;<span class="string">"code"</span>: 200,
+                        &nbsp;&nbsp;<span class="string">"message"</span>: <span class="string">"success"</span>,
+                        &nbsp;&nbsp;<span class="string">"data"</span>: [
+                        &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="string">"id"</span>: 1, <span class="string">"name"</span>: <span class="string">"张三"</span>, <span class="string">"email"</span>: <span class="string">"zhangsan@example.com"</span> },
+                        &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="string">"id"</span>: 2, <span class="string">"name"</span>: <span class="string">"李四"</span>, <span class="string">"email"</span>: <span class="string">"lisi@example.com"</span> }
+                        &nbsp;&nbsp;]
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Divider: Exception Path -->
+    <!-- ==================================================================== -->
+    <div class="my-12 text-center relative">
+        <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-dashed border-orange-200 dark:border-orange-800/30"></div>
+        </div>
+        <span class="relative px-4 inline-flex items-center gap-2 text-sm font-semibold text-orange-600 dark:text-orange-400 bg-gray-50 dark:bg-[#0f0f1a]">
+            <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            异常分支：@ExceptionHandler 拦截
+        </span>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Exception Path -->
+    <!-- ==================================================================== -->
+    <div class="opacity-0 animate-fade-in-up" style="animation-delay: 0.5s;">
+        <div class="step-card bg-orange-50 dark:bg-[#1e1a14] rounded-2xl p-6 md:p-7 shadow-sm !border-l-4 !border-l-orange-500">
+            <div class="flex items-start gap-4">
+                <div class="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-orange-200 dark:shadow-orange-900/30">
+                    ⚠
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-1">
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">@ExceptionHandler 全局异常拦截</h2>
+                        <span class="px-2.5 py-0.5 text-xs font-medium rounded-full bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-300">@ControllerAdvice · AOP</span>
+                    </div>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                        若 Controller 方法执行过程中抛出异常（如参数校验失败、空指针），<strong>DispatcherServlet</strong> 在
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">processHandlerException()</code> 中
+                        遍历所有 <strong>HandlerExceptionResolver</strong>。
+                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@ControllerAdvice</code> 标注的
+                        <strong>GlobalExceptionHandler</strong> 通过 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">@ExceptionHandler</code>
+                        匹配异常类型，返回统一的 <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400">ApiResult</code> 错误响应。
+                    </p>
+                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="code-snip text-xs">
+                            <span class="comment">// GlobalExceptionHandler.java</span>
+                            <span class="annotation">@RestControllerAdvice</span>
+                            <span class="keyword">public class</span> <span class="type">GlobalExceptionHandler</span> {
+                            &nbsp;&nbsp;<span class="annotation">@ExceptionHandler</span>(<span class="type">IllegalArgumentException</span>.<span class="keyword">class</span>)
+                            &nbsp;&nbsp;<span class="annotation">@ResponseStatus</span>(HttpStatus.<span class="variable">BAD_REQUEST</span>) <span class="comment">// 400</span>
+                            &nbsp;&nbsp;<span class="keyword">public</span> <span class="type">ApiResult</span>&lt;?&gt; <span class="method">handleIllegalArgument</span>(...) {
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span> <span class="type">ApiResult</span>.<span class="method">error</span>(400, <span class="string">"参数校验失败"</span>);
+                            &nbsp;&nbsp;}
+                            &nbsp;&nbsp;<span class="annotation">@ExceptionHandler</span>(<span class="type">RuntimeException</span>.<span class="keyword">class</span>)
+                            &nbsp;&nbsp;<span class="annotation">@ResponseStatus</span>(HttpStatus.<span class="variable">INTERNAL_SERVER_ERROR</span>)
+                            &nbsp;&nbsp;<span class="keyword">public</span> <span class="type">ApiResult</span>&lt;?&gt; <span class="method">handleRuntime</span>(...) { ... }
+                            }
+                        </div>
+                        <div class="code-snip text-xs">
+                            <span class="comment">// 异常响应示例</span>
+                            HTTP/1.1 <span class="text-red-400">400 Bad Request</span>
+                            {
+                            &nbsp;&nbsp;<span class="string">"code"</span>: 400,
+                            &nbsp;&nbsp;<span class="string">"message"</span>: <span class="string">"参数校验失败: 用户 ID 必须大于 0"</span>,
+                            &nbsp;&nbsp;<span class="string">"data"</span>: <span class="keyword">null</span>
+                            }
+                            <span class="comment">// 前端收到统一错误结构，统一处理</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Reference flow diagram for curl test -->
+    <!-- ==================================================================== -->
+    <div class="mt-10 opacity-0 animate-fade-in-up" style="animation-delay: 0.55s;">
+        <div class="glass-card rounded-2xl p-6">
+            <div class="flex items-center gap-2 mb-4">
+                <span class="text-lg">🧪</span>
+                <span class="font-semibold text-gray-900 dark:text-white">项目实战验证（在终端或 IDEA 运行）</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div class="code-snip">
+                    <span class="comment"># 1. 启动项目</span>
+                    mvn spring-boot:<span class="method">run</span>
+
+                    <span class="comment"># 2. 观察日志中的 HandlerMapping 注册</span>
+                    <span class="comment"># Mapped "{[/users],methods=[GET]}" onto listUsers(...)</span>
+
+                    <span class="comment"># 3. 测试 MVC 完整流程</span>
+                    curl http://localhost:8080/users?keyword=zhang
+                </div>
+                <div class="code-snip">
+                    <span class="comment"># 4. 测试自定义参数解析器</span>
+                    curl -H <span class="string">"X-User-Id: 42"</span> \
+                    &nbsp;&nbsp;http://localhost:8080/users/profile
+
+                    <span class="comment"># 5. 测试内容协商（CSV 响应）</span>
+                    curl -H <span class="string">"Accept: text/csv"</span> \
+                    &nbsp;&nbsp;http://localhost:8080/negotiation/users
+
+                    <span class="comment"># 6. 测试异常拦截</span>
+                    curl http://localhost:8080/exception-demo/user/-1
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Summary: Full Process Diagram -->
+    <!-- ==================================================================== -->
+    <div class="mt-14 opacity-0 animate-fade-in-up" style="animation-delay: 0.6s;">
+        <h2 class="text-center text-2xl font-bold text-gray-900 dark:text-white mb-8">
+            📋 全流程一览
+        </h2>
+
+        <div class="glass-card rounded-2xl p-6 md:p-8 overflow-x-auto">
+            <div class="min-w-[680px]">
+                <!-- Horizontal flow -->
+                <div class="flex items-center justify-between gap-1 text-xs font-medium text-center">
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/30 text-[10px] md:text-xs leading-tight">
+                            🌐 浏览器 / Curl<br/>
+                            <span class="text-[9px] text-indigo-400">发起 HTTP</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-indigo-300 dark:bg-indigo-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-indigo-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/30 text-[10px] md:text-xs leading-tight">
+                            🎯 DispatcherServlet<br/>
+                            <span class="text-[9px] text-amber-400">前端控制器</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-amber-300 dark:bg-amber-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-amber-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-100 dark:border-green-800/30 text-[10px] md:text-xs leading-tight">
+                            🗺️ HandlerMapping<br/>
+                            <span class="text-[9px] text-green-400">URL → 方法</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-green-300 dark:bg-green-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-green-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800/30 text-[10px] md:text-xs leading-tight">
+                            🔧 HandlerAdapter<br/>
+                            <span class="text-[9px] text-teal-400">适配调用</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-teal-300 dark:bg-teal-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-teal-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-100 dark:border-cyan-800/30 text-[10px] md:text-xs leading-tight">
+                            📝 ArgumentResolver<br/>
+                            <span class="text-[9px] text-cyan-400">参数解析</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-cyan-300 dark:bg-cyan-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-cyan-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border border-violet-100 dark:border-violet-800/30 text-[10px] md:text-xs leading-tight">
+                            🧠 Controller<br/>
+                            <span class="text-[9px] text-violet-400">业务逻辑</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-violet-300 dark:bg-violet-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-violet-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800/30 text-[10px] md:text-xs leading-tight">
+                            📦 ResponseBodyAdvice<br/>
+                            <span class="text-[9px] text-purple-400">统一包装</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-purple-300 dark:bg-purple-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-purple-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-pink-50 dark:bg-pink-900/20 text-pink-700 dark:text-pink-300 border border-pink-100 dark:border-pink-800/30 text-[10px] md:text-xs leading-tight">
+                            🔄 HttpMessage<br/>Converter<br/>
+                            <span class="text-[9px] text-pink-400">序列化输出</span>
+                        </div>
+                        <div class="w-0.5 h-4 bg-pink-300 dark:bg-pink-600 mt-0.5"></div>
+                    </div>
+                    <svg class="w-4 h-4 shrink-0 text-pink-400 -mt-3" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    <div class="flex flex-col items-center flex-1 min-w-0">
+                        <div class="w-full p-2 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-100 dark:border-green-800/30 text-[10px] md:text-xs leading-tight">
+                            ✅ HTTP 响应<br/>
+                            <span class="text-[9px] text-green-400">返回前端</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exception note -->
+                <div class="mt-4 pt-4 border-t border-dashed border-gray-200 dark:border-gray-700/50">
+                    <div class="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+                        <span class="text-orange-500 shrink-0">⚠️</span>
+                        <span>
+                            <strong class="text-orange-600 dark:text-orange-400">异常路径：</strong>
+                            Controller 抛异常 → DispatcherServlet.processHandlerException()
+                            → <strong>ExceptionHandlerExceptionResolver</strong> 匹配 @ExceptionHandler
+                            → GlobalExceptionHandler 返回 ApiResult 错误响应（同样经过 HttpMessageConverter 序列化）
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- Footer -->
+    <!-- ==================================================================== -->
+    <footer class="mt-16 text-center text-xs text-gray-400 dark:text-gray-600 border-t border-gray-100 dark:border-gray-800/30 pt-8">
+        <p>基于项目 <code class="text-indigo-400">spring-mvc-demo</code> 源码分析</p>
+        <p class="mt-1">
+            DispatcherServlet · HandlerMapping · HandlerAdapter · ArgumentResolver ·
+            Controller · ResponseBodyAdvice · HttpMessageConverter · @ExceptionHandler
+        </p>
+        <p class="mt-2 text-gray-300 dark:text-gray-700">— 面试必备 · MVC 请求生命周期 —</p>
+    </footer>
+
+</main>
+
+</body>
+</html>

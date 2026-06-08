@@ -1,0 +1,27 @@
+server:
+  port: 8081
+
+# 雪花算法演示配置
+snowflake:
+  # 不同策略的 worker-id
+  classic:
+    worker-id: 1
+    datacenter-id: 1
+  wait-strategy:
+    worker-id: 2
+    datacenter-id: 1
+    max-backward-ms: 10
+  fast-fail:
+    worker-id: 3
+    datacenter-id: 1
+  ring-buffer:
+    worker-id: 4
+    datacenter-id: 1
+    buffer-size: 1024
+  custom-bits:
+    worker-id: 5
+    datacenter-id: 1
+    # 自定义位分配: 时间戳40位 + 机器10位 + 序列13位
+    timestamp-bits: 40
+    worker-bits: 10
+    sequence-bits: 13

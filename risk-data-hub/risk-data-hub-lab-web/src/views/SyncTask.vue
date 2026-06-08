@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSyncTasks, startSync, fullSync, listDatasources } from '@/api/index.js'
 
@@ -9,6 +9,7 @@ const taskList = ref([])
 const taskPage = ref({ total: 0, pages: 0, current: 1 })
 const loading = ref(false)
 const error = ref('')
+const runningTask = computed(() => taskList.value.find(t => t.status === 'RUNNING' || t.status === 'QUEUED'))
 
 // 弹窗
 const showForm = ref(false)
@@ -16,11 +17,25 @@ const submitting = ref(false)
 const syncType = ref('INCREMENTAL')
 const form = ref({ dataSourceKey: '', pageSize: 10000 })
 const dsOptions = ref([])
+let timer = null
 
 onMounted(async () => {
   await loadList()
   loadDsOptions()
+  startAutoRefresh()
 })
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
+
+function startAutoRefresh() {
+  if (timer) clearInterval(timer)
+  timer = setInterval(async () => {
+    await loadList(taskPage.value.current)
+    if (!runningTask.value) clearInterval(timer)
+  }, 3000)
+}
 
 async function loadList(page = 1) {
   loading.value = true
@@ -29,6 +44,7 @@ async function loadList(page = 1) {
     const res = await getSyncTasks(page, 20)
     taskList.value = res.data?.records || []
     taskPage.value = { total: res.data?.total || 0, pages: res.data?.pages || 0, current: res.data?.current || 1 }
+    startAutoRefresh()
   } catch (e) {
     error.value = '加载失败: ' + e.message
   } finally {
@@ -89,9 +105,43 @@ function statusInfo(status) {
       <button @click="error = ''" class="ml-3 underline">关闭</button>
     </div>
 
+    <!-- 当前运行中的任务进度 -->
+    <div v-if="runningTask" class="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3">
+      <div class="flex items-center justify-between text-sm mb-2">
+        <div class="flex items-center gap-2 text-amber-700">
+          <span class="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+          <span class="font-medium">任务 #{{ runningTask.id }} 运行中</span>
+          <span class="text-amber-500">({{ runningTask.dataSourceKey }})</span>
+        </div>
+        <div class="text-amber-600 font-mono text-xs">{{ runningTask.progress || 0 }}%</div>
+      </div>
+      <div class="w-full bg-amber-100 rounded-full h-2">
+        <div class="h-2 rounded-full bg-amber-500 transition-all duration-500"
+          :style="{ width: (runningTask.progress || 0) + '%' }"></div>
+      </div>
+      <div class="flex gap-4 mt-2 text-xs text-amber-600">
+        <span>拉取 {{ runningTask.totalPulledCount ?? 0 }}</span>
+        <span>落库 {{ runningTask.totalSavedCount ?? 0 }}</span>
+      </div>
+    </div>
+
+    <!-- 任务概览统计 -->
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <div class="text-xs text-slate-400">同步总次数</div>
+        <div class="text-xl font-bold text-slate-800">{{ taskPage.total }}</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <div class="text-xs text-slate-400">当前状态</div>
+        <div class="text-xl font-bold" :class="runningTask ? 'text-amber-600' : 'text-emerald-600'">
+          {{ runningTask ? '运行中' : '空闲' }}
+        </div>
+      </div>
+    </div>
+
     <!-- 标题 + 操作按钮 -->
-    <div class="flex items-center justify-between mb-5">
-      <h3 class="text-base font-semibold text-slate-800">同步任务</h3>
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-base font-semibold text-slate-800">任务列表</h3>
       <div class="flex gap-2">
         <button @click="openForm('INCREMENTAL')"
           class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">

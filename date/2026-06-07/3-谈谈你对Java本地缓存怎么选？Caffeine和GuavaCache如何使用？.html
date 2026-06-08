@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Java本地缓存选型指南 | Caffeine vs Guava Cache 实战对比</title>
+    <!-- Tailwind CSS v3 + 字体优化 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap');
+        body {
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
+            background: linear-gradient(135deg, #f6f9fc 0%, #edf2f7 100%);
+        }
+        .code-block {
+            background-color: #0f172a;
+            border-radius: 1rem;
+            padding: 1.2rem;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            color: #e2e8f0;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            border: 1px solid #334155;
+        }
+        .code-block code {
+            color: #f1f5f9;
+            background: none;
+            font-family: inherit;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .glass-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.15);
+        }
+        .badge-compare {
+            background: #eef2ff;
+            color: #1e40af;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.2rem 0.7rem;
+            border-radius: 30px;
+        }
+        .table-header {
+            background: #f1f5f9;
+            border-bottom: 2px solid #cbd5e1;
+        }
+        .keyword {
+            color: #facc15;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body class="antialiased">
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-12">
+    <!-- Header Section -->
+    <div class="text-center mb-12">
+        <div class="inline-flex items-center gap-2 bg-indigo-100 text-indigo-800 px-4 py-1.5 rounded-full text-sm font-medium shadow-sm mb-4">
+            <span>⚡ 性能 · 命中率 · 易用性</span>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-800 mb-4 bg-gradient-to-r from-slate-800 to-indigo-700 bg-clip-text text-transparent">
+            Java 本地缓存选型指南
+        </h1>
+        <p class="text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
+            深入对比 Caffeine 与 Guava Cache，从算法原理到代码实战，<br>
+            帮您做出最适合业务场景的决策。
+        </p>
+    </div>
+
+    <!-- 概览卡片：为什么需要本地缓存 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <div class="bg-white rounded-2xl shadow-xl p-6 glass-card border border-indigo-100">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-3xl">🎯</span>
+                <h2 class="text-2xl font-bold text-slate-800">本地缓存适用场景</h2>
+            </div>
+            <ul class="space-y-2 text-slate-600 text-sm">
+                <li class="flex gap-2">✅ <span>高频读取、低写入频率的数据（配置、字典、用户会话）</span></li>
+                <li class="flex gap-2">✅ <span>计算成本高且结果可复用的对象（复杂SQL聚合、RPC结果）</span></li>
+                <li class="flex gap-2">✅ <span>允许一定数据延迟，需要大幅降低数据库/下游压力</span></li>
+                <li class="flex gap-2">✅ <span>单机应用或分布式下无需跨节点强一致性的场景</span></li>
+            </ul>
+            <div class="mt-4 p-3 bg-indigo-50 rounded-xl text-xs text-indigo-800">
+                💡 与分布式缓存（Redis）互补：本地缓存更接近应用，纳秒级延迟，无网络开销。
+            </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-xl p-6 glass-card border border-indigo-100">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-3xl">🧭</span>
+                <h2 class="text-2xl font-bold text-slate-800">选型核心指标</h2>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+                <div class="bg-slate-50 p-2 rounded-lg text-center"><span class="font-bold">🏆 命中率</span><br>淘汰算法决定缓存效率</div>
+                <div class="bg-slate-50 p-2 rounded-lg text-center"><span class="font-bold">⚡ 读写性能</span><br>吞吐量 & 延迟敏感度</div>
+                <div class="bg-slate-50 p-2 rounded-lg text-center"><span class="font-bold">🛠️ 易用性</span><br>API 丰富度、监控支持</div>
+                <div class="bg-slate-50 p-2 rounded-lg text-center"><span class="font-bold">📦 生态依赖</span><br>是否已引入Guava</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Caffeine vs Guava 深度对比 -->
+    <div class="mb-12">
+        <div class="flex items-center gap-2 mb-5">
+            <span class="text-3xl">🔍</span>
+            <h2 class="text-2xl font-bold text-slate-800">Caffeine 🆚 Guava Cache</h2>
+        </div>
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-indigo-100">
+            <table class="min-w-full text-sm">
+                <thead class="table-header">
+                <tr>
+                    <th class="px-5 py-3 text-left font-semibold text-slate-700">对比维度</th>
+                    <th class="px-5 py-3 text-left font-semibold text-slate-700">Caffeine</th>
+                    <th class="px-5 py-3 text-left font-semibold text-slate-700">Guava Cache</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                <tr><td class="px-5 py-3 font-medium">淘汰算法</td><td class="px-5 py-3">W-TinyLFU (近乎最优的命中率，兼顾频率与新鲜度)</td><td class="px-5 py-3">LRU (最近最少使用，实现简单但命中率较低)</td></tr>
+                <tr><td class="px-5 py-3 font-medium">读写性能</td><td class="px-5 py-3">极高，异步读写，支持并发优化（吞吐量高出Guava 2~3倍）</td><td class="px-5 py-3">优秀，但高并发下锁竞争略明显</td></tr>
+                <tr><td class="px-5 py-3 font-medium">异步加载</td><td class="px-5 py-3">原生支持 <span class="font-mono text-indigo-600">CacheLoader.asyncReloading</span>，<span class="font-mono">AsyncLoadingCache</span></td><td class="px-5 py-3">不支持异步加载，需自行包装CompletableFuture</td></tr>
+                <tr><td class="px-5 py-3 font-medium">统计监控</td><td class="px-5 py-3">内置 <span class="font-mono">recordStats()</span>，提供命中率、平均加载时间等</td><td class="px-5 py-3">需 <span class="font-mono">CacheBuilder.recordStats()</span>，功能基本一致</td></tr>
+                <tr><td class="px-5 py-3 font-medium">权重与大小</td><td class="px-5 py-3">支持基于权重驱逐、最大容量、弱/软引用</td><td class="px-5 py-3">同样支持权重、软/弱引用</td></tr>
+                <tr><td class="px-5 py-3 font-medium">刷新策略</td><td class="px-5 py-3">refreshAfterWrite 配合异步加载，支持并发安全刷新</td><td class="px-5 py-3">refreshAfterWrite，但刷新时可能阻塞读取线程</td></tr>
+                <tr><td class="px-5 py-3 font-medium">空值处理</td><td class="px-5 py-3">允许缓存null（通过Optional包装或自定义逻辑）</td><td class="px-5 py-3">支持，但加载器返回null时抛出异常</td></tr>
+                <tr><td class="px-5 py-3 font-medium">诞生背景</td><td class="px-5 py-3">Google开源于2018，Guava Cache的进化版，被Spring 5+ 默认采用</td><td class="px-5 py-3">Google Guava库，成熟稳定，广泛使用</td></tr>
+                </tbody>
+            </table>
+            <div class="bg-slate-50 p-4 text-sm text-slate-600 border-t border-slate-200">
+                <span class="font-bold">🎯 选型结论：</span> 新项目首选 <span class="font-semibold text-indigo-700">Caffeine</span>，性能与命中率均有明显优势；若项目已重度依赖Guava且缓存压力不大，可沿用Guava Cache。
+            </div>
+        </div>
+    </div>
+
+    <!-- Caffeine 深度使用教程 -->
+    <div class="glass-card bg-white rounded-2xl shadow-xl p-6 mb-12 border border-indigo-100">
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+            <span class="text-3xl">☕️</span>
+            <h2 class="text-2xl font-bold text-slate-800">Caffeine · 实战指南</h2>
+            <span class="badge-compare ml-2">高性能首选</span>
+        </div>
+        <p class="text-slate-600 mb-4 text-sm">Caffeine 提供类似 Guava 但更强大的 API，支持同步/异步加载，可配置过期策略、刷新策略、统计等。</p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- 基础构建 & 同步加载 -->
+            <div>
+                <h3 class="font-semibold text-indigo-800 mb-2">1️⃣ 同步缓存 (LoadingCache)</h3>
+                <div class="code-block text-xs">
+                    <code>
+                        import com.github.benmanes.caffeine.cache.*;<br>
+                        <br>
+                        // 构建CacheLoader，自动加载<br>
+                        LoadingCache&lt;String, User&gt; cache = Caffeine.newBuilder()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.maximumSize(10000)                 // 最大条目<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.expireAfterWrite(5, TimeUnit.MINUTES) // 写入后过期<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.refreshAfterWrite(1, TimeUnit.MINUTES) // 异步刷新<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.recordStats()                       // 开启统计<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.build(key -> userDao.findById(key));<br>
+                        <br>
+                        // 使用方式：自动加载或手动放入<br>
+                        User user = cache.get("userId_123");       // 若不存在则调用loader<br>
+                        cache.put("key", manualValue);             // 手动放入
+                    </code>
+                </div>
+            </div>
+            <!-- 异步缓存 & 高级特性 -->
+            <div>
+                <h3 class="font-semibold text-indigo-800 mb-2">2️⃣ 异步缓存 (AsyncLoadingCache)</h3>
+                <div class="code-block text-xs">
+                    <code>
+                        AsyncLoadingCache&lt;String, User&gt; asyncCache = Caffeine.newBuilder()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.maximumSize(5000)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.expireAfterWrite(10, TimeUnit.SECONDS)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.buildAsync(key -> fetchUserFromDB(key));<br>
+                        <br>
+                        // 返回 CompletableFuture<br>
+                        CompletableFuture&lt;User&gt; future = asyncCache.get("userId");<br>
+                        future.thenAccept(user -> System.out.println(user));<br>
+                        <br>
+                        // 异步+批量加载<br>
+                        AsyncLoadingCache&lt;String, User&gt; batchCache = Caffeine.newBuilder()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.buildAsync(new AsyncCacheLoader&lt;String, User&gt;() {<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;@Override<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;public CompletableFuture&lt;User&gt; asyncLoad(String key, Executor executor) {<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return CompletableFuture.supplyAsync(() -> dao.find(key));<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;});<br>
+                    </code>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-50 p-3 rounded-xl">
+                <span class="font-mono text-sm font-bold">⏱️ 多种过期策略</span>
+                <pre class="text-xs text-slate-700 mt-1 overflow-auto">expireAfterAccess(1, TimeUnit.HOURS)  // 访问后过期
+expireAfterWrite(1, TimeUnit.HOURS)   // 写入后过期
+expireAfter(Expiry)                   // 自定义过期</pre>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-xl">
+                <span class="font-mono text-sm font-bold">📊 监控统计示例</span>
+                <pre class="text-xs text-slate-700 mt-1">CacheStats stats = cache.stats();
+System.out.println(stats.hitRate());      // 命中率
+System.out.println(stats.loadSuccessCount());</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Guava Cache 使用教程 -->
+    <div class="glass-card bg-white rounded-2xl shadow-xl p-6 mb-12 border border-indigo-100">
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+            <span class="text-3xl">🍈</span>
+            <h2 class="text-2xl font-bold text-slate-800">Guava Cache · 经典实践</h2>
+            <span class="badge-compare ml-2">稳定可靠</span>
+        </div>
+        <p class="text-slate-600 mb-4 text-sm">Guava Cache 是本地缓存的老牌选手，API 设计简洁，适合中小规模项目。</p>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+                <h3 class="font-semibold text-indigo-800 mb-2">基本构建方式</h3>
+                <div class="code-block text-xs">
+                    <code>
+                        import com.google.common.cache.*;<br>
+                        <br>
+                        CacheLoader&lt;String, User&gt; loader = new CacheLoader&lt;String, User&gt;() {<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;@Override<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;public User load(String key) throws Exception {<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return userService.findByKey(key);   // 加载逻辑<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                        };<br>
+                        <br>
+                        LoadingCache&lt;String, User&gt; cache = CacheBuilder.newBuilder()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.maximumSize(1000)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.expireAfterWrite(5, TimeUnit.MINUTES)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.recordStats()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.build(loader);<br>
+                        <br>
+                        User user = cache.get("userId");          // 自动加载<br>
+                        cache.put("userId2", customUser);         // 手动填充
+                    </code>
+                </div>
+            </div>
+            <div>
+                <h3 class="font-semibold text-indigo-800 mb-2">高级特性：权重/监听/刷新</h3>
+                <div class="code-block text-xs">
+                    <code>
+                        // 基于权重的驱逐 (例如1KB为一个单位)<br>
+                        LoadingCache&lt;String, String&gt; weightCache = CacheBuilder.newBuilder()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.maximumWeight(1000)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.weigher((k, v) -> v.length())<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.build(loader);<br>
+                        <br>
+                        // 移除监听器<br>
+                        CacheBuilder.newBuilder()<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.removalListener(notification -> {<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;System.out.println("移除 key:" + notification.getKey());<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;})<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;.build(loader);<br>
+                        <br>
+                        // 注意：Guava 的 refreshAfterWrite 需要重写 reload 方法以实现异步，否则依然同步。
+                    </code>
+                </div>
+            </div>
+        </div>
+        <div class="mt-5 p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
+            ⚠️ Guava 注意事项：当缓存同时设置 expireAfterWrite 和 refreshAfterWrite，refresh 会在 expire 之前尝试刷新，但刷新未完成时返回旧值；若需要完全异步加载，可配合 <span class="font-mono">LoadingCache.refresh()</span> 自行提交线程池。
+        </div>
+    </div>
+
+    <!-- 缓存高级话题：穿透、击穿、雪崩 -->
+    <div class="bg-white rounded-2xl shadow-xl p-6 mb-12 border border-indigo-100">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="text-3xl">🛡️</span>
+            <h2 class="text-2xl font-bold text-slate-800">缓存难题应对策略（本地缓存视角）</h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div class="border-l-4 border-indigo-400 pl-3">
+                <h3 class="font-bold text-indigo-700">缓存穿透</h3>
+                <p class="text-sm text-slate-600 mt-1">大量请求查询不存在的数据 → 缓存无记录，一直穿透到DB。解决方案：<span class="font-mono">缓存空对象</span>（Caffeine允许put null）或布隆过滤器。</p>
+            </div>
+            <div class="border-l-4 border-indigo-400 pl-3">
+                <h3 class="font-bold text-indigo-700">缓存击穿</h3>
+                <p class="text-sm text-slate-600 mt-1">热点key过期瞬间大量并发请求重建缓存。Caffeine的 <span class="font-mono">CacheLoader</span> 天然防并发，只允许一个线程加载，其他等待。</p>
+            </div>
+            <div class="border-l-4 border-indigo-400 pl-3">
+                <h3 class="font-bold text-indigo-700">缓存雪崩</h3>
+                <p class="text-sm text-slate-600 mt-1">大量缓存同时失效。本地缓存可设置 <span class="font-mono">expireAfterWrite</span> 时加入随机偏移量，避免集体失效。</p>
+            </div>
+        </div>
+        <div class="mt-4 bg-indigo-50 p-3 rounded-xl text-xs text-indigo-900">
+            💡 Caffeine 的 <span class="font-mono font-bold">refreshAfterWrite</span> 机制可以在缓存过期后，返回旧值的同时异步刷新，有效防止击穿，并将雪崩风险降到最低。
+        </div>
+    </div>
+
+    <!-- 性能对比 + 迁移指南 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+        <div class="bg-gradient-to-br from-slate-50 to-white rounded-2xl shadow-lg p-5 border border-slate-200">
+            <div class="flex items-center gap-2 mb-2"><span class="text-2xl">📈</span><h3 class="font-bold text-slate-800">压测参考数据</h3></div>
+            <p class="text-xs text-slate-500 mb-2">基于JMH基准测试（8线程，50%读50%写，最大容量10000）</p>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between"><span>Caffeine 吞吐量</span><span class="font-mono font-bold text-green-700">≈ 6,500万 ops/s</span></div>
+                <div class="flex justify-between"><span>Guava Cache 吞吐量</span><span class="font-mono font-bold text-amber-700">≈ 2,800万 ops/s</span></div>
+                <div class="flex justify-between"><span>命中率模拟(80%热点)</span><span>Caffeine 92% vs Guava 85%</span></div>
+            </div>
+            <div class="mt-3 text-xs text-slate-500">* 数据源自Caffeine官方Benchmark，实际效果受硬件影响。</div>
+        </div>
+        <div class="bg-gradient-to-br from-slate-50 to-white rounded-2xl shadow-lg p-5 border border-slate-200">
+            <div class="flex items-center gap-2 mb-2"><span class="text-2xl">🔄</span><h3 class="font-bold text-slate-800">从 Guava 迁移到 Caffeine</h3></div>
+            <p class="text-sm text-slate-600">依赖替换 + API 几乎无缝兼容，修改少量import即可。</p>
+            <div class="code-block text-xs mt-2">
+                <code>
+                    // Guava 写法<br>
+                    import com.google.common.cache.CacheBuilder;<br>
+                    CacheBuilder.newBuilder().maximumSize(1000);<br>
+                    <br>
+                    // Caffeine 写法 (仅需改包名)<br>
+                    import com.github.benmanes.caffeine.cache.Caffeine;<br>
+                    Caffeine.newBuilder().maximumSize(1000);<br>
+                    <br>
+                    // 其他 API 方法基本一一对应，但 Caffeine 额外提供异步和更丰富的驱逐。
+                </code>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最佳实践总结 -->
+    <div class="bg-indigo-900/10 rounded-2xl p-6 border border-indigo-200 backdrop-blur-sm">
+        <div class="flex items-center gap-2 mb-4">
+            <span class="text-3xl">🏁</span>
+            <h2 class="text-2xl font-bold text-slate-800">最佳实践 & 避坑指南</h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div class="flex gap-2"><span class="text-indigo-600">✅</span><span><strong>预估容量</strong>：设置合理的maximumSize或maximumWeight，避免内存泄漏。</span></div>
+            <div class="flex gap-2"><span class="text-indigo-600">✅</span><span><strong>合理选择过期策略</strong>：写频繁数据用expireAfterWrite，读频繁用expireAfterAccess。</span></div>
+            <div class="flex gap-2"><span class="text-indigo-600">✅</span><span><strong>监控命中率</strong>：线上开启recordStats，结合指标系统告警命中率过低。</span></div>
+            <div class="flex gap-2"><span class="text-indigo-600">✅</span><span><strong>避免缓存大对象</strong>：使用weigher按内存权重驱逐，防止堆外压力。</span></div>
+            <div class="flex gap-2"><span class="text-amber-600">⚠️</span><span><strong>刷新 vs 过期</strong>：refreshAfterWrite适合“容忍旧值”场景，需配合异步加载防止阻塞。</span></div>
+            <div class="flex gap-2"><span class="text-amber-600">⚠️</span><span><strong>弱引用键</strong>：使用弱引用时GC可能造成数据丢失，谨慎使用。</span></div>
+        </div>
+        <div class="mt-5 p-3 bg-white rounded-xl shadow-inner text-xs text-slate-500">
+            📌 总结：<strong class="text-indigo-700">Caffeine 是 Guava Cache 的现代替代品</strong>，除了极少数兼容场景外，都应优先采用。Spring Boot 2.x+ 的 CacheManager 默认就使用 Caffeine，足以说明其行业地位。
+        </div>
+    </div>
+
+    <!-- 结尾 -->
+    <div class="mt-10 text-center text-sm text-slate-500 border-t border-slate-200 pt-6">
+        <span>☕️ Caffeine 与 🍈 Guava Cache — 让本地缓存选型不再迷茫</span>
+        <div class="mt-1 text-xs">基于实际业务场景，权衡性能、命中率与维护成本，做出最优决策。</div>
+    </div>
+</div>
+</body>
+</html>
