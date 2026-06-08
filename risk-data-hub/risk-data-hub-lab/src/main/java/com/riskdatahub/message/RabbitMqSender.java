@@ -5,11 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * RabbitMQ 消息发送器 — 同步任务完成后发送完成通知。
+ * RabbitMQ 消息发送器 — 通用消息发送。
  *
  * @author risk-data-hub
  */
@@ -21,34 +20,19 @@ public class RabbitMqSender {
     private final RabbitTemplate rabbitTemplate;
 
     private static final String EXCHANGE = "risk.sync.exchange";
-    private static final String ROUTING_KEY = "risk.sync.completed";
 
     /**
-     * 发送同步完成消息到 RabbitMQ。
+     * 发送消息到指定 routing key。
      *
-     * @param taskId         同步任务 ID
-     * @param dataSourceKey  数据源标识
-     * @param datasourceType 数据源类型
-     * @param totalPulled    总拉取数
-     * @param totalSaved     总落库数
+     * @param routingKey 路由键
+     * @param message    消息内容
      */
-    public void sendSyncCompleted(Long taskId, String dataSourceKey,
-                                  String datasourceType, int totalPulled, int totalSaved) {
-        Map<String, Object> message = new LinkedHashMap<>();
-        message.put("taskId", taskId);
-        message.put("dataSourceKey", dataSourceKey);
-        message.put("datasourceType", datasourceType);
-        message.put("totalPulledCount", totalPulled);
-        message.put("totalSavedCount", totalSaved);
-        message.put("status", "SUCCESS");
-        message.put("timestamp", System.currentTimeMillis());
-
+    public void sendMessage(String routingKey, Map<String, Object> message) {
         try {
-            rabbitTemplate.convertAndSend(EXCHANGE, ROUTING_KEY, message);
-            log.info("[RabbitMQ] sent taskId={}, dataSourceKey={}, pulled={}, saved={}",
-                    taskId, dataSourceKey, totalPulled, totalSaved);
+            rabbitTemplate.convertAndSend(EXCHANGE, routingKey, message);
+            log.info("[RabbitMQ] sent routingKey={}, message={}", routingKey, message);
         } catch (Exception e) {
-            log.error("[RabbitMQ] failed taskId={}", taskId, e);
+            log.error("[RabbitMQ] send failed routingKey={}", routingKey, e);
         }
     }
 }

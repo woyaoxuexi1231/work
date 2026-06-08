@@ -118,16 +118,17 @@ public class SyncEngine {
             doForceCleanIfNeeded(id);
             log.info("[SyncEngine] 2️⃣ 前置清理完成 ✅");
 
-            List<String> businessCodes = getBusinessCodes();
-            prepareBusinessRecords(id, businessCodes);
+            List<String> businessCodes = businessSyncTemplates.stream()
+                    .map(BusinessSyncTemplate::businessCode)
+                    .collect(Collectors.toList());
+            List<SyncBusinessRecord> syncBusinessRecords = prepareBusinessRecords(id, businessCodes);
             log.info("[SyncEngine] 3️⃣ 业务记录初始化完成 ✅ businessCodes={}", businessCodes);
 
             Map<String, Long> initialCursors = loadInitialCursors(businessCodes);
             log.info("[SyncEngine] 4️⃣ 断点续传游标加载完成 ✅");
 
-            Map<String, Long> businessRecordIds = loadBusinessRecordIds(id);
-
             log.info("[SyncEngine] 5️⃣ 开始执行同步编排...");
+            Map<String, Long> businessRecordIds = syncBusinessRecords.stream().collect(Collectors.toMap(SyncBusinessRecord::getBusinessCode, SyncBusinessRecord::getId));
             SyncResultDTO result = syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
             log.info("[SyncEngine] 5️⃣ 同步编排完成 ✅");
 
@@ -152,8 +153,15 @@ public class SyncEngine {
             });
             log.info("[SyncEngine] 6️⃣ 任务状态更新 SUCCESS ✅ pulled={}, saved={}", totalPulled, totalSaved);
 
-            rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
-                    totalPulled, totalSaved);
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("taskId", id);
+            msg.put("dataSourceKey", dataSourceKey);
+            msg.put("datasourceType", result.getDatasourceType());
+            msg.put("totalPulledCount", totalPulled);
+            msg.put("totalSavedCount", totalSaved);
+            msg.put("status", "SUCCESS");
+            msg.put("timestamp", System.currentTimeMillis());
+            rabbitMqSender.sendMessage("risk.sync.completed", msg);
             log.info("[SyncEngine] 7️⃣ 完成消息已发送 ✅");
         } catch (Exception e) {
             syncTaskService.updateTaskFields(id, task -> {
@@ -174,8 +182,11 @@ public class SyncEngine {
 
     // ---------- 执行子步骤 ----------
 
-    /** 初始化/重置每个业务的 SyncBusinessRecord 记录。 */
-    private void prepareBusinessRecords(Long taskId, List<String> businessCodes) {
+    /**
+     * 初始化/重置每个业务的 SyncBusinessRecord 记录。
+     */
+    private List<SyncBusinessRecord> prepareBusinessRecords(Long taskId, List<String> businessCodes) {
+        List<SyncBusinessRecord> records = new ArrayList<>();
         for (String bizCode : businessCodes) {
             routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
                 SyncBusinessRecord existing = syncBusinessRecordMapper.selectOne(
@@ -185,12 +196,11 @@ public class SyncEngine {
                                 .last("limit 1"));
                 if (existing != null) {
                     existing.setStatus("RUNNING");
-                    existing.setPulledCount(0);
-                    existing.setSavedCount(0);
                     existing.setErrorMessage(null);
                     existing.setStartedAt(TimeUtils.now());
                     existing.setFinishedAt(null);
                     syncBusinessRecordMapper.updateById(existing);
+                    records.add(existing);
                 } else {
                     SyncBusinessRecord record = new SyncBusinessRecord();
                     record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
@@ -201,12 +211,16 @@ public class SyncEngine {
                     record.setSavedCount(0);
                     record.setStartedAt(TimeUtils.now());
                     syncBusinessRecordMapper.insert(record);
+                    records.add(record);
                 }
             });
         }
+        return records;
     }
 
-    /** 查询各业务表的断点续传游标（最大 source_row_id）。 */
+    /**
+     * 查询各业务表的断点续传游标（最大 source_row_id）。
+     */
     private Map<String, Long> loadInitialCursors(List<String> businessCodes) {
         Map<String, Long> cursors = new HashMap<>();
         for (String bizCode : businessCodes) {
@@ -245,20 +259,9 @@ public class SyncEngine {
         return cursors;
     }
 
-    /** 查询各业务的 recordId 映射。 */
-    private Map<String, Long> loadBusinessRecordIds(Long taskId) {
-        Map<String, Long> ids = new HashMap<>();
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            for (SyncBusinessRecord rec : syncBusinessRecordMapper.selectList(
-                    new LambdaQueryWrapper<SyncBusinessRecord>()
-                            .eq(SyncBusinessRecord::getTaskId, taskId))) {
-                ids.put(rec.getBusinessCode(), rec.getId());
-            }
-        });
-        return ids;
-    }
-
-    /** 检查是否是强制刷新任务，是则清除全部清洗数据。 */
+    /**
+     * 检查是否是强制刷新任务，是则清除全部清洗数据。
+     */
     private void doForceCleanIfNeeded(Long taskId) {
         try {
             routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
@@ -290,7 +293,7 @@ public class SyncEngine {
                                           Map<String, Long> initialCursors,
                                           Map<String, Long> businessRecordIds) {
         DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
-        int safePageSize = sanitizePageSize(pageSize);
+        int safePageSize = Math.max(1, Math.min(pageSize, 100000));
         BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId, initialCursors, businessRecordIds);
 
         log.info("[SyncEngine] 开始 ETL 编排 dataSourceKey={}, 类型={}, 分页={}, 批次={}, 任务ID={}",
@@ -325,10 +328,6 @@ public class SyncEngine {
             throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
         }
         return config;
-    }
-
-    private int sanitizePageSize(int pageSize) {
-        return Math.max(1, Math.min(pageSize, 100000));
     }
 
     // ---------- 私有辅助：上下文构建 ----------
@@ -409,14 +408,5 @@ public class SyncEngine {
                 context.getDataSourceKey(), config.getName(), config.getDatasourceType(),
                 pageSize, context.getBatchNo(), maxPageCount,
                 totalPulled, totalSaved, businessResults);
-    }
-
-    // ==================== 查询接口 ====================
-
-    /** 获取所有业务编码列表。 */
-    public List<String> getBusinessCodes() {
-        return businessSyncTemplates.stream()
-                .map(BusinessSyncTemplate::businessCode)
-                .collect(Collectors.toList());
     }
 }

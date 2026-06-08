@@ -52,7 +52,6 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
             throw failure.get();
         }
 
-        publishBusinessSummaryEvent(context, counter);
         log.info("[同步模板] 业务 {} 执行完成，总页数={}, 拉取总数={}, 落库总数={}, 最后游标ID={}",
                 businessCode(), counter.getPageCount(), counter.getPulledCount(),
                 counter.getSavedCount(), counter.getLastRowId());
