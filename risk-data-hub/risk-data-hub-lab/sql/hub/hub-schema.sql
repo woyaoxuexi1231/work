@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS sync_task
     data_source_name   VARCHAR(128),
     datasource_type    VARCHAR(32),
     page_size          INT                  DEFAULT 2,
+    sync_type          VARCHAR(16)          DEFAULT 'INCREMENTAL' COMMENT 'FULL 全量 / INCREMENTAL 增量',
     status             VARCHAR(32) NOT NULL DEFAULT 'IDLE',
     progress           INT                  DEFAULT 0,
     total_pulled_count INT                  DEFAULT 0,

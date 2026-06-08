@@ -1,7 +1,6 @@
 package com.riskdatahub.sync.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.riskdatahub.common.constant.HubConstants;
@@ -28,7 +27,8 @@ import java.util.function.Consumer;
 /**
  * 同步任务服务 — 只操作任务记录（CRUD），不涉及同步执行。
  * <p>
- * 提交任务时创建 QUEUED 状态记录，由 {@link com.riskdatahub.sync.SyncTaskScheduler} 定时扫描并调度执行。
+ * 每次提交创建新任务，同一时间只允许一个 RUNNING 任务。
+ * 由 {@link com.riskdatahub.sync.SyncTaskScheduler} 定时扫描并调度执行。
  * </p>
  *
  * @author risk-data-hub
@@ -65,62 +65,50 @@ public class SyncTaskService {
 
     // ==================== Task 提交 ====================
 
-    /**
-     * 提交异步同步任务。每天只保留一条任务记录。
-     */
+    /** 提交增量同步任务（断点续传）。同一时间只允许一个 RUNNING 任务。 */
     public SyncTask startTask(String dataSourceKey, int pageSize) {
-        DataSourceConfigDTO config = validateDataSource(dataSourceKey);
-        return createOrResetTask(dataSourceKey, config, pageSize, "同步任务已提交，等待执行");
+        return createTask(dataSourceKey, pageSize, "INCREMENTAL", "增量同步已提交");
     }
 
-    /**
-     * 强制刷新 — 清除全部清洗数据后重新全量同步。
-     */
-    public SyncTask forceRefresh(String dataSourceKey, int pageSize) {
-        DataSourceConfigDTO config = validateDataSource(dataSourceKey);
-        log.warn("[SyncTask] 强制刷新已提交 dataSourceKey={}", dataSourceKey);
-        return createOrResetTask(dataSourceKey, config, pageSize, "强制刷新-清除数据中");
+    /** 提交全量同步任务（从头开始）。同一时间只允许一个 RUNNING 任务。 */
+    public SyncTask fullSync(String dataSourceKey, int pageSize) {
+        return createTask(dataSourceKey, pageSize, "FULL", "全量同步已提交");
     }
 
-    /** 创建或重置当天的同步任务。 */
-    private SyncTask createOrResetTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
+    /** 创建新任务，检查无 RUNNING 任务。 */
+    private SyncTask createTask(String dataSourceKey, int pageSize, String syncType, String message) {
+        DataSourceConfigDTO config = validateDataSource(dataSourceKey);
         int safePageSize = Math.max(1, Math.min(pageSize, 100000));
 
-        SyncTask existing = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
-                syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
-                        .apply("DATE(submitted_at) = CURDATE()")
-                        .orderByDesc(SyncTask::getId)
-                        .last("limit 1")));
-
-        if (existing != null) {
-            if ("RUNNING".equals(existing.getStatus())) {
-                throw new IllegalStateException("当天同步任务正在运行中，请等待完成后再试");
-            }
-            Long taskId = existing.getId();
-            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-                existing.setStatus("QUEUED");
-                existing.setProgress(0);
-                existing.setDataSourceKey(dataSourceKey);
-                existing.setDataSourceName(config.getName());
-                existing.setDatasourceType(config.getDatasourceType());
-                existing.setPageSize(safePageSize);
-                existing.setMessage(message);
-                existing.setStartedAt(null);
-                existing.setFinishedAt(null);
-                existing.setTotalPulledCount(0);
-                existing.setTotalSavedCount(0);
-                existing.setErrorMessage(null);
-                existing.setRunning(true);
-                syncTaskMapper.updateById(existing);
-            });
-            routingMybatisExecutor.run(HubConstants.DS_HUB, () ->
-                    syncBusinessRecordMapper.update(null, new LambdaUpdateWrapper<SyncBusinessRecord>()
-                            .eq(SyncBusinessRecord::getTaskId, taskId)
-                            .set(SyncBusinessRecord::getErrorMessage, (String) null)));
-            log.info("[SyncTask] resetTask id={}, dataSourceKey={}", taskId, dataSourceKey);
-            return existing;
+        // 检查是否有正在运行的任务
+        boolean hasRunning = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncTaskMapper.selectCount(new LambdaQueryWrapper<SyncTask>()
+                        .eq(SyncTask::getStatus, "RUNNING")) > 0);
+        if (hasRunning) {
+            throw new IllegalStateException("已有同步任务正在运行中，请等待完成后再试");
         }
-        return createQueuedTask(dataSourceKey, config, safePageSize, message);
+
+        // 创建新任务
+        long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
+        LocalDateTime now = TimeUtils.now();
+
+        SyncTask task = new SyncTask();
+        task.setId(taskId);
+        task.setSyncType(syncType);
+        task.setStatus("QUEUED");
+        task.setProgress(0);
+        task.setDataSourceKey(dataSourceKey);
+        task.setDataSourceName(config.getName());
+        task.setDatasourceType(config.getDatasourceType());
+        task.setPageSize(safePageSize);
+        task.setSubmittedAt(now);
+        task.setMessage(message);
+        task.setRunning(true);
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> syncTaskMapper.insert(task));
+
+        log.info("[SyncTask] createTask id={}, type={}, dataSourceKey={}, pageSize={}",
+                task.getId(), syncType, dataSourceKey, safePageSize);
+        return task;
     }
 
     /** 校验数据源存在且不是中台库。 */
@@ -135,27 +123,29 @@ public class SyncTaskService {
         return config;
     }
 
-    /** 创建 QUEUED 状态的任务记录。 */
-    private SyncTask createQueuedTask(String dataSourceKey, DataSourceConfigDTO config, int pageSize, String message) {
-        long taskId = leafSegmentService.nextId(TAG_SYNC_TASK);
-        LocalDateTime now = TimeUtils.now();
-        int safePageSize = Math.max(1, Math.min(pageSize, 100000));
+    /**
+     * 查询增量同步的断点续传播入游标。
+     * <p>查找上一次 SUCCESS/FAILED 任务中各业务的 lastRowId，用于继续同步。</p>
+     *
+     * @return businessCode → lastRowId，没有上一轮数据时返回空 Map
+     */
+    public java.util.Map<String, Long> getResumeCursors(String dataSourceKey) {
+        java.util.Map<String, Long> cursors = new java.util.HashMap<>();
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            SyncTask last = syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
+                    .eq(SyncTask::getDataSourceKey, dataSourceKey)
+                    .in(SyncTask::getStatus, "SUCCESS", "FAILED")
+                    .orderByDesc(SyncTask::getId)
+                    .last("limit 1"));
+            if (last == null) return;
 
-        SyncTask task = new SyncTask();
-        task.setId(taskId);
-        task.setStatus("QUEUED");
-        task.setProgress(0);
-        task.setDataSourceKey(dataSourceKey);
-        task.setDataSourceName(config.getName());
-        task.setDatasourceType(config.getDatasourceType());
-        task.setPageSize(safePageSize);
-        task.setSubmittedAt(now);
-        task.setMessage(message);
-        task.setRunning(true);
-        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> syncTaskMapper.insert(task));
-
-        log.info("[SyncTask] createQueuedTask id={}, dataSourceKey={}, pageSize={}", task.getId(), dataSourceKey, safePageSize);
-        return task;
+            syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()
+                            .eq(SyncBusinessRecord::getTaskId, last.getId())
+                            .isNotNull(SyncBusinessRecord::getLastRowId)
+                            .gt(SyncBusinessRecord::getLastRowId, 0))
+                    .forEach(r -> cursors.put(r.getBusinessCode(), r.getLastRowId()));
+        });
+        return cursors;
     }
 
     /** 更新同步任务的部分字段（供 SyncEngine / SyncTaskScheduler 调用）。 */
@@ -173,7 +163,21 @@ public class SyncTaskService {
 
     // ==================== 查询接口 ====================
 
-    /** 查询当前同步任务（最近一条）。无任务时返回 IDLE 空任务。 */
+    /** 根据 ID 查询单个同步任务。 */
+    public SyncTask getTaskById(Long taskId) {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncTaskMapper.selectById(taskId));
+    }
+
+    /** 分页查询同步任务列表，按提交时间倒序。 */
+    public IPage<SyncTask> listTasks(int page, int size) {
+        return routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
+                syncTaskMapper.selectPage(new Page<>(page, size),
+                        new LambdaQueryWrapper<SyncTask>()
+                                .orderByDesc(SyncTask::getId)));
+    }
+
+    /** 查询最近一条同步任务。无任务时返回 IDLE 空任务。 */
     public SyncTask currentTask() {
         SyncTask task = routingMybatisExecutor.query(HubConstants.DS_HUB, () ->
                 syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()

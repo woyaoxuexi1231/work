@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring MVC 深度解析 | 面试通关指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', 'Inter', sans-serif; }
+
+        /* 自定义动画 */
+        .flow-line {
+            stroke-dasharray: 10;
+            animation: dash 30s linear infinite;
+        }
+        @keyframes dash { to { stroke-dashoffset: -1000; } }
+
+        .card-hover { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-green-100 selection:text-green-900">
+
+<!-- 顶部导航/Hero -->
+<header class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center text-white">
+                <i class="fa-solid fa-leaf"></i>
+            </div>
+            <span class="font-bold text-xl tracking-tight">Spring MVC <span class="text-slate-400 font-normal">Internals</span></span>
+        </div>
+        <nav class="hidden md:flex gap-6 text-sm font-medium text-slate-500">
+            <a href="#core" class="hover:text-green-600 transition-colors">核心定位</a>
+            <a href="#flow" class="hover:text-green-600 transition-colors">执行流程</a>
+            <a href="#components" class="hover:text-green-600 transition-colors">九大组件</a>
+            <a href="#interview" class="hover:text-green-600 transition-colors">满分话术</a>
+        </nav>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-12 space-y-20">
+
+    <!-- Hero Section -->
+    <section class="text-center max-w-3xl mx-auto mb-16">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-bold uppercase tracking-wider mb-6 border border-green-100">
+            Java Backend Interview
+        </div>
+        <h1 class="text-4xl md:text-6xl font-extrabold text-slate-900 mb-6 leading-tight">
+            说说你对 <br class="md:hidden" /><span class="text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-500">Spring MVC</span> 的理解
+        </h1>
+        <p class="text-lg text-slate-500 leading-relaxed">
+            不要只背定义。面试官想听到的是你对<span class="text-slate-800 font-medium">架构设计思想</span>、<span class="text-slate-800 font-medium">核心组件协作</span>以及<span class="text-slate-800 font-medium">扩展机制</span>的深度认知。
+        </p>
+    </section>
+
+    <!-- 核心定位卡片 -->
+    <section id="core" class="grid md:grid-cols-3 gap-6">
+        <div class="md:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-100 card-hover relative overflow-hidden group">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-green-50 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-green-100 transition-colors"></div>
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-3">
+                <i class="fa-solid fa-bullseye text-green-600"></i> 核心定位
+            </h2>
+            <p class="text-slate-600 text-lg leading-relaxed relative z-10">
+                Spring MVC 是基于 <strong>Servlet API</strong> 构建的轻量级 Web 框架。它本质上是 <strong>MVC 设计模式</strong>在 Java Web 领域的标准化实现，通过高度抽象屏蔽了原生 Servlet 的复杂性，同时利用 Spring IoC/AOP 实现了组件的极致解耦。
+            </p>
+        </div>
+
+        <div class="bg-slate-900 text-white p-8 rounded-3xl shadow-lg card-hover flex flex-col justify-between">
+            <div>
+                <h3 class="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">Design Pattern</h3>
+                <div class="text-3xl font-bold mb-1">MVC + Adapter</div>
+                <div class="text-slate-400 text-sm">Model-View-Controller & Strategy</div>
+            </div>
+            <i class="fa-solid fa-layer-group text-4xl text-green-500 opacity-80 self-end mt-4"></i>
+        </div>
+    </section>
+
+    <!-- 执行流程可视化 (SVG) -->
+    <section id="flow" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 md:p-12 overflow-x-auto">
+        <div class="flex items-center justify-between mb-8 min-w-[800px]">
+            <h2 class="text-2xl font-bold text-slate-900">请求处理全链路</h2>
+            <span class="text-xs font-mono bg-slate-100 px-3 py-1 rounded text-slate-500">DispatcherServlet.doDispatch()</span>
+        </div>
+
+        <div class="min-w-[800px] relative">
+            <!-- SVG 连线背景 -->
+            <svg class="absolute inset-0 w-full h-full pointer-events-none z-0" style="top: 40px; left: 0;">
+                <path d="M 80 40 L 720 40" stroke="#e2e8f0" stroke-width="2" fill="none"/>
+                <!-- 动态流向点 -->
+                <circle r="4" fill="#16a34a">
+                    <animateMotion dur="3s" repeatCount="indefinite" path="M 80 40 L 720 40" />
+                </circle>
+            </svg>
+
+            <!-- 流程节点 -->
+            <div class="relative z-10 flex justify-between items-start">
+                <!-- Step 1 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-sm border border-blue-200">
+                        <i class="fa-solid fa-globe"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Client</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">HTTP Request</p>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-green-600 text-white flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-lg shadow-green-200">
+                        <i class="fa-solid fa-network-wired"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Dispatcher</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">前端控制器</p>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-purple-100 text-purple-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-sm border border-purple-200">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Mapping</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">查找处理器</p>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-sm border border-orange-200">
+                        <i class="fa-solid fa-plug"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Adapter</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">适配调用</p>
+                </div>
+
+                <!-- Step 5 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-sm border border-indigo-200">
+                        <i class="fa-solid fa-code"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Controller</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">业务逻辑</p>
+                </div>
+
+                <!-- Step 6 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-sm border border-pink-200">
+                        <i class="fa-solid fa-file-code"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Resolver</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">视图/JSON</p>
+                </div>
+
+                <!-- Step 7 -->
+                <div class="flex flex-col items-center w-24 text-center group">
+                    <div class="w-16 h-16 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform shadow-sm border border-slate-200">
+                        <i class="fa-solid fa-reply"></i>
+                    </div>
+                    <h4 class="font-bold text-sm text-slate-900">Response</h4>
+                    <p class="text-[10px] text-slate-500 mt-1">渲染返回</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 关键组件 Bento Grid -->
+    <section id="components">
+        <h2 class="text-2xl font-bold mb-8 px-2">核心组件与设计哲学</h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[minmax(180px,auto)]">
+
+            <!-- 策略模式 -->
+            <div class="md:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm card-hover flex flex-col justify-between">
+                <div>
+                    <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4">
+                        <i class="fa-solid fa-chess-knight"></i>
+                    </div>
+                    <h3 class="font-bold text-lg mb-2">策略模式 + 模板方法</h3>
+                    <p class="text-slate-500 text-sm leading-relaxed">
+                        DispatcherServlet 初始化时加载9大组件。每个组件都是一个策略接口，开发者可以随意替换默认实现（如自定义 HandlerMapping），完美遵循<strong>开闭原则</strong>。
+                    </p>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-50 font-mono text-xs text-slate-400">
+                    onRefresh() -> initStrategies()
+                </div>
+            </div>
+
+            <!-- 适配器 -->
+            <div class="md:col-span-1 bg-gradient-to-br from-orange-500 to-amber-500 text-white p-6 rounded-2xl shadow-md card-hover">
+                <i class="fa-solid fa-plug text-3xl mb-4 opacity-90"></i>
+                <h3 class="font-bold text-lg mb-2">HandlerAdapter</h3>
+                <p class="text-orange-100 text-sm">
+                    解决 Controller 实现方式多样性问题。无论是注解式还是接口式，适配器都能统一调用规范并处理参数绑定。
+                </p>
+            </div>
+
+            <!-- 拦截器 -->
+            <div class="md:col-span-1 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm card-hover">
+                <i class="fa-solid fa-shield-halved text-blue-500 text-2xl mb-4"></i>
+                <h3 class="font-bold text-lg mb-2">Interceptor</h3>
+                <p class="text-slate-500 text-sm">
+                    区别于 Servlet Filter，它能访问 Spring 上下文，精细控制到具体 Method 级别，适合登录校验、日志埋点。
+                </p>
+            </div>
+
+            <!-- 消息转换 -->
+            <div class="md:col-span-1 bg-slate-900 text-white p-6 rounded-2xl shadow-md card-hover">
+                <i class="fa-solid fa-arrow-right-arrow-left text-green-400 text-2xl mb-4"></i>
+                <h3 class="font-bold text-lg mb-2">MessageConverter</h3>
+                <p class="text-slate-400 text-sm">
+                    前后端分离的核心。自动将对象序列化为 JSON/XML，替代了传统的 ViewResolver。
+                </p>
+            </div>
+
+            <!-- 全局异常 -->
+            <div class="md:col-span-1 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm card-hover">
+                <i class="fa-solid fa-triangle-exclamation text-red-500 text-2xl mb-4"></i>
+                <h3 class="font-bold text-lg mb-2">ExceptionResolver</h3>
+                <p class="text-slate-500 text-sm">
+                    配合 @ControllerAdvice 实现全局统一异常处理，解耦业务代码与错误响应逻辑。
+                </p>
+            </div>
+
+            <!-- 数据绑定 -->
+            <div class="md:col-span-2 bg-indigo-50 p-6 rounded-2xl border border-indigo-100 card-hover flex items-center gap-6">
+                <div class="w-12 h-12 rounded-full bg-white text-indigo-600 flex items-center justify-center text-xl shrink-0 shadow-sm">
+                    <i class="fa-solid fa-link"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-indigo-900 mb-1">DataBinder 体系</h3>
+                    <p class="text-indigo-700/80 text-sm">
+                        强大的类型转换引擎。支持从 String 到复杂对象的自动映射，配合 Validator 接口实现声明式参数校验。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 面试满分话术 -->
+    <section id="interview" class="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+        <div class="bg-slate-900 px-8 py-4 flex items-center gap-3">
+            <div class="flex gap-1.5">
+                <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <span class="text-slate-400 text-sm font-mono ml-2">Interview_Answer_Template.java</span>
+        </div>
+        <div class="p-8 md:p-12">
+            <h2 class="text-2xl font-bold mb-6 text-slate-900">💡 建议回答逻辑</h2>
+            <div class="space-y-6">
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold shrink-0 mt-1">1</div>
+                    <div>
+                        <h4 class="font-bold text-slate-900 mb-1">架构层面</h4>
+                        <p class="text-slate-600 text-sm leading-relaxed">
+                            "Spring MVC 是 MVC 模式的落地，以 DispatcherServlet 为中枢，通过 HandlerMapping、HandlerAdapter 等组件实现了请求处理的流水线化。"
+                        </p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold shrink-0 mt-1">2</div>
+                    <div>
+                        <h4 class="font-bold text-slate-900 mb-1">设计层面</h4>
+                        <p class="text-slate-600 text-sm leading-relaxed">
+                            "它大量使用了策略模式和适配器模式。比如 HandlerAdapter 解决了不同 Controller 调用方式的差异，且所有核心组件都支持 SPI 级别的替换，扩展性极强。"
+                        </p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold shrink-0 mt-1">3</div>
+                    <div>
+                        <h4 class="font-bold text-slate-900 mb-1">工程实践</h4>
+                        <p class="text-slate-600 text-sm leading-relaxed">
+                            "在现代前后端分离架构下，我更关注它的参数绑定、全局异常处理以及与 Jackson 的集成。同时也了解它与 WebFlux 的定位差异，在高并发 IO 密集场景下会考虑响应式方案。"
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="max-w-7xl mx-auto px-6 py-12 border-t border-slate-200 mt-12">
+    <div class="flex flex-col md:flex-row justify-between items-center gap-4 text-slate-400 text-sm">
+        <p>© 2026 Spring MVC Deep Dive. Designed for Excellence.</p>
+        <div class="flex gap-6">
+            <span>IoC Container</span>
+            <span>AOP Proxy</span>
+            <span>Bean Lifecycle</span>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

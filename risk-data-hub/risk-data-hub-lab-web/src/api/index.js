@@ -82,13 +82,31 @@ export function startSync(dataSourceKey, pageSize = 100) {
 
 /**
  * 查询当前同步任务状态
- * 返回最近一条同步任务的实时状态，包括进度、拉取/落库数量、运行信息等
+ * 返回最近一条同步任务的实时状态
  * 后端路径：POST /api-hub-sync-task
- * 响应 data：同步任务对象 { id, status, progress, message, totalPulledCount, totalSavedCount, ... }
- *   无任务时返回 status=IDLE 的空任务
  */
 export function getSyncTask() {
   return request.post('/api-hub-sync-task')
+}
+
+/**
+ * 查询单个同步任务
+ * @param {number} taskId 任务 ID
+ * 后端路径：POST /api-hub-sync-task-get
+ */
+export function getSyncTaskById(taskId) {
+  return request.post('/api-hub-sync-task-get', { taskId })
+}
+
+/**
+ * 分页查询同步任务列表
+ * @param {number} page 页码
+ * @param {number} size 每页条数
+ * 后端路径：POST /api-hub-sync-tasks
+ * 响应 data：分页对象 { records, total, pages, current }
+ */
+export function getSyncTasks(page = 1, size = 20) {
+  return request.post('/api-hub-sync-tasks', { page, size })
 }
 
 /**
@@ -122,12 +140,12 @@ export function getBatchMetrics(recordId, page = 1, size = 50) {
 }
 
 /**
- * 强制刷新 — 清除 risk_hub 全部业务数据和任务记录，然后重新全量同步
+ * 全量同步 — 从头开始同步全部数据（不断点续传），upsert 方式不删除已有数据
  * @param {string} dataSourceKey 要同步的数据源标识
  * @param {number} pageSize 每页拉取条数，默认 100
- * 后端路径：POST /api-hub-sync-force-refresh
+ * 后端路径：POST /api-hub-sync-full
  * 响应 data：刚创建的同步任务对象 { id, status, progress, message, ... }
  */
-export function forceRefresh(dataSourceKey, pageSize = 100) {
-  return request.post('/api-hub-sync-force-refresh', { dataSourceKey, pageSize })
+export function fullSync(dataSourceKey, pageSize = 100) {
+  return request.post('/api-hub-sync-full', { dataSourceKey, pageSize })
 }

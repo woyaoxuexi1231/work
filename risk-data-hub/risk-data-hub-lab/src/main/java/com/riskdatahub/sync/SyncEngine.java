@@ -25,6 +25,7 @@ import com.riskdatahub.sync.task.SyncTaskService;
 import com.riskdatahub.sync.task.entity.SyncBusinessRecord;
 import com.riskdatahub.sync.task.entity.SyncTask;
 import com.riskdatahub.sync.task.mapper.SyncBusinessRecordMapper;
+import com.riskdatahub.sync.task.mapper.SyncTaskMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -61,6 +62,7 @@ public class SyncEngine {
     private final DataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final SyncBusinessRecordMapper syncBusinessRecordMapper;
+    private final SyncTaskMapper syncTaskMapper;
     private final List<BusinessSyncTemplate> businessSyncTemplates;
     private final ThreadPoolExecutor syncBusinessExecutor;
     private final SyncTaskService syncTaskService;
@@ -75,6 +77,7 @@ public class SyncEngine {
     public SyncEngine(DataSourceManager dataSourceManager,
                       RoutingMybatisExecutor routingMybatisExecutor,
                       SyncBusinessRecordMapper syncBusinessRecordMapper,
+                      SyncTaskMapper syncTaskMapper,
                       List<BusinessSyncTemplate> businessSyncTemplates,
                       @Qualifier("syncBusinessExecutor") ThreadPoolExecutor syncBusinessExecutor,
                       SyncTaskService syncTaskService,
@@ -88,6 +91,7 @@ public class SyncEngine {
         this.dataSourceManager = dataSourceManager;
         this.routingMybatisExecutor = routingMybatisExecutor;
         this.syncBusinessRecordMapper = syncBusinessRecordMapper;
+        this.syncTaskMapper = syncTaskMapper;
         this.businessSyncTemplates = businessSyncTemplates;
         this.syncBusinessExecutor = syncBusinessExecutor;
         this.syncTaskService = syncTaskService;
@@ -104,7 +108,7 @@ public class SyncEngine {
 
     /**
      * 在后台线程中执行同步任务。
-     * <p>获取分布式锁 → 预处理业务记录 → 断点续传 → 编排同步 → 更新任务状态 → 发完成消息。</p>
+     * <p>获取分布式锁 → 初始化业务记录 → 加载续传播入游标（增量）→ 编排同步 → 更新状态。</p>
      */
     public void executeTask(Long id, String dataSourceKey, int pageSize) {
         RLock lock = redissonClient.getLock(LOCK_KEY);
@@ -115,43 +119,56 @@ public class SyncEngine {
             }
             log.info("[SyncEngine] 1️⃣ 获取锁 ✅ taskId={}", id);
 
-            doForceCleanIfNeeded(id);
-            log.info("[SyncEngine] 2️⃣ 前置清理完成 ✅");
+            // 查询任务类型
+            SyncTask taskMeta = routingMybatisExecutor.query(HubConstants.DS_HUB,
+                    () -> syncTaskMapper.selectById(id));
+            boolean isFull = taskMeta != null && "FULL".equals(taskMeta.getSyncType());
+            log.info("[SyncEngine] 同步类型: {}", isFull ? "FULL 全量" : "INCREMENTAL 增量");
 
             List<String> businessCodes = businessSyncTemplates.stream()
                     .map(BusinessSyncTemplate::businessCode)
                     .collect(Collectors.toList());
-            List<SyncBusinessRecord> syncBusinessRecords = prepareBusinessRecords(id, businessCodes);
-            log.info("[SyncEngine] 3️⃣ 业务记录初始化完成 ✅ businessCodes={}", businessCodes);
+            prepareBusinessRecords(id, businessCodes);
+            log.info("[SyncEngine] 2️⃣ 业务记录初始化完成 ✅");
 
-            Map<String, Long> initialCursors = loadInitialCursors(businessCodes);
-            log.info("[SyncEngine] 4️⃣ 断点续传游标加载完成 ✅");
+            // 3️⃣ 加载续传播入游标
+            Map<String, Long> initialCursors;
+            if (isFull) {
+                initialCursors = Collections.emptyMap();
+                log.info("[SyncEngine] 3️⃣ 全量同步，不续传 ✅");
+            } else {
+                initialCursors = syncTaskService.getResumeCursors(dataSourceKey);
+                log.info("[SyncEngine] 3️⃣ 增量续传游标加载完成 ✅ cursors={}", initialCursors);
+            }
 
-            log.info("[SyncEngine] 5️⃣ 开始执行同步编排...");
-            Map<String, Long> businessRecordIds = syncBusinessRecords.stream().collect(Collectors.toMap(SyncBusinessRecord::getBusinessCode, SyncBusinessRecord::getId));
+            Map<String, Long> businessRecordIds = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
+                Map<String, Long> ids = new HashMap<>();
+                syncBusinessRecordMapper.selectList(new LambdaQueryWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getTaskId, id))
+                        .forEach(r -> ids.put(r.getBusinessCode(), r.getId()));
+                return ids;
+            });
+
+            log.info("[SyncEngine] 4️⃣ 开始执行同步编排...");
             SyncResultDTO result = syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
-            log.info("[SyncEngine] 5️⃣ 同步编排完成 ✅");
+            log.info("[SyncEngine] 4️⃣ 同步编排完成 ✅");
 
             int totalPulled = result.getBusinessResults().values().stream()
                     .mapToInt(BusinessSyncResult::getPulledCount).sum();
             int totalSaved = result.getBusinessResults().values().stream()
                     .mapToInt(BusinessSyncResult::getSavedCount).sum();
 
+            final String taskMessage = isFull ? "全量同步完成" : "增量同步完成";
             syncTaskService.updateTaskFields(id, task -> {
                 task.setStatus("SUCCESS");
-                task.setMessage("同步任务完成");
+                task.setMessage(taskMessage);
                 task.setFinishedAt(TimeUtils.now());
                 task.setTotalPulledCount(totalPulled);
                 task.setTotalSavedCount(totalSaved);
                 task.setProgress(100);
                 task.setRunning(false);
             });
-            syncTaskService.updateTaskFields(id, task -> {
-                if (task.getMessage() != null && task.getMessage().startsWith("强制刷新")) {
-                    task.setMessage("同步任务完成");
-                }
-            });
-            log.info("[SyncEngine] 6️⃣ 任务状态更新 SUCCESS ✅ pulled={}, saved={}", totalPulled, totalSaved);
+            log.info("[SyncEngine] 5️⃣ 任务状态更新 SUCCESS ✅ pulled={}, saved={}", totalPulled, totalSaved);
 
             Map<String, Object> msg = new HashMap<>();
             msg.put("taskId", id);
@@ -159,10 +176,11 @@ public class SyncEngine {
             msg.put("datasourceType", result.getDatasourceType());
             msg.put("totalPulledCount", totalPulled);
             msg.put("totalSavedCount", totalSaved);
+            msg.put("syncType", isFull ? "FULL" : "INCREMENTAL");
             msg.put("status", "SUCCESS");
             msg.put("timestamp", System.currentTimeMillis());
             rabbitMqSender.sendMessage("risk.sync.completed", msg);
-            log.info("[SyncEngine] 7️⃣ 完成消息已发送 ✅");
+            log.info("[SyncEngine] 6️⃣ 完成消息已发送 ✅");
         } catch (Exception e) {
             syncTaskService.updateTaskFields(id, task -> {
                 task.setStatus("FAILED");
@@ -219,10 +237,11 @@ public class SyncEngine {
     }
 
     /**
-     * 查询各业务表的断点续传游标（最大 source_row_id）。
+     * @deprecated 断点续传逻辑已移至 SyncTaskService.getResumeCursors
      */
     private Map<String, Long> loadInitialCursors(List<String> businessCodes) {
         Map<String, Long> cursors = new HashMap<>();
+        // dead code - cursor loading moved to SyncTaskService.getResumeCursors
         for (String bizCode : businessCodes) {
             Long cursor = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
                 List<Object> result;
@@ -260,7 +279,7 @@ public class SyncEngine {
     }
 
     /**
-     * 检查是否是强制刷新任务，是则清除全部清洗数据。
+     * @deprecated 全量更新不再清数据，此方法已废弃
      */
     private void doForceCleanIfNeeded(Long taskId) {
         try {

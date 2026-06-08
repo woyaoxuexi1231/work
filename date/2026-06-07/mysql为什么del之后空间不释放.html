@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MySQL DELETE 为何不释放磁盘空间？</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', 'Inter', sans-serif; }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .block-animate {
+            transition: all 0.5s ease;
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen selection:bg-blue-100 selection:text-blue-900">
+
+<!-- Hero Section -->
+<header class="relative overflow-hidden bg-white border-b border-slate-200">
+    <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
+    <div class="max-w-5xl mx-auto px-6 py-16 relative z-10">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-sm font-medium mb-6 border border-blue-100">
+            <i class="fa-solid fa-database"></i> MySQL 面试高频题
+        </div>
+        <h1 class="text-4xl md:text-5xl font-bold mb-6 leading-tight">
+            执行 <code class="text-red-500 bg-red-50 px-2 py-1 rounded mx-1">DELETE</code> 后<br>
+            为什么磁盘空间<span class="gradient-text">没有释放</span>？
+        </h1>
+        <p class="text-xl text-slate-500 max-w-2xl leading-relaxed">
+            面试官考察的不是命令本身，而是你对 InnoDB 存储引擎底层文件管理机制的理解。
+        </p>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-12 space-y-16">
+
+    <!-- 核心结论卡片 -->
+    <section class="glass-card rounded-2xl p-8 shadow-lg shadow-blue-900/5 border-l-4 border-l-blue-500">
+        <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 text-xl shrink-0">
+                <i class="fa-solid fa-lightbulb"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-bold mb-3 text-slate-900">一句话总结</h2>
+                <p class="text-lg text-slate-600 leading-relaxed">
+                    InnoDB 的 <code>DELETE</code> 操作仅仅是把数据页标记为<strong class="text-slate-900">「可复用」</strong>（碎片化），这些空间会被记录在空闲列表中供后续 INSERT/UPDATE 使用，但<strong class="text-red-500">不会归还给操作系统</strong>。只有 <code>TRUNCATE</code> 或 <code>DROP</code> 才会直接释放物理文件。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 可视化对比 -->
+    <section>
+        <h2 class="text-2xl font-bold mb-8 flex items-center gap-3">
+            <i class="fa-solid fa-layer-group text-indigo-500"></i> 底层机制可视化
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- DELETE 状态 -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-bold text-lg">DELETE 后的表空间</h3>
+                    <span class="text-xs font-mono bg-amber-100 text-amber-700 px-2 py-1 rounded">OS文件大小: 不变</span>
+                </div>
+
+                <div class="space-y-2 font-mono text-sm">
+                    <div class="flex items-center gap-2">
+                        <div class="w-24 text-slate-400">Page 1</div>
+                        <div class="flex-1 h-10 bg-green-500 rounded flex items-center px-3 text-white text-xs">有效数据</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-24 text-slate-400">Page 2</div>
+                        <div class="flex-1 h-10 bg-amber-400/80 rounded flex items-center px-3 text-white text-xs border-2 border-dashed border-amber-600">
+                            <i class="fa-solid fa-trash-can mr-2"></i> 已删除 (可复用空洞)
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-24 text-slate-400">Page 3</div>
+                        <div class="flex-1 h-10 bg-green-500 rounded flex items-center px-3 text-white text-xs">有效数据</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-24 text-slate-400">Page 4</div>
+                        <div class="flex-1 h-10 bg-amber-400/80 rounded flex items-center px-3 text-white text-xs border-2 border-dashed border-amber-600">
+                            <i class="fa-solid fa-trash-can mr-2"></i> 已删除 (可复用空洞)
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-24 text-slate-400">Page 5</div>
+                        <div class="flex-1 h-10 bg-green-500 rounded flex items-center px-3 text-white text-xs">有效数据</div>
+                    </div>
+                </div>
+
+                <div class="mt-6 p-4 bg-slate-50 rounded-xl text-sm text-slate-600">
+                    <p><i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> <strong>结果：</strong>虽然删了一半数据，但 .ibd 文件大小保持不变。新插入的数据会优先填充黄色区域。</p>
+                </div>
+            </div>
+
+            <!-- TRUNCATE 状态 -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-bold text-lg">TRUNCATE / DROP 后</h3>
+                    <span class="text-xs font-mono bg-green-100 text-green-700 px-2 py-1 rounded">OS文件大小: 释放</span>
+                </div>
+
+                <div class="space-y-2 font-mono text-sm">
+                    <div class="flex items-center gap-2 opacity-30">
+                        <div class="w-24 text-slate-400">Page 1</div>
+                        <div class="flex-1 h-10 bg-slate-200 rounded border border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-xs">已归还给操作系统</div>
+                    </div>
+                    <div class="flex items-center gap-2 opacity-30">
+                        <div class="w-24 text-slate-400">Page 2</div>
+                        <div class="flex-1 h-10 bg-slate-200 rounded border border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-xs">已归还给操作系统</div>
+                    </div>
+                    <div class="flex items-center gap-2 opacity-30">
+                        <div class="w-24 text-slate-400">Page 3</div>
+                        <div class="flex-1 h-10 bg-slate-200 rounded border border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-xs">已归还给操作系统</div>
+                    </div>
+                    <div class="flex items-center gap-2 opacity-30">
+                        <div class="w-24 text-slate-400">...</div>
+                        <div class="flex-1 h-10 bg-slate-200 rounded border border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-xs">已归还给操作系统</div>
+                    </div>
+                </div>
+
+                <div class="mt-6 p-4 bg-slate-50 rounded-xl text-sm text-slate-600">
+                    <p><i class="fa-solid fa-check-circle text-green-500 mr-1"></i> <strong>结果：</strong>直接销毁原文件并重建空表结构，磁盘空间立即释放。注意：此操作不可回滚。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 深度技术解析 -->
+    <section class="grid md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <div class="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-file-contract"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">独立表空间 (.ibd)</h3>
+            <p class="text-slate-500 text-sm leading-relaxed">
+                当开启 <code>innodb_file_per_table</code> 时，每张表拥有独立的 .ibd 文件。DELETE 只是在文件内部维护了一个 Free List（空闲链表），文件句柄并未缩小。
+            </p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <div class="w-10 h-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-recycle"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">性能与复用权衡</h3>
+            <p class="text-slate-500 text-sm leading-relaxed">
+                如果每次 DELETE 都向 OS 申请/释放空间，会导致大量的系统调用和文件碎片。保留空间是为了让后续的写入操作能以 O(1) 复杂度直接复用现有页面。
+            </p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <div class="w-10 h-10 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">数据字典视角</h3>
+            <p class="text-slate-500 text-sm leading-relaxed">
+                通过 <code>information_schema.tables</code> 查看时，<code>DATA_FREE</code> 字段显示的就是这些已删除但未释放给 OS 的内部碎片空间大小。
+            </p>
+        </div>
+    </section>
+
+    <!-- 解决方案 -->
+    <section class="bg-slate-900 text-white rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl -mr-16 -mt-16"></div>
+
+        <h2 class="text-2xl font-bold mb-8 relative z-10">💡 如何真正回收空间？</h2>
+
+        <div class="grid md:grid-cols-2 gap-8 relative z-10">
+            <div>
+                <h3 class="text-blue-400 font-semibold mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> 方案一：OPTIMIZE TABLE
+                </h3>
+                <div class="bg-slate-800/50 rounded-xl p-4 font-mono text-sm text-slate-300 border border-slate-700 mb-3">
+                    OPTIMIZE TABLE your_table_name;
+                </div>
+                <p class="text-slate-400 text-sm">
+                    <strong>原理：</strong>创建临时表 → 拷贝有效数据 → 删除旧表 → 重命名新表。<br>
+                    <strong>缺点：</strong>大表耗时极长，期间可能锁表（取决于版本），会产生双倍临时空间占用。
+                </p>
+            </div>
+
+            <div>
+                <h3 class="text-emerald-400 font-semibold mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-screwdriver-wrench"></i> 方案二：ALTER TABLE (推荐)
+                </h3>
+                <div class="bg-slate-800/50 rounded-xl p-4 font-mono text-sm text-slate-300 border border-slate-700 mb-3">
+                    ALTER TABLE your_table_name ENGINE=InnoDB;
+                </div>
+                <p class="text-slate-400 text-sm">
+                    <strong>原理：</strong>与 OPTIMIZE 类似，但在 MySQL 5.6+ 支持 Online DDL，对业务影响相对较小。<br>
+                    <strong>替代工具：</strong>生产环境建议使用 <code>pt-online-schema-change</code> 或 <code>gh-ost</code> 避免阻塞。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 面试回答模板 -->
+    <section class="border-t border-slate-200 pt-12">
+        <h2 class="text-2xl font-bold mb-6">🎯 满分回答话术</h2>
+        <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100">
+            <p class="text-slate-700 leading-loose text-lg italic">
+                "MySQL InnoDB 执行 DELETE 后不释放磁盘空间，是因为 InnoDB 采用了<strong>空间复用策略</strong>。被删除的记录所在的数据页会被标记为可用并加入 Free List，以便后续插入操作快速复用，避免频繁的系统级文件分配开销。这会导致表空间文件出现'空洞'或碎片。
+                <br><br>
+                如果需要物理回收空间，可以使用 <code>OPTIMIZE TABLE</code> 或 <code>ALTER TABLE ... ENGINE=InnoDB</code> 来重建表。但在生产环境中，对于大表我会优先考虑使用 gh-ost 等在线变更工具，以避免长时间锁表影响业务。另外，如果是清空全表，应直接使用 TRUNCATE 而非 DELETE。"
+            </p>
+        </div>
+    </section>
+
+</main>
+
+<footer class="max-w-5xl mx-auto px-6 py-12 text-center text-slate-400 text-sm">
+    <p>© 2026 MySQL Internals Explained. Designed for Interview Preparation.</p>
+</footer>
+
+</body>
+</html>

@@ -41,6 +41,23 @@ public class SyncQueryController {
     }
 
     /**
+     * 查询单个同步任务。
+     */
+    @PostMapping("/api-hub-sync-task-get")
+    public ApiResult<SyncTask> syncTaskGet(@Valid @RequestBody DetailRequest request) {
+        return ApiResult.ok(syncTaskService.getTaskById(request.getTaskId()));
+    }
+
+    /**
+     * 分页查询同步任务列表。
+     */
+    @PostMapping("/api-hub-sync-tasks")
+    public ApiResult<IPage<SyncTask>> syncTasks(@Valid @RequestBody PageRequest request) {
+        return ApiResult.ok(
+                syncTaskService.listTasks(request.page, request.size));
+    }
+
+    /**
      * 查询最近 30 条清洗后的交易记录。
      */
     @PostMapping("/api-hub-cleaned-trades")
@@ -66,6 +83,13 @@ public class SyncQueryController {
         return ApiResult.ok(
                 syncTaskService.getBatchMetrics(request.getRecordId(), request.getPage(), request.getSize()),
                 "SYNC_BATCH_METRICS");
+    }
+
+    @Data
+    public static class PageRequest {
+        private int page = 1;
+        @Min(1) @Max(200)
+        private int size = 20;
     }
 
     @Data

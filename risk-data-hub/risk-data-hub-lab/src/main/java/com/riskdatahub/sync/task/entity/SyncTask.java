@@ -32,6 +32,9 @@ public class SyncTask {
     /** 分页大小 */
     private Integer pageSize;
 
+    /** 同步类型：FULL 全量 / INCREMENTAL 增量 */
+    private String syncType;
+
     /** 任务状态（QUEUED / RUNNING / SUCCESS / FAILED / IDLE） */
     private String status;
 

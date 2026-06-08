@@ -50,6 +50,12 @@ const routes = [
         meta: { title: '同步任务' }
       },
       {
+        path: 'sync/:taskId',
+        name: 'SyncTaskDetail',
+        component: () => import('@/views/SyncTaskDetail.vue'),
+        meta: { title: '任务详情' }
+      },
+      {
         path: 'batch-metrics/:recordId',
         name: 'SyncBatchMetrics',
         component: () => import('@/views/SyncBatchMetrics.vue'),

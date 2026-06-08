@@ -1,101 +1,40 @@
-<!--
-  SyncTask — 同步任务页
-
-  核心功能：
-  1. 查看当前同步任务状态（进度、拉取/落库数量、运行信息）
-  2. 查看每个业务表（STOCK/TRADE/POSITION/ASSET）的同步详情
-  3. 发起新的同步任务
-
-  实时进度：后端每 1 秒写一次进度到 sync_task 和 sync_business_record，
-  前端每 3 秒轮询刷新，运行中显示脉冲动画提示。
--->
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getSyncTask, startSync, forceRefresh, listDatasources, getSyncDetails } from '@/api/index.js'
+import { getSyncTasks, startSync, fullSync, listDatasources } from '@/api/index.js'
 
 const router = useRouter()
 
-// ============================================================
-// 数据状态
-// ============================================================
-
-const task = ref(null)
-const details = ref([])
+const taskList = ref([])
+const taskPage = ref({ total: 0, pages: 0, current: 1 })
 const loading = ref(false)
-const taskError = ref('')
+const error = ref('')
 
-
-// ============================================================
-// 发起同步弹窗状态
-// ============================================================
-
+// 弹窗
 const showForm = ref(false)
 const submitting = ref(false)
-const forceMode = ref(false)
-
-const form = ref({
-  dataSourceKey: '',
-  pageSize: 10000
-})
-
+const syncType = ref('INCREMENTAL')
+const form = ref({ dataSourceKey: '', pageSize: 10000 })
 const dsOptions = ref([])
-let timer = null
-
-// ============================================================
-// 生命周期
-// ============================================================
 
 onMounted(async () => {
-  await loadTask()
+  await loadList()
   loadDsOptions()
 })
 
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-})
-
-// ============================================================
-// 加载当前任务 & 业务详情
-// ============================================================
-
-async function loadTask() {
+async function loadList(page = 1) {
   loading.value = true
-  taskError.value = ''
+  error.value = ''
   try {
-    const res = await getSyncTask()
-    task.value = res.data
-
-    if (res.data?.id) {
-      await loadDetails()
-    }
-
-    if (res.data?.running) {
-      startAutoRefresh()
-    } else {
-      stopAutoRefresh()
-    }
+    const res = await getSyncTasks(page, 20)
+    taskList.value = res.data?.records || []
+    taskPage.value = { total: res.data?.total || 0, pages: res.data?.pages || 0, current: res.data?.current || 1 }
   } catch (e) {
-    taskError.value = e.message
-    stopAutoRefresh()
+    error.value = '加载失败: ' + e.message
   } finally {
     loading.value = false
   }
 }
-
-async function loadDetails() {
-  if (!task.value?.id) return
-  try {
-    const res = await getSyncDetails(task.value.id)
-    details.value = res.data || []
-  } catch (e) {
-    console.error('[同步] 加载业务详情失败', e.message)
-  }
-}
-
-// ============================================================
-// 加载数据源选项
-// ============================================================
 
 async function loadDsOptions() {
   try {
@@ -106,47 +45,9 @@ async function loadDsOptions() {
   }
 }
 
-// ============================================================
-// 自动刷新（每 3 秒轮询任务状态 + 业务详情）
-// ============================================================
-
-function startAutoRefresh() {
-  stopAutoRefresh()
-  timer = setInterval(() => {
-    getSyncTask().then(res => {
-      task.value = res.data
-      if (res.data?.id) {
-        getSyncDetails(res.data.id).then(r => {
-          details.value = r.data || []
-        }).catch(() => {})
-      }
-      if (!res.data?.running) {
-        stopAutoRefresh()
-      }
-    }).catch(() => {})
-  }, 3000)
-}
-
-function stopAutoRefresh() {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-}
-
-// ============================================================
-// 发起同步
-// ============================================================
-
-function openForm() {
+function openForm(type) {
   form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 10000 }
-  forceMode.value = false
-  showForm.value = true
-}
-
-function openForceForm() {
-  form.value = { dataSourceKey: dsOptions.value[0]?.key || '', pageSize: 10000 }
-  forceMode.value = true
+  syncType.value = type
   showForm.value = true
 }
 
@@ -154,23 +55,19 @@ async function handleStart() {
   if (!form.value.dataSourceKey) return
   submitting.value = true
   try {
-    if (forceMode.value) {
-      await forceRefresh(form.value.dataSourceKey, form.value.pageSize)
+    if (syncType.value === 'FULL') {
+      await fullSync(form.value.dataSourceKey, form.value.pageSize)
     } else {
       await startSync(form.value.dataSourceKey, form.value.pageSize)
     }
     showForm.value = false
-    await loadTask()
+    await loadList()
   } catch (e) {
-    taskError.value = (forceMode.value ? '强制刷新' : '启动同步') + '失败: ' + e.message
+    error.value = '发起同步失败: ' + e.message
   } finally {
     submitting.value = false
   }
 }
-
-// ============================================================
-// 辅助函数
-// ============================================================
 
 function statusInfo(status) {
   const map = {
@@ -182,348 +79,140 @@ function statusInfo(status) {
   }
   return map[status] || { label: status || '-', class: 'bg-slate-50 text-slate-500' }
 }
-
-function bizStatusInfo(status) {
-  const map = {
-    RUNNING: { label: '运行中', class: 'bg-amber-50 text-amber-700' },
-    SUCCESS: { label: '已完成', class: 'bg-emerald-50 text-emerald-700' },
-    FAILED:  { label: '失败',   class: 'bg-red-50 text-red-700' }
-  }
-  return map[status] || { label: status || '-', class: 'bg-slate-50 text-slate-500' }
-}
-
-function bizProgress(rec) {
-  if (!rec.pulledCount || rec.pulledCount === 0) return 0
-  return Math.round((rec.savedCount / rec.pulledCount) * 100)
-}
-
-function bizPending(rec) {
-  return Math.max(0, (rec.pulledCount || 0) - (rec.savedCount || 0))
-}
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto animate-fade-in">
+  <div class="max-w-5xl mx-auto animate-fade-in">
 
-    <!-- ============================================================
-         错误提示
-         ============================================================ -->
-    <div
-      v-if="taskError"
-      class="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 text-sm"
-    >
-      {{ taskError }}
-      <button @click="taskError = ''" class="ml-3 underline">关闭</button>
+    <div v-if="error" class="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 text-sm">
+      {{ error }}
+      <button @click="error = ''" class="ml-3 underline">关闭</button>
     </div>
 
-    <!-- ============================================================
-         同步任务主卡片
-         ============================================================ -->
-    <div class="bg-white rounded-xl border border-slate-200 p-6">
-
-      <!-- 标题栏 -->
-      <div class="flex items-center justify-between mb-5">
-        <div class="flex items-center gap-3">
-          <h3 class="text-base font-semibold text-slate-800">同步任务</h3>
-          <span
-            v-if="task"
-            class="px-2.5 py-0.5 rounded-md text-xs font-medium"
-            :class="statusInfo(task.status).class"
-          >
-            {{ statusInfo(task.status).label }}
-          </span>
-        </div>
-        <div class="flex gap-2">
-          <button
-            @click="loadTask"
-            class="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-            :disabled="loading"
-          >
-            {{ loading ? '刷新中...' : '刷新' }}
-          </button>
-          <button
-            @click="openForceForm"
-            class="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-          >
-            强制刷新
-          </button>
-          <button
-            @click="openForm"
-            class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-          >
-            + 发起同步
-          </button>
-        </div>
+    <!-- 标题 + 操作按钮 -->
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-base font-semibold text-slate-800">同步任务</h3>
+      <div class="flex gap-2">
+        <button @click="openForm('INCREMENTAL')"
+          class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
+          + 增量同步
+        </button>
+        <button @click="openForm('FULL')"
+          class="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors">
+          全量同步
+        </button>
       </div>
-
-      <!-- 实时更新提示 -->
-      <div
-        v-if="task?.running"
-        class="mb-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-4 py-2.5 text-sm flex items-center gap-2"
-      >
-        <span class="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-        任务运行中，正在实时更新进度
-      </div>
-
-      <!-- ============================================================
-           任务详情
-           ============================================================ -->
-      <div v-if="task && task.status !== 'IDLE'" class="space-y-4">
-
-        <!-- 基础信息 -->
-        <div class="grid grid-cols-3 gap-4">
-          <div>
-            <div class="text-xs text-slate-400 mb-1">数据源</div>
-            <div class="text-sm text-slate-800 font-medium">{{ task.dataSourceKey || '-' }}</div>
-          </div>
-          <div>
-            <div class="text-xs text-slate-400 mb-1">数据源名称</div>
-            <div class="text-sm text-slate-800">{{ task.dataSourceName || '-' }}</div>
-          </div>
-          <div>
-            <div class="text-xs text-slate-400 mb-1">分页大小</div>
-            <div class="text-sm text-slate-800">{{ task.pageSize || '-' }}</div>
-          </div>
-        </div>
-
-        <!-- 时间信息 -->
-        <div class="grid grid-cols-3 gap-4">
-          <div>
-            <div class="text-xs text-slate-400 mb-1">提交时间</div>
-            <div class="text-sm text-slate-600">{{ task.submittedAt || '-' }}</div>
-          </div>
-          <div>
-            <div class="text-xs text-slate-400 mb-1">开始时间</div>
-            <div class="text-sm text-slate-600">{{ task.startedAt || '-' }}</div>
-          </div>
-          <div>
-            <div class="text-xs text-slate-400 mb-1">结束时间</div>
-            <div class="text-sm text-slate-600">{{ task.finishedAt || '-' }}</div>
-          </div>
-        </div>
-
-        <!-- 总体进度条 -->
-        <div>
-          <div class="flex justify-between text-xs text-slate-400 mb-1.5">
-            <span>总进度</span>
-            <span>{{ task.progress || 0 }}%</span>
-          </div>
-          <div class="w-full bg-slate-100 rounded-full h-2">
-            <div
-              class="h-2 rounded-full transition-all duration-500"
-              :class="task.status === 'FAILED' ? 'bg-red-500' : task.progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'"
-              :style="{ width: (task.progress || 0) + '%' }"
-            ></div>
-          </div>
-        </div>
-
-        <!-- 运行消息 -->
-        <div
-          v-if="task.message && task.status === 'RUNNING'"
-          class="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-lg px-4 py-2.5 text-sm"
-        >
-          {{ task.message }}
-        </div>
-
-        <!-- 统计行 -->
-        <div class="grid grid-cols-2 gap-4">
-          <div class="bg-slate-50 rounded-lg px-4 py-3">
-            <div class="text-xs text-slate-400">拉取条数</div>
-            <div class="text-xl font-bold text-slate-800">{{ task.totalPulledCount ?? 0 }}</div>
-          </div>
-          <div class="bg-slate-50 rounded-lg px-4 py-3">
-            <div class="text-xs text-slate-400">落库条数</div>
-            <div class="text-xl font-bold text-slate-800">{{ task.totalSavedCount ?? 0 }}</div>
-          </div>
-        </div>
-
-        <!-- 错误信息 -->
-        <div
-          v-if="task.errorMessage"
-          class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2.5 text-xs"
-        >
-          {{ task.errorMessage }}
-        </div>
-
-        <div v-if="task.message && task.status !== 'RUNNING' && task.status !== 'FAILED'" class="text-xs text-slate-400">
-          {{ task.message }}
-        </div>
-      </div>
-
-      <!-- 空闲状态 -->
-      <div v-else-if="!loading" class="py-12 text-center text-slate-400 text-sm">
-        暂无同步任务，点击「发起同步」开始
-      </div>
-
-      <!-- 加载中 -->
-      <div v-if="loading" class="py-12 text-center text-slate-400 text-sm">加载中...</div>
     </div>
 
-    <!-- ============================================================
-         业务同步详情（每张表的同步状况）
-         ============================================================ -->
-    <div v-if="details.length > 0" class="mt-6">
-      <h4 class="text-base font-semibold text-slate-800 mb-4">业务同步详情</h4>
-      <div class="grid grid-cols-2 gap-4">
-        <div
-          v-for="rec in details"
-          :key="rec.businessCode"
-          class="bg-white border border-slate-200 rounded-xl p-4"
-        >
-          <!-- 表头：业务编码 + 状态标签 -->
-          <div class="flex items-center justify-between mb-3">
-            <span class="font-semibold text-slate-800">{{ rec.businessCode }}</span>
-            <span
-              class="px-2 py-0.5 rounded-md text-xs font-medium"
-              :class="bizStatusInfo(rec.status).class"
-            >
-              {{ bizStatusInfo(rec.status).label }}
-            </span>
-          </div>
+    <!-- 任务列表 -->
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-slate-50 text-slate-500 text-xs border-b border-slate-200">
+            <th class="px-4 py-2.5 text-left w-20">ID</th>
+            <th class="px-4 py-2.5 text-left w-16">类型</th>
+            <th class="px-4 py-2.5 text-left">数据源</th>
+            <th class="px-4 py-2.5 text-left w-20">状态</th>
+            <th class="px-4 py-2.5 text-right w-20">拉取</th>
+            <th class="px-4 py-2.5 text-right w-20">落库</th>
+            <th class="px-4 py-2.5 text-right w-20">进度</th>
+            <th class="px-4 py-2.5 text-left w-40">提交时间</th>
+            <th class="px-4 py-2.5 text-left w-28">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="t in taskList" :key="t.id"
+            class="border-t border-slate-100 hover:bg-slate-50/60">
+            <td class="px-4 py-2.5 font-mono text-xs text-slate-500">#{{ t.id }}</td>
+            <td class="px-4 py-2.5">
+              <span class="text-xs px-2 py-0.5 rounded font-medium"
+                :class="t.syncType === 'FULL' ? 'bg-red-50 text-red-600' : 'bg-sky-50 text-sky-600'">
+                {{ t.syncType === 'FULL' ? '全量' : '增量' }}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-slate-700">{{ t.dataSourceKey }}</td>
+            <td class="px-4 py-2.5">
+              <span class="px-2 py-0.5 rounded-md text-xs font-medium" :class="statusInfo(t.status).class">
+                {{ statusInfo(t.status).label }}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 font-mono text-xs text-slate-600 text-right">{{ t.totalPulledCount ?? 0 }}</td>
+            <td class="px-4 py-2.5 font-mono text-xs text-slate-600 text-right">{{ t.totalSavedCount ?? 0 }}</td>
+            <td class="px-4 py-2.5 text-right">
+              <span class="text-xs font-mono" :class="t.progress >= 100 ? 'text-emerald-600' : 'text-slate-600'">
+                {{ t.progress || 0 }}%
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-xs text-slate-400">{{ t.submittedAt || '-' }}</td>
+            <td class="px-4 py-2.5">
+              <button @click="router.push('/sync/' + t.id)"
+                class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                查看详情 →
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-          <!-- 开始时间 -->
-          <div class="text-xs text-slate-400 mb-3">
-            开始时间: {{ rec.startedAt || '-' }}
-            <span v-if="rec.finishedAt" class="ml-3">结束时间: {{ rec.finishedAt }}</span>
-          </div>
+      <div v-if="!loading && taskList.length === 0" class="py-12 text-center text-slate-400 text-sm">
+        暂无同步任务
+      </div>
+      <div v-if="loading" class="py-8 text-center text-slate-400 text-sm">加载中...</div>
 
-          <!-- 统计数据（三列：已拉取 / 已落库 / 积压） -->
-          <div class="grid grid-cols-3 gap-2 mb-3">
-            <div class="bg-slate-50 rounded-lg px-3 py-2">
-              <div class="text-xs text-slate-400">已拉取</div>
-              <div class="text-lg font-bold text-slate-800">{{ rec.pulledCount ?? 0 }}</div>
-            </div>
-            <div class="bg-slate-50 rounded-lg px-3 py-2">
-              <div class="text-xs text-slate-400">已落库</div>
-              <div class="text-lg font-bold text-emerald-600">{{ rec.savedCount ?? 0 }}</div>
-            </div>
-            <div class="bg-slate-50 rounded-lg px-3 py-2">
-              <div class="text-xs text-slate-400">积压</div>
-              <div class="text-lg font-bold text-amber-600">{{ bizPending(rec) }}</div>
-            </div>
-          </div>
-
-          <!-- 进度条 -->
-          <div>
-            <div class="flex justify-between text-xs text-slate-400 mb-1">
-              <span>写入进度</span>
-              <span>{{ bizProgress(rec) }}%</span>
-            </div>
-            <div class="w-full bg-slate-100 rounded-full h-1.5">
-              <div
-                class="h-1.5 rounded-full transition-all duration-500"
-                :class="rec.status === 'FAILED' ? 'bg-red-500' : rec.status === 'SUCCESS' ? 'bg-emerald-500' : 'bg-indigo-500'"
-                :style="{ width: bizProgress(rec) + '%' }"
-              ></div>
-            </div>
-          </div>
-
-          <!-- 批次概览（同步完成后展示，详细数据在下面的批次表中） -->
-          <div v-if="rec.status === 'SUCCESS'" class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400">
-            <span>共 {{ rec.pageCount || '-' }} 页, {{ rec.pulledCount || 0 }} 条数据</span>
-            <span v-if="rec.finishedAt" class="ml-3">完成于 {{ rec.finishedAt }}</span>
-          </div>
-
-          <!-- 批次耗时按钮（运行中也可查看，数据实时写入 sync_batch_metrics） -->
-          <div v-if="rec.id && rec.pulledCount > 0" class="mt-2">
-            <button
-              @click="router.push('/batch-metrics/' + rec.id + '?biz=' + rec.businessCode)"
-              class="text-xs text-indigo-500 hover:text-indigo-700 font-medium"
-            >
-              查看批次耗时 →
-            </button>
-          </div>
-
-          <!-- 错误信息 -->
-          <div
-            v-if="rec.errorMessage"
-            class="mt-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs"
-          >
-            {{ rec.errorMessage }}
-          </div>
+      <!-- 分页 -->
+      <div v-if="taskPage.pages > 1"
+        class="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+        <span>共 {{ taskPage.total }} 条，{{ taskPage.pages }} 页</span>
+        <div class="flex items-center gap-2">
+          <button @click="loadList(taskPage.current - 1)" :disabled="taskPage.current <= 1"
+            class="px-3 py-1.5 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50">上一页</button>
+          <span>{{ taskPage.current }} / {{ taskPage.pages }}</span>
+          <button @click="loadList(taskPage.current + 1)" :disabled="taskPage.current >= taskPage.pages"
+            class="px-3 py-1.5 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50">下一页</button>
         </div>
       </div>
     </div>
 
-    <!-- ============================================================
-         发起同步弹窗
-         ============================================================ -->
-    <div
-      v-if="showForm"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      @click.self="showForm = false"
-    >
+    <!-- 发起同步弹窗 -->
+    <div v-if="showForm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      @click.self="showForm = false">
       <div class="bg-white rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
-        <h3 class="text-lg font-semibold text-slate-800 mb-5">{{ forceMode ? '强制刷新' : '发起同步' }}</h3>
+        <h3 class="text-lg font-semibold text-slate-800 mb-5">{{ syncType === 'FULL' ? '全量同步' : '增量同步' }}</h3>
 
-        <!-- 强制刷新警告 -->
-        <div
-          v-if="forceMode"
-          class="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm"
-        >
-          <div class="font-medium mb-1">此操作将清除以下数据：</div>
-          <ul class="list-disc list-inside space-y-0.5 text-xs">
-            <li>中台库全部清洗数据（clean_stock / clean_trade / clean_position / clean_asset）</li>
-            <li>所有同步任务记录（sync_task / sync_business_record）</li>
-            <li>Redis 中的已同步 ID 缓存</li>
-          </ul>
-          <div class="mt-1.5 font-medium">然后重新全量同步一次。</div>
+        <div v-if="syncType === 'FULL'"
+          class="mb-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-4 py-3 text-sm">
+          全量同步从头开始读取全部上游数据，通过 upsert 写入中台库，<b>不会删除已有数据</b>。
+          增量同步则从上一次中断位置继续。
         </div>
 
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">数据源</label>
-            <select
-              v-model="form.dataSourceKey"
-              class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
+            <select v-model="form.dataSourceKey"
+              class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="" disabled>请选择数据源</option>
-              <option v-for="ds in dsOptions" :key="ds.key" :value="ds.key">
-                {{ ds.name }} ({{ ds.key }})
-              </option>
+              <option v-for="ds in dsOptions" :key="ds.key" :value="ds.key">{{ ds.name }} ({{ ds.key }})</option>
             </select>
-            <div v-if="dsOptions.length === 0" class="mt-1 text-xs text-slate-400">
-              暂无可用数据源，请先在「数据源管理」页面注册
-            </div>
           </div>
-
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">每页条数</label>
-            <input
-              v-model.number="form.pageSize"
-              type="number"
-              min="1"
-              max="100000"
-              class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-            <div class="mt-1 text-xs text-slate-400">范围 1 ~ 100000</div>
+            <input v-model.number="form.pageSize" type="number" min="1" max="100000"
+              class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
         </div>
 
         <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
-          <button
-            @click="showForm = false"
-            class="px-5 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium"
-          >
+          <button @click="showForm = false" class="px-5 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium">
             取消
           </button>
-          <button
-            @click="handleStart"
-            :disabled="!form.dataSourceKey || submitting"
+          <button @click="handleStart" :disabled="!form.dataSourceKey || submitting"
             class="px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            :class="forceMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'"
-          >
-            {{ submitting ? '提交中...' : forceMode ? '确认强制刷新' : '开始同步' }}
+            :class="syncType === 'FULL' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'">
+            {{ submitting ? '提交中...' : '开始同步' }}
           </button>
         </div>
       </div>
     </div>
 
-
-          <div class="text-[11px] text-slate-500 mt-1 leading-relaxed space-y-0.5">
-            <div><b class="text-sky-600">①拉取</b> — 上游数据库查询耗时。右侧<kbd>排队</kbd>是数据在队列中的等待时间，排队久说明落库线程是瓶颈。</div>
-            <div><b class="text-emerald-600">②转换</b> — 上游字段映射为中台字段耗时。<kbd>%</kbd>=占总耗时比例，<kbd>ID生成</kbd>=Leaf批量获取ID耗时（已优化为批量预分配，大幅减少锁竞争）。</div>
-            <div><b class="text-indigo-600">③落库</b> — 写入中台库总耗时。子步骤：查重(判存)→拆分(分组)→INSERT(新增写库)→写缓存(同步Redis)→查ID(查已有主键)→UPDATE(更新)。</div>
-          </div>
   </div>
 </template>
