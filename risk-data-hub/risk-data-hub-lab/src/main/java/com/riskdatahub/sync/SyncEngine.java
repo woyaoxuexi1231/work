@@ -45,19 +45,8 @@ import java.util.stream.Collectors;
 /**
  * 同步编排引擎 — ETL 同步的核心入口。
  * <p>
- * <b>策略模式（Strategy Pattern）：</b>
- * {@code businessSyncTemplates} 为 Spring 自动注入的所有 {@link BusinessSyncTemplate} 实现类
- * （Stock / Trade / Position / Asset）。新增业务类型只需新建实现类，无需修改本类。
- * </p>
- * <p>
- * <b>执行流程：</b>
- * <ol>
- *   <li>校验数据源类型（中台库不能作为同步来源）</li>
- *   <li>创建同步上下文（数据源 key、类型、分页大小、批次号）</li>
- *   <li>并发派发 4 类业务（STOCK / TRADE / POSITION / ASSET）</li>
- *   <li>每类业务内部使用生产者-消费者双线程：拉取上游 → 转换 → 落库中台</li>
- *   <li>合并所有业务结果并返回摘要</li>
- * </ol>
+ * <b>策略模式：</b>{@code businessSyncTemplates} 为 Spring 自动注入的所有 {@link BusinessSyncTemplate} 实现类
+ * （Stock / Trade / Position / Asset）。
  * </p>
  *
  * @author risk-data-hub
@@ -111,166 +100,7 @@ public class SyncEngine {
         this.cleanAssetMapper = cleanAssetMapper;
     }
 
-    // ==================== 主流程 ====================
-
-    /**
-     * 执行同步。
-     * <p>主流程：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 等待全部完成 → 汇总结果。
-     * 进度事件由模板内 {@link org.springframework.context.ApplicationEventPublisher} 发布。</p>
-     *
-     * @param dataSourceKey  数据源标识
-     * @param pageSize       分页大小
-     * @param taskId         同步任务 ID（用于进度事件关联）
-     * @param initialCursors 每个业务的上一次成功游标（businessCode → lastRowId），用于断点续传
-     * @return 同步结果摘要
-     */
-    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize, Long taskId,
-                                          Map<String, Long> initialCursors,
-                                          Map<String, Long> businessRecordIds) {
-        DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
-        int safePageSize = sanitizePageSize(pageSize);
-        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId, initialCursors, businessRecordIds);
-
-        log.info("[同步编排] 开始同步 dataSourceKey={}, 数据源类型={}, 分页大小={}, 批次号={}, 任务ID={}, 业务模板数={}",
-                dataSourceKey, config.getDatasourceType(), safePageSize,
-                context.getBatchNo(), taskId, businessSyncTemplates.size());
-
-        try {
-            // 并发派发
-            List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
-            for (BusinessSyncTemplate template : businessSyncTemplates) {
-                futures.add(CompletableFuture.supplyAsync(
-                        () -> executeTemplate(template, context), syncBusinessExecutor));
-            }
-
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
-            SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
-            log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
-                    dataSourceKey, context.getBatchNo(), summary.getPulledCount(), summary.getSavedCount());
-            return summary;
-        } catch (Exception e) {
-            log.error("[同步编排] 同步失败 dataSourceKey={}, 错误={}", dataSourceKey, e.getMessage(), e);
-            throw new IllegalStateException("同步任务执行失败: " + e.getMessage(), e);
-        }
-    }
-
-    // ---------- 私有辅助：校验 ----------
-
-    /**
-     * 校验数据源存在且不是中台库
-     */
-    private DataSourceConfigDTO requireSyncableConfig(String dataSourceKey) {
-        DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
-        if (config == null) {
-            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
-        }
-        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
-            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
-        }
-        return config;
-    }
-
-    /**
-     * 限制分页大小在 [1, 100000] 区间
-     */
-    private int sanitizePageSize(int pageSize) {
-        return Math.max(1, Math.min(pageSize, 100000));
-    }
-
-    // ---------- 私有辅助：上下文构建 ----------
-
-    /**
-     * 构建同步上下文（含唯一批次号、任务 ID、断点续传游标和业务记录 ID 映射）
-     */
-    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize,
-                                             Long taskId, Map<String, Long> initialCursors,
-                                             Map<String, Long> businessRecordIds) {
-        return BusinessSyncContext.builder()
-                .dataSourceKey(dataSourceKey)
-                .datasourceType(config.getDatasourceType())
-                .pageSize(pageSize)
-                .batchNo("SYNC-" + System.currentTimeMillis())
-                .taskId(taskId)
-                .initialCursors(initialCursors == null ? Collections.emptyMap() : initialCursors)
-                .businessRecordIds(businessRecordIds == null ? Collections.emptyMap() : businessRecordIds)
-                .build();
-    }
-
-    // ---------- 私有辅助：并发派发 ----------
-
-    /**
-     * 执行单个模板，每个业务独立更新自己的 SyncBusinessRecord 状态
-     */
-    private BusinessSyncResult executeTemplate(BusinessSyncTemplate template, BusinessSyncContext context) {
-        Long taskId = context.getTaskId();
-        String bizCode = template.businessCode();
-        try {
-            BusinessSyncResult result = template.execute(context);
-            if (taskId != null) {
-                updateRecordStatus(taskId, bizCode, "SUCCESS", result);
-            }
-            return result;
-        } catch (Exception e) {
-            if (taskId != null) {
-                updateRecordStatus(taskId, bizCode, "FAILED", null);
-            }
-            throw new RuntimeException(e);
-        }
-    }
-
-    /**
-     * 更新 SyncBusinessRecord 状态
-     */
-    private void updateRecordStatus(Long taskId, String bizCode, String status, BusinessSyncResult result) {
-        try {
-            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-                LambdaUpdateWrapper<SyncBusinessRecord> wrapper = new LambdaUpdateWrapper<SyncBusinessRecord>()
-                        .eq(SyncBusinessRecord::getTaskId, taskId)
-                        .eq(SyncBusinessRecord::getBusinessCode, bizCode)
-                        .set(SyncBusinessRecord::getFinishedAt, java.time.LocalDateTime.now());
-                if ("SUCCESS".equals(status) && result != null) {
-                    wrapper.set(SyncBusinessRecord::getPageCount, result.getPageCount())
-                            .set(SyncBusinessRecord::getPulledCount, result.getPulledCount())
-                            .set(SyncBusinessRecord::getSavedCount, result.getSavedCount())
-                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId());
-                    syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "SUCCESS"));
-                } else {
-                    syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "FAILED")
-                            .set(SyncBusinessRecord::getErrorMessage, "同步异常"));
-                }
-            });
-        } catch (Exception ignored) {
-            // 状态更新失败不影响同步主流程
-        }
-    }
-
-    // ---------- 私有辅助：汇总 ----------
-
-    /**
-     * 汇总所有模板的执行结果
-     */
-    private SyncResultDTO summarizeResults(BusinessSyncContext context,
-                                           DataSourceConfigDTO config,
-                                           int pageSize,
-                                           List<CompletableFuture<BusinessSyncResult>> futures) throws Exception {
-        Map<String, BusinessSyncResult> businessResults = new LinkedHashMap<>();
-        int totalPulled = 0;
-        int totalSaved = 0;
-        int maxPageCount = 0;
-        for (CompletableFuture<BusinessSyncResult> future : futures) {
-            BusinessSyncResult result = future.get();
-            businessResults.put(result.getBusinessCode(), result);
-            totalPulled += result.getPulledCount();
-            totalSaved += result.getSavedCount();
-            maxPageCount = Math.max(maxPageCount, result.getPageCount());
-        }
-        return new SyncResultDTO(
-                context.getDataSourceKey(), config.getName(), config.getDatasourceType(),
-                pageSize, context.getBatchNo(), maxPageCount,
-                totalPulled, totalSaved, businessResults);
-    }
-
-    // ==================== 任务执行 ====================
+    // ==================== 任务执行（总入口） ====================
 
     /**
      * 在后台线程中执行同步任务。
@@ -280,105 +110,38 @@ public class SyncEngine {
         RLock lock = redissonClient.getLock(LOCK_KEY);
         try {
             if (!lock.tryLock(0, 30, TimeUnit.MINUTES)) {
-                log.warn("[SyncEngine] 无法获取分布式锁，任务 id={} 跳过", id);
+                log.warn("[SyncEngine] ⚠️ 无法获取分布式锁，任务 id={} 跳过", id);
                 return;
             }
+            log.info("[SyncEngine] 1️⃣ 获取锁 ✅ taskId={}", id);
 
             doForceCleanIfNeeded(id);
+            log.info("[SyncEngine] 2️⃣ 前置清理完成 ✅");
 
             List<String> businessCodes = getBusinessCodes();
-            for (String bizCode : businessCodes) {
-                routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-                    SyncBusinessRecord existing = syncBusinessRecordMapper.selectOne(
-                            new LambdaQueryWrapper<SyncBusinessRecord>()
-                                    .eq(SyncBusinessRecord::getTaskId, id)
-                                    .eq(SyncBusinessRecord::getBusinessCode, bizCode)
-                                    .last("limit 1"));
-                    if (existing != null) {
-                        existing.setStatus("RUNNING");
-                        existing.setPulledCount(0);
-                        existing.setSavedCount(0);
-                        existing.setErrorMessage(null);
-                        existing.setStartedAt(TimeUtils.now());
-                        existing.setFinishedAt(null);
-                        syncBusinessRecordMapper.updateById(existing);
-                    } else {
-                        SyncBusinessRecord record = new SyncBusinessRecord();
-                        record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
-                        record.setTaskId(id);
-                        record.setBusinessCode(bizCode);
-                        record.setStatus("RUNNING");
-                        record.setPulledCount(0);
-                        record.setSavedCount(0);
-                        record.setStartedAt(TimeUtils.now());
-                        syncBusinessRecordMapper.insert(record);
-                    }
-                });
-            }
+            prepareBusinessRecords(id, businessCodes);
+            log.info("[SyncEngine] 3️⃣ 业务记录初始化完成 ✅ businessCodes={}", businessCodes);
 
-            Map<String, Long> initialCursors = new HashMap<>();
-            for (String bizCode : businessCodes) {
-                Long cursor = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
-                    List<Object> result;
-                    switch (bizCode) {
-                        case "STOCK":
-                            result = cleanStockMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanStock>()
-                                            .select("MAX(source_row_id)"));
-                            break;
-                        case "TRADE":
-                            result = cleanTradeMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanTrade>()
-                                            .select("MAX(source_row_id)"));
-                            break;
-                        case "POSITION":
-                            result = cleanPositionMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanPosition>()
-                                            .select("MAX(source_row_id)"));
-                            break;
-                        case "ASSET":
-                            result = cleanAssetMapper.selectObjs(
-                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanAsset>()
-                                            .select("MAX(source_row_id)"));
-                            break;
-                        default:
-                            result = java.util.Collections.emptyList();
-                    }
-                    return result.isEmpty() || result.get(0) == null ? 0L : Long.valueOf(result.get(0).toString());
-                });
-                if (cursor > 0) {
-                    initialCursors.put(bizCode, cursor);
-                    log.info("[SyncEngine] 业务 {} 断点续传，从游标 {} 开始", bizCode, cursor);
-                }
-            }
+            Map<String, Long> initialCursors = loadInitialCursors(businessCodes);
+            log.info("[SyncEngine] 4️⃣ 断点续传游标加载完成 ✅");
 
-            Map<String, Long> businessRecordIds = new HashMap<>();
-            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-                for (SyncBusinessRecord rec : syncBusinessRecordMapper.selectList(
-                        new LambdaQueryWrapper<SyncBusinessRecord>()
-                                .eq(SyncBusinessRecord::getTaskId, id))) {
-                    businessRecordIds.put(rec.getBusinessCode(), rec.getId());
-                }
-            });
+            Map<String, Long> businessRecordIds = loadBusinessRecordIds(id);
 
+            log.info("[SyncEngine] 5️⃣ 开始执行同步编排...");
             SyncResultDTO result = syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
+            log.info("[SyncEngine] 5️⃣ 同步编排完成 ✅");
 
-            int totalPulled = 0;
-            int totalSaved = 0;
-            for (Map.Entry<String, BusinessSyncResult> entry : result.getBusinessResults().entrySet()) {
-                BusinessSyncResult bizResult = entry.getValue();
-                totalPulled += bizResult.getPulledCount();
-                totalSaved += bizResult.getSavedCount();
-            }
+            int totalPulled = result.getBusinessResults().values().stream()
+                    .mapToInt(BusinessSyncResult::getPulledCount).sum();
+            int totalSaved = result.getBusinessResults().values().stream()
+                    .mapToInt(BusinessSyncResult::getSavedCount).sum();
 
-            int finalPulled = totalPulled;
-            int finalSaved = totalSaved;
             syncTaskService.updateTaskFields(id, task -> {
                 task.setStatus("SUCCESS");
                 task.setMessage("同步任务完成");
                 task.setFinishedAt(TimeUtils.now());
-                task.setTotalPulledCount(finalPulled);
-                task.setTotalSavedCount(finalSaved);
+                task.setTotalPulledCount(totalPulled);
+                task.setTotalSavedCount(totalSaved);
                 task.setProgress(100);
                 task.setRunning(false);
             });
@@ -387,10 +150,11 @@ public class SyncEngine {
                     task.setMessage("同步任务完成");
                 }
             });
+            log.info("[SyncEngine] 6️⃣ 任务状态更新 SUCCESS ✅ pulled={}, saved={}", totalPulled, totalSaved);
 
-            log.info("[SyncEngine] done id={}, pulled={}, saved={}", id, totalPulled, totalSaved);
             rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
                     totalPulled, totalSaved);
+            log.info("[SyncEngine] 7️⃣ 完成消息已发送 ✅");
         } catch (Exception e) {
             syncTaskService.updateTaskFields(id, task -> {
                 task.setStatus("FAILED");
@@ -399,12 +163,99 @@ public class SyncEngine {
                 task.setFinishedAt(TimeUtils.now());
                 task.setRunning(false);
             });
-            log.error("[SyncEngine] failed id={}", id, e);
+            log.error("[SyncEngine] ❌ 任务执行失败 id={}", id, e);
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
+                log.info("[SyncEngine] 🔓 锁已释放 taskId={}", id);
             }
         }
+    }
+
+    // ---------- 执行子步骤 ----------
+
+    /** 初始化/重置每个业务的 SyncBusinessRecord 记录。 */
+    private void prepareBusinessRecords(Long taskId, List<String> businessCodes) {
+        for (String bizCode : businessCodes) {
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                SyncBusinessRecord existing = syncBusinessRecordMapper.selectOne(
+                        new LambdaQueryWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getTaskId, taskId)
+                                .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                                .last("limit 1"));
+                if (existing != null) {
+                    existing.setStatus("RUNNING");
+                    existing.setPulledCount(0);
+                    existing.setSavedCount(0);
+                    existing.setErrorMessage(null);
+                    existing.setStartedAt(TimeUtils.now());
+                    existing.setFinishedAt(null);
+                    syncBusinessRecordMapper.updateById(existing);
+                } else {
+                    SyncBusinessRecord record = new SyncBusinessRecord();
+                    record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
+                    record.setTaskId(taskId);
+                    record.setBusinessCode(bizCode);
+                    record.setStatus("RUNNING");
+                    record.setPulledCount(0);
+                    record.setSavedCount(0);
+                    record.setStartedAt(TimeUtils.now());
+                    syncBusinessRecordMapper.insert(record);
+                }
+            });
+        }
+    }
+
+    /** 查询各业务表的断点续传游标（最大 source_row_id）。 */
+    private Map<String, Long> loadInitialCursors(List<String> businessCodes) {
+        Map<String, Long> cursors = new HashMap<>();
+        for (String bizCode : businessCodes) {
+            Long cursor = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
+                List<Object> result;
+                switch (bizCode) {
+                    case "STOCK":
+                        result = cleanStockMapper.selectObjs(
+                                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanStock>()
+                                        .select("MAX(source_row_id)"));
+                        break;
+                    case "TRADE":
+                        result = cleanTradeMapper.selectObjs(
+                                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanTrade>()
+                                        .select("MAX(source_row_id)"));
+                        break;
+                    case "POSITION":
+                        result = cleanPositionMapper.selectObjs(
+                                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanPosition>()
+                                        .select("MAX(source_row_id)"));
+                        break;
+                    case "ASSET":
+                        result = cleanAssetMapper.selectObjs(
+                                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanAsset>()
+                                        .select("MAX(source_row_id)"));
+                        break;
+                    default:
+                        result = java.util.Collections.emptyList();
+                }
+                return result.isEmpty() || result.get(0) == null ? 0L : Long.valueOf(result.get(0).toString());
+            });
+            if (cursor > 0) {
+                cursors.put(bizCode, cursor);
+            }
+        }
+        return cursors;
+    }
+
+    /** 查询各业务的 recordId 映射。 */
+    private Map<String, Long> loadBusinessRecordIds(Long taskId) {
+        Map<String, Long> ids = new HashMap<>();
+        routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+            for (SyncBusinessRecord rec : syncBusinessRecordMapper.selectList(
+                    new LambdaQueryWrapper<SyncBusinessRecord>()
+                            .eq(SyncBusinessRecord::getTaskId, taskId))) {
+                ids.put(rec.getBusinessCode(), rec.getId());
+            }
+        });
+        return ids;
     }
 
     /** 检查是否是强制刷新任务，是则清除全部清洗数据。 */
@@ -429,11 +280,140 @@ public class SyncEngine {
         }
     }
 
-    // ==================== 查询接口 ====================
+    // ==================== ETL 编排 ====================
 
     /**
-     * 获取所有业务编码列表。
+     * 执行同步编排：校验数据源 → 构建上下文 → 并发派发 4 类业务 → 汇总结果。
+     * <p>由 {@link #executeTask} 在持有锁后调用。</p>
      */
+    public SyncResultDTO syncByDataSource(String dataSourceKey, int pageSize, Long taskId,
+                                          Map<String, Long> initialCursors,
+                                          Map<String, Long> businessRecordIds) {
+        DataSourceConfigDTO config = requireSyncableConfig(dataSourceKey);
+        int safePageSize = sanitizePageSize(pageSize);
+        BusinessSyncContext context = buildContext(dataSourceKey, config, safePageSize, taskId, initialCursors, businessRecordIds);
+
+        log.info("[SyncEngine] 开始 ETL 编排 dataSourceKey={}, 类型={}, 分页={}, 批次={}, 任务ID={}",
+                dataSourceKey, config.getDatasourceType(), safePageSize,
+                context.getBatchNo(), taskId);
+
+        try {
+            List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
+            for (BusinessSyncTemplate template : businessSyncTemplates) {
+                futures.add(CompletableFuture.supplyAsync(
+                        () -> executeTemplate(template, context), syncBusinessExecutor));
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
+            SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
+            log.info("[SyncEngine] ETL 编排完成 ✅ 拉取={}, 落库={}",
+                    summary.getPulledCount(), summary.getSavedCount());
+            return summary;
+        } catch (Exception e) {
+            log.error("[SyncEngine] ETL 编排失败 ❌ {}", e.getMessage());
+            throw new IllegalStateException("同步任务执行失败: " + e.getMessage(), e);
+        }
+    }
+
+    // ---------- 私有辅助：校验 ----------
+
+    private DataSourceConfigDTO requireSyncableConfig(String dataSourceKey) {
+        DataSourceConfigDTO config = dataSourceManager.getConfig(dataSourceKey);
+        if (config == null) {
+            throw new IllegalArgumentException("数据源不存在: " + dataSourceKey);
+        }
+        if (HubConstants.TYPE_HUB.equalsIgnoreCase(config.getDatasourceType())) {
+            throw new IllegalArgumentException("中台库不能作为同步来源: " + dataSourceKey);
+        }
+        return config;
+    }
+
+    private int sanitizePageSize(int pageSize) {
+        return Math.max(1, Math.min(pageSize, 100000));
+    }
+
+    // ---------- 私有辅助：上下文构建 ----------
+
+    private BusinessSyncContext buildContext(String dataSourceKey, DataSourceConfigDTO config, int pageSize,
+                                             Long taskId, Map<String, Long> initialCursors,
+                                             Map<String, Long> businessRecordIds) {
+        return BusinessSyncContext.builder()
+                .dataSourceKey(dataSourceKey)
+                .datasourceType(config.getDatasourceType())
+                .pageSize(pageSize)
+                .batchNo("SYNC-" + System.currentTimeMillis())
+                .taskId(taskId)
+                .initialCursors(initialCursors == null ? Collections.emptyMap() : initialCursors)
+                .businessRecordIds(businessRecordIds == null ? Collections.emptyMap() : businessRecordIds)
+                .build();
+    }
+
+    // ---------- 私有辅助：模板执行 ----------
+
+    private BusinessSyncResult executeTemplate(BusinessSyncTemplate template, BusinessSyncContext context) {
+        Long taskId = context.getTaskId();
+        String bizCode = template.businessCode();
+        try {
+            BusinessSyncResult result = template.execute(context);
+            if (taskId != null) {
+                updateRecordStatus(taskId, bizCode, "SUCCESS", result);
+            }
+            return result;
+        } catch (Exception e) {
+            if (taskId != null) {
+                updateRecordStatus(taskId, bizCode, "FAILED", null);
+            }
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void updateRecordStatus(Long taskId, String bizCode, String status, BusinessSyncResult result) {
+        try {
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                LambdaUpdateWrapper<SyncBusinessRecord> wrapper = new LambdaUpdateWrapper<SyncBusinessRecord>()
+                        .eq(SyncBusinessRecord::getTaskId, taskId)
+                        .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                        .set(SyncBusinessRecord::getFinishedAt, java.time.LocalDateTime.now());
+                if ("SUCCESS".equals(status) && result != null) {
+                    wrapper.set(SyncBusinessRecord::getPageCount, result.getPageCount())
+                            .set(SyncBusinessRecord::getPulledCount, result.getPulledCount())
+                            .set(SyncBusinessRecord::getSavedCount, result.getSavedCount())
+                            .set(SyncBusinessRecord::getLastRowId, result.getLastRowId());
+                    syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "SUCCESS"));
+                } else {
+                    syncBusinessRecordMapper.update(null, wrapper.set(SyncBusinessRecord::getStatus, "FAILED")
+                            .set(SyncBusinessRecord::getErrorMessage, "同步异常"));
+                }
+            });
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ---------- 私有辅助：汇总 ----------
+
+    private SyncResultDTO summarizeResults(BusinessSyncContext context,
+                                           DataSourceConfigDTO config,
+                                           int pageSize,
+                                           List<CompletableFuture<BusinessSyncResult>> futures) throws Exception {
+        Map<String, BusinessSyncResult> businessResults = new LinkedHashMap<>();
+        int totalPulled = 0;
+        int totalSaved = 0;
+        int maxPageCount = 0;
+        for (CompletableFuture<BusinessSyncResult> future : futures) {
+            BusinessSyncResult result = future.get();
+            businessResults.put(result.getBusinessCode(), result);
+            totalPulled += result.getPulledCount();
+            totalSaved += result.getSavedCount();
+            maxPageCount = Math.max(maxPageCount, result.getPageCount());
+        }
+        return new SyncResultDTO(
+                context.getDataSourceKey(), config.getName(), config.getDatasourceType(),
+                pageSize, context.getBatchNo(), maxPageCount,
+                totalPulled, totalSaved, businessResults);
+    }
+
+    // ==================== 查询接口 ====================
+
+    /** 获取所有业务编码列表。 */
     public List<String> getBusinessCodes() {
         return businessSyncTemplates.stream()
                 .map(BusinessSyncTemplate::businessCode)

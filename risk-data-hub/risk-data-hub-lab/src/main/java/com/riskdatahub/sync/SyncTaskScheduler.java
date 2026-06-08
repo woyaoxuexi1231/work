@@ -70,7 +70,7 @@ public class SyncTaskScheduler {
         boolean lockHeld = lock.isLocked();
 
         routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
-            // 检查异常终止的任务（锁释放但 DB 仍 RUNNING）
+            // 1️⃣ 检查异常终止的任务
             List<SyncTask> runningTasks = syncTaskMapper.selectList(
                     new LambdaQueryWrapper<SyncTask>().eq(SyncTask::getStatus, "RUNNING"));
 
@@ -85,11 +85,11 @@ public class SyncTaskScheduler {
                         t.setErrorMessage("Process crashed or watchdog expired");
                         t.setFinishedAt(TimeUtils.now());
                     });
-                    log.warn("[SyncScheduler] 检测到异常终止任务 id={}（锁已释放），已标记 FAILED", task.getId());
+                    log.warn("[SyncScheduler] 1️⃣ 检测到异常终止任务 id={}，已标记 FAILED ❌", task.getId());
                 }
             }
 
-            // 取出最旧的 QUEUED 任务
+            // 2️⃣ 取出最旧的 QUEUED 任务
             SyncTask queued = syncTaskMapper.selectOne(new LambdaQueryWrapper<SyncTask>()
                     .eq(SyncTask::getStatus, "QUEUED")
                     .orderByAsc(SyncTask::getId)
@@ -102,15 +102,13 @@ public class SyncTaskScheduler {
             String dsKey = queued.getDataSourceKey();
             int ps = queued.getPageSize();
 
-            // 标记为 RUNNING
+            // 3️⃣ 标记为 RUNNING 并调度
             syncTaskService.updateTaskFields(taskId, task -> {
                 task.setStatus("RUNNING");
                 task.setStartedAt(TimeUtils.now());
             });
-
-            // 提交到线程池执行
             syncTaskExecutor.submit(() -> syncEngine.executeTask(taskId, dsKey, ps));
-            log.info("[SyncScheduler] 调度任务 id={}, dataSourceKey={}", taskId, dsKey);
+            log.info("[SyncScheduler] 2️⃣ 调度任务 id={}, dataSourceKey={} ✅", taskId, dsKey);
         });
     }
 }
