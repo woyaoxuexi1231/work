@@ -7,7 +7,7 @@ spring:
   cloud:
     nacos:
       # Nacos 服务端地址 (Docker 安装默认 8848 端口)
-      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      server-addr: ${NACOS_SERVER_ADDR:host.docker.internal:8848}
       username: ${NACOS_USERNAME:nacos}
       password: ${NACOS_PASSWORD:nacos}
       discovery:
