@@ -3,29 +3,43 @@ package com.riskdatahub.sync;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.riskdatahub.common.constant.HubConstants;
+import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.DataSourceManager;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.datasource.dto.DataSourceConfigDTO;
+import com.riskdatahub.id.LeafSegmentService;
+import com.riskdatahub.message.RabbitMqSender;
+import com.riskdatahub.sync.entity.CleanAsset;
+import com.riskdatahub.sync.entity.CleanPosition;
+import com.riskdatahub.sync.entity.CleanStock;
 import com.riskdatahub.sync.entity.CleanTrade;
+import com.riskdatahub.sync.mapper.CleanAssetMapper;
+import com.riskdatahub.sync.mapper.CleanPositionMapper;
+import com.riskdatahub.sync.mapper.CleanStockMapper;
 import com.riskdatahub.sync.mapper.CleanTradeMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncResultDTO;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.sync.template.BusinessSyncTemplate;
+import com.riskdatahub.sync.task.SyncTaskService;
 import com.riskdatahub.sync.task.entity.SyncBusinessRecord;
+import com.riskdatahub.sync.task.entity.SyncTask;
 import com.riskdatahub.sync.task.mapper.SyncBusinessRecordMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -52,28 +66,49 @@ import java.util.stream.Collectors;
 @Service
 public class SyncEngine {
 
+    private static final String LOCK_KEY = "risk-hub:sync:task:lock";
+    private static final String TAG_SYNC_BUSINESS_RECORD = "sync_business_record";
+
     private final DataSourceManager dataSourceManager;
     private final RoutingMybatisExecutor routingMybatisExecutor;
     private final SyncBusinessRecordMapper syncBusinessRecordMapper;
-    /**
-     * Spring 自动注入所有 BusinessSyncTemplate 实现类（策略模式）
-     */
     private final List<BusinessSyncTemplate> businessSyncTemplates;
-    /**
-     * 4 线程池，每类业务一个 Future
-     */
     private final ThreadPoolExecutor syncBusinessExecutor;
+    private final SyncTaskService syncTaskService;
+    private final RedissonClient redissonClient;
+    private final LeafSegmentService leafSegmentService;
+    private final RabbitMqSender rabbitMqSender;
+    private final CleanStockMapper cleanStockMapper;
+    private final CleanTradeMapper cleanTradeMapper;
+    private final CleanPositionMapper cleanPositionMapper;
+    private final CleanAssetMapper cleanAssetMapper;
 
     public SyncEngine(DataSourceManager dataSourceManager,
                       RoutingMybatisExecutor routingMybatisExecutor,
                       SyncBusinessRecordMapper syncBusinessRecordMapper,
                       List<BusinessSyncTemplate> businessSyncTemplates,
-                      @Qualifier("syncBusinessExecutor") ThreadPoolExecutor syncBusinessExecutor) {
+                      @Qualifier("syncBusinessExecutor") ThreadPoolExecutor syncBusinessExecutor,
+                      SyncTaskService syncTaskService,
+                      RedissonClient redissonClient,
+                      LeafSegmentService leafSegmentService,
+                      RabbitMqSender rabbitMqSender,
+                      CleanStockMapper cleanStockMapper,
+                      CleanTradeMapper cleanTradeMapper,
+                      CleanPositionMapper cleanPositionMapper,
+                      CleanAssetMapper cleanAssetMapper) {
         this.dataSourceManager = dataSourceManager;
         this.routingMybatisExecutor = routingMybatisExecutor;
         this.syncBusinessRecordMapper = syncBusinessRecordMapper;
         this.businessSyncTemplates = businessSyncTemplates;
         this.syncBusinessExecutor = syncBusinessExecutor;
+        this.syncTaskService = syncTaskService;
+        this.redissonClient = redissonClient;
+        this.leafSegmentService = leafSegmentService;
+        this.rabbitMqSender = rabbitMqSender;
+        this.cleanStockMapper = cleanStockMapper;
+        this.cleanTradeMapper = cleanTradeMapper;
+        this.cleanPositionMapper = cleanPositionMapper;
+        this.cleanAssetMapper = cleanAssetMapper;
     }
 
     // ==================== 主流程 ====================
@@ -101,7 +136,13 @@ public class SyncEngine {
                 context.getBatchNo(), taskId, businessSyncTemplates.size());
 
         try {
-            List<CompletableFuture<BusinessSyncResult>> futures = submitBusinessTemplates(context);
+            // 并发派发
+            List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
+            for (BusinessSyncTemplate template : businessSyncTemplates) {
+                futures.add(CompletableFuture.supplyAsync(
+                        () -> executeTemplate(template, context), syncBusinessExecutor));
+            }
+
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
             SyncResultDTO summary = summarizeResults(context, config, safePageSize, futures);
             log.info("[同步编排] 同步完成 dataSourceKey={}, 批次号={}, 拉取总数={}, 落库总数={}",
@@ -156,18 +197,6 @@ public class SyncEngine {
     }
 
     // ---------- 私有辅助：并发派发 ----------
-
-    /**
-     * 并发提交所有业务模板到线程池
-     */
-    private List<CompletableFuture<BusinessSyncResult>> submitBusinessTemplates(BusinessSyncContext context) {
-        List<CompletableFuture<BusinessSyncResult>> futures = new ArrayList<>();
-        for (BusinessSyncTemplate template : businessSyncTemplates) {
-            futures.add(CompletableFuture.supplyAsync(
-                    () -> executeTemplate(template, context), syncBusinessExecutor));
-        }
-        return futures;
-    }
 
     /**
      * 执行单个模板，每个业务独立更新自己的 SyncBusinessRecord 状态
@@ -241,13 +270,169 @@ public class SyncEngine {
                 totalPulled, totalSaved, businessResults);
     }
 
+    // ==================== 任务执行 ====================
+
+    /**
+     * 在后台线程中执行同步任务。
+     * <p>获取分布式锁 → 预处理业务记录 → 断点续传 → 编排同步 → 更新任务状态 → 发完成消息。</p>
+     */
+    public void executeTask(Long id, String dataSourceKey, int pageSize) {
+        RLock lock = redissonClient.getLock(LOCK_KEY);
+        try {
+            if (!lock.tryLock(0, 30, TimeUnit.MINUTES)) {
+                log.warn("[SyncEngine] 无法获取分布式锁，任务 id={} 跳过", id);
+                return;
+            }
+
+            doForceCleanIfNeeded(id);
+
+            List<String> businessCodes = getBusinessCodes();
+            for (String bizCode : businessCodes) {
+                routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                    SyncBusinessRecord existing = syncBusinessRecordMapper.selectOne(
+                            new LambdaQueryWrapper<SyncBusinessRecord>()
+                                    .eq(SyncBusinessRecord::getTaskId, id)
+                                    .eq(SyncBusinessRecord::getBusinessCode, bizCode)
+                                    .last("limit 1"));
+                    if (existing != null) {
+                        existing.setStatus("RUNNING");
+                        existing.setPulledCount(0);
+                        existing.setSavedCount(0);
+                        existing.setErrorMessage(null);
+                        existing.setStartedAt(TimeUtils.now());
+                        existing.setFinishedAt(null);
+                        syncBusinessRecordMapper.updateById(existing);
+                    } else {
+                        SyncBusinessRecord record = new SyncBusinessRecord();
+                        record.setId(leafSegmentService.nextId(TAG_SYNC_BUSINESS_RECORD));
+                        record.setTaskId(id);
+                        record.setBusinessCode(bizCode);
+                        record.setStatus("RUNNING");
+                        record.setPulledCount(0);
+                        record.setSavedCount(0);
+                        record.setStartedAt(TimeUtils.now());
+                        syncBusinessRecordMapper.insert(record);
+                    }
+                });
+            }
+
+            Map<String, Long> initialCursors = new HashMap<>();
+            for (String bizCode : businessCodes) {
+                Long cursor = routingMybatisExecutor.query(HubConstants.DS_HUB, () -> {
+                    List<Object> result;
+                    switch (bizCode) {
+                        case "STOCK":
+                            result = cleanStockMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanStock>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        case "TRADE":
+                            result = cleanTradeMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanTrade>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        case "POSITION":
+                            result = cleanPositionMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanPosition>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        case "ASSET":
+                            result = cleanAssetMapper.selectObjs(
+                                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<CleanAsset>()
+                                            .select("MAX(source_row_id)"));
+                            break;
+                        default:
+                            result = java.util.Collections.emptyList();
+                    }
+                    return result.isEmpty() || result.get(0) == null ? 0L : Long.valueOf(result.get(0).toString());
+                });
+                if (cursor > 0) {
+                    initialCursors.put(bizCode, cursor);
+                    log.info("[SyncEngine] 业务 {} 断点续传，从游标 {} 开始", bizCode, cursor);
+                }
+            }
+
+            Map<String, Long> businessRecordIds = new HashMap<>();
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                for (SyncBusinessRecord rec : syncBusinessRecordMapper.selectList(
+                        new LambdaQueryWrapper<SyncBusinessRecord>()
+                                .eq(SyncBusinessRecord::getTaskId, id))) {
+                    businessRecordIds.put(rec.getBusinessCode(), rec.getId());
+                }
+            });
+
+            SyncResultDTO result = syncByDataSource(dataSourceKey, pageSize, id, initialCursors, businessRecordIds);
+
+            int totalPulled = 0;
+            int totalSaved = 0;
+            for (Map.Entry<String, BusinessSyncResult> entry : result.getBusinessResults().entrySet()) {
+                BusinessSyncResult bizResult = entry.getValue();
+                totalPulled += bizResult.getPulledCount();
+                totalSaved += bizResult.getSavedCount();
+            }
+
+            int finalPulled = totalPulled;
+            int finalSaved = totalSaved;
+            syncTaskService.updateTaskFields(id, task -> {
+                task.setStatus("SUCCESS");
+                task.setMessage("同步任务完成");
+                task.setFinishedAt(TimeUtils.now());
+                task.setTotalPulledCount(finalPulled);
+                task.setTotalSavedCount(finalSaved);
+                task.setProgress(100);
+                task.setRunning(false);
+            });
+            syncTaskService.updateTaskFields(id, task -> {
+                if (task.getMessage() != null && task.getMessage().startsWith("强制刷新")) {
+                    task.setMessage("同步任务完成");
+                }
+            });
+
+            log.info("[SyncEngine] done id={}, pulled={}, saved={}", id, totalPulled, totalSaved);
+            rabbitMqSender.sendSyncCompleted(id, dataSourceKey, result.getDatasourceType(),
+                    totalPulled, totalSaved);
+        } catch (Exception e) {
+            syncTaskService.updateTaskFields(id, task -> {
+                task.setStatus("FAILED");
+                task.setMessage("同步任务失败");
+                task.setErrorMessage(e.getMessage());
+                task.setFinishedAt(TimeUtils.now());
+                task.setRunning(false);
+            });
+            log.error("[SyncEngine] failed id={}", id, e);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 检查是否是强制刷新任务，是则清除全部清洗数据。 */
+    private void doForceCleanIfNeeded(Long taskId) {
+        try {
+            routingMybatisExecutor.run(HubConstants.DS_HUB, () -> {
+                SyncTask task = syncTaskService.currentTask();
+                if (task == null || task.getMessage() == null
+                        || !task.getMessage().startsWith("强制刷新")) {
+                    return;
+                }
+                log.warn("[SyncEngine] 强制刷新清除数据中 taskId={}", taskId);
+                cleanStockMapper.delete(new LambdaQueryWrapper<CleanStock>().apply("1=1"));
+                cleanTradeMapper.delete(new LambdaQueryWrapper<CleanTrade>().apply("1=1"));
+                cleanPositionMapper.delete(new LambdaQueryWrapper<CleanPosition>().apply("1=1"));
+                cleanAssetMapper.delete(new LambdaQueryWrapper<CleanAsset>().apply("1=1"));
+                syncTaskService.updateTaskFields(taskId, t -> t.setMessage("强制刷新-同步执行中"));
+                log.warn("[SyncEngine] 强制刷新数据清除完成 taskId={}", taskId);
+            });
+        } catch (Exception e) {
+            log.error("[SyncEngine] 强制刷新清除数据失败 taskId={}", taskId, e);
+        }
+    }
+
     // ==================== 查询接口 ====================
 
     /**
      * 获取所有业务编码列表。
-     * <p>用于 SyncTaskService 在同步开始前预创建 SyncBusinessRecord 记录。</p>
-     *
-     * @return 业务编码列表（STOCK / TRADE / POSITION / ASSET）
      */
     public List<String> getBusinessCodes() {
         return businessSyncTemplates.stream()
