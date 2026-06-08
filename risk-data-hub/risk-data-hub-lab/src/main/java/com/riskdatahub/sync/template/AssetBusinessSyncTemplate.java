@@ -4,8 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
-import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerFundAccount;
 import com.riskdatahub.sync.entity.CleanAsset;
 import com.riskdatahub.sync.entity.OmsCashAsset;
@@ -14,6 +12,7 @@ import com.riskdatahub.sync.mapper.CleanAssetMapper;
 import com.riskdatahub.sync.mapper.OmsCashAssetMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.CleanRecordContext;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -46,12 +45,11 @@ public class AssetBusinessSyncTemplate
 
     public AssetBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
                                      LeafSegmentService leafSegmentService,
-                                     MessageOutboxService messageOutboxService,
                                      @Qualifier("assetPairExecutor") ThreadPoolExecutor pairExecutor,
                                      CleanAssetMapper cleanAssetMapper,
                                      OmsCashAssetMapper omsCashAssetMapper,
                                      BrokerFundAccountMapper brokerFundAccountMapper) {
-        super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+        super(routingMybatisExecutor, leafSegmentService, pairExecutor);
         this.cleanAssetMapper = cleanAssetMapper;
         this.omsCashAssetMapper = omsCashAssetMapper;
         this.brokerFundAccountMapper = brokerFundAccountMapper;

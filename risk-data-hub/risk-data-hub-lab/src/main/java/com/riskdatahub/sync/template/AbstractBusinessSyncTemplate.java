@@ -2,7 +2,6 @@ package com.riskdatahub.sync.template;
 
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
-import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncSupport.BusinessSyncResult;
 import com.riskdatahub.sync.model.SyncSupport.PageChunk;
@@ -22,10 +21,9 @@ import java.util.concurrent.atomic.AtomicReference;
 public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyncTemplate<S, T> {
 
     protected AbstractBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
-                                            LeafSegmentService leafSegmentService,
-                                            MessageOutboxService messageOutboxService,
-                                            ThreadPoolExecutor pairExecutor) {
-        super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+                                           LeafSegmentService leafSegmentService,
+                                           ThreadPoolExecutor pairExecutor) {
+        super(routingMybatisExecutor, leafSegmentService, pairExecutor);
     }
 
     @Override

@@ -3,12 +3,10 @@ package com.riskdatahub.sync.template;
 import com.riskdatahub.common.util.TimeUtils;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
-import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.entity.SyncBatchMetrics;
 import com.riskdatahub.sync.mapper.SyncBatchMetricsMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.SyncProgressEvent;
-import com.riskdatahub.sync.model.SyncSupport.SyncCounter;
 import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,7 +22,6 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
 
     protected final RoutingMybatisExecutor routingMybatisExecutor;
     protected final LeafSegmentService leafSegmentService;
-    protected final MessageOutboxService messageOutboxService;
     private ApplicationEventPublisher eventPublisher;
     private final java.util.Queue<Long> batchIdQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     protected final ThreadPoolExecutor pairExecutor;
@@ -33,12 +30,10 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
     private SyncBatchMetricsMapper batchMetricsMapper;
 
     protected AbstractBaseSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
-                                        LeafSegmentService leafSegmentService,
-                                        MessageOutboxService messageOutboxService,
-                                        ThreadPoolExecutor pairExecutor) {
+                                       LeafSegmentService leafSegmentService,
+                                       ThreadPoolExecutor pairExecutor) {
         this.routingMybatisExecutor = routingMybatisExecutor;
         this.leafSegmentService = leafSegmentService;
-        this.messageOutboxService = messageOutboxService;
         this.pairExecutor = pairExecutor;
     }
 

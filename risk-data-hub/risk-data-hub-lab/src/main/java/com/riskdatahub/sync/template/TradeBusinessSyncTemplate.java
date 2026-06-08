@@ -7,8 +7,6 @@ import com.riskdatahub.dictionary.DictionaryService;
 import com.riskdatahub.dictionary.entity.DictItem;
 import com.riskdatahub.dictionary.mapper.DictItemMapper;
 import com.riskdatahub.id.LeafSegmentService;
-import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerTradeDeal;
 import com.riskdatahub.sync.entity.CleanTrade;
 import com.riskdatahub.sync.entity.OmsTradeOrder;
@@ -17,6 +15,7 @@ import com.riskdatahub.sync.mapper.CleanTradeMapper;
 import com.riskdatahub.sync.mapper.OmsTradeOrderMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.CleanRecordContext;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -28,7 +27,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -46,26 +44,24 @@ import java.util.stream.Collectors;
 public class TradeBusinessSyncTemplate
         extends AbstractBusinessSyncTemplate<TradeBusinessSyncTemplate.TradeRow, CleanTrade> {
 
-    private final DictionaryService dictionaryService;
     private final CleanTradeMapper cleanTradeMapper;
     private final OmsTradeOrderMapper omsTradeOrderMapper;
     private final BrokerTradeDealMapper brokerTradeDealMapper;
     private final DictItemMapper dictItemMapper;
 
-    /** 交易状态字典：code → name，首次使用前一次性全量加载 */
+    /**
+     * 交易状态字典：code → name，首次使用前一次性全量加载
+     */
     private volatile Map<String, String> tradeStatusDict;
 
     public TradeBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
                                      LeafSegmentService leafSegmentService,
-                                     MessageOutboxService messageOutboxService,
                                      @Qualifier("tradePairExecutor") ThreadPoolExecutor pairExecutor,
-                                     DictionaryService dictionaryService,
                                      CleanTradeMapper cleanTradeMapper,
                                      OmsTradeOrderMapper omsTradeOrderMapper,
                                      DictItemMapper dictItemMapper,
-                                 BrokerTradeDealMapper brokerTradeDealMapper) {
-        super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
-        this.dictionaryService = dictionaryService;
+                                     BrokerTradeDealMapper brokerTradeDealMapper) {
+        super(routingMybatisExecutor, leafSegmentService, pairExecutor);
         this.cleanTradeMapper = cleanTradeMapper;
         this.omsTradeOrderMapper = omsTradeOrderMapper;
         this.dictItemMapper = dictItemMapper;
@@ -218,7 +214,7 @@ public class TradeBusinessSyncTemplate
      */
     @Data
     @AllArgsConstructor
-    static class TradeRow {
+    public static class TradeRow {
         private Long id;
         private String bizNo;
         private String counterpartyName;

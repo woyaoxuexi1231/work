@@ -4,8 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
-import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerPositionBalance;
 import com.riskdatahub.sync.entity.CleanPosition;
 import com.riskdatahub.sync.entity.OmsPositionHolding;
@@ -14,6 +12,7 @@ import com.riskdatahub.sync.mapper.CleanPositionMapper;
 import com.riskdatahub.sync.mapper.OmsPositionHoldingMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.CleanRecordContext;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -46,12 +45,11 @@ public class PositionBusinessSyncTemplate
 
     public PositionBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
                                         LeafSegmentService leafSegmentService,
-                                        MessageOutboxService messageOutboxService,
                                         @Qualifier("positionPairExecutor") ThreadPoolExecutor pairExecutor,
                                         CleanPositionMapper cleanPositionMapper,
                                         OmsPositionHoldingMapper omsPositionHoldingMapper,
                                         BrokerPositionBalanceMapper brokerPositionBalanceMapper) {
-        super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+        super(routingMybatisExecutor, leafSegmentService, pairExecutor);
         this.cleanPositionMapper = cleanPositionMapper;
         this.omsPositionHoldingMapper = omsPositionHoldingMapper;
         this.brokerPositionBalanceMapper = brokerPositionBalanceMapper;

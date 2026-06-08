@@ -4,8 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.id.LeafSegmentService;
-import com.riskdatahub.message.MessageOutboxService;
-import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import com.riskdatahub.sync.entity.BrokerStockQuote;
 import com.riskdatahub.sync.entity.CleanStock;
 import com.riskdatahub.sync.entity.OmsStockSnapshot;
@@ -14,6 +12,7 @@ import com.riskdatahub.sync.mapper.CleanStockMapper;
 import com.riskdatahub.sync.mapper.OmsStockSnapshotMapper;
 import com.riskdatahub.sync.model.BusinessSyncContext;
 import com.riskdatahub.sync.model.CleanRecordContext;
+import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -51,12 +50,11 @@ public class StockBusinessSyncTemplate
 
     public StockBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
                                      LeafSegmentService leafSegmentService,
-                                     MessageOutboxService messageOutboxService,
                                      @Qualifier("stockPairExecutor") ThreadPoolExecutor pairExecutor,
                                      CleanStockMapper cleanStockMapper,
                                      OmsStockSnapshotMapper omsStockSnapshotMapper,
                                      BrokerStockQuoteMapper brokerStockQuoteMapper) {
-        super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
+        super(routingMybatisExecutor, leafSegmentService, pairExecutor);
         this.cleanStockMapper = cleanStockMapper;
         this.omsStockSnapshotMapper = omsStockSnapshotMapper;
         this.brokerStockQuoteMapper = brokerStockQuoteMapper;
