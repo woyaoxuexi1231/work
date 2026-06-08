@@ -30,7 +30,7 @@ public abstract class AbstractBusinessSyncTemplate<S, T> extends AbstractBaseSyn
 
     @Override
     public final BusinessSyncResult execute(BusinessSyncContext context) throws Exception {
-        BlockingQueue<PageChunk<S>> queue = new ArrayBlockingQueue<>(4);
+        BlockingQueue<PageChunk<S>> queue = new ArrayBlockingQueue<>(1);
         AtomicReference<RuntimeException> failure = new AtomicReference<>();
         SyncCounter counter = new SyncCounter();
 

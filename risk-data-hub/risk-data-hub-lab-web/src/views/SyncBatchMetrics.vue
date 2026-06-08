@@ -12,22 +12,22 @@ const data = ref(null)
 const loading = ref(true)
 
 const NODES = [
-  { key: 'fetchStartedAt', label: '拉取开始' },
-  { key: 'fetchFinishedAt', label: '拉取完成' },
-  { key: 'fetchQueuedAt', label: '入队开始' },
-  { key: 'fetchQueuedFinishedAt', label: '入队完成' },
-  { key: 'idGenStartedAt', label: 'ID生成开始' },
-  { key: 'idGenFinishedAt', label: 'ID生成完成' },
+  { key: 'fetchStartedAt', label: '上游拉取开始' },
+  { key: 'fetchFinishedAt', label: '上游拉取完成' },
+  { key: 'fetchQueuedAt', label: '入队(阻塞队列)' },
+  { key: 'fetchQueuedFinishedAt', label: '出队(阻塞队列)' },
+  { key: 'idGenStartedAt', label: '分布式ID开始' },
+  { key: 'idGenFinishedAt', label: '分布式ID完成' },
   { key: 'transformStartedAt', label: '转换开始' },
   { key: 'transformFinishedAt', label: '转换完成' },
-  { key: 'existingQueryStartedAt', label: '查询开始' },
-  { key: 'existingQueryFinishedAt', label: '查询完成' },
-  { key: 'splitStartedAt', label: '分流开始' },
-  { key: 'splitFinishedAt', label: '分流完成' },
-  { key: 'insertStartedAt', label: '新增写入开始' },
-  { key: 'insertFinishedAt', label: '新增写入完成' },
-  { key: 'updateStartedAt', label: '更新写入开始' },
-  { key: 'updateFinishedAt', label: '更新写入完成' },
+  { key: 'existingQueryStartedAt', label: '查已存在开始' },
+  { key: 'existingQueryFinishedAt', label: '查已存在完成' },
+  { key: 'splitStartedAt', label: '拆分开始' },
+  { key: 'splitFinishedAt', label: '拆分完成' },
+  { key: 'insertStartedAt', label: '插入新数据开始' },
+  { key: 'insertFinishedAt', label: '插入新数据完成' },
+  { key: 'updateStartedAt', label: '更新已存在开始' },
+  { key: 'updateFinishedAt', label: '批量更新完成' },
 ]
 
 const DURATION_PAIRS = [

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.riskdatahub.common.constant.HubConstants;
 import com.riskdatahub.datasource.RoutingMybatisExecutor;
 import com.riskdatahub.dictionary.DictionaryService;
+import com.riskdatahub.dictionary.entity.DictItem;
+import com.riskdatahub.dictionary.mapper.DictItemMapper;
 import com.riskdatahub.id.LeafSegmentService;
 import com.riskdatahub.message.MessageOutboxService;
 import com.riskdatahub.sync.model.SyncSupport.SyncMetrics;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -47,6 +50,10 @@ public class TradeBusinessSyncTemplate
     private final CleanTradeMapper cleanTradeMapper;
     private final OmsTradeOrderMapper omsTradeOrderMapper;
     private final BrokerTradeDealMapper brokerTradeDealMapper;
+    private final DictItemMapper dictItemMapper;
+
+    /** 交易状态字典：code → name，首次使用前一次性全量加载 */
+    private volatile Map<String, String> tradeStatusDict;
 
     public TradeBusinessSyncTemplate(RoutingMybatisExecutor routingMybatisExecutor,
                                      LeafSegmentService leafSegmentService,
@@ -55,11 +62,13 @@ public class TradeBusinessSyncTemplate
                                      DictionaryService dictionaryService,
                                      CleanTradeMapper cleanTradeMapper,
                                      OmsTradeOrderMapper omsTradeOrderMapper,
-                                     BrokerTradeDealMapper brokerTradeDealMapper) {
+                                     DictItemMapper dictItemMapper,
+                                 BrokerTradeDealMapper brokerTradeDealMapper) {
         super(routingMybatisExecutor, leafSegmentService, messageOutboxService, pairExecutor);
         this.dictionaryService = dictionaryService;
         this.cleanTradeMapper = cleanTradeMapper;
         this.omsTradeOrderMapper = omsTradeOrderMapper;
+        this.dictItemMapper = dictItemMapper;
         this.brokerTradeDealMapper = brokerTradeDealMapper;
     }
 
@@ -181,13 +190,17 @@ public class TradeBusinessSyncTemplate
     }
 
     /**
-     * 通过字典服务翻译交易状态码
+     * 翻译交易状态码 — 一次性全量查出放本地，后续全部走内存
      */
     private String resolveTradeStatus(String datasourceType, String rawStatus) {
-        if (HubConstants.TYPE_TRADE_OMS.equals(datasourceType)) {
-            return dictionaryService.translate("trade_status_oms", rawStatus);
+        if (tradeStatusDict == null) {
+            String dictType = HubConstants.TYPE_TRADE_OMS.equals(datasourceType)
+                    ? "trade_status_oms" : "trade_status_broker";
+            tradeStatusDict = dictItemMapper.selectList(new LambdaQueryWrapper<DictItem>()
+                            .eq(DictItem::getDictType, dictType))
+                    .stream().collect(Collectors.toMap(DictItem::getDictCode, DictItem::getDictName));
         }
-        return dictionaryService.translate("trade_status_broker", rawStatus);
+        return tradeStatusDict.getOrDefault(rawStatus, rawStatus);
     }
 
     /**
