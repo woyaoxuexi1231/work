@@ -158,7 +158,14 @@ public abstract class AbstractSemaphoreSyncTemplate<S, T> extends AbstractBaseSy
                 }
                 metrics.stampTransformFinished();
 
-                saveBatch(context, targets, metrics);
+                try {
+                    saveBatch(context, targets, metrics);
+                } catch (Exception e) {
+                    log.error("[同步模板] 业务 {} 第 {} 页落库失败: {}", businessCode(), counter.getPageCount(), e.getMessage(), e);
+                    metrics.setErrorMessage(e.getMessage());
+                    recordBatchMetrics(context, metrics);
+                    throw e;
+                }
                 for (S row : rows) {
                     counter.incrementSavedCount();
                 }

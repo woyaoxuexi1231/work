@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS sync_batch_metrics
     insert_finished_at          TIMESTAMP(3) NULL COMMENT '新增写入完成',
     update_started_at           TIMESTAMP(3) NULL COMMENT '更新写入开始',
     update_finished_at          TIMESTAMP(3) NULL COMMENT '更新写入完成',
+    error_message               TEXT NULL COMMENT '异常信息',
     recorded_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_batch_record (record_id)
 );

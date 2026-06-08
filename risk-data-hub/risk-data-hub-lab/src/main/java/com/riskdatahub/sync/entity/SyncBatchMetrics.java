@@ -35,6 +35,7 @@ public class SyncBatchMetrics {
     private LocalDateTime insertFinishedAt;
     private LocalDateTime updateStartedAt;
     private LocalDateTime updateFinishedAt;
+    private String errorMessage;
 
     private LocalDateTime recordedAt;
 }

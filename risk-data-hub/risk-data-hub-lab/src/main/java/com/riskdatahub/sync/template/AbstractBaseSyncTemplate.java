@@ -149,6 +149,7 @@ public abstract class AbstractBaseSyncTemplate<S, T> implements BusinessSyncTemp
         row.setInsertFinishedAt(m.getInsertFinishedAt());
         row.setUpdateStartedAt(m.getUpdateStartedAt());
         row.setUpdateFinishedAt(m.getUpdateFinishedAt());
+        row.setErrorMessage(m.getErrorMessage());
         return row;
     }
 

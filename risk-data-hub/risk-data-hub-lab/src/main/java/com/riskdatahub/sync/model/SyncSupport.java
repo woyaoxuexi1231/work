@@ -100,22 +100,46 @@ public final class SyncSupport {
         private Integer insertCount;
         private Integer updateCount;
 
+        // 拉取上游数据开始节点
         private LocalDateTime fetchStartedAt;
+        // 拉取上游数据结束节点
         private LocalDateTime fetchFinishedAt;
+
+        // 上游数据进入阻塞队列的时间节点
         private LocalDateTime fetchQueuedAt;
+        // 上游数据移出阻塞队列的时间节点
         private LocalDateTime fetchQueuedFinishedAt;
+
+        // 为上游数据生成分布式id的时间节点
         private LocalDateTime idGenStartedAt;
+        // 为上游数据生成分布式id结束节点
         private LocalDateTime idGenFinishedAt;
+
+        // 数据转换开始
         private LocalDateTime transformStartedAt;
+        // 数据转换结束
         private LocalDateTime transformFinishedAt;
+
+        // 查询已存在的数据 开始时间
         private LocalDateTime existingQueryStartedAt;
+        // 查询已存在的数据 结束时间
         private LocalDateTime existingQueryFinishedAt;
+
+        // 数据拆分开始
         private LocalDateTime splitStartedAt;
+        // 数据拆分结束
         private LocalDateTime splitFinishedAt;
+
+        // 插入新数据开始
         private LocalDateTime insertStartedAt;
+        // 插入新数据结束
         private LocalDateTime insertFinishedAt;
+
+        // 更新已存在数据开始
         private LocalDateTime updateStartedAt;
+        // 批量更新已存在数据结束
         private LocalDateTime updateFinishedAt;
+        private String errorMessage;
 
         public static SyncMetrics forPage(int pageNo, int rowCount) {
             SyncMetrics m = new SyncMetrics();
@@ -125,22 +149,71 @@ public final class SyncSupport {
             return m;
         }
 
-        public void stampFetchStarted() { fetchStartedAt = TimeUtils.now(); }
-        public void stampFetchFinished() { fetchFinishedAt = TimeUtils.now(); }
-        public void stampFetchQueued() { fetchQueuedAt = TimeUtils.now(); }
-        public void stampFetchQueuedFinished() { fetchQueuedFinishedAt = TimeUtils.now(); }
-        public void stampIdGenStarted() { idGenStartedAt = TimeUtils.now(); }
-        public void stampIdGenFinished() { idGenFinishedAt = TimeUtils.now(); }
-        public void stampTransformStarted() { transformStartedAt = TimeUtils.now(); }
-        public void stampTransformFinished() { transformFinishedAt = TimeUtils.now(); }
-        public void stampExistingQueryStarted() { existingQueryStartedAt = TimeUtils.now(); }
-        public void stampExistingQueryFinished() { existingQueryFinishedAt = TimeUtils.now(); }
-        public void stampSplitStarted() { splitStartedAt = TimeUtils.now(); }
-        public void stampSplitFinished() { splitFinishedAt = TimeUtils.now(); }
-        public void stampInsertStarted() { insertStartedAt = TimeUtils.now(); }
-        public void stampInsertFinished(int cnt) { insertFinishedAt = TimeUtils.now(); insertCount = cnt; }
-        public void stampUpdateStarted() { updateStartedAt = TimeUtils.now(); }
-        public void stampUpdateFinished(int cnt) { updateFinishedAt = TimeUtils.now(); updateCount = cnt; }
+        public void stampFetchStarted() {
+            fetchStartedAt = TimeUtils.now();
+        }
+
+        public void stampFetchFinished() {
+            fetchFinishedAt = TimeUtils.now();
+        }
+
+        public void stampFetchQueued() {
+            fetchQueuedAt = TimeUtils.now();
+        }
+
+        public void stampFetchQueuedFinished() {
+            fetchQueuedFinishedAt = TimeUtils.now();
+        }
+
+        public void stampIdGenStarted() {
+            idGenStartedAt = TimeUtils.now();
+        }
+
+        public void stampIdGenFinished() {
+            idGenFinishedAt = TimeUtils.now();
+        }
+
+        public void stampTransformStarted() {
+            transformStartedAt = TimeUtils.now();
+        }
+
+        public void stampTransformFinished() {
+            transformFinishedAt = TimeUtils.now();
+        }
+
+        public void stampExistingQueryStarted() {
+            existingQueryStartedAt = TimeUtils.now();
+        }
+
+        public void stampExistingQueryFinished() {
+            existingQueryFinishedAt = TimeUtils.now();
+        }
+
+        public void stampSplitStarted() {
+            splitStartedAt = TimeUtils.now();
+        }
+
+        public void stampSplitFinished() {
+            splitFinishedAt = TimeUtils.now();
+        }
+
+        public void stampInsertStarted() {
+            insertStartedAt = TimeUtils.now();
+        }
+
+        public void stampInsertFinished(int cnt) {
+            insertFinishedAt = TimeUtils.now();
+            insertCount = cnt;
+        }
+
+        public void stampUpdateStarted() {
+            updateStartedAt = TimeUtils.now();
+        }
+
+        public void stampUpdateFinished(int cnt) {
+            updateFinishedAt = TimeUtils.now();
+            updateCount = cnt;
+        }
     }
 
     /**
@@ -160,9 +233,13 @@ public final class SyncSupport {
         private long lastRowId;
         private long savedMaxRowId;
 
-        public void addPulledCount(int pulledCount) { this.pulledCount += pulledCount; }
+        public void addPulledCount(int pulledCount) {
+            this.pulledCount += pulledCount;
+        }
 
-        public void incrementSavedCount() { this.savedCount++; }
+        public void incrementSavedCount() {
+            this.savedCount++;
+        }
 
         public void updateSavedMaxRowId(long rowId) {
             if (rowId > savedMaxRowId) {
