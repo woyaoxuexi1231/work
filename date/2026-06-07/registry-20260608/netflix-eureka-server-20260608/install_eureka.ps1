@@ -38,11 +38,14 @@ if (-not $imageExists) {
 
 # ---- Cleanup old containers & network ----
 Write-Host "`nCleaning up old containers and network..." -ForegroundColor Yellow
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
 foreach ($n in 1..3) {
     $name = "${Prefix}${n}"
-    docker rm -f $name 2>$null
+    docker rm -f $name 2>$null | Out-Null
 }
-docker network rm $Network 2>$null
+docker network rm $Network 2>$null | Out-Null
+$ErrorActionPreference = $prevEAP
 
 # ---- Create network ----
 Write-Host "Creating Docker network: $Network" -ForegroundColor Yellow
