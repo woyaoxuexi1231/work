@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单超时自动取消 | 分布式延迟任务设计方案</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body { font-family: 'Noto Sans SC', 'Inter', sans-serif; }
+
+        /* 时间轴动画 */
+        .timeline-line {
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+        }
+
+        /* 卡片悬停效果 */
+        .solution-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .solution-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        /* 代码块样式 */
+        .code-snippet {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-indigo-100">
+
+<!-- Header -->
+<header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-clock-rotate-left text-indigo-600 text-xl"></i>
+            <span class="font-bold text-lg tracking-tight">Order<span class="text-slate-400 font-normal">Timeout</span></span>
+        </div>
+        <nav class="hidden md:flex gap-6 text-sm font-medium text-slate-500">
+            <a href="#challenge" class="hover:text-indigo-600 transition-colors">核心挑战</a>
+            <a href="#solutions" class="hover:text-indigo-600 transition-colors">五大方案</a>
+            <a href="#decision" class="hover:text-indigo-600 transition-colors">选型决策</a>
+        </nav>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-20">
+
+    <!-- Hero Section -->
+    <section id="challenge" class="text-center max-w-4xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-100">
+            System Design Interview
+        </div>
+        <h1 class="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
+            订单超时自动取消<br>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">如何优雅设计？</span>
+        </h1>
+        <p class="text-lg text-slate-500 leading-relaxed max-w-2xl mx-auto">
+            用户下单后 30 分钟未支付，系统需自动关闭订单并释放库存。
+            这不仅仅是一个定时任务，更是对<strong>延迟精度、系统解耦、幂等性</strong>的综合考验。
+        </p>
+
+        <!-- 痛点标签 -->
+        <div class="flex flex-wrap justify-center gap-3 mt-8">
+                <span class="px-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-600 shadow-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>数据库轮询压力
+                </span>
+            <span class="px-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-600 shadow-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>延迟时间不准
+                </span>
+            <span class="px-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-600 shadow-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>重复取消/幂等
+                </span>
+            <span class="px-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-600 shadow-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>服务重启丢失
+                </span>
+        </div>
+    </section>
+
+    <!-- 5 Solutions Grid -->
+    <section id="solutions">
+        <h2 class="text-2xl font-bold mb-8 px-2 flex items-center gap-3">
+            <i class="fa-solid fa-layer-group text-indigo-500"></i> 五种主流实现方案
+        </h2>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+            <!-- 方案1: 定时轮询 -->
+            <div class="solution-card bg-white p-6 rounded-2xl border border-slate-200 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-20 h-20 bg-slate-50 rounded-bl-full -mr-4 -mt-4 group-hover:bg-slate-100 transition-colors"></div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                    <span class="text-xs font-bold text-slate-400 uppercase">Level 1</span>
+                </div>
+                <h3 class="font-bold text-lg mb-2">数据库定时轮询</h3>
+                <p class="text-slate-500 text-sm mb-4 leading-relaxed">
+                    每隔 N 秒扫描 order 表中 status=UNPAID 且 create_time &lt; now()-30min 的记录。
+                </p>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 实现极简，无外部依赖</div>
+                    <div class="flex items-center gap-2 text-red-500"><i class="fa-solid fa-xmark"></i> DB 压力大，存在轮询间隔误差</div>
+                    <div class="flex items-center gap-2 text-red-500"><i class="fa-solid fa-xmark"></i> 数据量大时 SQL 性能急剧下降</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-50 text-xs text-slate-400 mono">
+                    适用: Demo / 日单量 &lt; 1000
+                </div>
+            </div>
+
+            <!-- 方案2: JDK DelayQueue -->
+            <div class="solution-card bg-white p-6 rounded-2xl border border-slate-200 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-20 h-20 bg-amber-50 rounded-bl-full -mr-4 -mt-4 group-hover:bg-amber-100 transition-colors"></div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-hourglass-half"></i>
+                    </div>
+                    <span class="text-xs font-bold text-amber-600 uppercase">Level 2</span>
+                </div>
+                <h3 class="font-bold text-lg mb-2">JDK DelayQueue</h3>
+                <p class="text-slate-500 text-sm mb-4 leading-relaxed">
+                    基于优先级队列的内存级延迟队列，元素到期后才能被取出消费。
+                </p>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 精度高，零外部依赖</div>
+                    <div class="flex items-center gap-2 text-red-500"><i class="fa-solid fa-xmark"></i> <strong>致命缺陷：重启丢失所有任务</strong></div>
+                    <div class="flex items-center gap-2 text-red-500"><i class="fa-solid fa-xmark"></i> 单机瓶颈，无法集群扩展</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-50 text-xs text-slate-400 mono">
+                    适用: 学习原理 / 非关键业务
+                </div>
+            </div>
+
+            <!-- 方案3: Redis ZSet / Keyspace -->
+            <div class="solution-card bg-white p-6 rounded-2xl border border-slate-200 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-20 h-20 bg-red-50 rounded-bl-full -mr-4 -mt-4 group-hover:bg-red-100 transition-colors"></div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center text-lg">
+                        <i class="fa-brands fa-redis"></i>
+                    </div>
+                    <span class="text-xs font-bold text-red-600 uppercase">Level 3</span>
+                </div>
+                <h3 class="font-bold text-lg mb-2">Redis ZSet / Keyspace</h3>
+                <p class="text-slate-500 text-sm mb-4 leading-relaxed">
+                    ZSet: score=过期时间戳，轮询取到期元素。<br>
+                    Keyspace: 利用 key 过期事件通知（不推荐）。
+                </p>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 轻量，多数项目已有 Redis</div>
+                    <div class="flex items-center gap-2 text-amber-500"><i class="fa-solid fa-minus"></i> ZSet 仍需轮询；Keyspace 不保证可靠</div>
+                    <div class="flex items-center gap-2 text-red-500"><i class="fa-solid fa-xmark"></i> 大数据量下 ZRANGEBYSCORE 阻塞风险</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-50 text-xs text-slate-400 mono">
+                    适用: 中小规模 / 已有Redis基础设施
+                </div>
+            </div>
+
+            <!-- 方案4: RabbitMQ TTL+DLX ⭐ -->
+            <div class="solution-card bg-white p-6 rounded-2xl border-2 border-indigo-500 relative overflow-hidden group ring-4 ring-indigo-50">
+                <div class="absolute top-3 right-3">
+                    <span class="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded uppercase">Recommended</span>
+                </div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-lg node-pulse">
+                        <i class="fa-solid fa-envelope-open-text"></i>
+                    </div>
+                    <span class="text-xs font-bold text-indigo-600 uppercase">Level 4</span>
+                </div>
+                <h3 class="font-bold text-lg mb-2">MQ 死信队列 (TTL+DLX)</h3>
+                <p class="text-slate-500 text-sm mb-4 leading-relaxed">
+                    消息设置 TTL=30min → 超时后进入 Dead Letter Exchange → 路由到取消订单队列 → 消费者处理。
+                </p>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> <strong>精准延迟，无需轮询</strong></div>
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 天然持久化，重启不丢失</div>
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 解耦下单与取消逻辑</div>
+                    <div class="flex items-center gap-2 text-amber-500"><i class="fa-solid fa-minus"></i> RabbitMQ 不支持动态 TTL 队列复用</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-indigo-50 text-xs text-indigo-500 font-bold mono">
+                    🏆 生产环境首选方案
+                </div>
+            </div>
+
+            <!-- 方案5: RocketMQ 延迟消息 -->
+            <div class="solution-card bg-white p-6 rounded-2xl border border-slate-200 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-20 h-20 bg-emerald-50 rounded-bl-full -mr-4 -mt-4 group-hover:bg-emerald-100 transition-colors"></div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-rocket"></i>
+                    </div>
+                    <span class="text-xs font-bold text-emerald-600 uppercase">Level 5</span>
+                </div>
+                <h3 class="font-bold text-lg mb-2">RocketMQ 延迟消息</h3>
+                <p class="text-slate-500 text-sm mb-4 leading-relaxed">
+                    原生支持 18 个延迟等级 (1s~2h)。5.x 版本支持任意精度延迟。
+                </p>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 开箱即用，无需 DLX 配置</div>
+                    <div class="flex items-center gap-2 text-green-600"><i class="fa-solid fa-check"></i> 高吞吐，阿里双11验证</div>
+                    <div class="flex items-center gap-2 text-amber-500"><i class="fa-solid fa-minus"></i> 4.x 仅支持固定等级，不够灵活</div>
+                    <div class="flex items-center gap-2 text-red-500"><i class="fa-solid fa-xmark"></i> 运维成本高于 RabbitMQ</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-50 text-xs text-slate-400 mono">
+                    适用: 已用RocketMQ / 超高并发
+                </div>
+            </div>
+
+            <!-- 方案6: 时间轮 (补充) -->
+            <div class="solution-card bg-slate-900 p-6 rounded-2xl border border-slate-700 relative overflow-hidden group text-white">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-white/10 text-blue-400 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-gear"></i>
+                    </div>
+                    <span class="text-xs font-bold text-slate-400 uppercase">Bonus</span>
+                </div>
+                <h3 class="font-bold text-lg mb-2">Netty HashedWheelTimer</h3>
+                <p class="text-slate-400 text-sm mb-4 leading-relaxed">
+                    时间轮算法，O(1) 调度复杂度。适合海量短延迟任务。
+                </p>
+                <div class="space-y-2 text-xs text-slate-400">
+                    <div class="flex items-center gap-2"><i class="fa-solid fa-check text-green-400"></i> 内存级高性能调度</div>
+                    <div class="flex items-center gap-2"><i class="fa-solid fa-xmark text-red-400"></i> 同样有重启丢失问题</div>
+                    <div class="flex items-center gap-2"><i class="fa-solid fa-lightbulb text-yellow-400"></i> 常作为 MQ 内部调度引擎</div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Decision Matrix -->
+    <section id="decision" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-8 border-b border-slate-100">
+            <h2 class="text-2xl font-bold flex items-center gap-3">
+                <i class="fa-solid fa-compass text-purple-500"></i> 选型决策矩阵
+            </h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider text-xs">
+                <tr>
+                    <th class="px-6 py-4">维度</th>
+                    <th class="px-6 py-4">DB轮询</th>
+                    <th class="px-6 py-4">DelayQueue</th>
+                    <th class="px-6 py-4">Redis ZSet</th>
+                    <th class="px-6 py-4 text-indigo-600">MQ DLX ⭐</th>
+                    <th class="px-6 py-4">RocketMQ</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                <tr>
+                    <td class="px-6 py-4 font-bold text-slate-700">延迟精度</td>
+                    <td class="px-6 py-4 text-red-500">低 (分钟级)</td>
+                    <td class="px-6 py-4 text-green-600">高 (毫秒级)</td>
+                    <td class="px-6 py-4 text-amber-500">中 (秒级)</td>
+                    <td class="px-6 py-4 text-green-600 font-bold">高 (秒级)</td>
+                    <td class="px-6 py-4 text-green-600">高 (秒级)</td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-bold text-slate-700">可靠性</td>
+                    <td class="px-6 py-4 text-green-600">高 (持久化)</td>
+                    <td class="px-6 py-4 text-red-500">极低 (内存)</td>
+                    <td class="px-6 py-4 text-amber-500">中 (AOF/RDB)</td>
+                    <td class="px-6 py-4 text-green-600 font-bold">极高 (ACK机制)</td>
+                    <td class="px-6 py-4 text-green-600">极高</td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-bold text-slate-700">实现复杂度</td>
+                    <td class="px-6 py-4 text-green-600">⭐</td>
+                    <td class="px-6 py-4 text-green-600">⭐⭐</td>
+                    <td class="px-6 py-4 text-amber-500">⭐⭐⭐</td>
+                    <td class="px-6 py-4 text-amber-500">⭐⭐⭐</td>
+                    <td class="px-6 py-4 text-green-600">⭐⭐</td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-bold text-slate-700">集群支持</td>
+                    <td class="px-6 py-4 text-amber-500">需分布式锁</td>
+                    <td class="px-6 py-4 text-red-500">不支持</td>
+                    <td class="px-6 py-4 text-amber-500">需分布式锁</td>
+                    <td class="px-6 py-4 text-green-600 font-bold">原生支持</td>
+                    <td class="px-6 py-4 text-green-600">原生支持</td>
+                </tr>
+                <tr>
+                    <td class="px-6 py-4 font-bold text-slate-700">推荐场景</td>
+                    <td class="px-6 py-4 text-slate-500">原型验证</td>
+                    <td class="px-6 py-4 text-slate-500">本地缓存过期</td>
+                    <td class="px-6 py-4 text-slate-500">轻量级延迟</td>
+                    <td class="px-6 py-4 text-indigo-600 font-bold">通用生产环境</td>
+                    <td class="px-6 py-4 text-slate-500">大规模交易</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Critical Pitfalls -->
+    <section class="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+
+        <h2 class="text-2xl font-bold mb-8 relative z-10 flex items-center gap-3">
+            <i class="fa-solid fa-shield-halved text-amber-400"></i> 生产环境三大铁律
+        </h2>
+
+        <div class="grid md:grid-cols-3 gap-6 relative z-10">
+            <div class="bg-white/5 border border-white/10 rounded-2xl p-6">
+                <div class="w-10 h-10 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center text-lg mb-4">
+                    <i class="fa-solid fa-fingerprint"></i>
+                </div>
+                <h3 class="font-bold text-lg mb-2">幂等性保障</h3>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                    取消操作必须幂等！用户可能在第29分钟手动取消，延迟消息到达时需检查订单状态。<br>
+                    <code class="text-xs bg-white/10 px-1.5 py-0.5 rounded mt-2 inline-block">UPDATE ... WHERE status='UNPAID'</code><br>
+                    用乐观锁/CAS 防止重复扣减库存。
+                </p>
+            </div>
+
+            <div class="bg-white/5 border border-white/10 rounded-2xl p-6">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg mb-4">
+                    <i class="fa-solid fa-arrows-spin"></i>
+                </div>
+                <h3 class="font-bold text-lg mb-2">补偿兜底机制</h3>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                    MQ 不是 100% 可靠。必须保留一个<strong>低频定时任务</strong>（如每5分钟）扫描漏网之鱼作为最终一致性兜底。
+                </p>
+            </div>
+
+            <div class="bg-white/5 border border-white/10 rounded-2xl p-6">
+                <div class="w-10 h-10 rounded-xl bg-green-500/20 text-green-400 flex items-center justify-center text-lg mb-4">
+                    <i class="fa-solid fa-ban"></i>
+                </div>
+                <h3 class="font-bold text-lg mb-2">避免 Keyspace 陷阱</h3>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                    Redis Keyspace Notification 是<strong>发布即忘</strong>模式，没有 ACK 机制。如果消费者宕机，消息永久丢失。<strong>生产环境严禁用于关键业务。</strong>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interview Answer Template -->
+    <section class="bg-indigo-50 border border-indigo-100 rounded-3xl p-8 md:p-10">
+        <h2 class="text-xl font-bold text-indigo-900 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-microphone-lines"></i> 面试满分回答模板
+        </h2>
+        <p class="text-indigo-800/80 leading-loose text-lg italic">
+            "订单超时取消本质是一个<strong>分布式延迟任务</strong>问题。我推荐基于 <strong>RabbitMQ TTL + 死信队列</strong>的方案：下单时发送一条 TTL=30min 的消息到延迟队列，超时后自动路由到取消队列由消费者处理。相比 DB 轮询，它精准且不伤库；相比 Redis Keyspace，它有 ACK 保证可靠性。同时我会做三点加固：<strong>①</strong> 消费者通过乐观锁保证幂等；<strong>②</strong> 保留低频定时扫描作为兜底补偿；<strong>③</strong> 如果团队已用 RocketMQ 5.x，可直接用其原生延迟消息简化架构。"
+        </p>
+    </section>
+
+</main>
+
+<footer class="max-w-6xl mx-auto px-6 py-10 text-center text-slate-400 text-sm border-t border-slate-200 mt-12">
+    <p>© 2026 Distributed System Design · Order Timeout Cancellation Patterns</p>
+</footer>
+
+</body>
+</html>

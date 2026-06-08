@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JVM老年代内存缓慢增长 - 排查指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
+              danger: { 50: '#fef2f2', 100: '#fee2e2', 200: '#fecaca', 300: '#fca5a5', 400: '#f87171', 500: '#ef4444', 600: '#dc2626', 700: '#b91c1c', 800: '#991b1b', 900: '#7f1d1d' },
+              warning: { 50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d', 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 700: '#b45309', 800: '#92400e', 900: '#78350f' },
+              success: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' },
+              dark: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' },
+            },
+            animation: {
+              'fade-in-up': 'fadeInUp 0.6s ease-out forwards',
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 6s ease-in-out infinite',
+              'shimmer': 'shimmer 2s linear infinite',
+            },
+            keyframes: {
+              fadeInUp: {
+                '0%': { opacity: '0', transform: 'translateY(20px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              },
+              shimmer: {
+                '0%': { backgroundPosition: '-200% 0' },
+                '100%': { backgroundPosition: '200% 0' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .dark .glass-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .code-block {
+            background: #0f172a;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .code-block::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 36px;
+            background: #1e293b;
+            border-radius: 12px 12px 0 0;
+        }
+        .code-block pre {
+            padding: 48px 20px 20px 20px;
+            margin: 0;
+            overflow-x: auto;
+        }
+        .code-block .dots {
+            position: absolute;
+            top: 12px; left: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        .code-block .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ef4444; }
+        .dot-yellow { background: #f59e0b; }
+        .dot-green { background: #22c55e; }
+
+        .timeline-line {
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+        }
+
+        .expandable-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease-out, opacity 0.3s ease-out;
+            opacity: 0;
+        }
+        .expandable-content.open {
+            max-height: 800px;
+            opacity: 1;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+            background-size: 200% 100%;
+            animation: shimmer 2s linear infinite;
+        }
+
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        .hover-lift {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .scroll-indicator {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+            transform-origin: left;
+            z-index: 100;
+        }
+
+        .bg-grid {
+            background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .dark .bg-grid {
+            background-image: radial-gradient(circle, #334155 1px, transparent 1px);
+        }
+    </style>
+    <base target="_blank">
+</head>
+<body class="bg-dark-50 text-dark-800 dark:bg-dark-950 dark:text-dark-100 transition-colors duration-300">
+<div class="scroll-indicator" id="scrollProgress"></div>
+
+<!-- Hero Section -->
+<section class="relative min-h-[70vh] flex items-center justify-center overflow-hidden bg-grid">
+    <div class="absolute inset-0 bg-gradient-to-br from-primary-500/10 via-transparent to-warning-500/10"></div>
+    <div class="absolute top-20 left-10 w-72 h-72 bg-primary-400/20 rounded-full blur-3xl animate-float"></div>
+    <div class="absolute bottom-20 right-10 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-float" style="animation-delay: 2s;"></div>
+
+    <div class="relative z-10 text-center px-6 max-w-4xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6 animate-fade-in-up">
+            <i data-lucide="cpu" class="w-4 h-4"></i>
+            <span>Java 面试高频考点</span>
+        </div>
+        <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 animate-fade-in-up" style="animation-delay: 0.1s;">
+            <span class="gradient-text">JVM 老年代</span><br>
+            <span class="text-dark-900 dark:text-white">内存缓慢增长</span>
+        </h1>
+        <p class="text-lg md:text-xl text-dark-500 dark:text-dark-400 max-w-2xl mx-auto mb-10 animate-fade-in-up" style="animation-delay: 0.2s;">
+            深入剖析老年代内存持续攀升的底层原因，从内存泄漏到GC策略，全面掌握排查与根治方案
+        </p>
+        <div class="flex flex-wrap justify-center gap-4 animate-fade-in-up" style="animation-delay: 0.3s;">
+            <a href="#causes" class="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-primary-500/25 flex items-center gap-2">
+                <i data-lucide="search" class="w-4 h-4"></i>
+                查看原因
+            </a>
+            <a href="#diagnosis" class="px-6 py-3 bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 text-dark-700 dark:text-dark-200 rounded-xl font-semibold hover:bg-dark-50 dark:hover:bg-dark-700 transition-all flex items-center gap-2">
+                <i data-lucide="activity" class="w-4 h-4"></i>
+                排查流程
+            </a>
+        </div>
+    </div>
+
+    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+        <i data-lucide="chevron-down" class="w-6 h-6 text-dark-400"></i>
+    </div>
+</section>
+
+<!-- Quick Stats -->
+<section class="py-12 px-6 max-w-6xl mx-auto">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="metric-card rounded-2xl p-6 hover-lift">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 rounded-xl bg-danger-100 dark:bg-danger-900/30 flex items-center justify-center">
+                    <i data-lucide="alert-triangle" class="w-6 h-6 text-danger-600"></i>
+                </div>
+                <span class="tag-pill bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300">高频</span>
+            </div>
+            <h3 class="text-2xl font-bold text-dark-900 dark:text-white mb-1">内存泄漏</h3>
+            <p class="text-dark-500 dark:text-dark-400 text-sm">静态集合、监听器未移除、ThreadLocal 滥用</p>
+        </div>
+        <div class="metric-card rounded-2xl p-6 hover-lift">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 rounded-xl bg-warning-100 dark:bg-warning-900/30 flex items-center justify-center">
+                    <i data-lucide="box" class="w-6 h-6 text-warning-600"></i>
+                </div>
+                <span class="tag-pill bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">常见</span>
+            </div>
+            <h3 class="text-2xl font-bold text-dark-900 dark:text-white mb-1">大对象</h3>
+            <p class="text-dark-500 dark:text-dark-400 text-sm">大数组、大字符串直接分配至老年代</p>
+        </div>
+        <div class="metric-card rounded-2xl p-6 hover-lift">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 rounded-xl bg-success-100 dark:bg-success-900/30 flex items-center justify-center">
+                    <i data-lucide="settings" class="w-6 h-6 text-success-600"></i>
+                </div>
+                <span class="tag-pill bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300">可调优</span>
+            </div>
+            <h3 class="text-2xl font-bold text-dark-900 dark:text-white mb-1">参数不当</h3>
+            <p class="text-dark-500 dark:text-dark-400 text-sm">堆大小、分代比例、GC策略配置不合理</p>
+        </div>
+    </div>
+</section>
+
+<!-- Main Causes Section -->
+<section id="causes" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-bold text-dark-900 dark:text-white mb-4">六大核心成因</h2>
+        <p class="text-dark-500 dark:text-dark-400 max-w-2xl mx-auto">Full GC 的触发本质是「内存资源供需失衡」，即老年代对象增长速度超过回收速度</p>
+    </div>
+
+    <div class="space-y-6">
+        <!-- Cause 1: Memory Leak -->
+        <div class="glass-card rounded-2xl overflow-hidden hover-lift">
+            <div class="p-6 cursor-pointer" onclick="toggleExpand('cause1')">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-danger-100 dark:bg-danger-900/30 flex items-center justify-center shrink-0">
+                        <span class="text-2xl font-bold text-danger-600">01</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-dark-900 dark:text-white">内存泄漏 — 头号元凶</h3>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-dark-400 transition-transform duration-300" id="icon-cause1"></i>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 mt-2">对象不再使用却未被回收，长期驻留老年代，导致内存占用持续上升</p>
+                    </div>
+                </div>
+            </div>
+            <div class="expandable-content" id="cause1">
+                <div class="px-6 pb-6 pt-2 border-t border-dark-100 dark:border-dark-800">
+                    <div class="grid md:grid-cols-2 gap-6 mt-4">
+                        <div class="space-y-4">
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="x-circle" class="w-5 h-5 text-danger-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">静态集合未清理</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400 mt-1">static List、Map 等容器缓存大量过期数据，未设置过期淘汰机制</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="x-circle" class="w-5 h-5 text-danger-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">监听器未移除</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400 mt-1">注册的事件监听器、回调函数在对象销毁后未注销，引用链持续存在</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="x-circle" class="w-5 h-5 text-danger-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">资源未释放</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400 mt-1">数据库连接、文件流、Socket 等资源未关闭，关联对象长期存活</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="x-circle" class="w-5 h-5 text-danger-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">ThreadLocal 滥用</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400 mt-1">ThreadLocal 中的对象与线程生命周期绑定，线程池场景下未及时 remove() 导致对象永久驻留</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-sm font-mono text-green-400"><code>// 典型内存泄漏代码示例
+public class MemoryLeakExample {
+    // 静态 Map 持续累积，无清理机制
+    private static final Map<String, Object> cache =
+        new HashMap<>();
+
+    public void addCache(String key, Object value) {
+        cache.put(key, value); // 只进不出！
+    }
+
+    // ThreadLocal 未清理
+    private static final ThreadLocal<byte[]> tl =
+        new ThreadLocal<>();
+
+    public void process() {
+        tl.set(new byte[1024 * 1024 * 10]); // 10MB
+        // 用完未调用 tl.remove()
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cause 2: Large Objects -->
+        <div class="glass-card rounded-2xl overflow-hidden hover-lift">
+            <div class="p-6 cursor-pointer" onclick="toggleExpand('cause2')">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-warning-100 dark:bg-warning-900/30 flex items-center justify-center shrink-0">
+                        <span class="text-2xl font-bold text-warning-600">02</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-dark-900 dark:text-white">大对象直接进入老年代</h3>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-dark-400 transition-transform duration-300" id="icon-cause2"></i>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 mt-2">超过阈值的大对象（如大数组、大字符串）直接分配在老年代，快速耗尽空间</p>
+                    </div>
+                </div>
+            </div>
+            <div class="expandable-content" id="cause2">
+                <div class="px-6 pb-6 pt-2 border-t border-dark-100 dark:border-dark-800">
+                    <div class="grid md:grid-cols-2 gap-6 mt-4">
+                        <div>
+                            <div class="bg-warning-50 dark:bg-warning-900/20 rounded-xl p-4 mb-4 border border-warning-200 dark:border-warning-800">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i data-lucide="info" class="w-5 h-5 text-warning-600"></i>
+                                    <span class="font-semibold text-warning-800 dark:text-warning-300">阈值说明</span>
+                                </div>
+                                <p class="text-sm text-warning-700 dark:text-warning-400">JVM 默认将大于 Eden 区剩余空间的对象直接分配到老年代，可通过 <code class="bg-warning-100 dark:bg-warning-900/40 px-1.5 py-0.5 rounded text-xs">-XX:PretenureSizeThreshold</code> 设置</p>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="flex items-start gap-3">
+                                    <i data-lucide="file-text" class="w-5 h-5 text-warning-500 mt-0.5 shrink-0"></i>
+                                    <div>
+                                        <h4 class="font-semibold text-dark-800 dark:text-dark-200">大 JSON/ XML 字符串</h4>
+                                        <p class="text-sm text-dark-500 dark:text-dark-400">序列化反序列化产生超大字符串对象</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                    <i data-lucide="image" class="w-5 h-5 text-warning-500 mt-0.5 shrink-0"></i>
+                                    <div>
+                                        <h4 class="font-semibold text-dark-800 dark:text-dark-200">图片/文件字节数组</h4>
+                                        <p class="text-sm text-dark-500 dark:text-dark-400">读取大文件到内存，byte[] 直接进入老年代</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                    <i data-lucide="database" class="w-5 h-5 text-warning-500 mt-0.5 shrink-0"></i>
+                                    <div>
+                                        <h4 class="font-semibold text-dark-800 dark:text-dark-200">批量查询大数据集</h4>
+                                        <p class="text-sm text-dark-500 dark:text-dark-400">一次查询返回百万级数据，List 对象巨大</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-sm font-mono text-green-400"><code>// 每次请求创建 100MB 大数组
+// 直接进入老年代！
+byte[] data = new byte[1024 * 1024 * 100];
+
+// 大对象分配参数调优
+// -XX:PretenureSizeThreshold=1m
+// 超过 1MB 直接进老年代
+
+// 优化方案：分页处理、流式读取
+public void processLargeData() {
+    // 错误：一次性加载全部
+    List<Record> all = dao.findAll();
+
+    // 正确：分页流式处理
+    dao.streamQuery(pageSize, record -> {
+        process(record); // 处理完即释放
+    });
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cause 3: Object Promotion -->
+        <div class="glass-card rounded-2xl overflow-hidden hover-lift">
+            <div class="p-6 cursor-pointer" onclick="toggleExpand('cause3')">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
+                        <span class="text-2xl font-bold text-primary-600">03</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-dark-900 dark:text-white">对象过早晋升（Premature Promotion）</h3>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-dark-400 transition-transform duration-300" id="icon-cause3"></i>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 mt-2">本应短期存活的对象因 Survivor 区不足或年龄阈值过低，提前进入老年代</p>
+                    </div>
+                </div>
+            </div>
+            <div class="expandable-content" id="cause3">
+                <div class="px-6 pb-6 pt-2 border-t border-dark-100 dark:border-dark-800">
+                    <div class="mt-4 space-y-4">
+                        <div class="grid md:grid-cols-3 gap-4">
+                            <div class="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                                <h4 class="font-semibold text-primary-800 dark:text-primary-300 mb-2 flex items-center gap-2">
+                                    <i data-lucide="gauge" class="w-4 h-4"></i>
+                                    Survivor 区不足
+                                </h4>
+                                <p class="text-sm text-dark-600 dark:text-dark-400">Minor GC 后存活对象超过 Survivor 容量，通过空间分配担保直接进入老年代</p>
+                            </div>
+                            <div class="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                                <h4 class="font-semibold text-primary-800 dark:text-primary-300 mb-2 flex items-center gap-2">
+                                    <i data-lucide="timer" class="w-4 h-4"></i>
+                                    年龄阈值过低
+                                </h4>
+                                <p class="text-sm text-dark-600 dark:text-dark-400">MaxTenuringThreshold 设置过小，对象在 Survivor 区经历几次 GC 就晋升</p>
+                            </div>
+                            <div class="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                                <h4 class="font-semibold text-primary-800 dark:text-primary-300 mb-2 flex items-center gap-2">
+                                    <i data-lucide="git-merge" class="w-4 h-4"></i>
+                                    动态年龄判定
+                                </h4>
+                                <p class="text-sm text-dark-600 dark:text-dark-400">Survivor 区中相同年龄对象大小超过 50% 时，大于等于该年龄的对象直接晋升</p>
+                            </div>
+                        </div>
+                        <div class="code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-sm font-mono text-green-400"><code>// JVM 参数调优建议
+// 增大 Survivor 区比例
+-XX:SurvivorRatio=6          // Eden:S0:S1 = 6:1:1
+
+// 适当提高晋升年龄阈值
+-XX:MaxTenuringThreshold=15  // 默认 15 (CMS 为 6)
+
+// 观察晋升情况
+jstat -gcutil PID 5000
+// 关注 YGC 后 OU（老年代使用）是否持续增长</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cause 4: Cache -->
+        <div class="glass-card rounded-2xl overflow-hidden hover-lift">
+            <div class="p-6 cursor-pointer" onclick="toggleExpand('cause4')">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
+                        <span class="text-2xl font-bold text-purple-600">04</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-dark-900 dark:text-white">本地缓存对象累积</h3>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-dark-400 transition-transform duration-300" id="icon-cause4"></i>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 mt-2">Guava Cache、Caffeine、HashMap 等缓存未设置过期策略，对象长期存活进入老年代</p>
+                    </div>
+                </div>
+            </div>
+            <div class="expandable-content" id="cause4">
+                <div class="px-6 pb-6 pt-2 border-t border-dark-100 dark:border-dark-800">
+                    <div class="mt-4">
+                        <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 mb-4 border border-purple-200 dark:border-purple-800">
+                            <p class="text-sm text-purple-700 dark:text-purple-400">
+                                <strong>典型场景：</strong>每隔一段时间刷新缓存，旧缓存实例成为垃圾对象，但因未触发 Major GC 而长期占用老年代空间，最终呈现 Old Gen 内存上升趋势。
+                            </p>
+                        </div>
+                        <div class="code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-sm font-mono text-green-400"><code>// 错误：无界缓存，只进不出
+private Map<String, Object> cache = new HashMap<>();
+
+// 正确：使用带过期策略的缓存
+LoadingCache<String, Object> cache = Caffeine.newBuilder()
+    .maximumSize(10_000)           // 最大条目数
+    .expireAfterWrite(30, TimeUnit.MINUTES)  // 写入后过期
+    .removalListener((key, value, cause) -> {
+        // 清理资源
+    })
+    .build(key -> loadFromDB(key));
+
+// 或 Guava Cache
+Cache<String, Object> cache = CacheBuilder.newBuilder()
+    .maximumSize(1000)
+    .expireAfterAccess(10, TimeUnit.MINUTES)
+    .weakValues()  // 允许 GC 回收值
+    .build();</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cause 5: Metaspace/Class Leak -->
+        <div class="glass-card rounded-2xl overflow-hidden hover-lift">
+            <div class="p-6 cursor-pointer" onclick="toggleExpand('cause5')">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-success-100 dark:bg-success-900/30 flex items-center justify-center shrink-0">
+                        <span class="text-2xl font-bold text-success-600">05</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-dark-900 dark:text-white">元空间（Metaspace）泄漏</h3>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-dark-400 transition-transform duration-300" id="icon-cause5"></i>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 mt-2">动态生成类（如 CGLIB、反射、Groovy）未卸载，导致 Metaspace 持续增长，触发 Full GC</p>
+                    </div>
+                </div>
+            </div>
+            <div class="expandable-content" id="cause5">
+                <div class="px-6 pb-6 pt-2 border-t border-dark-100 dark:border-dark-800">
+                    <div class="mt-4 space-y-4">
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="code-2" class="w-5 h-5 text-success-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">CGLIB / JDK 动态代理</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400">频繁创建代理类，类加载器未释放</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="terminal" class="w-5 h-5 text-success-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">Groovy / JSP 动态编译</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400">脚本引擎动态编译产生新类，类加载器累积</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="refresh-cw" class="w-5 h-5 text-success-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">热部署 / 热加载</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400">重复加载类，旧类加载器未卸载</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <i data-lucide="bug" class="w-5 h-5 text-success-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200">Orika / MapStruct</h4>
+                                    <p class="text-sm text-dark-500 dark:text-dark-400">字节码生成工具产生大量临时类</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-sm font-mono text-green-400"><code>// 监控元空间
+jstat -gcmetacapacity PID
+
+// 设置元空间上限，避免无限增长
+-XX:MetaspaceSize=128m
+-XX:MaxMetaspaceSize=256m
+
+// 开启类卸载日志
+-XX:+TraceClassUnloading
+
+// 检查类加载数量
+jcmd PID VM.classloader_stats</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cause 6: GC Strategy -->
+        <div class="glass-card rounded-2xl overflow-hidden hover-lift">
+            <div class="p-6 cursor-pointer" onclick="toggleExpand('cause6')">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-dark-100 dark:bg-dark-800 flex items-center justify-center shrink-0">
+                        <span class="text-2xl font-bold text-dark-600 dark:text-dark-400">06</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-dark-900 dark:text-white">GC 策略与参数配置不当</h3>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-dark-400 transition-transform duration-300" id="icon-cause6"></i>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 mt-2">堆大小、分代比例、GC 收集器选择不合理，导致 GC 效率低下</p>
+                    </div>
+                </div>
+            </div>
+            <div class="expandable-content" id="cause6">
+                <div class="px-6 pb-6 pt-2 border-t border-dark-100 dark:border-dark-800">
+                    <div class="mt-4">
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="space-y-3">
+                                <div class="bg-dark-50 dark:bg-dark-800/50 rounded-lg p-3">
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200 text-sm mb-1">老年代空间过小</h4>
+                                    <p class="text-xs text-dark-500 dark:text-dark-400">NewRatio 过大导致老年代空间不足，频繁触发 Full GC</p>
+                                </div>
+                                <div class="bg-dark-50 dark:bg-dark-800/50 rounded-lg p-3">
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200 text-sm mb-1">GC 收集器选择不当</h4>
+                                    <p class="text-xs text-dark-500 dark:text-dark-400">Serial GC 在服务端应用性能差；CMS 浮动垃圾问题；G1 的 Region 大小不匹配大对象</p>
+                                </div>
+                                <div class="bg-dark-50 dark:bg-dark-800/50 rounded-lg p-3">
+                                    <h4 class="font-semibold text-dark-800 dark:text-dark-200 text-sm mb-1">堆内存未对齐</h4>
+                                    <p class="text-xs text-dark-500 dark:text-dark-400">Xms ≠ Xmx 导致运行时堆扩展，触发 Full GC 整理内存</p>
+                                </div>
+                            </div>
+                            <div class="code-block">
+                                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                                <pre class="text-sm font-mono text-green-400"><code>// 生产环境推荐基线配置 (JDK 8+)
+-Xms4g -Xmx4g              // 堆大小固定，避免动态扩展
+-XX:NewRatio=2             // 老年代:年轻代 = 2:1
+-XX:SurvivorRatio=8         // Eden:S0:S1 = 8:1:1
+-XX:MaxMetaspaceSize=512m   // 限制元空间
+-XX:+UseG1GC               // 推荐 G1 收集器
+-XX:MaxGCPauseMillis=200   // 目标最大停顿
+-XX:InitiatingHeapOccupancyPercent=45
+
+// 开启 GC 日志
+-XX:+PrintGCDetails
+-XX:+PrintGCDateStamps
+-Xloggc:/path/to/gc.log</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Diagnosis Flow Section -->
+<section id="diagnosis" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-bold text-dark-900 dark:text-white mb-4">排查诊断流程</h2>
+        <p class="text-dark-500 dark:text-dark-400 max-w-2xl mx-auto">从现象到根源，形成完整证据链的四步定位法</p>
+    </div>
+
+    <div class="relative max-w-4xl mx-auto">
+        <div class="timeline-line hidden md:block"></div>
+
+        <div class="space-y-8">
+            <!-- Step 1 -->
+            <div class="relative flex flex-col md:flex-row gap-6 md:gap-12">
+                <div class="md:w-1/2 md:text-right">
+                    <div class="glass-card rounded-2xl p-6 hover-lift">
+                        <div class="flex items-center gap-3 mb-3 md:justify-end">
+                            <h3 class="text-lg font-bold text-dark-900 dark:text-white">查看 GC 日志</h3>
+                            <div class="w-10 h-10 rounded-full bg-primary-500 text-white flex items-center justify-center font-bold shrink-0">1</div>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 text-sm mb-4">收集 Full GC 发生时间、间隔、持续时间，判断老年代回收效率</p>
+                        <div class="code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-xs font-mono text-green-400"><code>// 添加 JVM 参数
+-XX:+PrintGCDetails
+-XX:+PrintGCDateStamps
+-Xloggc:/path/gc.log
+
+// 关键指标
+// Full GC 频率、老年代回收前后使用率
+// 若 Full GC 后内存仅降 3-5%，存在泄漏</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="md:w-1/2"></div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="relative flex flex-col md:flex-row gap-6 md:gap-12">
+                <div class="md:w-1/2"></div>
+                <div class="md:w-1/2">
+                    <div class="glass-card rounded-2xl p-6 hover-lift">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full bg-warning-500 text-white flex items-center justify-center font-bold shrink-0">2</div>
+                            <h3 class="text-lg font-bold text-dark-900 dark:text-white">实时监控定位</h3>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 text-sm mb-4">使用可视化工具观察 JVM 状态，快速锁定异常点</p>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-warning-50 dark:bg-warning-900/20 rounded-lg p-3 text-center">
+                                <i data-lucide="activity" class="w-5 h-5 text-warning-600 mx-auto mb-1"></i>
+                                <span class="text-xs font-semibold text-dark-700 dark:text-dark-300">Arthas</span>
+                            </div>
+                            <div class="bg-warning-50 dark:bg-warning-900/20 rounded-lg p-3 text-center">
+                                <i data-lucide="bar-chart-2" class="w-5 h-5 text-warning-600 mx-auto mb-1"></i>
+                                <span class="text-xs font-semibold text-dark-700 dark:text-dark-300">JVisualVM</span>
+                            </div>
+                            <div class="bg-warning-50 dark:bg-warning-900/20 rounded-lg p-3 text-center">
+                                <i data-lucide="monitor" class="w-5 h-5 text-warning-600 mx-auto mb-1"></i>
+                                <span class="text-xs font-semibold text-dark-700 dark:text-dark-300">JConsole</span>
+                            </div>
+                            <div class="bg-warning-50 dark:bg-warning-900/20 rounded-lg p-3 text-center">
+                                <i data-lucide="terminal-square" class="w-5 h-5 text-warning-600 mx-auto mb-1"></i>
+                                <span class="text-xs font-semibold text-dark-700 dark:text-dark-300">jstat</span>
+                            </div>
+                        </div>
+                        <div class="mt-3 code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-xs font-mono text-green-400"><code>// 每 5 秒采样，观察 OU 走势
+jstat -gcutil PID 5000
+
+// Arthas 实时看板
+dashboard -n 5
+
+// 导出堆快照
+heapdump /path/dump.hprof</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="relative flex flex-col md:flex-row gap-6 md:gap-12">
+                <div class="md:w-1/2 md:text-right">
+                    <div class="glass-card rounded-2xl p-6 hover-lift">
+                        <div class="flex items-center gap-3 mb-3 md:justify-end">
+                            <h3 class="text-lg font-bold text-dark-900 dark:text-white">堆快照分析</h3>
+                            <div class="w-10 h-10 rounded-full bg-danger-500 text-white flex items-center justify-center font-bold shrink-0">3</div>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 text-sm mb-4">使用 MAT / JProfiler 分析堆快照，定位占比最高的对象</p>
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2 justify-end">
+                                <span class="text-sm text-dark-600 dark:text-dark-400">支配树分析 (Dominator Tree)</span>
+                                <i data-lucide="check-circle" class="w-4 h-4 text-success-500"></i>
+                            </div>
+                            <div class="flex items-center gap-2 justify-end">
+                                <span class="text-sm text-dark-600 dark:text-dark-400">泄漏嫌疑报告 (Leak Suspects)</span>
+                                <i data-lucide="check-circle" class="w-4 h-4 text-success-500"></i>
+                            </div>
+                            <div class="flex items-center gap-2 justify-end">
+                                <span class="text-sm text-dark-600 dark:text-dark-400">对象对比 (Histogram 对比)</span>
+                                <i data-lucide="check-circle" class="w-4 h-4 text-success-500"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3 code-block">
+                            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                            <pre class="text-xs font-mono text-green-400"><code>// 生成堆转储（live 只保留存活对象）
+jmap -dump:live,format=b,file=heap.hprof PID
+
+// 快速查看对象统计（不停机）
+jmap -histo:live PID | head -n20
+
+// 对比两次采样（间隔 2 小时）
+diff <(jmap -histo:live PID1) <(jmap -histo:live PID2)</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="md:w-1/2"></div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="relative flex flex-col md:flex-row gap-6 md:gap-12">
+                <div class="md:w-1/2"></div>
+                <div class="md:w-1/2">
+                    <div class="glass-card rounded-2xl p-6 hover-lift">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full bg-success-500 text-white flex items-center justify-center font-bold shrink-0">4</div>
+                            <h3 class="text-lg font-bold text-dark-900 dark:text-white">代码定位与修复</h3>
+                        </div>
+                        <p class="text-dark-500 dark:text-dark-400 text-sm mb-4">结合 MAT 的 Path to GC Roots 找到引用链，定位到具体业务代码</p>
+                        <div class="bg-success-50 dark:bg-success-900/20 rounded-xl p-4 border border-success-200 dark:border-success-800">
+                            <h4 class="font-semibold text-success-800 dark:text-success-300 mb-2 flex items-center gap-2">
+                                <i data-lucide="lightbulb" class="w-4 h-4"></i>
+                                修复 checklist
+                            </h4>
+                            <ul class="space-y-1 text-sm text-success-700 dark:text-success-400">
+                                <li>• 添加缓存过期策略（TTL / LRU）</li>
+                                <li>• 移除无用监听器和回调</li>
+                                <li>• ThreadLocal 使用完及时 remove()</li>
+                                <li>• 关闭资源（try-with-resources）</li>
+                                <li>• 分页处理大数据集</li>
+                                <li>• 限制元空间大小，检查类卸载</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Tools Section -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-bold text-dark-900 dark:text-white mb-4">排查工具箱</h2>
+        <p class="text-dark-500 dark:text-dark-400">工欲善其事，必先利其器</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="terminal" class="w-8 h-8 text-primary-600"></i>
+            </div>
+            <h3 class="font-bold text-dark-900 dark:text-white mb-2">Arthas</h3>
+            <p class="text-sm text-dark-500 dark:text-dark-400">阿里巴巴开源 Java 诊断神器，支持实时查看内存、线程、方法耗时</p>
+            <div class="mt-3">
+                <span class="tag-pill bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">在线诊断</span>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-warning-100 dark:bg-warning-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="search" class="w-8 h-8 text-warning-600"></i>
+            </div>
+            <h3 class="font-bold text-dark-900 dark:text-white mb-2">MAT</h3>
+            <p class="text-sm text-dark-500 dark:text-dark-400">Memory Analyzer Tool，Eclipse 出品，堆分析利器，自动泄漏嫌疑报告</p>
+            <div class="mt-3">
+                <span class="tag-pill bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">堆分析</span>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-success-100 dark:bg-success-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="bar-chart-3" class="w-8 h-8 text-success-600"></i>
+            </div>
+            <h3 class="font-bold text-dark-900 dark:text-white mb-2">GCViewer / GCEasy</h3>
+            <p class="text-sm text-dark-500 dark:text-dark-400">GC 日志可视化分析工具，计算 Full GC 频率、耗时占比等指标</p>
+            <div class="mt-3">
+                <span class="tag-pill bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300">GC 分析</span>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="eye" class="w-8 h-8 text-purple-600"></i>
+            </div>
+            <h3 class="font-bold text-dark-900 dark:text-white mb-2">JProfiler</h3>
+            <p class="text-sm text-dark-500 dark:text-dark-400">商业级性能分析工具，支持内存、CPU、线程、JDBC 全面分析</p>
+            <div class="mt-3">
+                <span class="tag-pill bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">全链路</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Summary Card -->
+<section class="py-16 px-6 max-w-4xl mx-auto">
+    <div class="glass-card rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-primary-400/20 to-purple-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div class="relative z-10">
+            <h2 class="text-2xl md:text-3xl font-bold text-dark-900 dark:text-white mb-6">面试回答要点</h2>
+            <div class="space-y-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-primary-600 font-bold text-sm">1</span>
+                    </div>
+                    <p class="text-dark-700 dark:text-dark-300"><strong class="text-dark-900 dark:text-white">先判断是否正常：</strong>老年代缓慢上升不一定都是问题，可能是长期存活对象（如缓存）正常累积，只要最终能触发 Full GC 回收且不影响业务，属于正常现象。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-primary-600 font-bold text-sm">2</span>
+                    </div>
+                    <p class="text-dark-700 dark:text-dark-300"><strong class="text-dark-900 dark:text-white">区分泄漏与正常增长：</strong>若 Full GC 后老年代内存无法回落（仅降 3-5%），则存在内存泄漏；若能大幅回落，只是增长快，则考虑参数调优。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-primary-600 font-bold text-sm">3</span>
+                    </div>
+                    <p class="text-dark-700 dark:text-dark-300"><strong class="text-dark-900 dark:text-white">排查顺序：</strong>看 GC 日志 → 监控工具定位 → 堆快照分析 → 代码修复。常用工具：Arthas（在线）、MAT（离线堆分析）、jstat（命令行）。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-primary-600 font-bold text-sm">4</span>
+                    </div>
+                    <p class="text-dark-700 dark:text-dark-300"><strong class="text-dark-900 dark:text-white">高频根因：</strong>静态集合未清理、ThreadLocal 未 remove、大对象直接分配、缓存无过期策略、动态类生成导致 Metaspace 泄漏。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-12 px-6 text-center border-t border-dark-200 dark:border-dark-800">
+    <p class="text-dark-500 dark:text-dark-400 text-sm">
+        基于 JVM 内存管理与 GC 原理整理 · 适用于 Java 后端面试与生产问题排查
+    </p>
+    <div class="flex items-center justify-center gap-4 mt-4">
+        <span class="tag-pill bg-dark-100 text-dark-600 dark:bg-dark-800 dark:text-dark-400">JVM</span>
+        <span class="tag-pill bg-dark-100 text-dark-600 dark:bg-dark-800 dark:text-dark-400">GC</span>
+        <span class="tag-pill bg-dark-100 text-dark-600 dark:bg-dark-800 dark:text-dark-400">内存泄漏</span>
+        <span class="tag-pill bg-dark-100 text-dark-600 dark:bg-dark-800 dark:text-dark-400">性能优化</span>
+    </div>
+</footer>
+
+<script>
+  // Initialize Lucide icons
+  lucide.createIcons();
+
+  // Expandable content toggle
+  function toggleExpand(id) {
+    const content = document.getElementById(id);
+    const icon = document.getElementById('icon-' + id);
+    const isOpen = content.classList.contains('open');
+
+    // Close all others
+    document.querySelectorAll('.expandable-content').forEach(el => {
+      el.classList.remove('open');
+    });
+    document.querySelectorAll('[id^="icon-cause"]').forEach(el => {
+      el.style.transform = 'rotate(0deg)';
+    });
+
+    if (!isOpen) {
+      content.classList.add('open');
+      icon.style.transform = 'rotate(180deg)';
+    }
+  }
+
+  // Scroll progress indicator
+  window.addEventListener('scroll', () => {
+    const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    const progress = scrollTop / scrollHeight;
+    document.getElementById('scrollProgress').style.transform = `scaleX(${progress})`;
+  });
+
+  // Intersection Observer for fade-in animations
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.glass-card').forEach(card => {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(20px)';
+    card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(card);
+  });
+
+  // Dark mode detection
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.classList.add('dark');
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+    if (event.matches) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  });
+</script>
+</body>
+</html>
