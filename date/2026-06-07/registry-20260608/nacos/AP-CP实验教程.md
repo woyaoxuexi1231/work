@@ -65,10 +65,10 @@ MySQL: 192.168.3.100:3306 (容器名: mysql)
 docker ps | Select-String "nacos"
 
 # 查看集群节点信息
-curl "http://192.168.3.100:8848/nacos/v1/ns/operator/cluster/health"
+curl "http://192.168.3.100:8848/nacos/v2/core/cluster/node/self/health"
 
 # 查看集群节点列表
-curl "http://192.168.3.100:8848/nacos/v1/ns/operator/cluster/nodes"
+curl "http://192.168.3.100:8848/nacos/v2/core/cluster/node/self"
 ```
 
 ---
@@ -189,6 +189,7 @@ curl "http://192.168.3.100:8948/nacos/v1/ns/instance/list?serviceName=order-demo
 ```
 
 **预期结果**：
+
 ```text
 ✅ nacos2 和 nacos3 自动同步了 order-demo 的注册信息
 ✅ 这就是 AP 模式：最终一致性
@@ -222,6 +223,7 @@ mvn spring-boot:run
 ### 理论基础
 
 **CP 模式特点**：
+
 - 使用 **Raft 协议**（分布式一致性协议）
 - 优先保证数据一致性
 - 必须得到多数派（>50%）节点确认才能写入
