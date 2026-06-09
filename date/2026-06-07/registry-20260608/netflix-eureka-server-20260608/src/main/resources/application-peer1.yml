@@ -8,10 +8,9 @@ eureka:
     prefer-ip-address: true
     hostname: peer1
   client:
-    register-with-eureka: false
-    fetch-registry: false
+    register-with-eureka: true
+    fetch-registry: true
     service-url:
       defaultZone:
-        - http://peer1:12001/eureka/
         - http://peer2:12002/eureka/
         - http://peer3:12003/eureka/
