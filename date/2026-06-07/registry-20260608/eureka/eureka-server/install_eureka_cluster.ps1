@@ -1,5 +1,5 @@
 # Eureka Cluster | 3 nodes | jdk1.8
-. "$PSScriptRoot/../nacos/lib/common.ps1"
+. "$PSScriptRoot/lib/common.ps1"
 
 check_docker
 
