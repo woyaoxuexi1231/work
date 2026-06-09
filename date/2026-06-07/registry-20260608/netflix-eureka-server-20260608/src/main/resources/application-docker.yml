@@ -15,10 +15,9 @@ eureka:
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://eureka1:8761/eureka/,http://eureka2:8761/eureka/,http://eureka3:8761/eureka/}
   server:
-    # 测试用：关闭自我保护，停掉的节点会被剔除
-    enable-self-preservation: false
+    # AP 核心：开启自我保护，心跳低于阈值不剔除（宁可误留也不误杀）
+    enable-self-preservation: true
+    # 心跳续约阈值：低于 85% 就触发自我保护（3节点停1个=66%，直接触发）
     renewal-percent-threshold: 0.85
-    # 剔除检查间隔（默认60s，调短便于观察）
-    eviction-interval-timer-in-ms: 5000
-    # 节点间复制超时（默认 200ms，Docker Desktop 可能不够）
+    # 节点间复制超时（Docker Desktop 网络可能慢）
     peer-node-read-timeout-ms: 5000
