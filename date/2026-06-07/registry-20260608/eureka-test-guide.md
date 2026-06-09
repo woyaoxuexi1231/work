@@ -4,11 +4,11 @@
 
 | 节点 | 端口 | 容器名 | Dashboard |
 |------|------|--------|-----------|
-| Node 1 | 8761 | eureka1 | http://host.docker.internal:8761/ |
-| Node 2 | 8762 | eureka2 | http://host.docker.internal:8762/ |
-| Node 3 | 8763 | eureka3 | http://host.docker.internal:8763/ |
+| Node 1 | 8761 | eureka1 | http://localhost:8761/ |
+| Node 2 | 8762 | eureka2 | http://localhost:8762/ |
+| Node 3 | 8763 | eureka3 | http://localhost:8763/ |
 
-- 客户端应用 (eureka-demo): http://host.docker.internal:8082
+- 客户端应用 (eureka-demo): http://localhost:8082
 
 ## 启动环境
 
@@ -36,56 +36,68 @@ Eureka 是纯 **AP** 设计，核心机制是 **自我保护 (Self-Preservation)
 
 自我保护触发:
   每分钟统计心跳续约数
-  实际续约数 < 阈值续约数 (默认 85%) → 触发保护
+  实际续约数 < 预期续约数 × 85% → 触发保护
   保护模式下: 不剔除任何实例！宁可返回过时数据也不丢数据
 ```
 
-**为什么？** 防止网络分区 (Network Partition) 导致大量实例被误删。
+**关键：什么能触发，什么不能触发：**
+
+| 操作 | 能否触发自我保护 | 原因 |
+|------|:---:|------|
+| 停 Eureka Server 节点 | **不能** | 客户端还在给其他节点发心跳，续约率没降 |
+| 大量客户端突然断心跳 | **能** | 续约率暴跌 < 85%，触发保护 |
 
 ---
 
-## 测试步骤
+## 测试 A：自我保护开启（默认）
 
 ### Step 1: 确认集群正常
 
-打开三个 Dashboard，确认互相可见：
-
-- http://host.docker.internal:8761/ → "registered-replicas" 里应显示 EUREKA2、EUREKA3
-- http://host.docker.internal:8762/ → 应显示 EUREKA1、EUREKA3
-- http://host.docker.internal:8763/ → 应显示 EUREKA1、EUREKA2
-
 ```bash
 # 查看客户端注册状态
-curl http://host.docker.internal:8082/info
+curl http://localhost:8082/info
 
-# 查看自我保护状态
-curl http://host.docker.internal:8082/test/self-preservation
+# 打开 Dashboard 确认无红色告警
+# http://localhost:8761/
+# http://localhost:8762/
+# http://localhost:8763/
 ```
 
-**预期：** Dashboard 无红色告警，所有实例状态 UP。
-
-### Step 2: 注册更多实例 (增大续约基数)
-
-启动多个客户端实例，或手动注册模拟实例：
+### Step 2: 批量注册假实例（不发心跳）
 
 ```bash
-# 查看当前所有已注册应用
-curl http://host.docker.internal:8082/test/self-preservation
-
-# 查看所有注册详情
-curl http://host.docker.internal:8082/test/multi-node-compare
+# 注册 10 个假实例到 Eureka Server
+# 这些实例只注册，不会有 EurekaClient 维护心跳
+curl -X POST "http://localhost:8082/test/fake-register?count=10"
 ```
 
-### Step 3: 停掉 1 个 Eureka Server 节点
-
-```powershell
-docker stop eureka3
+返回示例：
+```json
+{
+  "registered": ["10.0.0.1:30001 (fake-host-1)", "..."],
+  "registeredCount": 10,
+  "renewalAnalysis": {
+    "realInstancesBefore": 1,
+    "fakeInstancesAdded": 10,
+    "totalInstancesAfter": 11,
+    "expectedRenewalRate": "9%",       ← 远低于 85%
+    "willTriggerSelfPreservation": true ← 将触发自我保护
+  }
+}
 ```
 
-**立即观察：**
+### Step 3: 等待 2 分钟
 
-1. 打开 http://host.docker.internal:8761/ Dashboard
-2. 应该看到顶部红色告警横幅：
+假实例的 lease 是 90s，等 2 分钟让它们过期。
+
+```bash
+# 等待 (PowerShell)
+Start-Sleep 120
+```
+
+### Step 4: 观察 Dashboard
+
+打开 http://localhost:8761/ ，应该看到顶部红色告警：
 
 ```
 EMERGENCY! EUREKA MAY BE INCORRECTLY CLAIMING INSTANCE ARE UP WHICH THEY'RE NOT.
@@ -93,76 +105,90 @@ RENEWALS ARE LESSER THAN THRESHOLD AND HENCE THE INSTANCES ARE NOT BEING EXPIRED
 JUST TO BE SAFE.
 ```
 
-这说明自我保护已激活！
+**这就是自我保护激活了！**
+
+### Step 5: 验证假实例仍在
 
 ```bash
-# 验证自我保护状态
-curl http://host.docker.internal:8082/test/self-preservation
+curl http://localhost:8082/test/fake-status
 ```
 
-### Step 4: 验证自我保护行为
+**预期结果：**
+```json
+{
+  "fakeInstancesStillVisible": 10,     ← 假实例仍在！没有被剔除
+  "verdict": "假实例仍在 → 自我保护已激活 (AP: 宁返过时数据也不丢)"
+}
+```
 
-自我保护激活后，**即使客户端停止心跳，实例也不会被剔除**。
-
-验证方式：
+### Step 6: 清理
 
 ```bash
-# 1. 记录当前实例数
-curl http://host.docker.internal:8082/test/self-preservation
-# → 记下 totalInstances
-
-# 2. 杀掉客户端应用 (Ctrl+C)
-
-# 3. 等待 2 分钟 (超过正常的 90s 过期时间)
-sleep 120
-
-# 4. 重新查看 (如果客户端还能查询缓存)
-# 或直接看 Dashboard: 实例仍然存在，没有被剔除!
+curl -X DELETE "http://localhost:8082/test/fake-cleanup"
 ```
-
-**对比：如果自我保护关闭**
-
-在 `application-docker.yml` 中设置 `enable-self-preservation: false`，重复上述测试：
-- 客户端停止心跳 → 90s 后实例被剔除 (状态变 DOWN 然后消失)
-
-### Step 5: 恢复节点
-
-```powershell
-docker start eureka3
-```
-
-等待 ~30s，Dashboard 红色告警消失，续约率恢复正常。
 
 ---
 
-## 进阶测试: 节点间数据同步验证
+## 测试 B：自我保护关闭（对比）
 
-### 验证 peer 复制
+### Step 1: 用 `no-sp` profile 重新启动 Eureka Server
 
-```bash
-# 通过客户端注册 (连接到 eureka1)
-# 然后分别在三个 Dashboard 查看是否都能看到这个实例
-# http://host.docker.internal:8761/ ✓
-# http://host.docker.internal:8762/ ✓ (从 eureka1 同步过来)
-# http://host.docker.internal:8763/ ✓ (从 eureka1 同步过来)
-```
-
-### 模拟网络分区
+修改 `install_eureka.ps1` 中的环境变量：
 
 ```powershell
-# 断开 eureka3 的网络 (不是 stop，而是隔离)
-docker network disconnect eureka-net eureka3
-
-# 观察:
-# - eureka1 和 eureka2: 互相可见，eureka3 变为 "unavailable-replicas"
-# - eureka3: eureka1 和 eureka2 变为 "unavailable-replicas"
-# - 两边都可能触发自我保护
-
-# 恢复网络
-docker network connect eureka-net eureka3
+-e SPRING_PROFILES_ACTIVE=no-sp `    # 改这里: docker → no-sp
 ```
 
+或者手动启动一个单节点对比：
+
+```powershell
+docker run -d --name eureka-test -p 18761:8761 `
+  -e SPRING_PROFILES_ACTIVE=no-sp `
+  -e SERVER_PORT=8761 `
+  -e "eureka.client.registerWithEureka=false" `
+  -e "eureka.client.fetchRegistry=false" `
+  eureka-server:latest
+```
+
+### Step 2: 注册假实例
+
+```bash
+# 注册到关闭保护的 Eureka
+curl -X POST "http://localhost:8082/test/fake-register?count=10"
+```
+
+### Step 3: 等待 2 分钟
+
+```bash
+Start-Sleep 120
+```
+
+### Step 4: 查看结果
+
+```bash
+curl http://localhost:8082/test/fake-status
+```
+
+**预期结果：**
+```json
+{
+  "fakeInstancesStillVisible": 0,     ← 假实例被剔除了！
+  "verdict": "假实例已被剔除 → 自我保护未激活或已关闭"
+}
+```
+
+Dashboard 无红色告警，假实例已消失。
+
 ---
+
+## 对比总结
+
+| | 自我保护开启 (默认) | 自我保护关闭 |
+|---|---|---|
+| **停发心跳后** | 实例保留，不剔除 | 90s 后剔除 |
+| **Dashboard 告警** | 红色 EMERGENCY | 无告警 |
+| **设计理念** | 宁可返回过时数据 (AP) | 宁可返回空数据 |
+| **适用场景** | 网络不稳定/分区风险高 | 网络稳定，追求数据新鲜 |
 
 ## API 速查表
 
@@ -171,44 +197,25 @@ docker network connect eureka-net eureka3
 | GET | `/info` | 当前服务注册信息 |
 | GET | `/services` | 所有已注册服务名 |
 | GET | `/services/{name}` | 指定服务的实例列表 |
-| GET | `/eureka/app/{appName}` | Eureka 原生 API 查询应用详情 |
-| GET | `/test/self-preservation` | 自我保护状态 + 测试指南 |
-| GET | `/test/multi-node-compare` | 多节点注册表对比 |
+| GET | `/eureka/app/{appName}` | Eureka 原生 API 查询应用 |
+| **POST** | `/test/fake-register?count=10` | **批量注册假实例 (触发保护)** |
+| **GET** | `/test/fake-status` | **查看假实例是否被剔除** |
+| **DELETE** | `/test/fake-cleanup` | **清理假实例** |
 
-## 关键观察点
+## 快速流程
 
 ```
-正常状态 (3 节点全活):
-  Dashboard: 无告警
-  实例心跳: 正常续约
-  过期实例: 90s 后被剔除 ✓
+# 1. 注册假实例
+curl -X POST "http://localhost:8082/test/fake-register?count=10"
 
-停 1 节点 (2/3):
-  Dashboard: 红色 EMERGENCY 告警 ⚠️
-  自我保护: 已激活
-  过期实例: 不会被剔除 (AP 设计)
-  新注册: 仍然成功 (写入剩余节点)
+# 2. 等 2 分钟
+# 3. 看 Dashboard → 红色 EMERGENCY 告警
+# 4. 查状态 → 假实例仍在 (保护生效)
+curl http://localhost:8082/test/fake-status
 
-停 2 节点 (1/3):
-  Dashboard: 红色告警 + 无 peer
-  自我保护: 仍然激活
-  过期实例: 不会被剔除
-  新注册: 成功 (单节点仍可接受写入)
-
-全部恢复:
-  Dashboard: 告警消失
-  节点同步: peer 间数据重新一致 ✓
-  续约率: 恢复正常阈值
+# 5. 清理
+curl -X DELETE "http://localhost:8082/test/fake-cleanup"
 ```
-
-## 自我保护 vs 不保护的对比
-
-| 场景 | 保护开启 (默认) | 保护关闭 |
-|------|----------------|---------|
-| 网络分区 | 保留所有实例 ✓ | 可能误删健康实例 ✗ |
-| 真的宕机 | 过时实例不会被剔除 | 90s 后被剔除 |
-| 设计理念 | **宁可返回过时数据** | **宁可返回空数据** |
-| CAP 分类 | AP (可用性优先) | 偏向 CP (一致性优先) |
 
 ## 清理
 

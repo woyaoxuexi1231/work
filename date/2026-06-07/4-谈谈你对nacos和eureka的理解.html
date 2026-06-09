@@ -44,6 +44,7 @@
             <a href="#definition" class="hover:text-blue-600 transition-colors">核心定义</a>
             <a href="#comparison" class="hover:text-blue-600 transition-colors">Nacos vs Eureka</a>
             <a href="#principles" class="hover:text-blue-600 transition-colors">底层原理</a>
+            <a href="#experiments" class="hover:text-blue-600 transition-colors">实战验证</a>
         </nav>
     </div>
 </header>
@@ -174,7 +175,63 @@
                 </div>
             </div>
 
-            <!-- 3. 配置中心原理 -->
+           <!-- 4. Eureka 自我保护 -->
+            <div class="md:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <h3 class="font-bold text-lg">Eureka 自我保护机制 (AP 核心)</h3>
+                    <span class="ml-auto text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">面试高频</span>
+                </div>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <p class="text-slate-500 text-sm leading-relaxed mb-4">
+                            Eureka 每分钟统计心跳续约数，当续约率低于阈值时触发保护：
+                        </p>
+                        <div class="bg-slate-50 rounded-xl p-4 text-sm space-y-3 border border-slate-100">
+                            <div class="flex items-start gap-2">
+                                <i class="fa-solid fa-calculator text-slate-400 mt-0.5"></i>
+                                <div><strong>预期续约数</strong> = 实例数 × 2/分钟 <span class="text-slate-400">(每30s一次心跳)</span></div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <i class="fa-solid fa-heart text-red-400 mt-0.5"></i>
+                                <div><strong>实际续约数</strong> = 服务端实际收到的心跳次数</div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5"></i>
+                                <div><strong>触发条件:</strong> 实际续约数 &lt; 预期 × <strong class="text-amber-700">0.85</strong> → 激活保护</div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <i class="fa-solid fa-lock text-emerald-500 mt-0.5"></i>
+                                <div><strong>保护行为:</strong> 不剔除任何实例，宁可返回过时数据</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-slate-500 text-sm leading-relaxed mb-4">关键误区 — 什么能/不能触发保护：</p>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex items-center gap-2 p-2 rounded-lg bg-red-50 border border-red-100">
+                                <i class="fa-solid fa-xmark text-red-500"></i>
+                                <span class="text-slate-700"><strong>停 Eureka Server 节点</strong> — 客户端还在给其他节点发心跳，续约率没降</span>
+                            </div>
+                            <div class="flex items-center gap-2 p-2 rounded-lg bg-green-50 border border-green-100">
+                                <i class="fa-solid fa-check text-green-500"></i>
+                                <span class="text-slate-700"><strong>大量客户端突然断心跳</strong> — 续约率暴跌，低于 85% 阈值</span>
+                            </div>
+                            <div class="flex items-center gap-2 p-2 rounded-lg bg-green-50 border border-green-100">
+                                <i class="fa-solid fa-check text-green-500"></i>
+                                <span class="text-slate-700"><strong>网络分区</strong> — Server 收不到心跳，续约率下降</span>
+                            </div>
+                        </div>
+                        <div class="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-100 text-xs text-amber-800">
+                            <i class="fa-solid fa-lightbulb mr-1"></i> 设计理念：宁可返回过时的数据 (AP)，也不误删健康实例。对比 Nacos CP 模式：失去多数节点后直接拒绝写入。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. 配置中心原理 -->
             <div class="md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
                 <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
 
@@ -218,13 +275,209 @@
         </div>
     </section>
 
+   <!-- Experiments / Practical Verification -->
+    <section id="experiments">
+        <h2 class="text-2xl font-bold mb-2 px-2">实战验证</h2>
+        <p class="text-slate-500 text-sm mb-8 px-2">基于 3 节点集群的实际测试结果，面试时说出这些细节会非常加分。</p>
+
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- Nacos AP/CP 实测 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-flask-vial"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold">Nacos AP/CP 集群故障实测</h3>
+                        <span class="text-xs text-slate-400">3节点集群: ephemeral 临时 vs 持久实例</span>
+                    </div>
+                </div>
+
+                <!-- 行为矩阵 -->
+                <div class="rounded-xl border border-slate-200 overflow-hidden text-xs">
+                    <table class="w-full text-center">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-500 font-semibold">
+                                <th class="p-2 text-left pl-3">场景</th>
+                                <th class="p-2">AP 写入</th>
+                                <th class="p-2">CP 写入</th>
+                                <th class="p-2">AP 读取</th>
+                                <th class="p-2">CP 读取</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr>
+                                <td class="p-2 text-left pl-3 font-medium text-slate-700">3/3 健康</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                            </tr>
+                            <tr class="bg-slate-50/50">
+                                <td class="p-2 text-left pl-3 font-medium text-slate-700">停1节点 (2/3)</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                            </tr>
+                            <tr class="bg-amber-50/50">
+                                <td class="p-2 text-left pl-3 font-medium text-amber-800">停2节点 (1/3)</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-red-500 font-bold">✗</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-amber-600 font-bold">旧数据</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2 text-left pl-3 font-medium text-slate-700">全部恢复</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-emerald-600 font-bold">✓</td>
+                                <td class="p-2 text-blue-600">最终一致</td>
+                                <td class="p-2 text-emerald-600 font-bold">强一致</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 space-y-2 text-xs text-slate-500">
+                    <div class="flex items-start gap-2">
+                        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5"></i>
+                        <span><strong class="text-slate-700">核心差异:</strong> 失去多数节点后，AP (Distro) 仍可写入单节点内存；CP (Raft) 因无法选举 Leader 直接拒绝写入。</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5"></i>
+                        <span><strong class="text-slate-700">恢复后:</strong> CP 重新选举 Leader 并保证数据强一致；AP 通过异步复制最终一致。</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Eureka 自我保护实测 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-flask-vial"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold">Eureka 自我保护触发实测</h3>
+                        <span class="text-xs text-slate-400">3节点集群: 续约率暴跌实验</span>
+                    </div>
+                </div>
+
+                <!-- 实验流程 -->
+                <div class="space-y-3">
+                    <div class="flex items-start gap-3">
+                        <div class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">1</div>
+                        <div class="text-sm">
+                            <strong class="text-slate-800">注册 10 个假实例</strong>
+                            <span class="text-slate-500 block text-xs">通过 REST API 注册，但不维护心跳 (不发 heartbeat)</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <div class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">2</div>
+                        <div class="text-sm">
+                            <strong class="text-slate-800">续约率暴跌至 ~9%</strong>
+                            <span class="text-slate-500 block text-xs">1 个真实实例续约 / 11 个实例预期续约 = 9% &lt; 85% 阈值</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <div class="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold shrink-0">3</div>
+                        <div class="text-sm">
+                            <strong class="text-amber-800">Dashboard 出现 EMERGENCY 告警</strong>
+                            <span class="text-slate-500 block text-xs">红色横幅: "RENEWALS ARE LESSER THAN THRESHOLD..."</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold shrink-0">4</div>
+                        <div class="text-sm">
+                            <strong class="text-emerald-800">等待 2 分钟后假实例仍在</strong>
+                            <span class="text-slate-500 block text-xs">lease 已过期 (90s)，但保护模式下不剔除 → AP 设计</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 对比表 -->
+                <div class="mt-5 rounded-xl border border-slate-200 overflow-hidden text-xs">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-500 font-semibold text-center">
+                                <th class="p-2 text-left pl-3"></th>
+                                <th class="p-2">保护开启 (默认)</th>
+                                <th class="p-2">保护关闭</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr>
+                                <td class="p-2 pl-3 font-medium text-slate-700">心跳停止后</td>
+                                <td class="p-2 text-center text-emerald-600">实例保留</td>
+                                <td class="p-2 text-center text-red-500">90s 后剔除</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2 pl-3 font-medium text-slate-700">网络分区时</td>
+                                <td class="p-2 text-center text-emerald-600">不会误删</td>
+                                <td class="p-2 text-center text-red-500">可能误删</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2 pl-3 font-medium text-slate-700">CAP 倾向</td>
+                                <td class="p-2 text-center font-bold text-blue-600">AP (可用性)</td>
+                                <td class="p-2 text-center font-bold text-indigo-600">偏 CP (一致性)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nacos vs Eureka 故障处理对比 -->
+        <div class="mt-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
+            <div class="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl -ml-10 -mb-10"></div>
+            <div class="relative z-10">
+                <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-arrows-left-right text-indigo-400"></i>
+                    Nacos vs Eureka: 节点故障时的行为对比
+                </h3>
+                <div class="grid md:grid-cols-3 gap-4 text-sm">
+                    <div class="bg-black/30 rounded-xl p-4 border border-white/10">
+                        <div class="text-slate-400 text-xs mb-2 font-semibold uppercase">场景: 失去多数节点</div>
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                <span class="text-slate-300"><strong class="text-blue-400">Nacos AP:</strong> 仍可读写，最终一致</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                <span class="text-slate-300"><strong class="text-indigo-400">Nacos CP:</strong> 拒绝写入，保证一致性</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                                <span class="text-slate-300"><strong class="text-amber-400">Eureka AP:</strong> 自我保护，保留所有实例</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-black/30 rounded-xl p-4 border border-white/10">
+                        <div class="text-slate-400 text-xs mb-2 font-semibold uppercase">设计哲学</div>
+                        <div class="space-y-2 text-slate-300">
+                            <div><strong class="text-blue-400">Nacos:</strong> 按需选择 — 临时服务用 AP 保可用，核心配置用 CP 保一致</div>
+                            <div><strong class="text-amber-400">Eureka:</strong> 一刀切 AP — 宁可返回过时数据也不误删实例</div>
+                        </div>
+                    </div>
+                    <div class="bg-black/30 rounded-xl p-4 border border-white/10">
+                        <div class="text-slate-400 text-xs mb-2 font-semibold uppercase">面试加分点</div>
+                        <div class="space-y-2 text-slate-300 text-xs">
+                            <div>• Nacos 的 AP/CP 不是配置切换，而是根据实例类型自动选择协议</div>
+                            <div>• Eureka 自我保护不是 bug 而是设计，防止网络分区误删</div>
+                            <div>• 停 Server 不触发 Eureka 保护，停 Client 心跳才会触发</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Interview Summary -->
     <section class="bg-blue-50 border border-blue-100 rounded-3xl p-8 md:p-10">
         <h2 class="text-xl font-bold text-blue-900 mb-4 flex items-center gap-2">
             <i class="fa-solid fa-microphone-lines"></i> 面试一句话总结
         </h2>
         <p class="text-blue-800/80 leading-loose text-lg italic">
-            "Nacos 是阿里开源的注册中心与配置中心二合一组件。相比 Eureka，它最大的优势在于<strong>同时支持 AP/CP 模型</strong>、<strong>原生集成配置管理</strong>以及<strong>更高的性能上限</strong>。其服务发现采用推拉结合+双重健康检查，配置更新采用长轮询机制，在保证实时性的同时大幅降低了服务器压力。在 Spring Cloud Alibaba 生态中，它是替代 Eureka+Config 的首选方案。"
+            "Nacos 是阿里开源的注册中心与配置中心二合一组件。相比 Eureka，它最大的优势在于<strong>同时支持 AP/CP 模型</strong>、<strong>原生集成配置管理</strong>以及<strong>更高的性能上限</strong>。Nacos 根据实例类型自动选择协议：临时实例用 Distro (AP) 保证高可用，持久实例用 Raft (CP) 保证强一致。实测中，当集群失去多数节点时，AP 仍可读写，CP 直接拒绝写入。Eureka 则是纯 AP 设计，通过自我保护机制实现高可用：当心跳续约率低于 85% 时触发保护，不剔除任何实例。需要注意，停 Server 不会触发保护，必须是客户端心跳丢失才会触发。在 Spring Cloud Alibaba 生态中，Nacos 是替代 Eureka+Config 的首选方案。"
         </p>
     </section>
 

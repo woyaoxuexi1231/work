@@ -1,0 +1,21 @@
+server:
+  port: ${SERVER_PORT:8761}
+
+spring:
+  application:
+    name: eureka-server
+
+eureka:
+  instance:
+    prefer-ip-address: false
+    hostname: ${EUREKA_HOSTNAME:eureka1}
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://eureka1:8761/eureka/,http://eureka2:8761/eureka/,http://eureka3:8761/eureka/}
+  server:
+    # 关闭自我保护 (对比测试用)
+    # 关闭后: 假实例 lease 过期后会被直接剔除
+    enable-self-preservation: false
+    renewal-percent-threshold: 0.85
