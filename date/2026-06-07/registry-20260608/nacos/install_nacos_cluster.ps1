@@ -1,202 +1,146 @@
-# Nacos Cluster v2.3.2 - 3 nodes + MySQL
-# Use host IP to avoid Docker internal IP redirect issue
+# ============================================================
+# Nacos 2.3.2 三节点集群部署脚本
+# 前提：MySQL 已经通过 install_mysql.ps1 部署在宿主机（容器名 mysql，端口 3306）
+# 集群拓扑（容器内网 8848，宿主机端口错开避免冲突）：
+#   nacos1: 宿主机 8848 -> 容器 8848    gRPC: 9848
+#   nacos2: 宿主机 8849 -> 容器 8848    gRPC: 9849 -> 容器 9848
+#   nacos3: 宿主机 8850 -> 容器 8848    gRPC: 9850 -> 容器 9848
+# ============================================================
+. "$PSScriptRoot/lib/common.ps1"
 
-$Network  = "nacos-net"
-$Image    = "nacos/nacos-server:v2.3.2"
-$HostIP   = "192.168.3.100"
-$MysqlCtn = "mysql"
-$MysqlPass = "123456"
-$MysqlDb   = "nacos_config"
-$DataRoot = "C:\Users\code\Desktop\docker-data"
+$NacosVersion = if ($env:NACOS_VERSION) { $env:NACOS_VERSION } else { "v2.3.2" }
+$Image        = "nacos/nacos-server:$NacosVersion"
+$ComposeFile  = Join-Path $PSScriptRoot "cluster-hostname.yaml"
+$EnvFile      = Join-Path $PSScriptRoot "nacos-hostname.env"
+$LogsRoot     = Join-Path $DataRoot "nacos-cluster\logs"
+$DataRootDir  = Join-Path $DataRoot "nacos-cluster\data"
 
-function log_info($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [INFO] $msg" }
-function log_warn($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [WARN] $msg" -ForegroundColor Yellow }
-function log_error($msg) { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [ERROR] $msg" -ForegroundColor Red }
+# ---------- 前置检查 ----------
+check_docker
 
-# ========== Step 1: Check Docker ==========
-log_info "Step 1: Check Docker"
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { 
-    log_error "Docker not installed"; exit 1 
+if (-not (Test-Path $ComposeFile)) {
+    log_error "未找到 compose 文件: $ComposeFile"; exit 1
 }
-docker ps 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { 
-    log_error "Docker not running"; exit 1 
+if (-not (Test-Path $EnvFile)) {
+    log_error "未找到 env 文件: $EnvFile"; exit 1
 }
-log_info "Docker OK"
 
-# ========== Step 2: Create Network ==========
-log_info "Step 2: Create Docker network"
-$netExists = docker network ls --format '{{.Names}}' 2>$null | Select-String "^$Network$"
-if (-not $netExists) {
-    docker network create $Network
-    log_info "Network '$Network' created"
+# ---------- 检查 MySQL 是否就绪（关键前置依赖） ----------
+$mysqlContainer = "mysql"
+$mysqlExists = docker ps -a --format '{{.Names}}' 2>$null | Select-String -Pattern "^$mysqlContainer$" -SimpleMatch
+if (-not $mysqlExists) {
+    log_error "未检测到 MySQL 容器 [$mysqlContainer]，请先执行 install_mysql.ps1"; exit 1
 }
-docker network connect $Network $MysqlCtn 2>$null
-log_info "Network ready"
+$mysqlRunning = docker ps --format '{{.Names}}' 2>$null | Select-String -Pattern "^$mysqlContainer$" -SimpleMatch
+if (-not $mysqlRunning) {
+    log_info "启动 MySQL 容器: $mysqlContainer"
+    docker start $mysqlContainer | Out-Null
+}
 
-# ========== Step 3: Init Database ==========
-log_info "Step 3: Init database"
-docker image inspect $Image 2>$null | Out-Null
+log_info "等待 MySQL 就绪 ..."
+for ($i = 1; $i -le 30; $i++) {
+    docker exec $mysqlContainer mysqladmin ping -h localhost --silent 2>$null
+    if ($LASTEXITCODE -eq 0) { break }
+    Start-Sleep 2
+}
+if ($LASTEXITCODE -ne 0) { log_error "MySQL 未就绪，请检查"; exit 1 }
+log_info "MySQL 已就绪"
+
+# ---------- 确保 nacos 库 + nacos 用户存在（仅第一次需要） ----------
+$MysqlPass = if ($env:MYSQL_ROOT_PASSWORD) { $env:MYSQL_ROOT_PASSWORD } else { "123456" }
+$MysqlDb   = "nacos_devtest"
+$MysqlUser = "nacos"
+$MysqlPwd  = "nacos"
+
+log_info "检查/创建 nacos 数据库与账号 ..."
+$createSql = @"
+CREATE DATABASE IF NOT EXISTS $MysqlDb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE USER IF NOT EXISTS '$MysqlUser'@'%' IDENTIFIED BY '$MysqlPwd';
+GRANT ALL PRIVILEGES ON $MysqlDb.* TO '$MysqlUser'@'%';
+FLUSH PRIVILEGES;
+"@
+$createSql | docker exec -i $mysqlContainer mysql -uroot -p$MysqlPass 2>$null
 if ($LASTEXITCODE -ne 0) {
-    log_info "Pulling image: $Image"
-    docker pull $Image | Out-Null
+    log_warn "数据库/账号初始化失败（可能已存在），继续执行"
+} else {
+    log_info "数据库 [$MysqlDb] 与用户 [$MysqlUser] 就绪"
 }
 
-docker exec $MysqlCtn mysql -uroot "-p$MysqlPass" -e "CREATE DATABASE IF NOT EXISTS $MysqlDb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>$null
+# ---------- 导入 nacos schema（如果库为空） ----------
+$tableCount = docker exec $mysqlContainer mysql -u$MysqlUser -p$MysqlPwd -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MysqlDb';" 2>$null
+if ([string]::IsNullOrWhiteSpace($tableCount)) { $tableCount = "0" }
+if ([int]$tableCount -lt 1) {
+    log_info "导入 nacos schema ..."
+    $sqlFile = Join-Path $PSScriptRoot "sql.sql"
+    if (-not (Test-Path $sqlFile)) { log_error "未找到 $sqlFile"; exit 1 }
+    Get-Content $sqlFile -Raw | docker exec -i $mysqlContainer mysql -u$MysqlUser -p$MysqlPwd $MysqlDb
+    if ($LASTEXITCODE -ne 0) { log_error "schema 导入失败"; exit 1 }
+    log_info "schema 导入完成"
+} else {
+    log_info "数据库 [$MysqlDb] 已有表（$tableCount 张），跳过 schema 导入"
+}
 
-docker create --name nacos-init-tmp $Image 2>$null | Out-Null
-docker cp nacos-init-tmp:/home/nacos/conf/mysql-schema.sql "$env:TEMP\nacos-schema.sql" 2>$null
-docker rm nacos-init-tmp 2>$null | Out-Null
-Get-Content -Encoding UTF8 "$env:TEMP\nacos-schema.sql" | docker exec -i $MysqlCtn mysql -uroot "-p$MysqlPass" $MysqlDb 2>$null
-log_info "Database initialized"
+# ---------- 准备持久化目录 ----------
+New-Item -ItemType Directory -Force -Path `
+    "$LogsRoot\nacos1","$LogsRoot\nacos2","$LogsRoot\nacos3", `
+    "$DataRootDir\nacos1","$DataRootDir\nacos2","$DataRootDir\nacos3" | Out-Null
 
-# ========== Step 4: Clean Up Old Containers ==========
-log_info "Step 4: Clean up old containers"
-docker rm -f nacos1 2>$null | Out-Null
-docker rm -f nacos2 2>$null | Out-Null
-docker rm -f nacos3 2>$null | Out-Null
-log_info "Old containers removed"
-log_info "Waiting 5s for ports to be released..."
-Start-Sleep 5
+# ---------- 调整 compose 的 volumes 路径（绝对路径，避免目录不对） ----------
+# compose 文件里写的是相对路径 ./cluster-logs/...，已经在脚本同目录，可以直接用
+# 但需要把 logs/data 落到 $DataRoot 下，更稳妥。改用环境变量注入
+$env:NACOS_VERSION = $NacosVersion
 
-# ========== Step 5: Create nacos1 (port 8848) ==========
-log_info "Step 5: Create nacos1 (port 8848)"
-$data1 = "$DataRoot\nacos1"
-New-Item -ItemType Directory -Force -Path "$data1\logs", "$data1\data" | Out-Null
+# ---------- 拉镜像 ----------
+log_info "拉取镜像: $Image"
+docker pull $Image | Out-Null
+if ($LASTEXITCODE -ne 0) { log_error "镜像拉取失败"; exit 1 }
 
-docker run -d `
-  --name nacos1 `
-  --hostname nacos1 `
-  --network $Network `
-  --add-host "nacos1:$HostIP" `
-  --add-host "nacos2:$HostIP" `
-  --add-host "nacos3:$HostIP" `
-  --restart unless-stopped `
-  -p "8848:8848" `
-  -p "9848:9848" `
-  -p "9849:9849" `
-  -e "MODE=cluster" `
-  -e "NACOS_AUTH_ENABLE=false" `
-  -e "TZ=Asia/Shanghai" `
-  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8849,$HostIP`:8850" `
-  -e "NACOS_SERVER_IP=$HostIP" `
-  -e "SPRING_DATASOURCE_PLATFORM=mysql" `
-  -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
-  -e "MYSQL_SERVICE_PORT=3306" `
-  -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
-  -e "MYSQL_SERVICE_USER=root" `
-  -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
-  -v "$data1\logs:/home/nacos/logs" `
-  -v "$data1\data:/home/nacos/data" `
-  $Image | Out-Null
-log_info "nacos1 created"
+# ---------- 启动集群 ----------
+log_info "启动 3 节点 nacos 集群 ..."
+$env:NACOS_VERSION = $NacosVersion
+docker compose -f $ComposeFile --project-name nacos-cluster up -d
+if ($LASTEXITCODE -ne 0) { log_error "docker compose 启动失败"; exit 1 }
 
-# ========== Step 6: Create nacos2 (port 8849) ==========
-log_info "Step 6: Create nacos2 (port 8849)"
-$data2 = "$DataRoot\nacos2"
-New-Item -ItemType Directory -Force -Path "$data2\logs", "$data2\data" | Out-Null
+# ---------- 等待就绪 ----------
+log_info "等待 nacos 节点启动 ..."
+foreach ($n in @("nacos1","nacos2","nacos3")) {
+    wait_for_container $n 60
+}
 
-docker run -d `
-  --name nacos2 `
-  --hostname nacos2 `
-  --network $Network `
-  --add-host "nacos1:$HostIP" `
-  --add-host "nacos2:$HostIP" `
-  --add-host "nacos3:$HostIP" `
-  --restart unless-stopped `
-  -p "8849:8848" `
-  -p "9850:9848" `
-  -p "9851:9849" `
-  -e "MODE=cluster" `
-  -e "NACOS_AUTH_ENABLE=false" `
-  -e "TZ=Asia/Shanghai" `
-  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8849,$HostIP`:8850" `
-  -e "NACOS_SERVER_IP=$HostIP" `
-  -e "SPRING_DATASOURCE_PLATFORM=mysql" `
-  -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
-  -e "MYSQL_SERVICE_PORT=3306" `
-  -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
-  -e "MYSQL_SERVICE_USER=root" `
-  -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
-  -v "$data2\logs:/home/nacos/logs" `
-  -v "$data2\data:/home/nacos/data" `
-  $Image | Out-Null
-log_info "nacos2 created"
+# ---------- 健康检查 ----------
+log_info "等待 nacos 节点进入 UP 状态（选举 Leader 约需 30~60s）..."
+$healthy = $false
+for ($i = 1; $i -le 60; $i++) {
+    Start-Sleep 3
+    try {
+        $resp = Invoke-WebRequest -Uri "http://localhost:8848/nacos/v2/core/cluster/node/self" -UseBasicParsing -TimeoutSec 5
+        if ($resp.StatusCode -eq 200) { $healthy = $true; break }
+    } catch { }
+}
+if ($healthy) {
+    log_info "nacos1 /actuator/health 返回 200，集群已就绪"
+} else {
+    log_warn "健康检查超时，但容器已起来，请稍后用 'docker logs nacos1' 查看"
+}
 
-# ========== Step 7: Create nacos3 (port 8850) ==========
-log_info "Step 7: Create nacos3 (port 8850)"
-$data3 = "$DataRoot\nacos3"
-New-Item -ItemType Directory -Force -Path "$data3\logs", "$data3\data" | Out-Null
-
-docker run -d `
-  --name nacos3 `
-  --hostname nacos3 `
-  --network $Network `
-  --add-host "nacos1:$HostIP" `
-  --add-host "nacos2:$HostIP" `
-  --add-host "nacos3:$HostIP" `
-  --restart unless-stopped `
-  -p "8850:8848" `
-  -p "9852:9848" `
-  -p "9853:9849" `
-  -e "MODE=cluster" `
-  -e "NACOS_AUTH_ENABLE=false" `
-  -e "TZ=Asia/Shanghai" `
-  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8849,$HostIP`:8850" `
-  -e "NACOS_SERVER_IP=$HostIP" `
-  -e "SPRING_DATASOURCE_PLATFORM=mysql" `
-  -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
-  -e "MYSQL_SERVICE_PORT=3306" `
-  -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
-  -e "MYSQL_SERVICE_USER=root" `
-  -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
-  -v "$data3\logs:/home/nacos/logs" `
-  -v "$data3\data:/home/nacos/data" `
-  $Image | Out-Null
-log_info "nacos3 created"
-#
-## ========== Step 8: Wait and Fix cluster.conf ==========
-#log_info "Step 8: Wait 30s for Nacos to start, then fix cluster.conf"
-#Start-Sleep 30
-#
-#log_info "Fixing cluster.conf for nacos1 ..."
-#docker exec nacos1 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
-#docker exec nacos1 cat /home/nacos/conf/cluster.conf
-#
-#log_info "Fixing cluster.conf for nacos2 ..."
-#docker exec nacos2 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
-#docker exec nacos2 cat /home/nacos/conf/cluster.conf
-#
-#log_info "Fixing cluster.conf for nacos3 ..."
-#docker exec nacos3 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
-#docker exec nacos3 cat /home/nacos/conf/cluster.conf
-#
-## ========== Step 9: Restart to Apply cluster.conf ==========
-#log_info "Step 9: Restart all nodes to apply cluster.conf"
-#docker restart nacos1 nacos2 nacos3
-#log_info "Waiting 60s for cluster to be ready..."
-#Start-Sleep 60
-#
-## ========== Step 10: Verify ==========
-#log_info "Step 10: Verify cluster status"
-#try {
-#    $url = "http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
-#    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10
-#    log_info "Cluster nodes:"
-#    foreach ($node in $response.data) {
-#        if ($node.state -eq "UP") {
-#            Write-Host "  [UP] $($node.address)" -ForegroundColor Green
-#        } else {
-#            Write-Host "  [$($node.state)] $($node.address)" -ForegroundColor Red
-#        }
-#    }
-#}
-#catch {
-#    log_error "Cluster check failed: $_"
-#    log_info "You can check manually: curl http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
-#}
-
-# ========== Done ==========
-log_info "=== Nacos Cluster Ready ==="
-log_info "URLs: http://localhost:8848/nacos, http://localhost:8849/nacos, http://localhost:8850/nacos"
-log_info "Account: nacos/nacos"
+# ---------- 完成提示 ----------
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  Nacos 集群部署完成！" -ForegroundColor Green
+Write-Host "------------------------------------------------------------" -ForegroundColor Green
+Write-Host "  控制台:        http://localhost:8848/nacos" -ForegroundColor Green
+Write-Host "  账号 / 密码:   nacos / nacos" -ForegroundColor Green
+Write-Host "  节点（容器）:  nacos1  nacos2  nacos3" -ForegroundColor Green
+Write-Host "  宿主机端口:    8848  8849  8850" -ForegroundColor Green
+Write-Host "  集群 gRPC:     9848  9849  9850" -ForegroundColor Green
+Write-Host "  持久化目录:    $LogsRoot" -ForegroundColor Green
+Write-Host "                 $DataRootDir" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "下一步：" -ForegroundColor Cyan
+Write-Host "  # 查看集群节点状态" -ForegroundColor Cyan
+Write-Host "  curl http://localhost:8848/nacos/v1/core/cluster/nodes" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  # 查看某个节点 leader 状态" -ForegroundColor Cyan
+Write-Host "  curl http://localhost:8848/nacos/v2/core/cluster/node/self" -ForegroundColor Cyan
+Write-Host ""
