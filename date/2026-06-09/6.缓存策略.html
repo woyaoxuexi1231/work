@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缓存策略 | 先DB还是先缓存 · 一致性 · 删除失败 · 击穿</title>
+    <style>
+        /* 极简样式，仅保证可读 */
+        body {
+            margin: 20px;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.5;
+            background: white;
+            color: #111;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            margin: 1.5em 0;
+            border: 0;
+            border-top: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 8px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        .note {
+            background: #f9f9f9;
+            border-left: 4px solid #666;
+            padding: 12px 16px;
+            margin: 1.2em 0;
+        }
+        ul, ol {
+            margin: 0.5em 0 1em 1.5em;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .section {
+            margin-bottom: 2em;
+        }
+        .highlight {
+            background-color: #fff3cd;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>缓存策略：数据一致性 · 删除失败 · 缓存击穿</h1>
+    <p>面试官：先更新数据库还是先更新缓存？如何保证一致性？删除缓存失败了怎么办？高并发下会不会出现缓存击穿？<br>本文逐一解答。</p>
+    <hr>
+
+    <div class="section">
+        <h2>📌 1. 先更新数据库 vs 先更新缓存？</h2>
+        <p>主流方案：<strong>Cache Aside Pattern（旁路缓存）</strong> —— 读：先读缓存，未命中则读数据库并写入缓存；写：<strong>先更新数据库，再删除缓存</strong>（而非更新缓存）。</p>
+        <table>
+            <thead><tr><th>策略</th><th>风险</th><th>结论</th></tr></thead>
+            <tbody>
+            <tr><td>先更新缓存，后更新数据库</td><td>更新缓存成功但DB失败 → 缓存与DB永久不一致</td><td>❌ 不采用</td></tr>
+            <tr><td>先更新数据库，后更新缓存</td><td>并发更新可能导致脏数据（如线程A写DB，线程B写DB并更新缓存，A再更新缓存覆盖）</td><td>⚠️ 有竞态，不推荐</td></tr>
+            <tr><td>先更新数据库，后删除缓存</td><td>删除失败时可能短暂不一致，但可通过重试/订阅binlog修复</td><td>✅ 推荐</td></tr>
+            <tr><td>先删除缓存，后更新数据库</td><td>删除后、更新前有读请求 → 缓存未命中，读取旧DB并重建缓存，导致脏数据</td><td>⚠️ 需要延迟双删等补偿，复杂</td></tr>
+            </tbody>
+        </table>
+        <div class="note">
+            ✅ <strong>最佳实践</strong>：<span class="highlight">先更新数据库，再删除缓存</span>。因为数据库是唯一可靠数据源，缓存只是加速。删除操作比更新缓存更安全（避免并发写脏）。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🧹 2. 删除缓存失败怎么办？</h2>
+        <p>即使采用“先DB后删缓存”，仍可能因网络闪断、Redis宕机等原因导致删除失败。此时缓存中仍是旧数据，造成短期不一致。解决方案：</p>
+        <ul>
+            <li><strong>① 重试机制（同步+异步）</strong>：将删除失败的key放入本地内存队列或Redis重试队列，后台线程异步重试（如指数退避）。</li>
+            <li><strong>② 订阅数据库变更日志（Binlog）</strong>：使用 Canal / Debezium 监听MySQL binlog，当数据变更时，由消费者异步删除缓存（保证最终一致）。</li>
+            <li><strong>③ 设置合理的过期时间</strong>：即使删除失败，缓存也会在TTL后失效，保证最终一致（兜底）。</li>
+            <li><strong>④ 提供主动修复接口</strong>：运维或监控发现不一致时，手动调用清理接口。</li>
+        </ul>
+        <div class="note">
+            💡 典型工程实现：更新DB后，立即发送MQ消息（如RocketMQ），消费者负责删除缓存；结合死信队列处理多次失败。或使用Canal + 监听binlog，无侵入保证最终一致。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔥 3. 高并发下缓存击穿 & 如何应对？</h2>
+        <p><strong>缓存击穿</strong>：某个热点key在缓存中失效（过期或刚被删除），大量并发请求同时穿透到数据库，造成DB压力骤增。</p>
+        <ul>
+            <li><strong>互斥锁（分布式锁）</strong>：只允许一个线程去查DB并重建缓存，其他线程等待或快速失败。常用Redis setnx或Redisson。</li>
+            <li><strong>逻辑过期（永远不设置物理过期，而是维护一个逻辑过期时间）</strong>：当发现逻辑过期时，异步去更新缓存，旧数据仍可返回，避免DB压力。</li>
+            <li><strong>布隆过滤器</strong>：针对不存在的key，提前过滤，避免无效穿透。但击穿是<strong>存在的key刚好失效</strong>，布隆过滤器无效，需用锁或异步重建。</li>
+            <li><strong>提前“续命”</strong>：对热点key后台线程定时刷新，防止失效瞬间高并发。</li>
+        </ul>
+        <div class="note">
+            🧠 <strong>经典互斥锁代码示例</strong>（基于Redis）：<br>
+            <code>
+                String value = redis.get(key);<br>
+                if (value == null) {<br>
+                &nbsp;&nbsp;String lockKey = "lock:" + key;<br>
+                &nbsp;&nbsp;if (redis.setnx(lockKey, "1", 3)) { // 获取锁<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;try {<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;value = db.query(key);<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;redis.setex(key, ttl, value);<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;} finally { redis.del(lockKey); }<br>
+                &nbsp;&nbsp;} else {<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;Thread.sleep(50); // 稍等重试<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;return redis.get(key);<br>
+                &nbsp;&nbsp;}<br>
+                }
+            </code>
+        </div>
+        <p><strong>注意区分</strong>：缓存穿透（查询不存在key）和雪崩（大量key同时失效）。击穿特指单个热点key失效。</p>
+    </div>
+
+    <div class="section">
+        <h2>📐 4. 整体一致性保证方案汇总</h2>
+        <ul>
+            <li><strong>最强一致性（低并发场景）</strong>：先更新DB，再同步删除缓存，若删除失败则回滚DB事务（需支持分布式事务，不推荐）。</li>
+            <li><strong>平衡方案（主流）</strong>：<br>
+                - 更新DB → 发送MQ → 消费者删除缓存（保证最终一致）<br>
+                - 或订阅binlog异步删除<br>
+                - 同时给缓存设置较短过期时间（如30秒），兜底不一致窗口。
+            </li>
+            <li><strong>高并发优化</strong>：结合击穿防护（互斥锁）+ 异步删除 + 监控告警。</li>
+        </ul>
+        <div class="note">
+            ✅ 面试回答模板：<br>
+            “我们采用<strong>先更新数据库，再删除缓存</strong>策略，避免脏数据。删除失败时，通过<strong>消息队列重试</strong>或<strong>binlog监听</strong>保证最终一致性。针对缓存击穿，对热点key使用<strong>分布式锁</strong>控制DB查询并发，或者采用逻辑过期异步更新方案。”
+        </div>
+    </div>
+
+    <hr>
+    <p style="font-size: 0.85rem; color: #444;">✅ 本文档聚焦缓存策略核心问题：更新顺序、删除失败兜底、击穿防护，无冗余样式。</p>
+</div>
+</body>
+</html>
