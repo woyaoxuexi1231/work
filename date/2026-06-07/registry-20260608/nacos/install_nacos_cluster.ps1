@@ -3,7 +3,6 @@
 
 $Network  = "nacos-net"
 $Image    = "nacos/nacos-server:v2.3.2"
-$BasePort = 8848
 $HostIP   = "192.168.3.100"
 $MysqlCtn = "mysql"
 $MysqlPass = "123456"
@@ -27,7 +26,7 @@ log_info "Docker OK"
 
 # ========== Step 2: Create Network ==========
 log_info "Step 2: Create Docker network"
-$netExists = docker network ls --format '{{.Name}}' 2>$null | Select-String "^$Network$"
+$netExists = docker network ls --format '{{.Names}}' 2>$null | Select-String "^$Network$"
 if (-not $netExists) {
     docker network create $Network
     log_info "Network '$Network' created"
@@ -53,79 +52,135 @@ log_info "Database initialized"
 
 # ========== Step 4: Clean Up Old Containers ==========
 log_info "Step 4: Clean up old containers"
-foreach ($ctn in @("nacos1", "nacos2", "nacos3")) {
-    docker rm -f $ctn 2>$null | Out-Null
-}
+docker rm -f nacos1 2>$null | Out-Null
+docker rm -f nacos2 2>$null | Out-Null
+docker rm -f nacos3 2>$null | Out-Null
 log_info "Old containers removed"
+log_info "Waiting 5s for ports to be released..."
+Start-Sleep 5
 
-# ========== Step 5: Create 3 Nacos Nodes ==========
-log_info "Step 5: Create 3 Nacos nodes"
+# ========== Step 5: Create nacos1 (port 8848) ==========
+log_info "Step 5: Create nacos1 (port 8848)"
+$data1 = "$DataRoot\nacos1"
+New-Item -ItemType Directory -Force -Path "$data1\logs", "$data1\data" | Out-Null
 
-$nacosServers = "$HostIP`:$BasePort,$HostIP`:$($BasePort+100),$HostIP`:$($BasePort+200)"
+docker run -d `
+  --name nacos1 `
+  --hostname nacos1 `
+  --network $Network `
+  --add-host "nacos1:$HostIP" `
+  --add-host "nacos2:$HostIP" `
+  --add-host "nacos3:$HostIP" `
+  --restart unless-stopped `
+  -p "8848:8848" `
+  -p "9848:9848" `
+  -p "9849:9849" `
+  -e "MODE=cluster" `
+  -e "NACOS_AUTH_ENABLE=false" `
+  -e "TZ=Asia/Shanghai" `
+  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8948,$HostIP`:9848" `
+  -e "NACOS_SERVER_IP=$HostIP" `
+  -e "SPRING_DATASOURCE_PLATFORM=mysql" `
+  -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
+  -e "MYSQL_SERVICE_PORT=3306" `
+  -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
+  -e "MYSQL_SERVICE_USER=root" `
+  -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
+  -v "$data1\logs:/home/nacos/logs" `
+  -v "$data1\data:/home/nacos/data" `
+  $Image | Out-Null
+log_info "nacos1 created"
 
-$ports = @($BasePort, $BasePort+100, $BasePort+200)
+# ========== Step 6: Create nacos2 (port 8948) ==========
+log_info "Step 6: Create nacos2 (port 8948)"
+$data2 = "$DataRoot\nacos2"
+New-Item -ItemType Directory -Force -Path "$data2\logs", "$data2\data" | Out-Null
 
-for ($i = 0; $i -lt 3; $i++) {
-    $node = $i + 1
-    $ctn = "nacos$node"
-    $p = $ports[$i]
-    $g1 = $p + 1000
-    $g2 = $p + 1001
-    $data = "$DataRoot\nacos$node"
+docker run -d `
+  --name nacos2 `
+  --hostname nacos2 `
+  --network $Network `
+  --add-host "nacos1:$HostIP" `
+  --add-host "nacos2:$HostIP" `
+  --add-host "nacos3:$HostIP" `
+  --restart unless-stopped `
+  -p "8948:8848" `
+  -p "9948:9848" `
+  -p "9949:9849" `
+  -e "MODE=cluster" `
+  -e "NACOS_AUTH_ENABLE=false" `
+  -e "TZ=Asia/Shanghai" `
+  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8948,$HostIP`:9848" `
+  -e "NACOS_SERVER_IP=$HostIP" `
+  -e "SPRING_DATASOURCE_PLATFORM=mysql" `
+  -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
+  -e "MYSQL_SERVICE_PORT=3306" `
+  -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
+  -e "MYSQL_SERVICE_USER=root" `
+  -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
+  -v "$data2\logs:/home/nacos/logs" `
+  -v "$data2\data:/home/nacos/data" `
+  $Image | Out-Null
+log_info "nacos2 created"
 
-    log_info "Creating $ctn (port: $p) ..."
+# ========== Step 7: Create nacos3 (port 9848) ==========
+log_info "Step 7: Create nacos3 (port 9848)"
+$data3 = "$DataRoot\nacos3"
+New-Item -ItemType Directory -Force -Path "$data3\logs", "$data3\data" | Out-Null
 
-    New-Item -ItemType Directory -Force -Path "$data\logs", "$data\data" | Out-Null
+docker run -d `
+  --name nacos3 `
+  --hostname nacos3 `
+  --network $Network `
+  --add-host "nacos1:$HostIP" `
+  --add-host "nacos2:$HostIP" `
+  --add-host "nacos3:$HostIP" `
+  --restart unless-stopped `
+  -p "9848:8848" `
+  -p "10048:9848" `
+  -p "10049:9849" `
+  -e "MODE=cluster" `
+  -e "NACOS_AUTH_ENABLE=false" `
+  -e "TZ=Asia/Shanghai" `
+  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8948,$HostIP`:9848" `
+  -e "NACOS_SERVER_IP=$HostIP" `
+  -e "SPRING_DATASOURCE_PLATFORM=mysql" `
+  -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
+  -e "MYSQL_SERVICE_PORT=3306" `
+  -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
+  -e "MYSQL_SERVICE_USER=root" `
+  -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
+  -v "$data3\logs:/home/nacos/logs" `
+  -v "$data3\data:/home/nacos/data" `
+  $Image | Out-Null
+log_info "nacos3 created"
 
-    docker run -d `
-      --name $ctn `
-      --hostname $ctn `
-      --network $Network `
-      --add-host "nacos1:$HostIP" `
-      --add-host "nacos2:$HostIP" `
-      --add-host "nacos3:$HostIP" `
-      --restart unless-stopped `
-      -p ${p}:8848 `
-      -p ${g1}:9848 `
-      -p ${g2}:9849 `
-      -e "MODE=cluster" `
-      -e "NACOS_AUTH_ENABLE=false" `
-      -e "TZ=Asia/Shanghai" `
-      -e "NACOS_SERVERS=$nacosServers" `
-      -e "NACOS_SERVER_IP=$HostIP" `
-      -e "SPRING_DATASOURCE_PLATFORM=mysql" `
-      -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
-      -e "MYSQL_SERVICE_PORT=3306" `
-      -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
-      -e "MYSQL_SERVICE_USER=root" `
-      -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
-      -v "$data\logs:/home/nacos/logs" `
-      -v "$data\data:/home/nacos/data" `
-      $Image | Out-Null
-
-    log_info "$ctn started"
-}
-
-# ========== Step 6: Wait and Fix cluster.conf ==========
-log_info "Step 6: Wait 30s for Nacos to start, then fix cluster.conf"
+# ========== Step 8: Wait and Fix cluster.conf ==========
+log_info "Step 8: Wait 30s for Nacos to start, then fix cluster.conf"
 Start-Sleep 30
 
-foreach ($ctn in @("nacos1", "nacos2", "nacos3")) {
-    log_info "Fixing cluster.conf for $ctn ..."
-    docker exec $ctn bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
-    docker exec $ctn cat /home/nacos/conf/cluster.conf
-}
+log_info "Fixing cluster.conf for nacos1 ..."
+docker exec nacos1 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+docker exec nacos1 cat /home/nacos/conf/cluster.conf
 
-# ========== Step 7: Restart to Apply cluster.conf ==========
-log_info "Step 7: Restart all nodes to apply cluster.conf"
+log_info "Fixing cluster.conf for nacos2 ..."
+docker exec nacos2 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+docker exec nacos2 cat /home/nacos/conf/cluster.conf
+
+log_info "Fixing cluster.conf for nacos3 ..."
+docker exec nacos3 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+docker exec nacos3 cat /home/nacos/conf/cluster.conf
+
+# ========== Step 9: Restart to Apply cluster.conf ==========
+log_info "Step 9: Restart all nodes to apply cluster.conf"
 docker restart nacos1 nacos2 nacos3
 log_info "Waiting 60s for cluster to be ready..."
 Start-Sleep 60
 
-# ========== Step 8: Verify ==========
-log_info "Step 8: Verify cluster status"
+# ========== Step 10: Verify ==========
+log_info "Step 10: Verify cluster status"
 try {
-    $url = "http://$HostIP`:$BasePort/nacos/v1/ns/operator/cluster/nodes"
+    $url = "http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
     $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10
     log_info "Cluster nodes:"
     foreach ($node in $response.data) {
@@ -138,7 +193,7 @@ try {
 }
 catch {
     log_error "Cluster check failed: $_"
-    log_info "You can check manually: curl http://$HostIP`:$BasePort/nacos/v1/ns/operator/cluster/nodes"
+    log_info "You can check manually: curl http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
 }
 
 # ========== Done ==========
