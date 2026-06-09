@@ -47,6 +47,9 @@ for ($i = 0; $i -lt 3; $i++) {
 
     docker run -d --name $ctn --network $Network --restart unless-stopped `
       -p ${p}:8848 -p ${g1}:9848 -p ${g2}:9849 `
+       --name $ctn `
+      --hostname $ctn `
+      --network $Network `
       -e MODE=cluster -e NACOS_AUTH_ENABLE=false -e TZ=Asia/Shanghai `
       -e NACOS_SERVERS="nacos1:8848,nacos2:8848,nacos3:8848" `
       -e SPRING_DATASOURCE_PLATFORM=mysql `
