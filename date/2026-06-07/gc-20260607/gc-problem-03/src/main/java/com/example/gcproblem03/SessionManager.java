@@ -20,7 +20,7 @@ public class SessionManager {
     /**
      * 每 3 秒创建一批新"会话"
      */
-    @Scheduled(fixedRate = 3000)
+    @Scheduled(fixedRate = 300)
     public void manageSessions() {
         // 创建新会话
         for (int i = 0; i < 20; i++) {
