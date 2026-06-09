@@ -1,4 +1,4 @@
-# Nacos 3-Node Cluster | AP/CP 模式测试环境
+﻿# Nacos 3-Node Cluster | AP/CP Test
 # nacos1:8848  nacos2:8849  nacos3:8850
 . "$PSScriptRoot/lib/common.ps1"
 
@@ -11,25 +11,25 @@ $NodeCount = 3
 
 check_docker
 
-# ---- 清理旧容器 ----
+# ---- cleanup old containers ----
 for ($i = 1; $i -le $NodeCount; $i++) {
     $name = "${Prefix}${i}"
     cleanup_container $name
 }
 
-# ---- 创建目录 ----
+# ---- create dirs ----
 for ($i = 1; $i -le $NodeCount; $i++) {
     New-Item -ItemType Directory -Force -Path "$Data\nacos${i}\logs","$Data\nacos${i}\data" | Out-Null
 }
 
-# ---- 构建集群成员列表 ----
+# ---- build cluster member list ----
 $Members = @()
 for ($i = 1; $i -le $NodeCount; $i++) {
     $Members += "${Prefix}${i}:$($BasePort + $i - 1)"
 }
 $ClusterMembers = $Members -join ","
 
-# ---- 生成 docker-compose.yml ----
+# ---- generate docker-compose.yml ----
 $ComposePath = "$Data\docker-compose.yml"
 $ComposeContent = @"
 version: '3.8'
@@ -67,7 +67,7 @@ $ComposeContent | Out-File -FilePath $ComposePath -Encoding UTF8
 pull_image $Image
 docker-compose -f $ComposePath up -d
 
-# ---- 等待所有节点启动 ----
+# ---- wait for all nodes ----
 for ($i = 1; $i -le $NodeCount; $i++) {
     $name = "${Prefix}${i}"
     $port = $BasePort + $i - 1
@@ -87,6 +87,6 @@ for ($i = 1; $i -le $NodeCount; $i++) {
 }
 Write-Host ""
 Write-Host "  AP/CP Test:" -ForegroundColor Green
-Write-Host "    - AP (临时实例): ephemeral=true  -> Distro 协议，允许短暂不一致" -ForegroundColor Gray
-Write-Host "    - CP (持久实例): ephemeral=false -> Raft 协议，强一致性，需多数节点存活" -ForegroundColor Gray
-Write-Host "    - 模拟故障: docker stop nacos3 -> 观察 CP 实例是否仍可写入 (2/3 多数)" -ForegroundColor Gray
+Write-Host "    - AP mode: ephemeral=true  -> Distro, allows temporary inconsistency" -ForegroundColor Gray
+Write-Host "    - CP mode: ephemeral=false -> Raft, strong consistency, needs majority alive" -ForegroundColor Gray
+Write-Host "    - Failover: docker stop nacos3 -> check if CP instances still writable 2/3 majority" -ForegroundColor Gray
