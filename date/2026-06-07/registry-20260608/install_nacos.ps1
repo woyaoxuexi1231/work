@@ -22,10 +22,10 @@ for ($i = 1; $i -le $NodeCount; $i++) {
     New-Item -ItemType Directory -Force -Path "$Data\nacos${i}\logs","$Data\nacos${i}\data" | Out-Null
 }
 
-# ---- build cluster member list ----
+# ---- build cluster member list (容器内部全部是 8848) ----
 $Members = @()
 for ($i = 1; $i -le $NodeCount; $i++) {
-    $Members += "${Prefix}${i}:$($BasePort + $i - 1)"
+    $Members += "${Prefix}${i}:8848"
 }
 $ClusterMembers = $Members -join ","
 
@@ -56,6 +56,12 @@ for ($i = 1; $i -le $NodeCount; $i++) {
       - NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789
       - PREFER_HOST_MODE=hostname
       - TZ=Asia/Shanghai
+      # 限制每个节点的 JVM 堆内存（3 节点 × 512m ≈ 1.5G，Docker Desktop 扛得住）
+      - JVM_XMS=256m
+      - JVM_XMX=512m
+      - JVM_XMN=128m
+      - JVM_MS=64m
+      - JVM_MMS=128m
     volumes:
       - ${Data}\nacos${i}\logs:/home/nacos/logs
       - ${Data}\nacos${i}\data:/home/nacos/data
@@ -73,7 +79,7 @@ for ($i = 1; $i -le $NodeCount; $i++) {
     $port = $BasePort + $i - 1
     wait_for_container $name 60
     Write-Host "  Waiting for ${name} (port ${port})..." -ForegroundColor Yellow
-    for ($j = 1; $j -le 30; $j++) {
+    for ($j = 1; $j -le 45; $j++) {
         $resp = try { Invoke-WebRequest -Uri "http://host.docker.internal:${port}/nacos/v1/console/health/readiness" -UseBasicParsing -TimeoutSec 3 } catch { $null }
         if ($resp -and $resp.StatusCode -eq 200) { break }
         Start-Sleep 2
