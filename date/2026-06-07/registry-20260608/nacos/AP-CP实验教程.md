@@ -97,6 +97,10 @@ docker start nacos2
 
 ## 2. 实验二：配置中心 CP 模式
 
+> ⚠️ 网上很多人说"停 2/3 节点后配置发不出去"——这是**理论上的 Raft 行为**，但 Nacos 的 JRaft 实现允许 leader 在降级单节点时继续写入（通过 MySQL 保证数据不丢）。你刚刚也亲测确认了：停 nacos2+nacos3 后仍然能发配置。
+>
+> 所以本实验换个角度——不是看"写不写得进去"，而是看"数据丢不丢"。**配置中心的 CP 本质是：配置走 Raft + MySQL 双写，数据强一致不丢失。**
+
 ### 2.1 正常发布一个配置
 
 控制台 `http://localhost:8848/nacos` → **配置管理 → 配置列表** → 点 `+` 新建：
@@ -105,58 +109,68 @@ docker start nacos2
 |---|---|
 | Data ID | `test-cp-demo` |
 | Group | `DEFAULT_GROUP` |
-| 配置内容 | `hello cp` |
+| 配置内容 | `before crash` |
 
-点右下角"发布"。
+点右下角"发布"。✅ 成功。
 
-✅ 发布成功。
-
-### 2.2 停掉 nacos2 + nacos3
+### 2.2 停掉全部 3 个 Nacos
 
 ```powershell
-docker stop nacos2 nacos3
+docker stop nacos1 nacos2 nacos3
 ```
-
-控制台 → **集群管理 → 节点列表**。
-
-✅ 只剩 nacos1 一个节点。
-
-### 2.3 再发配置
-
-控制台 → 配置管理 → 再点 `+`：
-
-| 字段 | 填 |
-|---|---|
-| Data ID | `test-cp-demo-2` |
-| 配置内容 | `hello cp again` |
-
-点"发布"。
-
-✅ **发布失败 / 超时 / 页面一直转圈。**
-
-> **这就是 CP：配置中心走 Raft 协议，3 节点需要 ≥2 个同意才能写入。现在只剩 1 个节点，拿不到多数派，直接拒绝写入。**
->
-> 宁可不可用，也不允许配置写乱。
-
-### 2.4 恢复
 
 ```powershell
-docker start nacos2 nacos3
+docker ps --filter "name=nacos"
 ```
 
-等 5-10 秒，三个节点恢复 `UP`。再发 `test-cp-demo-2` → ✅ 成功。
+✅ 全部空了，Nacos 集群彻底挂了。
+
+### 2.3 去 MySQL 里找配置
+
+```powershell
+docker exec -it <你的 mysql 容器> mysql -uroot -p123456 -e "SELECT data_id, content FROM nacos_config.config_info WHERE data_id='test-cp-demo'"
+```
+
+✅ 输出：`test-cp-demo  |  before crash`
+
+> 配置**还在 MySQL 里**。Nacos 全挂了，配置不丢。
+
+### 2.4 重启 Nacos，验证配置恢复
+
+```powershell
+docker start nacos1 nacos2 nacos3
+```
+
+等 15 秒，打开 `http://localhost:8848/nacos` → **配置管理 → 配置列表**。
+
+✅ `test-cp-demo` 还在，内容 `before crash`，完好无损。
+
+### 2.5 对比：注册中心的 AP 实例呢？
+
+三个 Demo 早就停了。重启 Nacos 后，去**服务管理 → 服务列表**看。
+
+✅ 三个服务**全没了**。
+
+> **这就是 AP vs CP 最核心的区别：**
+> - **CP 的配置**落 MySQL，Nacos 全挂了重启，配置还在
+> - **AP 的临时实例**只在内存，Nacos 重启就丢
+
+### 2.6 那 CP 什么时候真正"写不了"？
+
+停节点不是 CP 的"拒绝写入"场景。真正触发 Raft 多数派拒绝写入的是**网络分区**——节点都活着但互相连不上，此时少数派节点检测到自己不是 leader / 没有 follower 响应，会拒绝写入。
+
+在本机用 Docker Desktop 做网络分区比较麻烦，核心理解就是：**CP 保证数据不丢，AP 不保证**。
 
 ---
 
 ## 3. AP vs CP 一眼看懂
 
-| | 注册中心 | 配置中心 |
+| | 注册中心（AP） | 配置中心（CP） |
 |---|---|---|
-| 模式 | **AP** | **CP** |
-| 协议 | Distro（异步复制） | Raft（强一致） |
-| 停 1 台 Nacos | ✅ 业务照常 | ✅ 配置照常读写 |
-| 停 2 台 Nacos | ✅ 服务照常注册 | ❌ 配置发不出去 |
-| 设计倾向 | 可用优先 | 一致优先 |
+| 协议 | Distro（异步复制） | Raft + MySQL（强一致） |
+| 数据存在哪 | Nacos 节点内存 | **MySQL 持久化** |
+| Nacos 全部重启后 | ❌ 临时实例全丢 | ✅ 配置完好无损 |
+| 设计倾向 | 可用优先 | 一致 + 持久 优先 |
 
 ---
 
@@ -175,7 +189,7 @@ docker compose -f cluster-hostname.yaml down
 
 ## 5. 一句话记住
 
-> **注册中心 AP：挂节点还能用。**
-> **配置中心 CP：挂多了写不进去。**
+> **注册中心 AP：Nacos 全挂了重启，服务实例全丢（内存）。**
+> **配置中心 CP：Nacos 全挂了重启，配置一份不少（MySQL）。**
 >
-> Nacos 在同一套集群里同时跑着 AP（Distro）和 CP（Raft），各管各的事。
+> Nacos 在同一套集群里同时跑着 AP（Distro 内存）和 CP（Raft + MySQL），各管各的事。

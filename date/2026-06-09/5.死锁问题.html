@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>死锁排查与预防 | 动态顺序锁策略</title>
+    <style>
+        /* 极简样式，只保证可读，无装饰 */
+        body {
+            margin: 20px;
+            font-family: system-ui, -apple-system, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.5;
+            background: white;
+            color: #111;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            margin: 1.5em 0;
+            border: 0;
+            border-top: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 8px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+        .note {
+            background: #f9f9f9;
+            border-left: 4px solid #666;
+            padding: 12px 16px;
+            margin: 1.2em 0;
+        }
+        ul, ol {
+            margin: 0.5em 0 1em 1.5em;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .section {
+            margin-bottom: 2em;
+        }
+        .command {
+            background: #f5f5f5;
+            font-family: monospace;
+            padding: 6px 10px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>死锁：排查 → 预防 → 动态顺序锁</h1>
+    <p>面试连环问：有没有遇到过死锁？怎么排查？<code>jstat</code> 是做什么的？如何预防？动态场景下如何保证加锁顺序？本文逐一回答。</p>
+
+    <hr>
+
+    <div class="section">
+        <h2>🔍 1. 死锁排查实战（命令行 + 堆栈分析）</h2>
+        <p><strong>遇到过</strong>：典型场景如两个线程各自持有锁A、锁B，互相等待对方释放。排查步骤如下：</p>
+        <ul>
+            <li><strong>① 定位进程</strong>：<code>jps -l</code> 或 <code>ps -ef | grep java</code> 获取 Java 进程PID。</li>
+            <li><strong>② 导出线程堆栈</strong>：<code>jstack &lt;pid&gt;</code> 或 <code>jstack -l &lt;pid&gt;</code>，控制台会直接打印所有线程状态。<br>
+                → 查找 <strong>"deadlock"</strong> 关键字，JVM 会自动检测死锁并输出线程信息、锁对象地址、以及哪两个线程互相等待。
+            </li>
+            <li><strong>③ 分析锁持有情况</strong>：<code>jstack</code> 输出中会显示 <code>waiting to lock ...</code> 和 <code>locked ...</code>，可直接定位代码行号。</li>
+            <li><strong>④ 使用 <code>jconsole</code> 或 <code>VisualVM</code></strong>：图形化界面，可以点击“线程”选项卡 → “检测死锁”。</li>
+        </ul>
+        <div class="note">
+            ⚠️ <strong>关于 <code>jstat</code></strong>：面试官可能故意混淆。<code>jstat</code> 是用于监控 JVM <strong>GC 和内存</strong>的工具（如 <code>jstat -gc &lt;pid&gt;</code>），<strong>不能直接排查死锁</strong>。死锁排查用 <code>jstack</code>、<code>jconsole</code>。区分清楚是加分点。
+        </div>
+        <p><strong>示例死锁堆栈片段</strong>：<br>
+            <code>
+                Found one Java-level deadlock:<br>
+                Thread-1: waiting to lock monitor A (owned by Thread-0)<br>
+                Thread-0: waiting to lock monitor B (owned by Thread-1)
+            </code>
+        </p>
+    </div>
+
+    <div class="section">
+        <h2>⚠️ 2. 导致死锁的四个必要条件 & 常见场景</h2>
+        <ul>
+            <li><strong>互斥</strong>：资源一次只能被一个线程占用。</li>
+            <li><strong>持有并等待</strong>：线程持有至少一个资源，同时等待其他资源。</li>
+            <li><strong>不可剥夺</strong>：资源只能由持有者主动释放。</li>
+            <li><strong>循环等待</strong>：线程间形成环形依赖。</li>
+        </ul>
+        <p><strong>常见产生死锁的代码场景</strong>：</p>
+        <ul>
+            <li>嵌套 synchronized 或 ReentrantLock，锁顺序不一致（如线程A先锁a再锁b，线程B先锁b再锁a）。</li>
+            <li>数据库连接池 + 事务：一个连接持有锁，另一个事务等待，同时互相占用表锁或行锁。</li>
+            <li>线程池任务提交自己（例如线程池内任务等待另一个任务结果，而另一个任务在队列中）。</li>
+            <li>使用 <code>CountDownLatch</code> 或 <code>CyclicBarrier</code> 设置不当导致互相等待。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>🛡️ 3. 预防死锁的通用策略</h2>
+        <ul>
+            <li><strong>破坏“请求与保持”</strong>：一次性申请所有资源（但降低并发度）。</li>
+            <li><strong>破坏“不可剥夺”</strong>：使用 <code>ReentrantLock</code> 的 <code>tryLock(long timeout)</code> 方法，超时则释放已持有的锁。</li>
+            <li><strong>破坏“循环等待”</strong>：<span class="highlight">按固定顺序获取锁</span>（最常用）。</li>
+            <li><strong>使用更高级的并发工具</strong>：如 <code>ConcurrentHashMap</code>、<code>BlockingQueue</code>、<code>AtomicReference</code> 避免显式锁。</li>
+            <li><strong>静态代码分析工具</strong>：SpotBugs、SonarQube 检测潜在死锁。</li>
+        </ul>
+        <div class="note">
+            ✅ <strong>重点</strong>：面试中被问到“两个线程互相等待锁怎么办？” → 最直接的解决方案是<strong>调整锁顺序</strong>，或者用 <code>tryLock</code> 超时 + 回退重试。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔐 4. 按顺序获取锁：静态顺序 vs 动态顺序</h2>
+        <p><strong>静态顺序</strong>：例如两个锁对象 <code>lockA</code>、<code>lockB</code>，规定所有线程必须先锁A再锁B。这很简单，通过编码约束即可。</p>
+        <p><strong>动态情况</strong>：锁的获取顺序依赖于运行时参数（如需要根据账户ID、订单ID等动态决定先锁哪个对象）。如何保证顺序？</p>
+
+        <h3>✅ 动态顺序锁方案：基于哈希值或系统一致性排序</h3>
+        <ul>
+            <li><strong>方案1：System.identityHashCode</strong> 比较。对需要加锁的对象（如两个账户），比较其内存地址哈希值，总是先锁哈希值小的对象。</li>
+            <li><strong>方案2：使用对象的唯一ID（如数据库主键）</strong>，总是按 ID 升序获取锁，可以完全避免循环等待。</li>
+            <li><strong>方案3：使用锁排序器（LockOrder）</strong>，将需要锁的对象放入 TreeSet，按自然顺序排序后再依次加锁。</li>
+            <li><strong>方案4：使用 <code>ReentrantLock</code> 配合 <code>tryLock</code> 加超时</strong>，不固定顺序，但允许超时后释放已持有的锁并重试（类似死锁恢复机制）。</li>
+        </ul>
+
+        <div class="note">
+            📌 <strong>动态顺序经典示例（转账业务）</strong>：<br>
+            <code>
+                void transfer(Account from, Account to, int amount) {<br>
+                &nbsp;&nbsp;// 根据哈希值确定锁顺序，避免死锁<br>
+                &nbsp;&nbsp;Account first = System.identityHashCode(from) < System.identityHashCode(to) ? from : to;<br>
+                &nbsp;&nbsp;Account second = first == from ? to : from;<br>
+                &nbsp;&nbsp;synchronized(first) {<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;synchronized(second) {<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 执行转账<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                &nbsp;&nbsp;}<br>
+                }
+            </code>
+            <br>即使传入的 from/to 顺序不同，全局加锁顺序一致，打破循环等待。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🚀 5. 超时重试：应对无法固定顺序的复杂场景</h2>
+        <p>如果动态排序无法应用（比如需要同时锁三个互相关联的缓存对象，且哈希冲突极少但理论存在），可以采用 <code>ReentrantLock.tryLock</code> 模式：</p>
+        <code>
+            boolean acquired = false;<br>
+            while (!acquired) {<br>
+            &nbsp;&nbsp;if (lockA.tryLock(10, TimeUnit.MILLISECONDS)) {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;try {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (lockB.tryLock(10, TimeUnit.MILLISECONDS)) {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 业务逻辑<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;acquired = true; break;<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;} finally { lockB.unlock(); }<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;} finally { if(!acquired) lockA.unlock(); }<br>
+            &nbsp;&nbsp;}<br>
+            &nbsp;&nbsp;Thread.sleep(5); // 退避重试<br>
+            }
+        </code>
+        <p>这种方式牺牲一定性能，但能彻底避免死锁。可用于分布式锁、数据库锁重试等场景。</p>
+    </div>
+
+    <div class="section">
+        <h2>🎤 面试核心答案总结（快速背诵版）</h2>
+        <div class="note">
+            <strong>Q1：死锁排查？</strong> → jstack 获取线程堆栈，查找 deadlock 字样，分析锁持有和等待关系。<br>
+            <strong>Q2：预防死锁？</strong> → 破坏四个必要条件之一，最常用固定顺序加锁，或 tryLock 超时重试。<br>
+            <strong>Q3：两线程互相等待怎么办？</strong> → 调整锁顺序，或使用 tryLock 超时 + 释放已持有锁。<br>
+            <strong>Q4：动态情况下保证顺序？</strong> → 根据对象哈希值或唯一ID排序，确保全局统一加锁顺序；极端情况使用超时重试。
+        </div>
+        <p>额外说明：<code>jstat</code> 不是死锁排查工具，而是监控 GC 和内存，避免面试官挖坑。</p>
+    </div>
+
+    <hr>
+    <p style="font-size: 0.85rem; color: #444;">✅ 本文档覆盖死锁排查、预防、动态锁顺序实战方案，极简无冗余样式。</p>
+</div>
+</body>
+</html>
