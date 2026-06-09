@@ -45,18 +45,26 @@ for ($i = 0; $i -lt 3; $i++) {
     cleanup_container $ctn
     New-Item -ItemType Directory -Force -Path "$data\logs","$data\data" | Out-Null
 
-    docker run -d --name $ctn --network $Network --restart unless-stopped `
-      -p ${p}:8848 -p ${g1}:9848 -p ${g2}:9849 `
-       --name $ctn `
+    docker run -d `
+      --name $ctn `
       --hostname $ctn `
       --network $Network `
-      -e MODE=cluster -e NACOS_AUTH_ENABLE=false -e TZ=Asia/Shanghai `
+      --restart unless-stopped `
+      -p ${p}:8848 `
+      -p ${g1}:9848 `
+      -p ${g2}:9849 `
+      -e MODE=cluster `
+      -e NACOS_AUTH_ENABLE=false `
+      -e TZ=Asia/Shanghai `
       -e NACOS_SERVERS="nacos1:8848,nacos2:8848,nacos3:8848" `
       -e SPRING_DATASOURCE_PLATFORM=mysql `
-      -e MYSQL_SERVICE_HOST=$MysqlCtn -e MYSQL_SERVICE_PORT=3306 `
+      -e MYSQL_SERVICE_HOST=$MysqlCtn `
+      -e MYSQL_SERVICE_PORT=3306 `
       -e MYSQL_SERVICE_DB_NAME=$MysqlDb `
-      -e MYSQL_SERVICE_USER=root -e MYSQL_SERVICE_PASSWORD=$MysqlPass `
-      -v "${data}\logs:/home/nacos/logs" -v "${data}\data:/home/nacos/data" `
+      -e MYSQL_SERVICE_USER=root `
+      -e MYSQL_SERVICE_PASSWORD=$MysqlPass `
+      -v "${data}\logs:/home/nacos/logs" `
+      -v "${data}\data:/home/nacos/data" `
       $Image
 
     wait_for_container $ctn 60
