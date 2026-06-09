@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缓存击穿 · 穿透 · 雪崩 | 区别与解决方案</title>
+    <style>
+        body {
+            margin: 20px;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.5;
+            background: white;
+            color: #111;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            margin: 1.5em 0;
+            border: 0;
+            border-top: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 8px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        .note {
+            background: #f9f9f9;
+            border-left: 4px solid #666;
+            padding: 12px 16px;
+            margin: 1.2em 0;
+        }
+        ul {
+            margin: 0.5em 0 1em 1.5em;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .section {
+            margin-bottom: 2em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>缓存三大事故：击穿 · 穿透 · 雪崩</h1>
+    <p>区别、成因与针对性解决方案，面试必考。</p>
+    <hr>
+
+    <div class="section">
+        <h2>📊 一图看懂区别</h2>
+        <table>
+            <thead>
+            <tr><th>现象</th><th>核心特征</th><th>根本原因</th><th>影响</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><strong>缓存击穿</strong></td><td>热点key失效瞬间，大量并发直达DB</td><td>某个热点数据过期+高并发</td><td>DB瞬时压力过大</td></tr>
+            <tr><td><strong>缓存穿透</strong></td><td>查询不存在的数据，每次都绕过缓存查DB</td><td>恶意攻击或业务缺陷（不存在key）</td><td>DB持续高压，缓存形同虚设</td></tr>
+            <tr><td><strong>缓存雪崩</strong></td><td>大量key同时失效，或缓存服务宕机</td><td>批量设相同过期时间 / Redis崩溃</td><td>DB被打垮，可能连锁故障</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>🔥 1. 缓存击穿</h2>
+        <p><strong>定义</strong>：某个<strong>热点key</strong>（如秒杀商品）在失效的瞬间，大量请求穿透缓存，直接查询数据库，造成DB压力骤增。</p>
+        <p><strong>解决方案</strong>：</p>
+        <ul>
+            <li><strong>互斥锁（分布式锁）</strong>：只允许一个线程查询DB并重建缓存，其他线程等待或重试。常用Redis setnx + 过期时间。</li>
+            <li><strong>逻辑过期</strong>：缓存不设物理TTL，而是存储逻辑过期时间字段，异步刷新缓存，旧数据仍可返回，避免DB被击穿。</li>
+            <li><strong>热点key永不过期</strong>：后台线程主动定时更新，不依赖失效触发。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>🌀 2. 缓存穿透</h2>
+        <p><strong>定义</strong>：查询<strong>根本不存在的数据</strong>（如id=-1），缓存和数据库中都没有，每次请求都会打到数据库，可能被恶意利用拖垮DB。</p>
+        <p><strong>解决方案</strong>：</p>
+        <ul>
+            <li><strong>缓存空对象（Null Value）</strong>：将查询结果为空的key也缓存，TTL较短（如5分钟），防止频繁穿透。</li>
+            <li><strong>布隆过滤器（Bloom Filter）</strong>：在缓存前加一层布隆过滤器，存储所有存在的key，快速过滤掉不存在的请求。</li>
+            <li><strong>参数校验/限流</strong>：对非法参数（如负数ID、超长字符串）直接拒绝。</li>
+        </ul>
+        <div class="note">
+            💡 布隆过滤器可准确判断“一定不存在”，但可能有误判（认为存在实际不存在），适合容忍少量误判的场景。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>❄️ 3. 缓存雪崩</h2>
+        <p><strong>定义</strong>：<strong>大量key在同一时间集中过期</strong>，或Redis实例宕机，导致所有请求全部落到数据库，引发DB灾难。</p>
+        <p><strong>解决方案</strong>：</p>
+        <ul>
+            <li><strong>过期时间打散</strong>：为缓存key的TTL增加随机偏移量（如基础时间+随机1~5分钟），避免集体失效。</li>
+            <li><strong>Redis高可用</strong>：部署集群（Redis Cluster / Sentinel），避免单点宕机。</li>
+            <li><strong>多级缓存</strong>：本地缓存（Caffeine） + Redis，本地缓存抗一部分流量。</li>
+            <li><strong>限流降级</strong>：当DB压力过大时，对请求进行限流或返回默认值，保护后端。</li>
+            <li><strong>提前预热+异步重建</strong>：对于大规模活动，提前将热点数据加载到缓存，并后台持续续期。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>📌 总结对比表</h2>
+        <table>
+            <thead><tr><th>问题</th><th>核心原因</th><th>主流解决方案</th></tr></thead>
+            <tbody>
+            <tr><td>缓存击穿</td><td>单个热点key过期+高并发</td><td>互斥锁、逻辑过期、永不过期</td></tr>
+            <tr><td>缓存穿透</td><td>查询不存在的数据</td><td>空对象缓存、布隆过滤器、参数校验</td></tr>
+            <tr><td>缓存雪崩</td><td>大量key同时过期 / Redis宕机</td><td>TTL随机化、高可用集群、多级缓存、限流</td></tr>
+            </tbody>
+        </table>
+        <div class="note">
+            🎤 面试回答模板：<br>
+            “击穿是热点key过期，用互斥锁解决；穿透是查询不存在数据，用布隆过滤器+空值缓存；雪崩是大面积过期，通过TTL随机化+集群高可用应对。三者的本质都是防止缓存失效时数据库被压垮。”
+        </div>
+    </div>
+
+    <hr>
+    <p style="font-size: 0.85rem; color: #444;">✅ 极简说明，无多余样式，直击要点。</p>
+</div>
+</body>
+</html>
