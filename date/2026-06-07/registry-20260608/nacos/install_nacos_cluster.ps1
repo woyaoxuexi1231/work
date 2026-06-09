@@ -78,7 +78,7 @@ docker run -d `
   -e "MODE=cluster" `
   -e "NACOS_AUTH_ENABLE=false" `
   -e "TZ=Asia/Shanghai" `
-  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8948,$HostIP`:9848" `
+  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8849,$HostIP`:8850" `
   -e "NACOS_SERVER_IP=$HostIP" `
   -e "SPRING_DATASOURCE_PLATFORM=mysql" `
   -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
@@ -91,8 +91,8 @@ docker run -d `
   $Image | Out-Null
 log_info "nacos1 created"
 
-# ========== Step 6: Create nacos2 (port 8948) ==========
-log_info "Step 6: Create nacos2 (port 8948)"
+# ========== Step 6: Create nacos2 (port 8849) ==========
+log_info "Step 6: Create nacos2 (port 8849)"
 $data2 = "$DataRoot\nacos2"
 New-Item -ItemType Directory -Force -Path "$data2\logs", "$data2\data" | Out-Null
 
@@ -104,13 +104,13 @@ docker run -d `
   --add-host "nacos2:$HostIP" `
   --add-host "nacos3:$HostIP" `
   --restart unless-stopped `
-  -p "8948:8848" `
-  -p "9948:9848" `
-  -p "9949:9849" `
+  -p "8849:8848" `
+  -p "9850:9848" `
+  -p "9851:9849" `
   -e "MODE=cluster" `
   -e "NACOS_AUTH_ENABLE=false" `
   -e "TZ=Asia/Shanghai" `
-  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8948,$HostIP`:9848" `
+  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8849,$HostIP`:8850" `
   -e "NACOS_SERVER_IP=$HostIP" `
   -e "SPRING_DATASOURCE_PLATFORM=mysql" `
   -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
@@ -123,8 +123,8 @@ docker run -d `
   $Image | Out-Null
 log_info "nacos2 created"
 
-# ========== Step 7: Create nacos3 (port 9848) ==========
-log_info "Step 7: Create nacos3 (port 9848)"
+# ========== Step 7: Create nacos3 (port 8850) ==========
+log_info "Step 7: Create nacos3 (port 8850)"
 $data3 = "$DataRoot\nacos3"
 New-Item -ItemType Directory -Force -Path "$data3\logs", "$data3\data" | Out-Null
 
@@ -136,13 +136,13 @@ docker run -d `
   --add-host "nacos2:$HostIP" `
   --add-host "nacos3:$HostIP" `
   --restart unless-stopped `
-  -p "9848:8848" `
-  -p "10048:9848" `
-  -p "10049:9849" `
+  -p "8850:8848" `
+  -p "9852:9848" `
+  -p "9853:9849" `
   -e "MODE=cluster" `
   -e "NACOS_AUTH_ENABLE=false" `
   -e "TZ=Asia/Shanghai" `
-  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8948,$HostIP`:9848" `
+  -e "NACOS_SERVERS=$HostIP`:8848,$HostIP`:8849,$HostIP`:8850" `
   -e "NACOS_SERVER_IP=$HostIP" `
   -e "SPRING_DATASOURCE_PLATFORM=mysql" `
   -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
@@ -160,15 +160,15 @@ log_info "Step 8: Wait 30s for Nacos to start, then fix cluster.conf"
 Start-Sleep 30
 
 log_info "Fixing cluster.conf for nacos1 ..."
-docker exec nacos1 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+docker exec nacos1 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
 docker exec nacos1 cat /home/nacos/conf/cluster.conf
 
 log_info "Fixing cluster.conf for nacos2 ..."
-docker exec nacos2 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+docker exec nacos2 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
 docker exec nacos2 cat /home/nacos/conf/cluster.conf
 
 log_info "Fixing cluster.conf for nacos3 ..."
-docker exec nacos3 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+docker exec nacos3 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
 docker exec nacos3 cat /home/nacos/conf/cluster.conf
 
 # ========== Step 9: Restart to Apply cluster.conf ==========
@@ -198,5 +198,5 @@ catch {
 
 # ========== Done ==========
 log_info "=== Nacos Cluster Ready ==="
-log_info "URLs: http://localhost:8848/nacos, http://localhost:8948/nacos, http://localhost:9848/nacos"
+log_info "URLs: http://localhost:8848/nacos, http://localhost:8849/nacos, http://localhost:8850/nacos"
 log_info "Account: nacos/nacos"
