@@ -74,7 +74,7 @@ for ($i = 1; $i -le $NodeCount; $i++) {
     wait_for_container $name 60
     Write-Host "  Waiting for ${name} (port ${port})..." -ForegroundColor Yellow
     for ($j = 1; $j -le 30; $j++) {
-        $resp = try { Invoke-WebRequest -Uri "http://localhost:${port}/nacos/v1/console/health/readiness" -UseBasicParsing -TimeoutSec 3 } catch { $null }
+        $resp = try { Invoke-WebRequest -Uri "http://host.docker.internal:${port}/nacos/v1/console/health/readiness" -UseBasicParsing -TimeoutSec 3 } catch { $null }
         if ($resp -and $resp.StatusCode -eq 200) { break }
         Start-Sleep 2
     }
@@ -83,7 +83,7 @@ for ($i = 1; $i -le $NodeCount; $i++) {
 done_banner "Nacos Cluster (3 nodes) | AP/CP Testable"
 for ($i = 1; $i -le $NodeCount; $i++) {
     $port = $BasePort + $i - 1
-    Write-Host "  Console $i : http://localhost:${port}/nacos" -ForegroundColor Cyan
+    Write-Host "  Console $i : http://host.docker.internal:${port}/nacos" -ForegroundColor Cyan
 }
 Write-Host ""
 Write-Host "  AP/CP Test:" -ForegroundColor Green

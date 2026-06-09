@@ -261,7 +261,7 @@ public class NacosController {
 
     private String getLocalIp() {
         try {
-            return java.net.InetAddress.getLocalHost().getHostAddress();
+            return java.net.InetAddress.gethost.docker.internal().getHostAddress();
         } catch (Exception e) {
             return "127.0.0.1";
         }

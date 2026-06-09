@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JDK 1.8 运行时排查 — 未开GC日志怎么办</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .dark .glass-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .code-block {
+            background: #0f172a;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .code-block::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 36px;
+            background: #1e293b;
+            border-radius: 12px 12px 0 0;
+        }
+        .code-block pre {
+            padding: 48px 20px 20px 20px;
+            margin: 0;
+            overflow-x: auto;
+        }
+        .code-block .dots {
+            position: absolute;
+            top: 12px; left: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        .code-block .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ef4444; }
+        .dot-yellow { background: #f59e0b; }
+        .dot-green { background: #22c55e; }
+        .timeline-line {
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+            border-radius: 2px;
+        }
+        .scroll-indicator {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+            transform-origin: left;
+            z-index: 100;
+            transform: scaleX(0);
+        }
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .hover-lift {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+        }
+        .bg-grid {
+            background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .dark .bg-grid {
+            background-image: radial-gradient(circle, #334155 1px, transparent 1px);
+        }
+        .param-card {
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+        .param-card:hover {
+            border-left-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            z-index: 20;
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+        .copy-btn.copied {
+            color: #22c55e;
+            border-color: #22c55e;
+        }
+        .tool-card {
+            transition: all 0.3s ease;
+        }
+        .tool-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+        }
+    </style>
+    <base target="_blank">
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300">
+<div class="scroll-indicator" id="scrollProgress"></div>
+
+<!-- Hero Section -->
+<section class="relative min-h-[65vh] flex items-center justify-center overflow-hidden bg-grid">
+    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-amber-500/10"></div>
+    <div class="absolute top-20 left-10 w-72 h-72 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
+    <div class="absolute bottom-20 right-10 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse" style="animation-delay:2s"></div>
+    <div class="relative z-10 text-center px-6 max-w-4xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium mb-6">
+            <i data-lucide="zap" class="w-4 h-4"></i>
+            <span>生产环境应急指南</span>
+        </div>
+        <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6">
+            <span class="gradient-text">没开 GC 日志？</span><br>
+            <span class="text-slate-900 dark:text-white">照样排查</span>
+        </h1>
+        <p class="text-lg md:text-xl text-slate-500 dark:text-slate-400 max-w-2xl mx-auto mb-10">
+            应用正在运行，GC 日志没开，老年代内存还在涨 —— 别慌，用 JDK 自带工具在线诊断，无需重启
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="#emergency" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center gap-2">
+                <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                紧急排查
+            </a>
+            <a href="#tools" class="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2">
+                <i data-lucide="tool" class="w-4 h-4"></i>
+                工具速查
+            </a>
+        </div>
+    </div>
+    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+        <i data-lucide="chevron-down" class="w-6 h-6 text-slate-400"></i>
+    </div>
+</section>
+
+<!-- Emergency Banner -->
+<section class="py-8 px-6 max-w-6xl mx-auto">
+    <div class="bg-red-50 dark:bg-red-900/20 rounded-2xl p-6 border border-red-200 dark:border-red-800 flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+            <i data-lucide="alert-triangle" class="w-6 h-6 text-red-600"></i>
+        </div>
+        <div>
+            <h3 class="text-lg font-bold text-red-800 dark:text-red-300 mb-2">⚠️ 紧急场景：GC 日志未开启，应用正在运行</h3>
+            <p class="text-red-700 dark:text-red-400 mb-3">生产环境最常见的情况：应用启动时没配 GC 日志参数，现在老年代内存缓慢增长，需要立即排查，但<strong>不能重启</strong>（重启会丢失现场）。</p>
+            <div class="flex flex-wrap gap-2">
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">不能重启</span>
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">不能改参数</span>
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">需要在线诊断</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 1: 5-Minute Emergency -->
+<section id="emergency" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-red-500 text-white flex items-center justify-center text-xl font-bold shrink-0">01</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">黄金 5 分钟排查法</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">不重启、不改参数，纯在线诊断</p>
+        </div>
+    </div>
+
+    <div class="relative pl-8 md:pl-12 space-y-8">
+        <div class="timeline-line"></div>
+
+        <!-- Step 1: jps -->
+        <div class="relative">
+            <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-blue-500 border-4 border-white dark:border-slate-950 z-10"></div>
+            <div class="glass-card rounded-2xl p-6 hover-lift">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                        <span class="font-bold text-blue-600">1</span>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">找到 Java 进程 PID</h3>
+                    <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">10秒</span>
+                </div>
+                <div class="code-block mb-4">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    <pre class="text-sm font-mono text-green-400"><code># 查看所有 Java 进程
+jps -lvm
+
+# 输出示例：
+# 12345 myapp.jar -Xms2g -Xmx2g
+# 12346 sun.tools.jps.Jps -lvm
+
+# 或者用 ps 过滤
+ps -ef | grep java | grep -v grep</code></pre>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">拿到目标应用的 PID（如 12345），后续所有命令都基于这个 PID</p>
+            </div>
+        </div>
+
+        <!-- Step 2: jstat -->
+        <div class="relative">
+            <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-amber-500 border-4 border-white dark:border-slate-950 z-10"></div>
+            <div class="glass-card rounded-2xl p-6 hover-lift">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                        <span class="font-bold text-amber-600">2</span>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">实时监控 GC 与内存（jstat）</h3>
+                    <span class="tag-pill bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">30秒</span>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="code-block">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                        <pre class="text-xs font-mono text-green-400"><code># 最常用：查看 GC 统计（百分比）
+jstat -gcutil PID 5000 10
+
+# 每 5 秒采样一次，共 10 次
+# 关注列：S0/S1/E/O/M/ YGC/FGC/ GCT</code></pre>
+                    </div>
+                    <div class="code-block">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                        <pre class="text-xs font-mono text-green-400"><code># 查看详细内存容量（KB）
+jstat -gc PID 5000 10
+
+# 关注列：
+# S0C/S1C/EC/OC/MC = 各区域总容量
+# S0U/S1U/EU/OU/MU = 各区域已使用</code></pre>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                    <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-3">jstat -gcutil 输出解读</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-blue-600 font-mono">S0/S1</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Survivor 0/1 区使用率</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-blue-600 font-mono">E</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Eden 区使用率</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-red-600 font-mono font-bold">O</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Old Gen 使用率 ⭐</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-blue-600 font-mono">M</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Metaspace 使用率</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-blue-600 font-mono">YGC</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Young GC 次数</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-red-600 font-mono font-bold">FGC</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Full GC 次数 ⭐</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-blue-600 font-mono">YGCT</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Young GC 总耗时</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-700 rounded-lg p-2">
+                            <code class="text-red-600 font-mono font-bold">FGCT</code>
+                            <p class="text-slate-500 dark:text-slate-400 mt-1">Full GC 总耗时 ⭐</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                    <div class="flex items-start gap-3">
+                        <i data-lucide="lightbulb" class="w-5 h-5 text-amber-600 mt-0.5 shrink-0"></i>
+                        <div>
+                            <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-1">💡 判断技巧</h4>
+                            <p class="text-sm text-amber-700 dark:text-amber-400">连续执行 <code class="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">jstat -gcutil PID 5000</code>（不加次数，持续观察），如果 <strong>O 列（老年代使用率）持续上涨</strong>，且 FGC 次数不断增加但 O 降不下来 → 确认内存泄漏或对象过早晋升</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: jmap histo -->
+        <div class="relative">
+            <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-purple-500 border-4 border-white dark:border-slate-950 z-10"></div>
+            <div class="glass-card rounded-2xl p-6 hover-lift">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                        <span class="font-bold text-purple-600">3</span>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">查看对象统计（jmap -histo）</h3>
+                    <span class="tag-pill bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">1分钟</span>
+                </div>
+
+                <div class="code-block mb-4">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    <pre class="text-sm font-mono text-green-400"><code># 查看存活对象统计（触发一次 Full GC 后统计，更准）
+jmap -histo:live PID | head -n 30
+
+# 不触发 Full GC，直接统计
+jmap -histo PID | head -n 30
+
+# 输出示例：
+#  1:        123456     9876480  java.lang.String
+#  2:         54321     8691360  [B
+#  3:         12345     5925600  java.util.HashMap$Node
+#  4:          8888     4555520  com.myapp.CacheEntry   &lt;-- 重点关注！</code></pre>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                        <h4 class="font-semibold text-purple-800 dark:text-purple-300 text-sm mb-2">📊 看什么？</h4>
+                        <p class="text-sm text-purple-700 dark:text-purple-400">找自己业务相关的类是否排名靠前。如果某个业务类（如 CacheEntry、UserData）实例数异常多，大概率是缓存泄漏或对象未释放</p>
+                    </div>
+                    <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                        <h4 class="font-semibold text-purple-800 dark:text-purple-300 text-sm mb-2">⚠️ 注意</h4>
+                        <p class="text-sm text-purple-700 dark:text-purple-400">jmap -histo:live 会触发 Full GC，生产环境慎用！建议先用不加 :live 的版本，确认问题后再用 :live 精确分析</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: jmap heap -->
+        <div class="relative">
+            <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-green-500 border-4 border-white dark:border-slate-950 z-10"></div>
+            <div class="glass-card rounded-2xl p-6 hover-lift">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                        <span class="font-bold text-green-600">4</span>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">查看堆配置与使用（jmap -heap）</h3>
+                    <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">30秒</span>
+                </div>
+
+                <div class="code-block mb-4">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    <pre class="text-sm font-mono text-green-400"><code># 查看堆内存详细配置和使用情况
+jmap -heap PID
+
+# 输出关键信息：
+# - 使用的 GC 收集器（G1/CMS/Parallel）
+# - 堆内存各区域容量（NewSize/OldSize/MaxHeapSize）
+# - 各区域当前使用量
+# - 是否使用了压缩指针等</code></pre>
+                </div>
+
+                <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border border-green-200 dark:border-green-800">
+                    <p class="text-sm text-green-700 dark:text-green-400"><strong>用途：</strong>快速确认当前 JVM 的堆配置是否合理。比如老年代容量是否过小、年轻代比例是否失衡，这些都会导致对象过早晋升到老年代</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: heap dump -->
+        <div class="relative">
+            <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-red-500 border-4 border-white dark:border-slate-950 z-10"></div>
+            <div class="glass-card rounded-2xl p-6 hover-lift">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                        <span class="font-bold text-red-600">5</span>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">导出堆快照（jmap -dump）</h3>
+                    <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">2-5分钟</span>
+                </div>
+
+                <div class="code-block mb-4">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    <pre class="text-sm font-mono text-green-400"><code># 导出堆快照（live 只保留存活对象，文件更小）
+jmap -dump:live,format=b,file=/tmp/heap_dump.hprof PID
+
+# 不区分存活/死亡，全部导出（文件较大）
+jmap -dump:format=b,file=/tmp/heap_dump.hprof PID
+
+# 如果 jmap 报错，用 gcore 替代（Linux）
+gcore PID
+jmap -dump:format=b,file=/tmp/heap_dump.hprof /path/to/java core.PID</code></pre>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
+                        <h4 class="font-semibold text-red-800 dark:text-red-300 text-sm mb-2">⚠️ 生产环境注意</h4>
+                        <p class="text-sm text-red-700 dark:text-red-400">jmap -dump 会暂停应用（STW），堆越大停顿越久。建议在业务低峰期执行，或使用 <code class="bg-red-100 dark:bg-red-900/40 px-1 rounded">gcore</code> 先 dump 整个进程内存，再离线转换</p>
+                    </div>
+                    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                        <h4 class="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-2">📁 后续分析</h4>
+                        <p class="text-sm text-blue-700 dark:text-blue-400">导出后用 <strong>MAT</strong>（Memory Analyzer Tool）或 <strong>JVisualVM</strong> 打开，使用 Dominator Tree 找到占用最大的对象及 GC Roots 引用链</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 2: Arthas -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-xl font-bold shrink-0">02</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">Arthas 在线诊断（推荐）</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">阿里巴巴开源，无需重启，功能最强大的在线工具</p>
+        </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-8">
+        <div class="glass-card rounded-2xl p-6 hover-lift">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                    <i data-lucide="activity" class="w-5 h-5 text-amber-600"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">为什么用 Arthas？</h3>
+            </div>
+            <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+                <li class="flex items-start gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                    <span><strong>无需重启</strong>：attach 到运行中的进程即可</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                    <span><strong>功能全面</strong>：内存、线程、方法耗时、火焰图、反编译</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                    <span><strong>低侵入</strong>：对应用性能影响极小</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                    <span><strong>实时看板</strong>：dashboard 命令实时刷新内存和 GC 状态</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 hover-lift">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                    <i data-lucide="download" class="w-5 h-5 text-blue-600"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">快速安装启动</h3>
+            </div>
+            <div class="code-block">
+                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                <pre class="text-xs font-mono text-green-400"><code># 下载并启动（自动识别 Java 进程）
+curl -O https://arthas.aliyun.com/arthas-boot.jar
+java -jar arthas-boot.jar
+
+# 选择目标进程编号
+# 进入 Arthas 命令行界面</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Arthas Commands -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-6">排查老年代问题的核心命令</h3>
+
+        <div class="space-y-6">
+            <!-- dashboard -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5">
+                <div class="flex items-center gap-3 mb-3">
+                    <code class="font-mono text-sm font-bold text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-lg">dashboard</code>
+                    <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">实时看板</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">实时显示线程、内存、GC、运行时信息，自动刷新</p>
+                <div class="code-block">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code>$ dashboard -n 5 -i 2000
+# -n 5: 刷新 5 次后退出
+# -i 2000: 每 2 秒刷新一次
+
+# 关注输出中的：
+# HEAP-MEMORY: used / total / max
+# G1-Heap: Eden / Survivor / Old Gen 使用量
+# GC-COUNT: YGC / FGC 次数</code></pre>
+                </div>
+            </div>
+
+            <!-- memory -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5">
+                <div class="flex items-center gap-3 mb-3">
+                    <code class="font-mono text-sm font-bold text-blue-600 bg-blue-100 dark:bg-blue-900/30 px-3 py-1 rounded-lg">memory</code>
+                    <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">内存详情</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">查看 JVM 各内存区域的详细使用情况，比 jstat 更直观</p>
+                <div class="code-block">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code>$ memory
+
+# 输出示例：
+# Heap Memory:
+#   used: 512MB, committed: 1GB, max: 2GB
+# G1 Old Gen:
+#   used: 380MB, committed: 800MB
+# Metaspace:
+#   used: 45MB, committed: 128MB</code></pre>
+                </div>
+            </div>
+
+            <!-- heapdump -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5">
+                <div class="flex items-center gap-3 mb-3">
+                    <code class="font-mono text-sm font-bold text-purple-600 bg-purple-100 dark:bg-purple-900/30 px-3 py-1 rounded-lg">heapdump</code>
+                    <span class="tag-pill bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">堆快照</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">在线导出堆快照，无需 jmap，更稳定</p>
+                <div class="code-block">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code>$ heapdump /tmp/arthas_dump.hprof
+
+# 或只 dump 存活对象（文件更小）
+$ heapdump --live /tmp/arthas_dump.hprof
+
+# 导出后用 MAT 分析 Dominator Tree</code></pre>
+                </div>
+            </div>
+
+            <!-- classloader -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5">
+                <div class="flex items-center gap-3 mb-3">
+                    <code class="font-mono text-sm font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-3 py-1 rounded-lg">classloader</code>
+                    <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">类加载器</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">查看 ClassLoader 统计，排查 Metaspace 泄漏</p>
+                <div class="code-block">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code>$ classloader
+
+# 输出每个 ClassLoader 加载的类数量
+# 如果发现大量自定义 ClassLoader（如 GroovyClassLoader）
+# 且加载了成千上万个类 → Metaspace 泄漏</code></pre>
+                </div>
+            </div>
+
+            <!-- vmtool -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5">
+                <div class="flex items-center gap-3 mb-3">
+                    <code class="font-mono text-sm font-bold text-red-600 bg-red-100 dark:bg-red-900/30 px-3 py-1 rounded-lg">vmtool</code>
+                    <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">强制GC</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">强制触发 GC，观察内存回收情况（类似 jmap -histo:live 的效果）</p>
+                <div class="code-block">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code>$ vmtool --action forceGc
+
+# 强制 GC 后，再用 dashboard/memory 查看
+# 如果 Old Gen 几乎没降 → 确认内存泄漏</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 3: jinfo dynamic -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center text-xl font-bold shrink-0">03</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">动态开启 GC 日志（jinfo）</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">不重启应用，临时开启 GC 日志打印</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-6 border border-blue-200 dark:border-blue-800">
+            <div class="flex items-start gap-3">
+                <i data-lucide="info" class="w-5 h-5 text-blue-600 mt-0.5 shrink-0"></i>
+                <div>
+                    <h4 class="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-1">ℹ️ 适用场景</h4>
+                    <p class="text-sm text-blue-700 dark:text-blue-400">虽然之前没开 GC 日志，但可以通过 <strong>jinfo</strong> 在运行时动态开启部分参数（注意：并非所有参数都支持动态修改，但 PrintGCDetails 和 PrintGC 通常可以）</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="code-block mb-6">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre class="text-sm font-mono text-green-400"><code># 1. 先查看当前是否开启了 GC 日志
+jinfo -flag PrintGCDetails PID
+# 输出：-XX:-PrintGCDetails  （减号表示未开启）
+
+# 2. 动态开启 PrintGC（基础 GC 信息）
+jinfo -flag +PrintGC PID
+# 输出：成功则无返回值
+
+# 3. 尝试开启 PrintGCDetails（详细 GC 信息）
+jinfo -flag +PrintGCDetails PID
+
+# 4. 验证是否开启成功
+jinfo -flag PrintGCDetails PID
+# 输出：-XX:+PrintGCDetails  （加号表示已开启）
+
+# 5. 开启后，GC 信息会输出到控制台（stdout）
+# 如果应用日志重定向到文件，可以在日志文件中看到 GC 信息</code></pre>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border border-green-200 dark:border-green-800">
+                <h4 class="font-semibold text-green-800 dark:text-green-300 text-sm mb-2">✅ 可以动态开启的参数</h4>
+                <ul class="text-sm text-green-700 dark:text-green-400 space-y-1">
+                    <li>• PrintGC / PrintGCDetails</li>
+                    <li>• PrintGCTimeStamps</li>
+                    <li>• HeapDumpOnOutOfMemoryError</li>
+                    <li>• MaxHeapFreeRatio / MinHeapFreeRatio</li>
+                </ul>
+            </div>
+            <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
+                <h4 class="font-semibold text-red-800 dark:text-red-300 text-sm mb-2">❌ 不能动态修改的参数</h4>
+                <ul class="text-sm text-red-700 dark:text-red-400 space-y-1">
+                    <li>• Xmx / Xms（堆大小）</li>
+                    <li>• Xloggc（日志文件路径）</li>
+                    <li>• UseG1GC / UseConcMarkSweepGC（GC 收集器）</li>
+                    <li>• NewRatio / SurvivorRatio（分代比例）</li>
+                </ul>
+                <p class="text-xs text-red-600 dark:text-red-500 mt-2">这些参数需要修改后重启才能生效</p>
+            </div>
+        </div>
+
+        <div class="mt-6 bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+            <div class="flex items-start gap-3">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 mt-0.5 shrink-0"></i>
+                <div>
+                    <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-1">⚠️ 重要提示</h4>
+                    <p class="text-sm text-amber-700 dark:text-amber-400">动态开启的 GC 日志只会输出到 <strong>stdout/stderr</strong>，不会写入文件。如果应用日志做了重定向，可以在日志文件中找到；否则只能在控制台看到。建议配合 <code class="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">nohup</code> 或 <code class="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">systemd</code> 的日志收集查看</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 4: Tools Comparison -->
+<section id="tools" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-purple-500 text-white flex items-center justify-center text-xl font-bold shrink-0">04</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">工具对比与选择</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">不同场景下该用哪个工具？</p>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+            <tr class="border-b border-slate-200 dark:border-slate-700">
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">工具</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">是否需要重启</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">对应用影响</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">适用场景</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">推荐指数</th>
+            </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="activity" class="w-4 h-4 text-amber-500"></i>
+                        <span class="font-semibold text-slate-900 dark:text-white">Arthas</span>
+                    </div>
+                </td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">否</td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">极低</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">在线诊断首选，功能最全面</td>
+                <td class="py-4 px-4">
+                    <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">⭐⭐⭐⭐⭐</span>
+                </td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="bar-chart-2" class="w-4 h-4 text-blue-500"></i>
+                        <span class="font-semibold text-slate-900 dark:text-white">jstat</span>
+                    </div>
+                </td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">否</td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">无</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">快速查看 GC 频率和内存趋势</td>
+                <td class="py-4 px-4">
+                    <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">⭐⭐⭐⭐⭐</span>
+                </td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="search" class="w-4 h-4 text-purple-500"></i>
+                        <span class="font-semibold text-slate-900 dark:text-white">jmap -histo</span>
+                    </div>
+                </td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">否</td>
+                <td class="py-4 px-4 text-amber-600 dark:text-amber-400">中（触发 Full GC）</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">快速查看对象统计，定位嫌疑类</td>
+                <td class="py-4 px-4">
+                    <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">⭐⭐⭐⭐</span>
+                </td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4 text-red-500"></i>
+                        <span class="font-semibold text-slate-900 dark:text-white">jmap -dump</span>
+                    </div>
+                </td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">否</td>
+                <td class="py-4 px-4 text-red-600 dark:text-red-400">高（STW 停顿）</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">导出堆快照，MAT 深度分析</td>
+                <td class="py-4 px-4">
+                    <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">⭐⭐⭐</span>
+                </td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="settings" class="w-4 h-4 text-green-500"></i>
+                        <span class="font-semibold text-slate-900 dark:text-white">jinfo</span>
+                    </div>
+                </td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">否</td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">无</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">动态开启 GC 日志等参数</td>
+                <td class="py-4 px-4">
+                    <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">⭐⭐⭐⭐</span>
+                </td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
+                        <span class="font-semibold text-slate-900 dark:text-white">GC日志</span>
+                    </div>
+                </td>
+                <td class="py-4 px-4 text-red-600 dark:text-red-400">是（需配置参数重启）</td>
+                <td class="py-4 px-4 text-green-600 dark:text-green-400">无</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">长期监控、历史趋势分析</td>
+                <td class="py-4 px-4">
+                    <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">⭐⭐⭐⭐⭐</span>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Part 5: Complete Workflow -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-green-500 text-white flex items-center justify-center text-xl font-bold shrink-0">05</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">完整排查流程图</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">从发现到定位，一步不落</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="relative pl-8 md:pl-12 space-y-8">
+            <div class="timeline-line"></div>
+
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-red-500 border-4 border-white dark:border-slate-950 z-10 flex items-center justify-center">
+                    <i data-lucide="alert-circle" class="w-3 h-3 text-white"></i>
+                </div>
+                <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-5 border border-red-200 dark:border-red-800">
+                    <h4 class="font-bold text-red-800 dark:text-red-300 mb-2">🔴 发现问题</h4>
+                    <p class="text-sm text-red-700 dark:text-red-400">监控告警：老年代内存使用率 > 80% 且持续增长，或应用响应变慢、偶发卡顿</p>
+                </div>
+            </div>
+
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-amber-500 border-4 border-white dark:border-slate-950 z-10 flex items-center justify-center">
+                    <span class="text-white text-xs font-bold">1</span>
+                </div>
+                <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-5 border border-amber-200 dark:border-amber-800">
+                    <h4 class="font-bold text-amber-800 dark:text-amber-300 mb-2">🟡 第一步：jps 找 PID</h4>
+                    <div class="code-block mb-2">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code>jps -lvm</code></pre>
+                    </div>
+                    <p class="text-sm text-amber-700 dark:text-amber-400">确认目标 Java 进程 PID</p>
+                </div>
+            </div>
+
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-blue-500 border-4 border-white dark:border-slate-950 z-10 flex items-center justify-center">
+                    <span class="text-white text-xs font-bold">2</span>
+                </div>
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-5 border border-blue-200 dark:border-blue-800">
+                    <h4 class="font-bold text-blue-800 dark:text-blue-300 mb-2">🔵 第二步：jstat 确认趋势</h4>
+                    <div class="code-block mb-2">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code>jstat -gcutil PID 5000</code></pre>
+                    </div>
+                    <p class="text-sm text-blue-700 dark:text-blue-400">观察 O 列（老年代使用率）是否持续上涨，FGC 次数是否频繁增加</p>
+                    <div class="mt-2 flex gap-2">
+                        <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">O 稳定 → 正常波动</span>
+                        <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">O 持续上涨 → 进入第三步</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-purple-500 border-4 border-white dark:border-slate-950 z-10 flex items-center justify-center">
+                    <span class="text-white text-xs font-bold">3</span>
+                </div>
+                <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-5 border border-purple-200 dark:border-purple-800">
+                    <h4 class="font-bold text-purple-800 dark:text-purple-300 mb-2">🟣 第三步：jmap -histo 定位嫌疑类</h4>
+                    <div class="code-block mb-2">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code>jmap -histo PID | head -n 30</code></pre>
+                    </div>
+                    <p class="text-sm text-purple-700 dark:text-purple-400">查看对象统计，找业务相关类是否异常多。如果找到嫌疑类 → 进入代码审查；如果找不到 → 进入第四步</p>
+                </div>
+            </div>
+
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-green-500 border-4 border-white dark:border-slate-950 z-10 flex items-center justify-center">
+                    <span class="text-white text-xs font-bold">4</span>
+                </div>
+                <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-5 border border-green-200 dark:border-green-800">
+                    <h4 class="font-bold text-green-800 dark:text-green-300 mb-2">🟢 第四步：heapdump + MAT 深度分析</h4>
+                    <div class="code-block mb-2">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code>jmap -dump:live,format=b,file=/tmp/heap.hprof PID</code></pre>
+                    </div>
+                    <p class="text-sm text-green-700 dark:text-green-400">导出堆快照，用 MAT 分析 Dominator Tree 和 Leak Suspects 报告，找到 GC Roots 引用链，定位到具体代码</p>
+                </div>
+            </div>
+
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-slate-500 border-4 border-white dark:border-slate-950 z-10 flex items-center justify-center">
+                    <i data-lucide="check-circle" class="w-3 h-3 text-white"></i>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5 border border-slate-200 dark:border-slate-700">
+                    <h4 class="font-bold text-slate-800 dark:text-slate-300 mb-2">✅ 修复与验证</h4>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">修复代码后重新部署，用 jstat 持续观察，确认老年代内存不再异常增长。同时补充 GC 日志参数，防止下次再踩坑</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Summary -->
+<section class="py-16 px-6 max-w-4xl mx-auto">
+    <div class="glass-card rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div class="relative z-10">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-6">面试回答要点</h2>
+            <div class="space-y-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">1</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">首选 jstat：</strong>不重启、无侵入，jstat -gcutil PID 5000 实时监控老年代使用率和 GC 次数，是最快确认问题的手段。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">2</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">推荐 Arthas：</strong>如果环境允许安装第三方工具，Arthas 是功能最全面的在线诊断方案，dashboard、memory、heapdump 命令一条龙。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">3</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">jmap 慎用：</strong>jmap -histo:live 和 jmap -dump 都会触发 Full GC 或 STW，生产环境建议在低峰期执行，或用 gcore 替代。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">4</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">jinfo 补救：</strong>可以通过 jinfo -flag +PrintGC PID 动态开启基础 GC 日志，虽然不能写文件，但至少能在控制台看到 GC 情况。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-12 px-6 text-center border-t border-slate-200 dark:border-slate-800">
+    <p class="text-slate-500 dark:text-slate-400 text-sm">
+        基于 JDK 1.8 自带工具与 Arthas 在线诊断实践整理 · 适用于生产环境应急排查
+    </p>
+    <div class="flex items-center justify-center gap-4 mt-4">
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">JDK 1.8</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">jstat</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">jmap</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">Arthas</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">jinfo</span>
+    </div>
+</footer>
+
+<script>
+  lucide.createIcons();
+
+  function copyCode(btn) {
+    var pre = btn.parentElement.querySelector('pre');
+    var text = pre.innerText;
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = '已复制!';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = '复制';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  window.addEventListener('scroll', function() {
+    var scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    var scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    var progress = scrollTop / scrollHeight;
+    document.getElementById('scrollProgress').style.transform = 'scaleX(' + progress + ')';
+  });
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.glass-card').forEach(function(card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(20px)';
+    card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(card);
+  });
+
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.classList.add('dark');
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(event) {
+    if (event.matches) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  });
+</script>
+</body>
+</html>

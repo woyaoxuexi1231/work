@@ -39,7 +39,7 @@ public class EurekaController {
     @Value("${spring.application.name}")
     private String applicationName;
 
-    @Value("${eureka.client.service-url.defaultZone:http://localhost:8761/eureka/}")
+    @Value("${eureka.client.service-url.defaultZone:http://host.docker.internal:8761/eureka/}")
     private String eurekaServerUrl;
 
     // ==================== 基础查询 ====================
@@ -173,7 +173,7 @@ public class EurekaController {
             result.put("peerNode", peerNode);
         }
 
-        result.put("compareTip", "打开两个 Dashboard 对比: http://localhost:8761/ 和 http://localhost:8762/");
+        result.put("compareTip", "打开两个 Dashboard 对比: http://host.docker.internal:8761/ 和 http://host.docker.internal:8762/");
         return result;
     }
 

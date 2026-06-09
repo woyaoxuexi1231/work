@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JDK 1.8 GC日志全攻略 — 从获取到排查</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .dark .glass-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .code-block {
+            background: #0f172a;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .code-block::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 36px;
+            background: #1e293b;
+            border-radius: 12px 12px 0 0;
+        }
+        .code-block pre {
+            padding: 48px 20px 20px 20px;
+            margin: 0;
+            overflow-x: auto;
+        }
+        .code-block .dots {
+            position: absolute;
+            top: 12px; left: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        .code-block .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ef4444; }
+        .dot-yellow { background: #f59e0b; }
+        .dot-green { background: #22c55e; }
+        .timeline-line {
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+            border-radius: 2px;
+        }
+        .scroll-indicator {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+            transform-origin: left;
+            z-index: 100;
+            transform: scaleX(0);
+        }
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .hover-lift {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+        }
+        .bg-grid {
+            background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .dark .bg-grid {
+            background-image: radial-gradient(circle, #334155 1px, transparent 1px);
+        }
+        .param-card {
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+        .param-card:hover {
+            border-left-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            z-index: 20;
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+        .copy-btn.copied {
+            color: #22c55e;
+            border-color: #22c55e;
+        }
+    </style>
+    <base target="_blank">
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300">
+<div class="scroll-indicator" id="scrollProgress"></div>
+
+<!-- Hero Section -->
+<section class="relative min-h-[65vh] flex items-center justify-center overflow-hidden bg-grid">
+    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-amber-500/10"></div>
+    <div class="absolute top-20 left-10 w-72 h-72 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
+    <div class="absolute bottom-20 right-10 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse" style="animation-delay:2s"></div>
+    <div class="relative z-10 text-center px-6 max-w-4xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium mb-6">
+            <i data-lucide="terminal" class="w-4 h-4"></i>
+            <span>JDK 1.8 实战指南</span>
+        </div>
+        <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6">
+            <span class="gradient-text">GC 日志</span><br>
+            <span class="text-slate-900 dark:text-white">从获取到排查</span>
+        </h1>
+        <p class="text-lg md:text-xl text-slate-500 dark:text-slate-400 max-w-2xl mx-auto mb-10">
+            JDK 1.8 环境下，完整掌握 GC 日志的开启、查看、分析全流程，快速定位内存问题
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="#config" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center gap-2">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+                参数配置
+            </a>
+            <a href="#analysis" class="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2">
+                <i data-lucide="search" class="w-4 h-4"></i>
+                日志分析
+            </a>
+        </div>
+    </div>
+    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+        <i data-lucide="chevron-down" class="w-6 h-6 text-slate-400"></i>
+    </div>
+</section>
+
+<!-- Part 1: How to Get GC Logs -->
+<section id="config" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center text-xl font-bold shrink-0">01</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">如何开启 GC 日志</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">JDK 1.8 的 GC 日志参数配置全解</p>
+        </div>
+    </div>
+
+    <!-- Core Parameters -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <i data-lucide="zap" class="w-5 h-5 text-blue-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">核心参数（必开）</h3>
+        </div>
+
+        <div class="code-block mb-6">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre class="text-sm font-mono text-green-400"><code># JDK 1.8 推荐 GC 日志参数组合
+-XX:+PrintGCDetails          # 打印详细 GC 信息（各区域回收详情）
+-XX:+PrintGCDateStamps       # 打印绝对日期时间戳（推荐，便于对齐系统日志）
+-XX:+PrintGCTimeStamps        # 打印 JVM 启动后的相对时间（秒）
+-Xloggc:/path/to/gc.log       # 指定 GC 日志输出文件路径
+
+# 生产环境完整推荐配置
+java -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps \
+     -Xloggc:/var/log/myapp/gc-%t.log \
+     -XX:+UseGCLogFileRotation \
+     -XX:NumberOfGCLogFiles=5 \
+     -XX:GCLogFileSize=20M \
+     -jar myapp.jar</code></pre>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="font-mono text-sm font-bold text-blue-600">-XX:+PrintGCDetails</span>
+                    <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">必开</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印 GC 详细信息，包括各内存区域（Eden、Survivor、Old Gen、Metaspace）回收前后的使用量、耗时、触发原因等</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="font-mono text-sm font-bold text-blue-600">-XX:+PrintGCDateStamps</span>
+                    <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">必开</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印绝对日期时间戳（如 2024-06-08T21:04:33.123+0800），便于与系统日志、业务日志对齐排查</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="font-mono text-sm font-bold text-blue-600">-XX:+PrintGCTimeStamps</span>
+                    <span class="tag-pill bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs">建议</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印 JVM 启动后的相对时间（秒），便于计算 GC 间隔和频率</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="font-mono text-sm font-bold text-blue-600">-Xloggc:&lt;file&gt;</span>
+                    <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">必开</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">将 GC 日志输出到指定文件，避免与 stdout 混合。支持 %t 占位符生成带时间戳的文件名</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Rotation -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                <i data-lucide="rotate-ccw" class="w-5 h-5 text-amber-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">日志轮转（生产环境必备）</h3>
+        </div>
+        <p class="text-slate-600 dark:text-slate-400 mb-4">生产环境 GC 日志可能非常大，开启日志轮转防止磁盘占满</p>
+
+        <div class="code-block mb-4">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre class="text-sm font-mono text-green-400"><code># 日志轮转参数
+-XX:+UseGCLogFileRotation     # 开启 GC 日志文件轮转
+-XX:NumberOfGCLogFiles=5       # 保留 5 个历史日志文件
+-XX:GCLogFileSize=20M          # 每个日志文件最大 20MB
+
+# 完整示例：保留 5 个 20MB 的日志文件，循环覆盖
+-Xloggc:/var/log/app/gc-%t.log \
+-XX:+UseGCLogFileRotation \
+-XX:NumberOfGCLogFiles=5 \
+-XX:GCLogFileSize=20M</code></pre>
+        </div>
+
+        <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+            <div class="flex items-start gap-3">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 mt-0.5 shrink-0"></i>
+                <div>
+                    <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-1">⚠️ JDK 9+ 注意</h4>
+                    <p class="text-sm text-amber-700 dark:text-amber-400">JDK 9 引入了统一日志框架（Unified Logging），上述参数在 JDK 9+ 已被移除，需使用 -Xlog:gc*:file=gc.log 替代。本指南仅针对 JDK 1.8。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extra Parameters -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <i data-lucide="plus-circle" class="w-5 h-5 text-green-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">进阶参数（按需开启）</h3>
+        </div>
+
+        <div class="space-y-3">
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <code class="font-mono text-sm text-blue-600 shrink-0">-XX:+PrintHeapAtGC</code>
+                <p class="text-sm text-slate-600 dark:text-slate-400">每次 GC 前后打印堆内存详细分布，用于分析内存分配模式</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <code class="font-mono text-sm text-blue-600 shrink-0">-XX:+PrintTenuringDistribution</code>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印 Survivor 区中对象的年龄分布，排查对象过早晋升问题</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <code class="font-mono text-sm text-blue-600 shrink-0">-XX:+PrintGCApplicationStoppedTime</code>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印应用因 GC 导致的停顿时间（STW），评估对业务的影响</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <code class="font-mono text-sm text-blue-600 shrink-0">-XX:+PrintGCCause</code>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印触发 GC 的原因（如 Allocation Failure、Ergonomics 等）</p>
+            </div>
+            <div class="param-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <code class="font-mono text-sm text-blue-600 shrink-0">-XX:+PrintReferenceGC</code>
+                <p class="text-sm text-slate-600 dark:text-slate-400">打印 Reference（软/弱/虚引用）处理时间，排查引用队列堆积</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 2: How to View GC Logs -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-xl font-bold shrink-0">02</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">GC 日志怎么看</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">逐行拆解日志格式，读懂每一列含义</p>
+        </div>
+    </div>
+
+    <!-- Log Format Explanation -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <i data-lucide="file-text" class="w-5 h-5 text-blue-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">日志格式逐行解析</h3>
+        </div>
+
+        <div class="code-block mb-6">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono leading-relaxed"><code><span style="color:#c084fc">2024-06-08T21:04:33.123+0800:</span> <span style="color:#facc15">120.456:</span> <span style="color:#22d3ee">[GC</span> <span style="color:#fb923c">(Allocation Failure)</span>
+  <span style="color:#4ade80">[PSYoungGen: 153600K->25599K(179200K)]</span>
+  <span style="color:#60a5fa">153600K->25601K(384000K),</span> <span style="color:#f472b6">0.0304152 secs]</span>
+  <span style="color:#9ca3af">[Times: user=0.05 sys=0.01, real=0.03 secs]</span></code></pre>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#c084fc"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">2024-06-08T21:04:33.123+0800</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">绝对日期时间戳（由 PrintGCDateStamps 开启），精确到毫秒，带时区</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#facc15"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">120.456</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">JVM 启动后的相对时间（秒），由 PrintGCTimeStamps 开启</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#22d3ee"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">[GC / [Full GC</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5"><strong>GC</strong> = Minor GC（只回收年轻代）；<strong>Full GC</strong> = 全堆回收（含老年代），会 STW</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#fb923c"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">(Allocation Failure)</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">GC 触发原因。常见：Allocation Failure、Ergonomics、System.gc()、Metadata GC Threshold</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#4ade80"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">153600K->25599K(179200K)</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">GC 前 -> GC 后（该区域总容量）。例如：年轻代从 153600K 降到 25599K，总容量 179200K</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#60a5fa"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">153600K->25601K(384000K)</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">整个堆内存的 GC 前 -> GC 后（堆总容量）。注意：堆的下降量 = 回收量</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#f472b6"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">0.0304152 secs</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">本次 GC 耗时（秒）。Minor GC 通常 &lt; 100ms，Full GC 可能几百 ms 到几秒</p>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full" style="background:#9ca3af"></span>
+                    <span class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">[Times: user=... sys=... real=...]</span>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 ml-5">user = CPU 时间；sys = 系统调用时间；real = 实际 wall-clock 时间（STW 主要看 real）</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full GC Example -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <i data-lucide="alert-circle" class="w-5 h-5 text-red-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">Full GC 日志详解</h3>
+        </div>
+
+        <div class="code-block mb-6">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono leading-relaxed"><code><span style="color:#c084fc">2024-06-08T21:05:12.456+0800:</span> <span style="color:#facc15">159.789:</span> <span style="color:#ef4444">[Full GC</span> <span style="color:#fb923c">(Ergonomics)</span>
+  <span style="color:#4ade80">[PSYoungGen: 25599K->0K(179200K)]</span>
+  <span style="color:#60a5fa">[ParOldGen: 204801K->180234K(409600K)]</span>
+  <span style="color:#22d3ee">230400K->180234K(588800K),</span>
+  <span style="color:#f472b6">[Metaspace: 34567K->34567K(107520K)],</span>
+  <span style="color:#fca5a5">1.2345678 secs]</span>
+  <span style="color:#9ca3af">[Times: user=3.50 sys=0.10, real=1.23 secs]</span></code></pre>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-4">
+            <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
+                <h4 class="font-semibold text-red-800 dark:text-red-300 text-sm mb-2">⚠️ 关键信号</h4>
+                <p class="text-sm text-red-700 dark:text-red-400">出现 [Full GC 说明发生了全堆 STW，业务线程全部暂停</p>
+            </div>
+            <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                <h4 class="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-2">📊 回收效率</h4>
+                <p class="text-sm text-blue-700 dark:text-blue-400">老年代从 204801K 降到 180234K，仅回收了约 24MB，回收率很低，可能存在内存泄漏</p>
+            </div>
+            <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-2">⏱️ 停顿时间</h4>
+                <p class="text-sm text-amber-700 dark:text-amber-400">real=1.23 秒，业务停顿超过 1 秒，严重影响用户体验，需立即排查</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Check Commands -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <i data-lucide="terminal" class="w-5 h-5 text-green-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">命令行快速查看</h3>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre class="text-sm font-mono text-green-400"><code># 1. 实时查看 GC 日志（类似 tail -f）
+tail -f /var/log/app/gc.log
+
+# 2. 只看 Full GC 行（快速定位问题）
+grep "Full GC" /var/log/app/gc.log
+
+# 3. 统计 Full GC 次数和平均耗时
+awk '/Full GC/ {count++; sum+=$NF} END {print "Full GC 次数:", count, "平均耗时:", sum/count "s"}' gc.log
+
+# 4. 提取每次 GC 的堆内存变化（年轻代 + 老年代）
+grep -E "GC|Full GC" gc.log | awk '{print $1, $2, $(NF-1)}'
+
+# 5. 找出耗时最长的 GC 事件
+sort -t',' -k2 -nr gc.log | head -20
+
+# 6. 统计每分钟 GC 次数（判断频率是否异常）
+awk '{gsub(/T/, " "); print substr($1,1,16)}' gc.log | sort | uniq -c | sort -nr | head</code></pre>
+        </div>
+    </div>
+</section>
+
+<!-- Part 3: How to Analyze -->
+<section id="analysis" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-green-500 text-white flex items-center justify-center text-xl font-bold shrink-0">03</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">GC 日志如何排查</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">从日志中提取关键指标，定位老年代内存问题</p>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift">
+            <div class="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="repeat" class="w-7 h-7 text-blue-600"></i>
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white mb-1">GC 频率</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400">每分钟 GC 次数是否异常增加</p>
+            <div class="mt-3 text-xs font-mono bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 text-blue-700 dark:text-blue-300">
+                正常：Minor GC &lt; 10次/分<br>Full GC &lt; 1次/小时
+            </div>
+        </div>
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift">
+            <div class="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="timer" class="w-7 h-7 text-red-600"></i>
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white mb-1">停顿时间</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400">STW 时间是否影响业务</p>
+            <div class="mt-3 text-xs font-mono bg-red-50 dark:bg-red-900/20 rounded-lg p-2 text-red-700 dark:text-red-300">
+                正常：Minor GC &lt; 100ms<br>Full GC &lt; 1s
+            </div>
+        </div>
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift">
+            <div class="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="trending-up" class="w-7 h-7 text-amber-600"></i>
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white mb-1">回收效率</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Full GC 后老年代是否回落</p>
+            <div class="mt-3 text-xs font-mono bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 text-amber-700 dark:text-amber-300">
+                异常：Full GC 后只降 3-5%<br>→ 内存泄漏嫌疑
+            </div>
+        </div>
+        <div class="glass-card rounded-2xl p-6 text-center hover-lift">
+            <div class="w-14 h-14 rounded-2xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="gauge" class="w-7 h-7 text-green-600"></i>
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white mb-1">吞吐量</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400">应用运行时间占总时间比例</p>
+            <div class="mt-3 text-xs font-mono bg-green-50 dark:bg-green-900/20 rounded-lg p-2 text-green-700 dark:text-green-300">
+                目标：&gt; 95%<br>&lt; 90% 需优化
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnosis Flow -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-8">
+            <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <i data-lucide="git-branch" class="w-5 h-5 text-blue-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">排查决策树</h3>
+        </div>
+
+        <div class="relative pl-8 md:pl-12 space-y-6">
+            <div class="timeline-line"></div>
+
+            <!-- Step 1 -->
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-blue-500 border-4 border-white dark:border-slate-950 z-10"></div>
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-5 border border-blue-200 dark:border-blue-800">
+                    <h4 class="font-bold text-blue-800 dark:text-blue-300 mb-2">Step 1：看 Full GC 频率</h4>
+                    <div class="code-block mb-3">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code>grep -c "Full GC" gc.log          # 统计 Full GC 总次数
+grep "Full GC" gc.log | wc -l     # 同上</code></pre>
+                    </div>
+                    <div class="flex gap-4 text-sm">
+                        <div class="flex-1 bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 mb-2">正常</span>
+                            <p class="text-slate-600 dark:text-slate-400">Full GC 很少（几小时一次），且每次回收后老年代大幅回落</p>
+                        </div>
+                        <div class="flex-1 bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 mb-2">异常</span>
+                            <p class="text-slate-600 dark:text-slate-400">Full GC 频繁（几分钟一次），甚至连续触发 → 进入 Step 2</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-amber-500 border-4 border-white dark:border-slate-950 z-10"></div>
+                <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-5 border border-amber-200 dark:border-amber-800">
+                    <h4 class="font-bold text-amber-800 dark:text-amber-300 mb-2">Step 2：看 Full GC 回收效率</h4>
+                    <div class="code-block mb-3">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code># 提取老年代回收前后数据
+grep "Full GC" gc.log | awk '{
+    for(i=1;i<=NF;i++) {
+        if($i ~ /ParOldGen|PSOldGen|Tenured/) {
+            print $i
+        }
+    }
+}'
+# 示例输出：204801K->180234K(409600K)
+# 回收率 = (204801-180234)/204801 ≈ 12% → 很低！</code></pre>
+                    </div>
+                    <div class="flex gap-4 text-sm">
+                        <div class="flex-1 bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 mb-2">正常</span>
+                            <p class="text-slate-600 dark:text-slate-400">Full GC 后老年代回收率 &gt; 50%，内存能回落到较低水平</p>
+                        </div>
+                        <div class="flex-1 bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 mb-2">异常</span>
+                            <p class="text-slate-600 dark:text-slate-400">回收率 &lt; 20%，内存几乎不回落 → <strong>内存泄漏嫌疑</strong>，进入 Step 3</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-red-500 border-4 border-white dark:border-slate-950 z-10"></div>
+                <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-5 border border-red-200 dark:border-red-800">
+                    <h4 class="font-bold text-red-800 dark:text-red-300 mb-2">Step 3：看 Minor GC 后老年代变化</h4>
+                    <div class="code-block mb-3">
+                        <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                        <pre class="text-xs font-mono text-green-400"><code># 观察每次 Minor GC 后老年代是否持续增长
+# 如果每次 YGC 后老年代都在涨，说明对象在快速晋升
+grep "GC (Allocation Failure)" gc.log | tail -20
+
+# 关注整体堆的变化趋势
+# 153600K->25601K(384000K)  → 堆从 153M 降到 25M，回收了 128M
+# 如果每次回收量越来越少 → 老年代在累积对象</code></pre>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 rounded-lg p-3 text-sm">
+                        <p class="text-slate-700 dark:text-slate-300"><strong>判断标准：</strong>如果 Minor GC 后老年代（Old Gen）持续增长，且 Full GC 也无法回收，基本可以确认存在 <span style="color:#dc2626" class="font-bold">内存泄漏</span> 或 <span style="color:#d97706" class="font-bold">对象过早晋升</span>。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="relative">
+                <div class="absolute -left-8 md:-left-12 top-0 w-6 h-6 rounded-full bg-green-500 border-4 border-white dark:border-slate-950 z-10"></div>
+                <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-5 border border-green-200 dark:border-green-800">
+                    <h4 class="font-bold text-green-800 dark:text-green-300 mb-2">Step 4：结合 GC 原因定位根因</h4>
+                    <div class="grid md:grid-cols-2 gap-3 text-sm">
+                        <div class="bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <code class="font-mono text-xs text-orange-600">Allocation Failure</code>
+                            <p class="text-slate-600 dark:text-slate-400 mt-1">新生代空间不足，正常触发 Minor GC。若频繁出现，考虑增大年轻代或优化对象创建。</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <code class="font-mono text-xs text-orange-600">Ergonomics</code>
+                            <p class="text-slate-600 dark:text-slate-400 mt-1">JVM 自适应调整触发的 GC，通常伴随堆扩展。若频繁出现，建议固定堆大小（Xms=Xmx）。</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <code class="font-mono text-xs text-orange-600">Metadata GC Threshold</code>
+                            <p class="text-slate-600 dark:text-slate-400 mt-1">Metaspace 空间不足触发 Full GC。检查动态类生成、反射、CGLIB 代理等。</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 rounded-lg p-3">
+                            <code class="font-mono text-xs text-orange-600">System.gc()</code>
+                            <p class="text-slate-600 dark:text-slate-400 mt-1">代码中显式调用了 System.gc()。搜索代码中是否有不当调用，建议禁用（-XX:+DisableExplicitGC）。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real Example Analysis -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <i data-lucide="microscope" class="w-5 h-5 text-purple-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">实战案例：老年代缓慢增长</h3>
+        </div>
+
+        <p class="text-slate-600 dark:text-slate-400 mb-4">假设你拿到以下 GC 日志片段，如何快速判断问题？</p>
+
+        <div class="code-block mb-6">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono leading-relaxed"><code><span style="color:#6b7280"># 10:00 应用启动后 1 小时</span>
+<span style="color:#c084fc">2024-06-08T10:00:00.000+0800:</span> <span style="color:#facc15">3600.000:</span> <span style="color:#22d3ee">[GC</span> <span style="color:#fb923c">(Allocation Failure)</span>
+  <span style="color:#4ade80">[PSYoungGen: 153600K->2048K(179200K)]</span>
+  <span style="color:#60a5fa">153600K->102400K(384000K),</span> <span style="color:#f472b6">0.0500000 secs]</span>
+
+<span style="color:#6b7280"># 11:00 应用启动后 2 小时</span>
+<span style="color:#c084fc">2024-06-08T11:00:00.000+0800:</span> <span style="color:#facc15">7200.000:</span> <span style="color:#22d3ee">[GC</span> <span style="color:#fb923c">(Allocation Failure)</span>
+  <span style="color:#4ade80">[PSYoungGen: 153600K->2048K(179200K)]</span>
+  <span style="color:#60a5fa">153600K->204800K(384000K),</span> <span style="color:#f472b6">0.0500000 secs]</span>
+
+<span style="color:#6b7280"># 12:00 应用启动后 3 小时 —— 触发 Full GC</span>
+<span style="color:#c084fc">2024-06-08T12:00:00.000+0800:</span> <span style="color:#facc15">10800.000:</span> <span style="color:#ef4444">[Full GC</span> <span style="color:#fb923c">(Ergonomics)</span>
+  <span style="color:#4ade80">[PSYoungGen: 2048K->0K(179200K)]</span>
+  <span style="color:#60a5fa">[ParOldGen: 204800K->204000K(204800K)]</span>
+  <span style="color:#22d3ee">206848K->204000K(384000K),</span> <span style="color:#f472b6">2.5000000 secs]</span>
+  <span style="color:#9ca3af">[Times: user=5.00 sys=0.10, real=2.50 secs]</span></code></pre>
+        </div>
+
+        <div class="space-y-3">
+            <div class="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 mt-0.5 shrink-0"></i>
+                <div>
+                    <h4 class="font-semibold text-red-800 dark:text-red-300 text-sm">🚨 问题 1：老年代持续增长</h4>
+                    <p class="text-sm text-red-700 dark:text-red-400">1 小时时堆占用 102400K，2 小时时 204800K，老年代几乎翻倍增长，说明对象在不断累积进入老年代。</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                <i data-lucide="alert-circle" class="w-5 h-5 text-amber-500 mt-0.5 shrink-0"></i>
+                <div>
+                    <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm">⚠️ 问题 2：Full GC 回收无效</h4>
+                    <p class="text-sm text-amber-700 dark:text-amber-400">Full GC 后老年代从 204800K 降到 204000K，仅回收了 800K（0.4%），几乎没回收！这是典型的 <strong>内存泄漏</strong> 特征。</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                <i data-lucide="zap" class="w-5 h-5 text-blue-500 mt-0.5 shrink-0"></i>
+                <div>
+                    <h4 class="font-semibold text-blue-800 dark:text-blue-300 text-sm">💡 结论与下一步</h4>
+                    <p class="text-sm text-blue-700 dark:text-blue-400">确认存在内存泄漏。下一步：生成堆快照（heap dump），用 MAT 分析支配树，找到占用最大的对象及 GC Roots 引用链。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 4: Tools -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-purple-500 text-white flex items-center justify-center text-xl font-bold shrink-0">04</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">可视化分析工具</h2>
+            <p class="text-slate-500 dark:text-slate-400">告别手动 grep，用工具高效分析</p>
+        </div>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+        <!-- GCEasy -->
+        <div class="glass-card rounded-2xl p-6 hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="cloud" class="w-8 h-8 text-blue-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white text-center mb-2">GCEasy.io</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 text-center mb-4">在线 GC 日志分析工具，上传日志即可生成可视化报告</p>
+            <div class="space-y-2 mb-4">
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>自动计算吞吐量、停顿时间分布</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>内存使用趋势图（识别泄漏）</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>智能诊断建议</span>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                <pre class="text-xs font-mono text-green-400"><code># 使用方式
+1. 访问 https://gceasy.io
+2. 上传 gc.log 文件
+3. 查看自动生成的报告
+
+# 支持对比分析（优化前后）
+# 支持时间范围过滤</code></pre>
+            </div>
+            <div class="mt-3 text-center">
+                <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">推荐</span>
+                <span class="tag-pill bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">在线工具</span>
+            </div>
+        </div>
+
+        <!-- GCViewer -->
+        <div class="glass-card rounded-2xl p-6 hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="monitor" class="w-8 h-8 text-green-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white text-center mb-2">GCViewer</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 text-center mb-4">开源本地 GC 日志可视化工具，无需上传敏感数据</p>
+            <div class="space-y-2 mb-4">
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>完全离线，数据安全</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>堆内存变化曲线图</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>支持多文件对比</span>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                <pre class="text-xs font-mono text-green-400"><code># 下载地址
+https://github.com/chewiebug/GCViewer
+
+# 运行方式
+java -jar gcviewer-1.36.jar gc.log
+
+# 或双击 JAR 文件运行</code></pre>
+            </div>
+            <div class="mt-3 text-center">
+                <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">开源免费</span>
+                <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">本地工具</span>
+            </div>
+        </div>
+
+        <!-- Arthas -->
+        <div class="glass-card rounded-2xl p-6 hover-lift group">
+            <div class="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <i data-lucide="activity" class="w-8 h-8 text-amber-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white text-center mb-2">Arthas</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 text-center mb-4">阿里巴巴开源 Java 诊断工具，在线实时监控无需重启</p>
+            <div class="space-y-2 mb-4">
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>dashboard 实时看板</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>heapdump 在线导出</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                    <span>无需修改 JVM 参数</span>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                <pre class="text-xs font-mono text-green-400"><code># 安装运行
+java -jar arthas-boot.jar
+
+# 选择目标进程
+# 进入后常用命令：
+dashboard       # 实时内存/线程看板
+heapdump        # 导出堆快照
+jvm             # 查看 JVM 参数
+memory          # 查看各区域内存</code></pre>
+            </div>
+            <div class="mt-3 text-center">
+                <span class="tag-pill bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">在线诊断</span>
+                <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">生产必备</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 5: Complete Config -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-slate-800 dark:bg-slate-600 text-white flex items-center justify-center text-xl font-bold shrink-0">05</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">生产环境完整配置</h2>
+            <p class="text-slate-500 dark:text-slate-400">直接可用的 JDK 1.8 GC 日志配置模板</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre class="text-sm font-mono text-green-400"><code># ============================================
+# JDK 1.8 生产环境 GC 日志完整配置（推荐）
+# ============================================
+
+# --- 基础堆内存配置 ---
+-Xms4g                          # 初始堆大小（建议 = Xmx，避免动态扩展触发 Full GC）
+-Xmx4g                          # 最大堆大小
+-XX:NewRatio=2                 # 老年代:年轻代 = 2:1（年轻代约 1.3g）
+-XX:SurvivorRatio=8            # Eden:S0:S1 = 8:1:1
+
+# --- GC 收集器选择（JDK 1.8） ---
+-XX:+UseG1GC                   # 推荐 G1（停顿可控）
+# -XX:+UseConcMarkSweepGC      # CMS（低延迟，但有浮动垃圾问题）
+# -XX:+UseParallelGC           # Parallel（高吞吐，默认）
+
+# --- GC 日志核心参数（必开） ---
+-XX:+PrintGCDetails            # 详细 GC 信息
+-XX:+PrintGCDateStamps         # 绝对日期时间戳
+-XX:+PrintGCTimeStamps          # 相对时间戳
+-Xloggc:/var/log/app/gc-%t.log # 日志文件路径
+
+# --- 日志轮转（生产必备） ---
+-XX:+UseGCLogFileRotation       # 开启轮转
+-XX:NumberOfGCLogFiles=5        # 保留 5 个文件
+-XX:GCLogFileSize=20M           # 单个文件 20MB
+
+# --- 进阶参数（按需） ---
+-XX:+PrintHeapAtGC              # GC 前后打印堆
+-XX:+PrintTenuringDistribution  # 对象年龄分布
+-XX:+PrintGCCause               # GC 触发原因
+-XX:+PrintGCApplicationStoppedTime  # 应用停顿时间
+
+# --- OOM 时自动 dump 堆（排查用） ---
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/var/log/app/heapdump.hprof
+
+# ============================================
+# 完整启动命令示例
+# ============================================
+java -Xms4g -Xmx4g \
+     -XX:NewRatio=2 -XX:SurvivorRatio=8 \
+     -XX:+UseG1GC \
+     -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps \
+     -Xloggc:/var/log/app/gc-%t.log \
+     -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=5 -XX:GCLogFileSize=20M \
+     -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/app/heapdump.hprof \
+     -jar myapp.jar</code></pre>
+        </div>
+    </div>
+</section>
+
+<!-- Summary -->
+<section class="py-16 px-6 max-w-4xl mx-auto">
+    <div class="glass-card rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div class="relative z-10">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-6">面试回答要点</h2>
+            <div class="space-y-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">1</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">开启参数：</strong>JDK 1.8 使用 -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:file 开启 GC 日志，生产环境必须加 -XX:+UseGCLogFileRotation 做日志轮转。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">2</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">查看方式：</strong>命令行用 grep/awk 快速筛选 Full GC 行；可视化用 GCEasy（在线）、GCViewer（本地）生成图表报告。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">3</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">排查思路：</strong>先看 Full GC 频率 → 再看回收效率（Full GC 后老年代是否回落）→ 最后看 GC 原因（Allocation Failure / Ergonomics / Metadata GC Threshold）。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">4</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">关键判断：</strong>Full GC 后老年代回收率 &lt; 20% 且持续增长 → 内存泄漏；回收率正常但频率高 → 参数调优（增大堆、调整分代比例）。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-12 px-6 text-center border-t border-slate-200 dark:border-slate-800">
+    <p class="text-slate-500 dark:text-slate-400 text-sm">
+        基于 JDK 1.8 GC 日志参数与排查实践整理 · 适用于 Java 后端面试与生产问题排查
+    </p>
+    <div class="flex items-center justify-center gap-4 mt-4">
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">JDK 1.8</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">GC 日志</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">JVM 调优</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">内存排查</span>
+    </div>
+</footer>
+
+<script>
+  lucide.createIcons();
+
+  function copyCode(btn) {
+    const pre = btn.parentElement.querySelector('pre');
+    const text = pre.innerText;
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = '已复制!';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = '复制';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  window.addEventListener('scroll', function() {
+    const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    const progress = scrollTop / scrollHeight;
+    document.getElementById('scrollProgress').style.transform = 'scaleX(' + progress + ')';
+  });
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.glass-card').forEach(function(card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(20px)';
+    card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(card);
+  });
+
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.classList.add('dark');
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(event) {
+    if (event.matches) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  });
+</script>
+</body>
+</html>

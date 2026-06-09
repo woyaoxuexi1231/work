@@ -1,7 +1,7 @@
 import redis
 import time
 
-r = redis.Redis(host='localhost', port=6379, password="123456")
+r = redis.Redis(host='host.docker.internal', port=6379, password="123456")
 KEY = "test:bigkey:hash"
 COUNT = 10_000_000
 

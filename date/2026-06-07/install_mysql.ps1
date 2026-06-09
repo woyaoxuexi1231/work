@@ -27,7 +27,7 @@ docker run -d --name $Container --restart unless-stopped -p ${Port}:3306 `
 wait_for_container $Container 60
 
 for ($i = 1; $i -le 30; $i++) {
-    docker exec $Container mysqladmin ping -h localhost --silent 2>$null; if ($LASTEXITCODE -eq 0) { break }
+    docker exec $Container mysqladmin ping -h host.docker.internal --silent 2>$null; if ($LASTEXITCODE -eq 0) { break }
     Start-Sleep 2
 }
 

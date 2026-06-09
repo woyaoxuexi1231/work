@@ -49,9 +49,9 @@
 
 | 节点 | URL |
 |------|-----|
-| eureka1 | http://localhost:8761/ |
-| eureka2 | http://localhost:8762/ |
-| eureka3 | http://localhost:8763/ |
+| eureka1 | http://host.docker.internal:8761/ |
+| eureka2 | http://host.docker.internal:8762/ |
+| eureka3 | http://host.docker.internal:8763/ |
 
 ## 自定义配置
 
@@ -97,7 +97,7 @@ docker network rm eureka-net
 
 Eureka 的自我保护机制用于防止网络分区时误剔除健康实例：
 
-1. 打开 http://localhost:8761/ 观察 Dashboard
+1. 打开 http://host.docker.internal:8761/ 观察 Dashboard
 2. 停止一个节点：`docker stop eureka3`
 3. 观察剩余节点的 Dashboard，会出现红字警告进入自我保护模式
 4. 恢复节点：`docker start eureka3`

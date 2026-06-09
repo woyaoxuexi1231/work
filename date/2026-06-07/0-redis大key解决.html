@@ -149,7 +149,7 @@
                             <pre class="p-3 overflow-x-auto"><code id="py-code" class="text-green-300">import redis
 import time
 
-r = redis.Redis(host='localhost', port=6379)
+r = redis.Redis(host='host.docker.internal', port=6379)
 KEY = "test:bigkey:hash"
 COUNT = 1_000_000
 

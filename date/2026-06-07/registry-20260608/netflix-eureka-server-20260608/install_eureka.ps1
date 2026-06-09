@@ -95,11 +95,11 @@ $maxWait = 90
 foreach ($n in 1..3) {
     $name = "${Prefix}${n}"
     $port = if ($n -eq 1) { $Port1 } elseif ($n -eq 2) { $Port2 } else { $Port3 }
-    Write-Host "  Waiting for ${name} (http://localhost:${port}/) ..." -ForegroundColor DarkYellow
+    Write-Host "  Waiting for ${name} (http://host.docker.internal:${port}/) ..." -ForegroundColor DarkYellow
     $ready = $false
     for ($i = 1; $i -le $maxWait; $i++) {
         try {
-            $resp = Invoke-WebRequest -Uri "http://localhost:${port}/" -UseBasicParsing -TimeoutSec 2
+            $resp = Invoke-WebRequest -Uri "http://host.docker.internal:${port}/" -UseBasicParsing -TimeoutSec 2
             if ($resp.StatusCode -eq 200) {
                 $ready = $true
                 break
@@ -121,9 +121,9 @@ Write-Host "  Eureka 3-Node Cluster Started" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Dashboards:" -ForegroundColor White
-Write-Host "    Node 1: http://localhost:${Port1}/" -ForegroundColor Cyan
-Write-Host "    Node 2: http://localhost:${Port2}/" -ForegroundColor Cyan
-Write-Host "    Node 3: http://localhost:${Port3}/" -ForegroundColor Cyan
+Write-Host "    Node 1: http://host.docker.internal:${Port1}/" -ForegroundColor Cyan
+Write-Host "    Node 2: http://host.docker.internal:${Port2}/" -ForegroundColor Cyan
+Write-Host "    Node 3: http://host.docker.internal:${Port3}/" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Commands:" -ForegroundColor White
 Write-Host "    View logs   : docker logs -f ${Prefix}1" -ForegroundColor Gray
