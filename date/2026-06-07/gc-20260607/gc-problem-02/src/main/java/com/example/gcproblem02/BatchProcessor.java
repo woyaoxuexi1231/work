@@ -37,9 +37,4 @@ public class BatchProcessor {
                 rt.freeMemory() / 1024 / 1024);
     }
 
-    @GetMapping("/trigger-gc")
-    public String triggerGc() {
-        System.gc();
-        return "GC triggered. " + status();
-    }
 }

@@ -1,5 +1,9 @@
 # gc-problem-02 配置
-server.port=8102
-spring.application.name=gc-problem-02
+server:
+  port: 8102
+
+spring:
+  application:
+    name: gc-problem-02
 
 # 启动命令: mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Xms128m -Xmx128m -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc-problem-02.log"

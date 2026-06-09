@@ -37,9 +37,4 @@ public class DataCollector {
         return result;
     }
 
-    @GetMapping("/trigger-gc")
-    public String triggerGc() {
-        System.gc();
-        return "System.gc() called. Total entries in store: " + store.size();
-    }
 }

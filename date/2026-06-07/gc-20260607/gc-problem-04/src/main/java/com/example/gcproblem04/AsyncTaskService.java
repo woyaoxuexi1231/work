@@ -52,9 +52,4 @@ public class AsyncTaskService {
                 + ", Active threads in pool: " + pool.toString();
     }
 
-    @GetMapping("/trigger-gc")
-    public String triggerGc() {
-        System.gc();
-        return "GC triggered. Tasks: " + taskCounter.get();
-    }
 }

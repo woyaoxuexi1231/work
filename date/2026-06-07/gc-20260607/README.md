@@ -39,13 +39,15 @@ jmap -histo <PID> | head -n 30
 tail -f ./gc.log
 grep "Full GC" ./gc.log
 
-# 5. 也可通过 API 触发 GC 和查看状态
+# 5. 手动触发一次 Full GC（JDK 自带工具，不需要应用暴露接口）
+jcmd <PID> GC.run
+
+# 6. 查看应用状态（通过 /status 接口）
 curl http://localhost:8101/status
-curl http://localhost:8101/trigger-gc
 ```
 
 ## 提示
 
 - 每个项目启动后约 1-3 分钟就能观察到内存趋势变化
 - 重点关注 jstat 输出中的 O(老年代使用率) 和 FGC(Full GC 次数) 两列
-- 用 `curl /trigger-gc` 可以手动触发一次 GC，观察回收效果
+- 用 `jcmd <PID> GC.run` 可以手动触发一次 GC，观察回收效果

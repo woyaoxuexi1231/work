@@ -1,6 +1,10 @@
 # gc-problem-01 配置
-server.port=8101
-spring.application.name=gc-problem-01
+server:
+  port: 8101
+
+spring:
+  application:
+    name: gc-problem-01
 
 # 故意设置较小堆内存，方便快速观测
 # 启动命令: mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Xms128m -Xmx128m -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc-problem-01.log"

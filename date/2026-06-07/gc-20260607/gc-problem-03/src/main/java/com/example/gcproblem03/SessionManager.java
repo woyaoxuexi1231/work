@@ -44,12 +44,6 @@ public class SessionManager {
                 + ", Total created: " + sessionIdCounter.get();
     }
 
-    @GetMapping("/trigger-gc")
-    public String triggerGc() {
-        System.gc();
-        return "GC triggered. " + status();
-    }
-
     /**
      * 模拟一个"会话"对象
      */
