@@ -6,7 +6,7 @@ $Prefix    = "nacos"
 $Image     = "nacos/nacos-server:$($env:NACOS_VERSION -replace '^$','v2.3.0')"
 $BasePort  = if ($env:NACOS_BASE_PORT) { [int]$env:NACOS_BASE_PORT } else { 8848 }
 $GrpcBase  = if ($env:NACOS_GRPC_BASE) { [int]$env:NACOS_GRPC_BASE } else { 9848 }
-$Data      = "${DataRoot}\nacos-data"
+$Network   = "${Prefix}-net"
 $NodeCount = 3
 
 check_docker
@@ -17,79 +17,75 @@ for ($i = 1; $i -le $NodeCount; $i++) {
     cleanup_container $name
 }
 
-# ---- create dirs ----
+# ---- cleanup and create network ----
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+docker network rm $Network 2>$null | Out-Null
+$ErrorActionPreference = $prevEAP
+docker network create $Network | Out-Null
+
+# ---- build NACOS_SERVERS (space-separated for the startup script) ----
+# Nacos startup.sh uses: for server in ${NACOS_SERVERS}
+# It splits by SPACE, not comma. So use spaces.
+$Servers = @()
 for ($i = 1; $i -le $NodeCount; $i++) {
-    New-Item -ItemType Directory -Force -Path "$Data\nacos${i}\logs","$Data\nacos${i}\data" | Out-Null
+    $Servers += "${Prefix}${i}:8848"
 }
-
-# ---- build cluster member list (容器内部全部是 8848) ----
-$Members = @()
-for ($i = 1; $i -le $NodeCount; $i++) {
-    $Members += "${Prefix}${i}:8848"
-}
-$ClusterMembers = $Members -join ","
-
-# ---- generate docker-compose.yml ----
-$ComposePath = "$Data\docker-compose.yml"
-$ComposeContent = @"
-version: '3.8'
-services:
-"@
-
-for ($i = 1; $i -le $NodeCount; $i++) {
-    $port = $BasePort + $i - 1
-    $grpc = $GrpcBase + $i - 1
-    $ComposeContent += @"
-
-  ${Prefix}${i}:
-    image: ${Image}
-    container_name: ${Prefix}${i}
-    restart: unless-stopped
-    ports:
-      - "${port}:8848"
-      - "${grpc}:9848"
-    environment:
-      - MODE=cluster
-      - NACOS_SERVERS=${ClusterMembers}
-      - NACOS_AUTH_IDENTITY_KEY=serverIdentity
-      - NACOS_AUTH_IDENTITY_VALUE=security
-      - NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789
-      - PREFER_HOST_MODE=hostname
-      - TZ=Asia/Shanghai
-      # 限制每个节点的 JVM 堆内存（3 节点 × 512m ≈ 1.5G，Docker Desktop 扛得住）
-      - JVM_XMS=256m
-      - JVM_XMX=512m
-      - JVM_XMN=128m
-      - JVM_MS=64m
-      - JVM_MMS=128m
-    volumes:
-      - ${Data}\nacos${i}\logs:/home/nacos/logs
-      - ${Data}\nacos${i}\data:/home/nacos/data
-"@
-}
-
-$ComposeContent | Out-File -FilePath $ComposePath -Encoding UTF8
+$NacosServers = $Servers -join ","   # Nacos app reads comma-separated
+$NacosServersSpace = $Servers -join " "  # startup.sh for-loop reads space-separated
 
 pull_image $Image
-docker-compose -f $ComposePath up -d
+
+# ---- start 3 nodes with docker run ----
+for ($i = 1; $i -le $NodeCount; $i++) {
+    $name  = "${Prefix}${i}"
+    $port  = $BasePort + $i - 1
+    $grpc  = $GrpcBase + $i - 1
+
+    Write-Host "Starting $name (host -> :$port)..." -ForegroundColor Green
+    docker run -d `
+        --name $name `
+        --hostname $name `
+        --network $Network `
+        -p "${port}:8848" `
+        -p "${grpc}:9848" `
+        -e MODE=cluster `
+        -e NACOS_SERVERS=$NacosServers `
+        -e PREFER_HOST_MODE=hostname `
+        -e NACOS_AUTH_IDENTITY_KEY=serverIdentity `
+        -e NACOS_AUTH_IDENTITY_VALUE=security `
+        -e "NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789" `
+        -e JVM_XMS=256m `
+        -e JVM_XMX=512m `
+        -e JVM_XMN=128m `
+        -e JVM_MS=64m `
+        -e JVM_MMS=128m `
+        -e TZ=Asia/Shanghai `
+        --restart unless-stopped `
+        $Image | Out-Null
+}
 
 # ---- wait for all nodes ----
 for ($i = 1; $i -le $NodeCount; $i++) {
     $name = "${Prefix}${i}"
     $port = $BasePort + $i - 1
-    wait_for_container $name 60
     Write-Host "  Waiting for ${name} (port ${port})..." -ForegroundColor Yellow
-    for ($j = 1; $j -le 45; $j++) {
-        $resp = try { Invoke-WebRequest -Uri "http://host.docker.internal:${port}/nacos/v1/console/health/readiness" -UseBasicParsing -TimeoutSec 3 } catch { $null }
+    for ($j = 1; $j -le 60; $j++) {
+        $resp = try { Invoke-WebRequest -Uri "http://localhost:${port}/nacos/v1/console/health/readiness" -UseBasicParsing -TimeoutSec 3 } catch { $null }
         if ($resp -and $resp.StatusCode -eq 200) { break }
         Start-Sleep 2
+    }
+    if ($resp -and $resp.StatusCode -eq 200) {
+        Write-Host "  -> ${name} READY" -ForegroundColor Green
+    } else {
+        Write-Host "  -> ${name} TIMEOUT, check: docker logs ${name}" -ForegroundColor Red
     }
 }
 
 done_banner "Nacos Cluster (3 nodes) | AP/CP Testable"
 for ($i = 1; $i -le $NodeCount; $i++) {
     $port = $BasePort + $i - 1
-    Write-Host "  Console $i : http://host.docker.internal:${port}/nacos" -ForegroundColor Cyan
+    Write-Host "  Console $i : http://localhost:${port}/nacos" -ForegroundColor Cyan
 }
 Write-Host ""
 Write-Host "  AP/CP Test:" -ForegroundColor Green
