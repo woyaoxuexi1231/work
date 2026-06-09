@@ -176,25 +176,25 @@ log_info "nacos3 created"
 #docker restart nacos1 nacos2 nacos3
 #log_info "Waiting 60s for cluster to be ready..."
 #Start-Sleep 60
-
-# ========== Step 10: Verify ==========
-log_info "Step 10: Verify cluster status"
-try {
-    $url = "http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
-    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10
-    log_info "Cluster nodes:"
-    foreach ($node in $response.data) {
-        if ($node.state -eq "UP") {
-            Write-Host "  [UP] $($node.address)" -ForegroundColor Green
-        } else {
-            Write-Host "  [$($node.state)] $($node.address)" -ForegroundColor Red
-        }
-    }
-}
-catch {
-    log_error "Cluster check failed: $_"
-    log_info "You can check manually: curl http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
-}
+#
+## ========== Step 10: Verify ==========
+#log_info "Step 10: Verify cluster status"
+#try {
+#    $url = "http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
+#    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10
+#    log_info "Cluster nodes:"
+#    foreach ($node in $response.data) {
+#        if ($node.state -eq "UP") {
+#            Write-Host "  [UP] $($node.address)" -ForegroundColor Green
+#        } else {
+#            Write-Host "  [$($node.state)] $($node.address)" -ForegroundColor Red
+#        }
+#    }
+#}
+#catch {
+#    log_error "Cluster check failed: $_"
+#    log_info "You can check manually: curl http://$HostIP`:8848/nacos/v1/ns/operator/cluster/nodes"
+#}
 
 # ========== Done ==========
 log_info "=== Nacos Cluster Ready ==="
