@@ -10,3 +10,4 @@ spring:
         server-addr: 192.168.3.100:8848
         namespace: public
         cluster-name: DEFAULT
+        ephemeral: false  # 持久实例 = CP 模式
