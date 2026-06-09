@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线程池配置实战 | 核心线程数 · 队列 · 拒绝策略</title>
+    <style>
+        /* 极简样式，仅保证可读，无任何装饰 */
+        body {
+            margin: 20px;
+            font-family: system-ui, -apple-system, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.5;
+            background: white;
+            color: #111;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            margin: 1.5em 0;
+            border: 0;
+            border-top: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 8px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+        .note {
+            background: #f9f9f9;
+            border-left: 4px solid #666;
+            padding: 12px 16px;
+            margin: 1.2em 0;
+        }
+        ul, ol {
+            margin: 0.5em 0 1em 1.5em;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .section {
+            margin-bottom: 2em;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>线程池面试连环问：自定义参数 & 拒绝策略实战</h1>
+    <p>面试官：你们系统用的什么线程池，自定义的还是JDK自带的？<br>
+        <strong>回答：使用的是<code>java.util.concurrent.ThreadPoolExecutor</code>自定义线程池，并未使用<code>Executors</code>工具类的快捷方法（如<code>newCachedThreadPool</code>、<code>newFixedThreadPool</code>），因为这些预定义线程池存在队列无界或线程数无限制等风险，生产环境必须自己精细控制参数。</strong>
+    </p>
+
+    <hr>
+
+    <div class="section">
+        <h2>📌 1. 核心线程数 & 最大线程数 设置依据</h2>
+        <p>没有“银弹”公式，必须结合<strong>业务类型、硬件资源、压测数据</strong>动态调整。以下是通用方法论：</p>
+
+        <h3>🔹 区分任务类型</h3>
+        <ul>
+            <li><strong>CPU密集型</strong>（加密、计算、图像处理）：核心线程数 ≈ CPU核心数 + 1，最大线程数一般与核心线程数持平，避免过多上下文切换。</li>
+            <li><strong>IO密集型</strong>（数据库查询、RPC调用、文件读写）：核心线程数 ≈ CPU核心数 * 2（或更高），因为线程大部分时间在等待IO。最大线程数可以设置为核心线程数的2~4倍，取决于IO等待时长比例。</li>
+            <li><strong>混合型</strong>：根据压测找出最优值，或拆分为不同线程池隔离。</li>
+        </ul>
+
+        <h3>🔹 具体设置流程（我们系统的实践）</h3>
+        <ul>
+            <li><strong>基线计算</strong>：服务器配置（例如 8核32G）。核心线程数初始设为：IO密集型 → 16，CPU密集型 → 9。</li>
+            <li><strong>压测验证</strong>：使用JMeter或全链路压测，逐步增加并发，观察CPU利用率、系统负载、平均响应时间、拒绝策略触发次数。</li>
+            <li><strong>调优原则</strong>：<br>
+                - 核心线程数：保证系统在低负载时能快速响应，通常设为压测得出的<strong>最佳吞吐量对应的线程数</strong>。<br>
+                - 最大线程数：应对突发流量，通常设为核心线程数的2~4倍（结合队列容量）。但不能超过操作系统限制及内存承受能力，同时要预留一部分资源给其他应用。
+            </li>
+            <li><strong>最终落地</strong>（例如某API业务，IO密集型）：<code>corePoolSize = 16</code>，<code>maximumPoolSize = 64</code>，经过压测后调整为<code>core=24</code>，<code>max=80</code>（前提是数据库连接池、下游系统能抗住）。</li>
+        </ul>
+        <div class="note">
+            💡 <strong>关键点</strong>：<span class="highlight">线程数并非越大越好</span>。过多线程会导致频繁上下文切换（每次约1~3微秒），反而降低吞吐量。需要结合<code>CPU负载</code>和<code>任务平均等待/计算比</code>来调整。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📦 2. 任务队列满了怎么处理？</h2>
+        <p>队列的选择和满后的行为由<strong>阻塞队列类型</strong> + <strong>拒绝策略</strong>共同决定。以下是常见队列及其满后行为：</p>
+
+        <table>
+            <thead>
+            <tr><th>队列类型</th><th>特点</th><th>队列满后的行为</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><code>LinkedBlockingQueue</code> (无界)</td><td>默认Integer.MAX_VALUE，几乎不会满</td><td>不会触发拒绝策略，但可能导致内存溢出（任务无限堆积）→ 不推荐生产使用</td></tr>
+            <tr><td><code>ArrayBlockingQueue</code> (有界)</td><td>固定容量，队列满后新任务尝试入队失败</td><td>触发拒绝策略（由<code>RejectedExecutionHandler</code>处理）</td></tr>
+            <tr><td><code>SynchronousQueue</code></td><td>不存储任务，每个插入必须等待一个移除</td><td>若无空闲线程则立即创建新线程直到最大线程数，满后触发拒绝策略</td></tr>
+            <tr><td><code>LinkedBlockingQueue</code> (有界，自定义容量)</td><td>最常用，例如容量=2000</td><td>队列满后新任务会尝试创建新线程（如果当前线程数 &lt; maximumPoolSize），否则触发拒绝策略</td></tr>
+            </tbody>
+        </table>
+
+        <p><strong>我们系统的做法</strong>：使用<strong>有界的<code>LinkedBlockingQueue</code></strong>（容量通常设置为<code>2000~5000</code>），并配合拒绝策略。原因：<br>
+            - 无界队列风险太大（可能积压海量任务导致OOM）。<br>
+            - 有界队列可以触发拒绝策略，让我们有机会快速失败或降级。<br>
+            - 队列容量根据压测确定：<br>
+            &nbsp;&nbsp;▪ 容量太小 → 频繁触发拒绝，浪费线程资源。<br>
+            &nbsp;&nbsp;▪ 容量太大 → 任务积压延迟高，且内存占用高。<br>
+            - <strong>队列满后，ThreadPoolExecutor的执行逻辑</strong>：<code>corePoolSize满 → 入队 → 队列满 → 新建线程（直至max） → 队列仍满 → 执行拒绝策略</code>。</p>
+        <div class="note">
+            ⚙️ 举例：core=20, max=80, 队列容量=1000。当20个核心线程都在忙，新任务进入队列；队列满后，会创建第21~80个线程来处理任务；若80个线程也全忙且队列已满，则后续任务走拒绝策略。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🚫 3. 拒绝策略 (RejectedExecutionHandler) 怎么做的？</h2>
+        <p>JDK 内置四种拒绝策略，我们根据业务重要性选择了组合方案：</p>
+        <table>
+            <thead><tr><th>策略</th><th>行为</th><th>适用场景</th></tr></thead>
+            <tbody>
+            <tr><td><code>AbortPolicy</code> (默认)</td><td>直接抛出 <code>RejectedExecutionException</code> 异常</td><td>关键业务，不允许丢失任务，希望上游快速感知失败</td></tr>
+            <tr><td><code>CallerRunsPolicy</code></td><td>由调用线程（提交任务的线程）自己执行该任务</td><td>降低新任务提交速度，避免系统过载，但会阻塞调用方</td></tr>
+            <tr><td><code>DiscardPolicy</code></td><td>静默丢弃该任务，不抛异常</td><td>可容忍少量丢失的非核心业务（如日志上报）</td></tr>
+            <tr><td><code>DiscardOldestPolicy</code></td><td>丢弃队列头部（等待最久）的任务，然后重试提交当前任务</td><td>希望淘汰旧任务，保留新任务（如实时更新场景）</td></tr>
+            </tbody>
+        </table>
+
+        <h3>🔹 我们的实践与思考</h3>
+        <ul>
+            <li><strong>核心业务（订单处理、支付回调）</strong>：使用<code>AbortPolicy</code> + <strong>统一异常捕获</strong>，并在上层做重试或降级（如写入消息队列，异步补偿）。绝对不能静默丢弃或让调用线程执行（避免阻塞Tomcat容器线程）。</li>
+            <li><strong>非核心业务（日志分析、统计上报）</strong>：使用<code>DiscardPolicy</code>，并记录监控指标（丢弃次数），允许高峰期丢失部分不敏感数据。</li>
+            <li><strong>需要削峰填谷但不想丢失任何任务</strong>：使用<code>CallerRunsPolicy</code>，但同时需要监控调用线程的耗时，防止雪崩。通常配合有界队列+限流器使用。</li>
+            <li><strong>自定义拒绝策略</strong>：对于极端重要场景，我们扩展了 <code>RejectedExecutionHandler</code>，将拒绝的任务持久化到本地磁盘或 Redis 队列，随后由单独补偿线程处理。</li>
+        </ul>
+        <div class="note">
+            🧠 <strong>面试官追问：“CallerRunsPolicy 有什么潜在问题？”</strong><br>
+            答：如果调用线程是 Web 容器线程（如 Tomcat），该线程被阻塞执行耗时任务，会导致该请求响应变慢，甚至拖垮整个容器线程池，造成其他请求无法处理。因此<strong>一般不建议在 Web 请求处理链路中直接使用</strong>，除非任务非常轻量或专门用于限流。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📋 4. 完整自定义线程池配置示例（代码级）</h2>
+        <p>实际项目中，我们会将线程池封装成 Spring Bean，并提供监控（通过 Micrometer 暴露指标）。</p>
+        <code>
+            @Bean("bizExecutor")<br>
+            public ThreadPoolExecutor bizExecutor() {<br>
+            &nbsp;&nbsp;int core = Runtime.getRuntime().availableProcessors() * 2; // IO密集 ≈ 16 (8核)<br>
+            &nbsp;&nbsp;int max = core * 4; // 64<br>
+            &nbsp;&nbsp;int queueCapacity = 2000;<br>
+            &nbsp;&nbsp;long keepAliveTime = 60L; // 空闲线程存活时间<br>
+            &nbsp;&nbsp;TimeUnit unit = TimeUnit.SECONDS;<br>
+            &nbsp;&nbsp;BlockingQueue&lt;Runnable&gt; workQueue = new LinkedBlockingQueue&lt;&gt;(queueCapacity);<br>
+            &nbsp;&nbsp;ThreadFactory factory = new ThreadFactoryBuilder().setNameFormat("biz-pool-%d").build();<br>
+            &nbsp;&nbsp;RejectedExecutionHandler handler = new ThreadPoolExecutor.AbortPolicy();<br>
+            &nbsp;&nbsp;return new ThreadPoolExecutor(core, max, keepAliveTime, unit, workQueue, factory, handler);<br>
+            }
+        </code>
+        <p><strong>动态调优</strong>：通过 <code>setCorePoolSize()</code> 和 <code>setMaximumPoolSize()</code> 结合配置中心（Nacos/Apollo）实现运行时调整，无需重启。</p>
+    </div>
+
+    <div class="section">
+        <h2>🧪 5. 任务队列满 + 拒绝策略的实战案例</h2>
+        <p><strong>场景</strong>：双11大促，订单创建接口瞬时QPS飙升到平时5倍。线程池核心32，最大128，队列容量1000。瞬间打满后触发 <code>AbortPolicy</code>。为避免直接抛异常导致订单失败，我们做了如下设计：</p>
+        <ul>
+            <li>提交任务时捕获 <code>RejectedExecutionException</code>，将订单信息落入本地消息表 + 定时补偿。</li>
+            <li>监控系统告警，立即触发弹性扩容（自动增加线程池最大线程数到200，并加大队列）。</li>
+            <li>同时启用<strong>动态限流</strong>（Sentinel），控制进入线程池的流量，确保下游DB不会被压垮。</li>
+        </ul>
+        <p>最终效果：少量订单短暂延迟，但无一丢失，系统平稳。</p>
+    </div>
+
+    <div class="section">
+        <h2>🎯 面试总结（快速回答模板）</h2>
+        <div class="note">
+            ✅ “我们使用自定义ThreadPoolExecutor，根据任务类型（IO/CPU）结合压测设置核心和最大线程数。使用有界队列来限制积压。队列满后会触发拒绝策略，核心业务用AbortPolicy并配合补偿机制，非核心用DiscardPolicy。同时我们通过监控和动态调优来应对突发流量。”
+        </div>
+        <p><strong>追问点扩展</strong>：还可以补充 <code>keepAliveTime</code> 的设置（通常60秒），以及如何监控线程池状态（活跃线程数、队列大小、拒绝次数），利用 Micrometer + Grafana 可视化。</p>
+    </div>
+
+    <hr>
+    <p style="font-size: 0.85rem; color: #444;">✅ 本文档聚焦线程池核心参数设置及拒绝策略，无冗余样式，可直接用于面试准备或技术分享。</p>
+</div>
+</body>
+</html>

@@ -11,9 +11,9 @@ spring:
         server-addr: 192.168.3.100:8848,192.168.3.100:8849,192.168.3.100:8850
         namespace: public
         cluster-name: DEFAULT
-        # CP 模式：持久实例
-        ephemeral: false
+        # AP 模式：临时实例
+        ephemeral: true
         # 命名空间使用空字符串表示 public
         metadata:
-          mode: CP
+          mode: AP
           cluster: nacos-cluster-3nodes
