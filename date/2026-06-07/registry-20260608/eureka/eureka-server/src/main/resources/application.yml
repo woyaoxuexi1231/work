@@ -1,0 +1,16 @@
+server:
+  port: ${SERVER_PORT:8761}
+spring:
+  application:
+    name: eureka-server
+eureka:
+  instance:
+    hostname: ${EUREKA_HOST:eureka1}
+    prefer-ip-address: false
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_ZONE:http://eureka1:8761/eureka/,http://eureka2:8761/eureka/,http://eureka3:8761/eureka/}
+  server:
+    enable-self-preservation: false
