@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis 内存淘汰策略详解 | 极简核心</title>
+    <style>
+        /* 极简样式，仅保证可读，无冗余装饰 */
+        body {
+            margin: 20px;
+            font-family: system-ui, -apple-system, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.5;
+            background: white;
+            color: #111;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            margin: 1.5em 0;
+            border: 0;
+            border-top: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 4px;
+            font-weight: 500;
+        }
+        .note {
+            background: #f9f9f9;
+            border-left: 4px solid #666;
+            padding: 12px 16px;
+            margin: 1.2em 0;
+        }
+        ul, ol {
+            margin: 0.5em 0 1em 1.5em;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .section {
+            margin-bottom: 2em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Redis 内存淘汰策略（Maxmemory Policy）</h1>
+    <p>当 Redis 内存使用量达到 <code>maxmemory</code> 上限时，<strong>内存淘汰策略</strong>被触发，用于腾出空间容纳新数据。这与“惰性删除/定期删除”（针对已过期键）<strong>完全不同</strong>，淘汰策略可以删除<strong>任意键</strong>（无论是否设置 TTL）。</p>
+
+    <hr>
+
+    <div class="section">
+        <h2>📌 1. 触发条件</h2>
+        <ul>
+            <li><strong>配置 <code>maxmemory</code></strong>：设置 Redis 最大可用内存（例如 <code>maxmemory 4gb</code>）。若不设置，64位系统默认为物理内存上限，可能导致 OOM。</li>
+            <li><strong>写命令执行时</strong>：当尝试写入新数据（SET、LPUSH、SADD 等）导致内存超过 <code>maxmemory</code>，Redis 会按照配置的策略淘汰部分键，然后执行写入。如果淘汰后内存仍然不够，则写入失败（返回错误）。</li>
+            <li><strong>注意</strong>：读命令不触发淘汰。</li>
+        </ul>
+        <div class="note">
+            💡 重要：内存淘汰是<strong>被动触发</strong>，仅在内存达到上限且需要写入时发生。可通过 <code>INFO memory</code> 查看 <code>maxmemory</code> 和当前内存使用。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>⚙️ 2. 八种淘汰策略（Redis 4.0+ 支持）</h2>
+        <p>通过 <code>maxmemory-policy</code> 配置项设置，常用策略如下：</p>
+        <table>
+            <thead>
+            <tr><th>策略名称</th><th>适用数据范围</th><th>淘汰算法/行为</th><th>适用场景</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><strong>noeviction</strong></td><td>所有键</td><td>不淘汰任何键，当内存满时，写命令返回错误（如 OOM 错误）</td><td>不允许丢数据的场景（但需保证内存绝对充足）</td></tr>
+            <tr><td><strong>allkeys-lru</strong></td><td>所有键</td><td>从所有键中淘汰<strong>最近最少使用</strong>（LRU）的键</td><td>通用热点数据缓存，推荐</td></tr>
+            <tr><td><strong>volatile-lru</strong></td><td>仅设置了过期时间的键</td><td>从设置了 TTL 的键中淘汰 LRU 的键</td><td>既需要持久化又需要淘汰过期数据的混合场景</td></tr>
+            <tr><td><strong>allkeys-lfu</strong> (4.0+)</td><td>所有键</td><td>淘汰<strong>最不经常使用</strong>（LFU，访问频率最低）的键</td><td>访问频率差异明显的缓存，LRU 容易被冷数据冲击</td></tr>
+            <tr><td><strong>volatile-lfu</strong> (4.0+)</td><td>仅有过期时间的键</td><td>从设置了 TTL 的键中淘汰 LFU 的键</td><td>同上，但仅限过期键集合</td></tr>
+            <tr><td><strong>allkeys-random</strong></td><td>所有键</td><td>随机淘汰</td><td>缓存项访问分布均匀，无热点</td></tr>
+            <tr><td><strong>volatile-random</strong></td><td>仅有过期时间的键</td><td>从设置了 TTL 的键中随机淘汰</td><td>配合 expire 使用的简单场景</td></tr>
+            <tr><td><strong>volatile-ttl</strong></td><td>仅有过期时间的键</td><td>淘汰剩余 TTL 最短（最快过期）的键</td><td>希望优先删除即将过期的数据</td></tr>
+            </tbody>
+        </table>
+        <div class="note">
+            🔍 <strong>LRU vs LFU 快速区分</strong>：LRU 关注<strong>最近一次访问时间</strong>，LFU 关注<strong>访问频率</strong>。LFU 能更好避免缓存污染（比如一次性读取大量冷数据挤掉热点）。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📖 3. 淘汰策略与过期删除的区别（高频面试题）</h2>
+        <ul>
+            <li><strong>触发维度不同</strong>：惰性/定期删除处理的是<strong>已到期</strong>的键；内存淘汰策略处理的是<strong>内存超限</strong>时，无论键是否到期。</li>
+            <li><strong>是否强制</strong>：过期删除是清理“合法过期”的键；淘汰策略是“强行驱逐”，可能删除未过期的键。</li>
+            <li><strong>执行顺序</strong>：通常先尝试惰性/定期删除来释放内存，如果释放后依然超过 <code>maxmemory</code>，则触发淘汰策略。</li>
+            <li><strong>配置独立</strong>：过期删除不可禁用（有 TTL 就会自动清理），淘汰策略可配置。</li>
+        </ul>
+        <div class="note">
+            ⚠️ 常见误区：很多人认为 Redis 满了会自动删除过期键，实际上过期键并不一定被立即删除（惰性删除不活跃），导致内存爆满时淘汰策略会删除任何键，包括未过期的热点数据。因此合理设置 maxmemory 与策略非常重要。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔧 4. 配置示例 & 动态修改</h2>
+        <p><strong>配置文件 redis.conf：</strong></p>
+        <code>
+            maxmemory 2gb<br>
+            maxmemory-policy allkeys-lru
+        </code>
+        <p><strong>运行时动态修改（无需重启）：</strong></p>
+        <code>
+            CONFIG SET maxmemory 4gb<br>
+            CONFIG SET maxmemory-policy volatile-lfu
+        </code>
+        <p><strong>查看当前策略：</strong></p>
+        <code>CONFIG GET maxmemory-policy</code>
+    </div>
+
+    <div class="section">
+        <h2>📊 5. 如何选择合适的内存淘汰策略？</h2>
+        <ul>
+            <li><strong>纯缓存场景（可丢数据）</strong>：<code>allkeys-lru</code> 或 <code>allkeys-lfu</code>。推荐 allkeys-lru，最通用。</li>
+            <li><strong>必须保留部分固定数据 + 缓存过期数据</strong>：<code>volatile-lru</code> 或 <code>volatile-ttl</code>。只对设置了 TTL 的键进行淘汰。</li>
+            <li><strong>禁止删除任何键</strong>：<code>noeviction</code>，但需搭配监控和充足内存，否则写入全失败。</li>
+            <li><strong>访问模式非常随机且无热点</strong>：<code>allkeys-random</code> 性能最佳。</li>
+            <li><strong>热点数据频繁访问，防止一次性扫描污染</strong>：LFU 策略（allkeys-lfu）优于 LRU。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>⚠️ 6. 实战注意事项</h2>
+        <ul>
+            <li><strong>maxmemory 不要设置过大</strong>：建议留出 10%~20% 内存给系统与碎片，避免 OOM Killer。</li>
+            <li><strong>预估写入吞吐</strong>：淘汰策略执行时会阻塞主线程（但 Redis 内部淘汰算法优化为近似 LRU/LFU，性能较高）。</li>
+            <li><strong>与持久化（RDB/AOF）的关系</strong>：内存淘汰会删除键，这些删除操作也会被记录到 AOF 文件，并在从库同步。所以从库也可能因为主库淘汰而丢失数据。</li>
+            <li><strong>监控淘汰情况</strong>：使用 <code>INFO stats</code> 查看 <code>evicted_keys</code> 计数器，如果频繁增长说明内存压力大。</li>
+        </ul>
+        <div class="note">
+            🧠 <strong>面试回答模板</strong>：“Redis 内存淘汰策略在 maxmemory 达到上限时触发，通过 maxmemory-policy 配置。常用 allkeys-lru 淘汰最少使用的键。它与过期删除不同，过期删除只针对已 TTL 到期的键，而淘汰策略可删除任何键。选择策略需根据业务是否能容忍数据丢失以及访问模式来定。必要时还可调整 LFU 和采样精度参数。”
+        </div>
+    </div>
+
+    <hr>
+    <div class="section">
+        <h2>📚 扩展：近似 LRU 与精确 LRU</h2>
+        <p>Redis 的 LRU 并非精确淘汰全局最久未访问的键，而是<strong>抽样淘汰</strong>（默认采样5个键，淘汰其中 idle 时间最长的）。<br>
+            可通过 <code>maxmemory-samples</code> 配置提高精度（消耗更多 CPU）。LFU 也采用类似抽样方法。</p>
+        <code>CONFIG SET maxmemory-samples 10</code>
+        <p>这样在内存淘汰时更精确，但性能稍降。</p>
+    </div>
+
+    <hr>
+    <p style="font-size: 0.85rem; color: #444;">✅ 本文档聚焦 Redis 内存淘汰策略核心，无冗余样式，适用于面试速记与实战理解。</p>
+</div>
+</body>
+</html>

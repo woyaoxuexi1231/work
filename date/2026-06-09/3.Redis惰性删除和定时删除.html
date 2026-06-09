@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis 惰性删除 vs 定期删除 | 核心区别</title>
+    <!-- 极简风格，无多余样式，只保证可读性与重点突出 -->
+    <style>
+        /* 只做基础排版，无花哨样式，完全符合“不要任何美丽样式”要求 */
+        body {
+            margin: 20px;
+            font-family: system-ui, -apple-system, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.5;
+            background: white;
+            color: #111;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            margin: 1.5em 0;
+            border: 0;
+            border-top: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 4px;
+            font-weight: 500;
+        }
+        .note {
+            background: #f9f9f9;
+            border-left: 4px solid #666;
+            padding: 12px 16px;
+            margin: 1.2em 0;
+        }
+        ul, ol {
+            margin: 0.5em 0 1em 1.5em;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .badge {
+            font-weight: bold;
+        }
+        /* 完全无装饰，仅用于内容层次 */
+        .section {
+            margin-bottom: 2em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Redis 过期键删除策略：惰性删除 vs 定期删除</h1>
+    <p>Redis 作为内存数据库，为了高效清理已经设置了过期时间（TTL）的键，采用<strong>两种策略协同工作</strong>：<strong class="highlight">惰性删除</strong> 和 <strong class="highlight">定期删除</strong>。两者目的都是释放内存，但机制、触发时机、资源消耗完全不同。下面从核心区别展开。</p>
+
+    <hr>
+
+    <!-- 快速对比表格 -->
+    <div class="section">
+        <h2>📋 核心区别总览</h2>
+        <table>
+            <thead>
+            <tr><th>对比维度</th><th>惰性删除 (Lazy Expiration)</th><th>定期删除 (Active Expiration)</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><strong>触发时机</strong></td><td>客户端<strong>访问（读/写）</strong>某个键时，检查该键是否过期，若过期则立即删除。</td><td>Redis 内部<strong>周期性任务</strong>（默认每秒执行10次，即每隔100ms）主动抽取一批设置了过期时间的键进行检查删除。</td></tr>
+            <tr><td><strong>删除方式</strong></td><td>被动删除，只有访问到才会触发，不访问则长期占用内存。</td><td>主动扫描，在后台定期抽查过期键，无需等待客户端请求。</td></tr>
+            <tr><td><strong>CPU 消耗</strong></td><td><strong>低</strong>：仅在访问发生时检查，不额外占用后台资源。</td><td><strong>相对较高</strong>：周期性遍历部分过期键字典，消耗CPU时间片。</td></tr>
+            <tr><td><strong>内存释放时效性</strong></td><td><strong>差</strong>：如果过期键一直不被访问，会成为“僵尸键”长期滞留内存，造成内存浪费。</td><td><strong>较好</strong>：即便键不被访问，定期任务也会逐步清理，避免内存无限膨胀。</td></tr>
+            <tr><td><strong>是否会遗漏过期键</strong></td><td>会大量遗漏（不访问就不删）。</td><td>也会遗漏（因为每次只抽样部分键），但配合惰性删除可最大程度减少残留。</td></tr>
+            <tr><td><strong>典型场景问题</strong></td><td>可能导致内存持续增长，有 OOM 风险。</td><td>可能短暂增加CPU负载，但可控。</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>⚙️ 1. 惰性删除（Lazy Expiration） —— “用到才删”</h2>
+        <ul>
+            <li><strong>执行位置</strong>：所有读写命令（如 GET、SET、HGET、LPUSH 等）执行前，Redis 会检查目标键是否设置过期时间并已过期。</li>
+            <li><strong>删除动作</strong>：若过期，则先执行删除，再返回 key 不存在（或者对写操作视为该 key 不存在）。</li>
+            <li><strong>优点</strong>：<span class="highlight">CPU友好</span>，只在必要时工作，不会额外增加系统负担。</li>
+            <li><strong>缺点</strong>：<span class="highlight">内存不友好</span>。例如一个设置了 TTL 的 key 在过期后再也没有被访问，它将继续占用内存，造成“内存泄漏”假象。</li>
+            <li><strong>示例</strong>：<br>
+                <code>> SET user:100 "john" EX 60</code> (60秒过期)<br>
+                <code>> GET user:100</code>  → 60秒内返回 "john"；60秒后再次 GET，Redis 发现已过期，删除键，返回 (nil)。
+            </li>
+        </ul>
+        <div class="note">
+            💡 <strong>重要</strong>：惰性删除保证了过期键不会通过访问“复活”，但无法主动清理死数据。因此必须配合定期删除。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>⏲️ 2. 定期删除（Active Expiration） —— “后台主动扫描”</h2>
+        <ul>
+            <li><strong>执行机制</strong>：Redis 的 <code>server.hz</code> 配置（默认10，即每秒10次）触发 <strong>activeExpireCycle</strong> 函数。该函数每次在指定时间预算内，遍历各个数据库（db）的过期哈希表，随机抽取一批带有过期时间的键，检查并删除过期的键。</li>
+            <li><strong>扫描策略</strong>：每次选取一定数量（如20个）的过期字典槽位中的键，删除其中过期的键。如果本次过期键比例过高，会继续扫描，直至时间用完或遍历完。</li>
+            <li><strong>优点</strong>：弥补惰性删除不足，主动释放内存，避免大量过期键堆积。</li>
+            <li><strong>缺点</strong>：占用少量CPU；如果过期键很多，一次定期删除可能耗时稍长，但Redis做了严格的时间限制（默认不超过25%的CPU时间片）。</li>
+            <li><strong>配置相关</strong>：<br>
+                - <code>hz</code> 参数（1~500，默认10）影响定期删除的执行频率。调高会更快清理但增加CPU负载。<br>
+                - <code>active-expire-effort</code> (Redis 6.0+) 调节扫描积极度。
+            </li>
+        </ul>
+        <div class="note">
+            ⚙️ <strong>关键点</strong>：定期删除不是全量扫描所有过期键，而是<strong>随机抽样</strong> + <strong>自适应循环</strong>，防止阻塞主线程。在合理配置下，既能控制CPU开销，又能有效减少过期键残留。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔄 3. 两者如何协同工作？—— 完整的过期键清理生态</h2>
+        <p><strong>Redis 实际采用 “惰性删除为主，定期删除为辅” 的组合策略</strong>：</p>
+        <ul>
+            <li>✅ 定期删除主动清理大部分过期键，保证内存不会无限增长。</li>
+            <li>✅ 惰性删除作为兜底机制，清理那些被定期删除遗漏且后续又被访问到的过期键。</li>
+            <li>✅ 如果过期键一直没人访问且定期删除每次抽样都恰好没抽到，那么该键依然可能滞留。为此 Redis 还提供了 <strong>内存淘汰策略（maxmemory-policy）</strong> 作为最后防线（如 volatile-lru、allkeys-lru 等）。</li>
+        </ul>
+        <p><strong>举例</strong>：一个 Redis 实例中有 10w 个设置了 TTL 的 key，大部分未被继续访问。定期任务每秒10次扫描，每次大约清理几百个 key，全部清理完毕需要一定时间。在此期间，如果客户端访问到某个还未被扫描到但已过期的 key，惰性删除会立刻删除，避免返回脏数据。两者结合达到 CPU/内存的平衡。</p>
+    </div>
+
+    <div class="section">
+        <h2>⚠️ 4. 极端情况：为什么还会出现过期键堆积？</h2>
+        <ul>
+            <li><strong>定期删除频率不足</strong>：如果 <code>hz</code> 太小（例如1），扫描次数少，新过期键产生速度快于清理速度，导致积压。</li>
+            <li><strong>每次扫描抽样数量有限</strong>：默认扫描20个字典槽位的key，若某个数据库有过亿级别的过期键，抽样无法覆盖全部。</li>
+            <li><strong>懒汉式缺陷</strong>：所有过期键永远不被客户端访问，且定期删除每次都“错过”，理论上存在极低概率长期残留，但 Redis 会通过多次迭代逐步覆盖大多数。</li>
+        </ul>
+        <div class="note">
+            🔁 <strong>优化建议</strong>：适当调高 <code>hz</code>（比如20~50），或结合主动触发 <code>SCAN</code> + 手动删除，但一般默认配置足够。更严格的场景可增加内存淘汰策略兜底。
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📌 5. 对比总结：面试可直接表达的核心区别</h2>
+        <ul>
+            <li><strong>触发方式不同</strong>：惰性删除 → 客户端访问触发；定期删除 → 服务器定时任务触发。</li>
+            <li><strong>删除时机不同</strong>：前者“即时检查”但被动；后者“主动扫描”但非实时。</li>
+            <li><strong>资源取舍</strong>：惰性删除节省CPU浪费内存；定期删除用适量CPU换内存释放。</li>
+            <li><strong>遗漏风险</strong>：惰性删除遗漏大部分过期键；定期删除减少遗漏但不能100%清除。</li>
+            <li><strong>最终依赖</strong>：两者必须共存，且最后还有内存淘汰策略（maxmemory）做保底。</li>
+        </ul>
+    </div>
+
+    <hr>
+    <div class="section">
+        <h2>🧠 补充：与内存淘汰策略的区别（容易混淆）</h2>
+        <p>很多面试者会把“过期删除”和“内存淘汰”混淆，这里强调：</p>
+        <ul>
+            <li><strong>惰性删除 + 定期删除</strong> 专门处理<strong>已经达到过期时间的键</strong>（TTL到期）。</li>
+            <li><strong>内存淘汰策略 (maxmemory-policy)</strong> 是在 Redis 内存使用超过 <code>maxmemory</code> 阈值时，根据某种算法（LRU/LFU/随机/ttl）强制删除任意键（无论是否过期），目的是防止 OOM。两者是完全不同的机制。</li>
+        </ul>
+        <p>因此回答“Redis如何清理过期键”时，只需阐述惰性删除与定期删除即可；如果问“内存不足怎么处理”再引出淘汰策略。</p>
+    </div>
+
+    <div class="section">
+        <h2>📖 一句话记忆口诀</h2>
+        <p><strong>“惰性访问时清理，节约CPU；定期主动扫库，防止内存堆积；两者结合是王道，最后淘汰策略兜底。”</strong></p>
+    </div>
+
+    <hr>
+    <p style="font-size: 0.85rem; color: #444; margin-top: 2em;">✅ 本文档仅聚焦Redis惰性删除与定期删除的本质区别，无冗余样式，突出内容核心。</p>
+</div>
+</body>
+</html>
