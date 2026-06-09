@@ -14,20 +14,34 @@ $MysqlDb   = "nacos_config"
 $DataRoot = "C:\Users\code\Desktop\docker-data"
 
 # ========== 辅助函数 ==========
-function log_info($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [INFO] $msg" }
-function log_warn($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [WARN] $msg" -ForegroundColor Yellow }
-function log_error($msg) { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [ERROR] $msg" -ForegroundColor Red }
+function log_info($msg)  { 
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [INFO] $msg" 
+}
+
+function log_warn($msg)  { 
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [WARN] $msg" -ForegroundColor Yellow 
+}
+
+function log_error($msg) { 
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [ERROR] $msg" -ForegroundColor Red 
+}
 
 function check_docker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { log_error "Docker not installed"; exit 1 }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { 
+        log_error "Docker not installed" 
+        exit 1 
+    }
     docker ps 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { log_error "Docker not running"; exit 1 }
+    if ($LASTEXITCODE -ne 0) { 
+        log_error "Docker not running" 
+        exit 1 
+    }
 }
 
 function wait_for_container($name, $max=60) {
     for ($i = 0; $i -lt $max; $i++) {
-        docker ps --format '{{.Names}}' 2>$null | Select-String -Pattern "^$name$" -SimpleMatch | Out-Null
-        if ($?) { return $true }
+        $output = docker ps --format '{{.Names}}' 2>$null | Select-String -Pattern "^$name$" -SimpleMatch
+        if ($output) { return $true }
         Start-Sleep 1
     }
     log_error "Container $name did not start in ${max}s"
@@ -37,14 +51,8 @@ function wait_for_container($name, $max=60) {
 function fix_cluster_conf($ctn, $hostIP, $basePort) {
     log_info "Fixing cluster.conf for $ctn ..."
     
-    # 写入正确的集群配置（使用宿主机可访问的 IP）
-    $conf = @"
-$hostIP`:$basePort
-$hostIP`:$($basePort+100)
-$hostIP`:$($basePort+200)
-"@
-    
-    $conf | docker exec -i $ctn bash -c "cat > /home/nacos/conf/cluster.conf"
+    # 使用简单的方法写入配置
+    docker exec $ctn bash -c "printf '%s\n%s\n%s\n' '$hostIP`:$basePort' '$hostIP`:$(($basePort+100))' '$hostIP`:$(($basePort+200))' > /home/nacos/conf/cluster.conf"
     
     # 验证
     log_info "Verifying cluster.conf for $ctn ..."
@@ -60,7 +68,8 @@ log_info "Host IP: $HostIP"
 log_info "Base Port: $BasePort"
 
 # ---- Docker Network ----
-if (-not (docker network ls --format '{{.Name}}' | Select-String "^$Network$")) {
+$netExists = docker network ls --format '{{.Name}}' 2>$null | Select-String "^$Network$"
+if (-not $netExists) {
     docker network create $Network
     log_info "Network '$Network' created"
 }
@@ -90,7 +99,10 @@ foreach ($ctn in @("nacos1", "nacos2", "nacos3")) {
 }
 
 # ---- Create 3 Nacos Nodes ----
-$ports = @($BasePort, $BasePort+100, $BasePort+200)
+$port1 = $BasePort
+$port2 = $BasePort + 100
+$port3 = $BasePort + 200
+$ports = @($port1, $port2, $port3)
 
 for ($i = 0; $i -lt 3; $i++) {
     $node = $i + 1
@@ -113,24 +125,24 @@ for ($i = 0; $i -lt 3; $i++) {
       --name $ctn `
       --hostname $ctn `
       --network $Network `
-      --add-host="nacos1:$HostIP" `
-      --add-host="nacos2:$HostIP" `
-      --add-host="nacos3:$HostIP" `
+      --add-host "nacos1:$HostIP" `
+      --add-host "nacos2:$HostIP" `
+      --add-host "nacos3:$HostIP" `
       --restart unless-stopped `
       -p ${p}:8848 `
       -p ${g1}:9848 `
       -p ${g2}:9849 `
-      -e MODE=cluster `
-      -e NACOS_AUTH_ENABLE=false `
-      -e TZ=Asia/Shanghai `
-      -e NACOS_SERVERS="$nacosServers" `
-      -e NACOS_SERVER_IP="$HostIP" `
-      -e SPRING_DATASOURCE_PLATFORM=mysql `
-      -e MYSQL_SERVICE_HOST=$MysqlCtn `
-      -e MYSQL_SERVICE_PORT=3306 `
-      -e MYSQL_SERVICE_DB_NAME=$MysqlDb `
-      -e MYSQL_SERVICE_USER=root `
-      -e MYSQL_SERVICE_PASSWORD=$MysqlPass `
+      -e "MODE=cluster" `
+      -e "NACOS_AUTH_ENABLE=false" `
+      -e "TZ=Asia/Shanghai" `
+      -e "NACOS_SERVERS=$nacosServers" `
+      -e "NACOS_SERVER_IP=$HostIP" `
+      -e "SPRING_DATASOURCE_PLATFORM=mysql" `
+      -e "MYSQL_SERVICE_HOST=$MysqlCtn" `
+      -e "MYSQL_SERVICE_PORT=3306" `
+      -e "MYSQL_SERVICE_DB_NAME=$MysqlDb" `
+      -e "MYSQL_SERVICE_USER=root" `
+      -e "MYSQL_SERVICE_PASSWORD=$MysqlPass" `
       -v "$data\logs:/home/nacos/logs" `
       -v "$data\data:/home/nacos/data" `
       $Image | Out-Null
@@ -158,11 +170,12 @@ Start-Sleep 30
 # ---- Verify Cluster Status ----
 log_info "Verifying cluster status..."
 try {
-    $result = Invoke-RestMethod -Uri "http://$HostIP`:$BasePort/nacos/v1/ns/operator/cluster/nodes" -Method Get -TimeoutSec 10
+    $url = "http://$HostIP`:$BasePort/nacos/v1/ns/operator/cluster/nodes"
+    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10
     
     log_info "Cluster nodes status:"
-    foreach ($node in $result.data) {
-        $status = if ($node.state -eq "UP") { "✅ UP" } else { "❌ " + $node.state }
+    foreach ($node in $response.data) {
+        $status = if ($node.state -eq "UP") { "UP" } else { $node.state }
         Write-Host "  $($node.address) -> $status"
         
         if ($node.ip -like "172.*") {
@@ -170,13 +183,16 @@ try {
         }
     }
     
-    log_info "Cluster health check passed ✅"
-} catch {
+    log_info "Cluster health check passed"
+}
+catch {
     log_error "Failed to verify cluster status: $_"
 }
 
 # ---- Done ----
-$urls = ($ports | ForEach-Object { "http://localhost:$_/nacos" }) -join ', '
+$url1 = "http://localhost:$port1/nacos"
+$url2 = "http://localhost:$port2/nacos"
+$url3 = "http://localhost:$port3/nacos"
 log_info "=== Nacos Cluster Ready ==="
-log_info "Console URLs: $urls"
+log_info "Console URLs: $url1,$url2,$url3"
 log_info "Username/Password: nacos/nacos"

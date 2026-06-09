@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线上接口偶发性慢 — 完整排查指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .dark .glass-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .code-block {
+            background: #0f172a;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .code-block::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 36px;
+            background: #1e293b;
+            border-radius: 12px 12px 0 0;
+        }
+        .code-block pre {
+            padding: 48px 20px 20px 20px;
+            margin: 0;
+            overflow-x: auto;
+        }
+        .code-block .dots {
+            position: absolute;
+            top: 12px; left: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        .code-block .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ef4444; }
+        .dot-yellow { background: #f59e0b; }
+        .dot-green { background: #22c55e; }
+        .timeline-line {
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(to bottom, #3b82f6, #8b5cf6, #ec4899);
+            border-radius: 2px;
+        }
+        .scroll-indicator {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+            transform-origin: left;
+            z-index: 100;
+            transform: scaleX(0);
+        }
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .hover-lift {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+        }
+        .bg-grid {
+            background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .dark .bg-grid {
+            background-image: radial-gradient(circle, #334155 1px, transparent 1px);
+        }
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            z-index: 20;
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+        .copy-btn.copied {
+            color: #22c55e;
+            border-color: #22c55e;
+        }
+        .branch-box {
+            border-left: 3px solid #3b82f6;
+            padding-left: 16px;
+            margin-left: 12px;
+        }
+    </style>
+    <base target="_blank">
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300">
+<div class="scroll-indicator" id="scrollProgress"></div>
+
+<!-- Hero Section -->
+<section class="relative min-h-[65vh] flex items-center justify-center overflow-hidden bg-grid">
+    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-amber-500/10"></div>
+    <div class="absolute top-20 left-10 w-72 h-72 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
+    <div class="absolute bottom-20 right-10 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse" style="animation-delay:2s"></div>
+    <div class="relative z-10 text-center px-6 max-w-4xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium mb-6">
+            <i data-lucide="zap" class="w-4 h-4"></i>
+            <span>Java 面试高频场景题</span>
+        </div>
+        <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6">
+            <span class="gradient-text">接口偶发性慢</span><br>
+            <span class="text-slate-900 dark:text-white">怎么排查？</span>
+        </h1>
+        <p class="text-lg md:text-xl text-slate-500 dark:text-slate-400 max-w-2xl mx-auto mb-10">
+            从监控告警到根因定位，系统性掌握偶发性接口延迟的排查方法论与工具链
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="#framework" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center gap-2">
+                <i data-lucide="git-branch" class="w-4 h-4"></i>
+                排查框架
+            </a>
+            <a href="#cases" class="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2">
+                <i data-lucide="search" class="w-4 h-4"></i>
+                经典案例
+            </a>
+        </div>
+    </div>
+    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+        <i data-lucide="chevron-down" class="w-6 h-6 text-slate-400"></i>
+    </div>
+</section>
+
+<!-- Key Challenge -->
+<section class="py-8 px-6 max-w-6xl mx-auto">
+    <div class="bg-red-50 dark:bg-red-900/20 rounded-2xl p-6 border border-red-200 dark:border-red-800 flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+            <i data-lucide="alert-triangle" class="w-6 h-6 text-red-600"></i>
+        </div>
+        <div>
+            <h3 class="text-lg font-bold text-red-800 dark:text-red-300 mb-2">⚠️ 偶发性问题的核心难点</h3>
+            <p class="text-red-700 dark:text-red-400 mb-3">偶发性慢接口最大的挑战是<strong>难以复现、现场易丢失</strong>。等你发现问题再去排查时，异常现场可能已经消失，传统的断点调试和手动 jstack 很难精准定位。</p>
+            <div class="flex flex-wrap gap-2">
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">难以复现</span>
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">现场丢失</span>
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">无规律</span>
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">可能涉及多服务</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 1: Framework -->
+<section id="framework" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center text-xl font-bold shrink-0">01</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">排查框架：先定界，再定位</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">偶发性问题最怕"大海捞针"，必须先缩小范围</p>
+        </div>
+    </div>
+
+    <!-- Step 1: Problem Scope -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <i data-lucide="crosshair" class="w-5 h-5 text-blue-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">第一步：界定问题范围</h3>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-6">
+            <div class="space-y-4">
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-blue-500"></i>
+                        <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm">是单个接口还是全部接口？</h4>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">单个接口慢 → 代码逻辑或该接口依赖的外部服务问题<br>全部接口慢 → 服务器资源瓶颈（CPU/内存/网络）</p>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-blue-500"></i>
+                        <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm">是偶发还是持续？</h4>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">偶发 → 资源竞争、锁竞争、GC、网络抖动<br>持续 → 代码缺陷、配置错误、容量不足</p>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-blue-500"></i>
+                        <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm">是否有规律？</h4>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">整点/高峰期慢 → 定时任务、流量突增<br>随机慢 → 资源竞争、GC、外部依赖抖动</p>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-blue-500"></i>
+                        <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm">是否特定参数触发？</h4>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">特定用户/订单/参数慢 → 数据倾斜、大对象、慢SQL</p>
+                </div>
+            </div>
+            <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-5 border border-blue-200 dark:border-blue-800">
+                <h4 class="font-semibold text-blue-800 dark:text-blue-300 mb-3">📊 监控数据辅助判断</h4>
+                <ul class="space-y-2 text-sm text-blue-700 dark:text-blue-400">
+                    <li class="flex items-start gap-2">
+                        <i data-lucide="check" class="w-4 h-4 mt-0.5 shrink-0"></i>
+                        <span>查看 APM（SkyWalking/Prometheus）接口 P99/P95 延迟趋势</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <i data-lucide="check" class="w-4 h-4 mt-0.5 shrink-0"></i>
+                        <span>对比不同实例的响应时间，确认是否单点问题</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <i data-lucide="check" class="w-4 h-4 mt-0.5 shrink-0"></i>
+                        <span>查看错误率是否同步上升（超时/5xx）</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <i data-lucide="check" class="w-4 h-4 mt-0.5 shrink-0"></i>
+                        <span>查看 QPS 曲线，确认是否与流量峰值相关</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Distributed Tracing -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <i data-lucide="activity" class="w-5 h-5 text-purple-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">第二步：分布式链路追踪（最重要）</h3>
+            <span class="tag-pill bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">核心手段</span>
+        </div>
+
+        <p class="text-slate-600 dark:text-slate-400 mb-4">偶发性问题最难的是"不知道慢在哪里"。链路追踪（SkyWalking / Zipkin / Jaeger）能还原一次请求的完整调用链，精准定位耗时环节。</p>
+
+        <div class="grid md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="search" class="w-4 h-4 text-purple-600"></i>
+                    <h4 class="font-semibold text-purple-800 dark:text-purple-300 text-sm">TraceId 定位慢请求</h4>
+                </div>
+                <p class="text-sm text-purple-700 dark:text-purple-400">在 APM 中找到耗时异常的 Trace，查看每个 Span 的耗时分布，一眼看出是数据库慢、RPC 慢、还是本地计算慢</p>
+            </div>
+            <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="database" class="w-4 h-4 text-purple-600"></i>
+                    <h4 class="font-semibold text-purple-800 dark:text-purple-300 text-sm">识别耗时环节</h4>
+                </div>
+                <p class="text-sm text-purple-700 dark:text-purple-400">链路图会标注每个调用的耗时，常见瓶颈：MySQL 查询、Redis 命令、HTTP/RPC 调用、消息队列</p>
+            </div>
+            <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="git-merge" class="w-4 h-4 text-purple-600"></i>
+                    <h4 class="font-semibold text-purple-800 dark:text-purple-300 text-sm">跨服务串联</h4>
+                </div>
+                <p class="text-sm text-purple-700 dark:text-purple-400">微服务架构下，一个接口可能调用多个下游服务。链路追踪能穿透服务边界，定位是 A 服务慢还是 B 服务慢</p>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+            <pre class="text-sm font-mono text-green-400"><code># SkyWalking 查询示例
+# 1. 进入 SkyWalking UI
+# 2. 选择目标服务和时间段
+# 3. 按耗时排序，找到 > P99 的 Trace
+# 4. 查看 Trace 详情，分析每个 Span 的耗时
+
+# 关键观察点：
+# - 是否有某个 Span 耗时占比 > 80%？
+# - 是否存在串行调用可以改为并行？
+# - 是否有重复查询（N+1 问题）？</code></pre>
+        </div>
+    </div>
+
+    <!-- Step 3: Log Analysis -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <i data-lucide="file-text" class="w-5 h-5 text-green-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">第三步：日志分析</h3>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="code-block">
+                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                <pre class="text-xs font-mono text-green-400"><code># ELK 中搜索慢请求日志
+curl -X GET "localhost:9200/logstash-*/_search" -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "match": { "service": "order-service" }},
+        { "range": { "responseTime": { "gt": 2000 }}}
+      ]
+    }
+  },
+  "sort": [{ "timestamp": "desc" }],
+  "size": 100
+}'
+
+# 或者直接用 grep
+grep "cost=\"[2-9][0-9]" application.log | tail -100</code></pre>
+            </div>
+            <div class="space-y-3">
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+                    <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">🔍 搜索关键词</h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">Timeout、Slow、cost=、elapsed、exception、error</p>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+                    <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">📊 关联 TraceId</h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">日志中打印 TraceId，通过 TraceId 串联全链路日志，定位具体报错点</p>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+                    <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">⏱️ 时间窗口对齐</h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">将慢请求时间与 GC 日志、数据库慢查询日志、中间件监控对齐</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 4: JVM & Thread -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                <i data-lucide="cpu" class="w-5 h-5 text-amber-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">第四步：JVM 与线程分析</h3>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-2">🧵 线程 Dump 分析</h4>
+                <div class="code-block mb-2">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code># 导出线程栈
+jstack PID > thread_dump.txt
+
+# 查找 BLOCKED 线程
+grep -A 20 "BLOCKED" thread_dump.txt
+
+# 查找 WAITING 线程（可能等待锁或资源）
+grep -A 20 "WAITING" thread_dump.txt | head -100</code></pre>
+                </div>
+                <p class="text-xs text-amber-700 dark:text-amber-400">关注 BLOCKED（锁竞争）、WAITING/TIMED_WAITING（等待连接池、等待锁）状态的线程</p>
+            </div>
+            <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                <h4 class="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-2">🗑️ GC 影响排查</h4>
+                <div class="code-block mb-2">
+                    <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                    <pre class="text-xs font-mono text-green-400"><code># 查看 GC 情况
+jstat -gcutil PID 5000
+
+# 如果开启了 GC 日志
+grep "Full GC" gc.log | tail -20
+
+# 关注：FGC 次数是否突增、GC 耗时是否 > 1s</code></pre>
+                </div>
+                <p class="text-xs text-amber-700 dark:text-amber-400">Full GC 或长耗时 GC 会导致应用 STW，接口响应出现"毛刺"</p>
+            </div>
+        </div>
+
+        <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+            <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">🔥 Arthas 在线诊断（推荐）</h4>
+            <div class="code-block">
+                <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+                <pre class="text-xs font-mono text-green-400"><code># 1. 监控接口实时耗时
+trace com.example.OrderService getOrder '#cost>1000' -n 5
+
+# 2. 查看方法内部每行耗时（精准定位慢代码）
+stack com.example.OrderService getOrder
+
+# 3. 查看线程状态
+thread -n 20 | grep TIMED_WAITING
+
+# 4. 查看线程阻塞情况
+thread -b  # 找出阻塞其他线程的罪魁祸首
+
+# 5. 火焰图分析（需要 async-profiler）
+profiler start --event cpu
+profiler stop --file /tmp/flame.html</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 5: External Dependencies -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <i data-lucide="server" class="w-5 h-5 text-red-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">第五步：外部依赖排查</h3>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="database" class="w-4 h-4 text-red-600"></i>
+                    <h4 class="font-semibold text-red-800 dark:text-red-300 text-sm">MySQL</h4>
+                </div>
+                <ul class="text-xs text-red-700 dark:text-red-400 space-y-1">
+                    <li>• SHOW PROCESSLIST 看慢查询</li>
+                    <li>• 慢查询日志分析</li>
+                    <li>• 检查锁等待、死锁</li>
+                    <li>• 连接池是否耗尽</li>
+                </ul>
+            </div>
+            <div class="bg-orange-50 dark:bg-orange-900/20 rounded-xl p-4 border border-orange-200 dark:border-orange-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="layers" class="w-4 h-4 text-orange-600"></i>
+                    <h4 class="font-semibold text-orange-800 dark:text-orange-300 text-sm">Redis</h4>
+                </div>
+                <ul class="text-xs text-orange-700 dark:text-orange-400 space-y-1">
+                    <li>• redis-cli --latency 测延迟</li>
+                    <li>• 排查大 Key / 热 Key</li>
+                    <li>• 检查连接池是否耗尽</li>
+                    <li>• 集群节点是否故障</li>
+                </ul>
+            </div>
+            <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="globe" class="w-4 h-4 text-blue-600"></i>
+                    <h4 class="font-semibold text-blue-800 dark:text-blue-300 text-sm">RPC / HTTP</h4>
+                </div>
+                <ul class="text-xs text-blue-700 dark:text-blue-400 space-y-1">
+                    <li>• 下游服务是否超时</li>
+                    <li>• 网络延迟 / 丢包</li>
+                    <li>• 下游服务是否雪崩</li>
+                    <li>• 重试策略是否合理</li>
+                </ul>
+            </div>
+            <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border border-green-200 dark:border-green-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="message-square" class="w-4 h-4 text-green-600"></i>
+                    <h4 class="font-semibold text-green-800 dark:text-green-300 text-sm">MQ / 定时任务</h4>
+                </div>
+                <ul class="text-xs text-green-700 dark:text-green-400 space-y-1">
+                    <li>• 消息是否堆积</li>
+                    <li>• 消费速度是否跟得上</li>
+                    <li>• 定时任务是否抢资源</li>
+                    <li>• 整点批量任务影响</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Part 2: Classic Cases -->
+<section id="cases" class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-purple-500 text-white flex items-center justify-center text-xl font-bold shrink-0">02</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">经典案例与根因</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">面试中最常考的具体场景</p>
+        </div>
+    </div>
+
+    <!-- Case 1: Database -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <i data-lucide="database" class="w-5 h-5 text-red-600"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">案例一：数据库慢查询</h3>
+                <span class="tag-pill bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">最高频</span>
+            </div>
+        </div>
+
+        <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 mb-4 border border-red-200 dark:border-red-800">
+            <p class="text-sm text-red-700 dark:text-red-400"><strong>现象：</strong>接口偶发响应时间从 50ms 飙到 3-5s，无规律，用户反馈"有时候卡"</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">🔍 排查过程</h4>
+                <ol class="text-sm text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                    <li>SkyWalking 发现慢请求中 MySQL 查询耗时占 90%</li>
+                    <li>慢查询日志定位到一条未走索引的 SQL</li>
+                    <li>EXPLAIN 分析：type=ALL，rows=5000000</li>
+                    <li>发现该 SQL 的 WHERE 条件字段无索引</li>
+                </ol>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">💡 根因分析</h4>
+                <p class="text-sm text-slate-600 dark:text-slate-400">偶发性是因为：该 SQL 的查询条件对应的字段值分布不均匀，某些值命中大量数据时触发全表扫描。平时查询快是因为命中了索引字段的常见值。</p>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono text-green-400"><code>-- 问题 SQL（status 字段无索引，且某些 status 值数据量极大）
+SELECT * FROM orders WHERE status = 'PENDING' AND create_time > '2024-01-01';
+
+-- EXPLAIN 结果：
+-- type: ALL（全表扫描）
+-- rows: 5000000
+-- Extra: Using where
+
+-- 修复方案：
+-- 1. 添加复合索引
+ALTER TABLE orders ADD INDEX idx_status_create_time(status, create_time);
+
+-- 2. 或优化查询逻辑，增加时间范围限制
+SELECT * FROM orders
+WHERE status = 'PENDING'
+  AND create_time BETWEEN '2024-06-01' AND '2024-06-08'
+LIMIT 100;</code></pre>
+        </div>
+    </div>
+
+    <!-- Case 2: Lock -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                <i data-lucide="lock" class="w-5 h-5 text-amber-600"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">案例二：锁竞争 / 死锁</h3>
+                <span class="tag-pill bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs">高频</span>
+            </div>
+        </div>
+
+        <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-800">
+            <p class="text-sm text-amber-700 dark:text-amber-400"><strong>现象：</strong>订单扣库存接口偶发超时，高峰期更明显，jstack 发现大量线程 BLOCKED</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">🔍 排查过程</h4>
+                <ol class="text-sm text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                    <li>jstack 导出线程栈，发现 50+ 线程 BLOCKED</li>
+                    <li>所有 BLOCKED 线程都在等待同一把锁</li>
+                    <li>锁的持有者在执行数据库更新操作</li>
+                    <li>发现 synchronized 锁住了整个方法</li>
+                </ol>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">💡 根因分析</h4>
+                <p class="text-sm text-slate-600 dark:text-slate-400">synchronized 锁粒度太大，锁住了整个扣库存方法。高并发下，一个线程持有锁执行 DB 操作，其他线程全部排队等待，导致偶发性超时。</p>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono text-green-400"><code>// 问题代码：锁粒度太大
+public synchronized void deductStock(Long productId, int qty) {
+    // 1. 查询库存（DB 操作，耗时 ~50ms）
+    Stock stock = stockDao.selectById(productId);
+    // 2. 校验库存
+    if (stock.getQty() < qty) throw new BizException("库存不足");
+    // 3. 扣减库存（DB 操作，耗时 ~50ms）
+    stockDao.deduct(productId, qty);
+    // 4. 记录日志（DB 操作，耗时 ~20ms）
+    logDao.insert(...);
+    // 整个方法被锁住，高并发下排队严重
+}
+
+// 修复方案：缩小锁粒度 + 使用乐观锁
+public void deductStock(Long productId, int qty) {
+    // 1. 先查询（无锁）
+    Stock stock = stockDao.selectById(productId);
+    if (stock.getQty() < qty) throw new BizException("库存不足");
+
+    // 2. 使用乐观锁更新（数据库层面 CAS）
+    int affected = stockDao.deductWithVersion(productId, qty, stock.getVersion());
+    if (affected == 0) throw new BizException("并发冲突，请重试");
+}
+
+// SQL：利用 version 字段实现乐观锁
+UPDATE stock SET qty = qty - #{qty}, version = version + 1
+WHERE product_id = #{productId} AND version = #{version} AND qty >= #{qty};</code></pre>
+        </div>
+    </div>
+
+    <!-- Case 3: Connection Pool -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <i data-lucide="plug" class="w-5 h-5 text-blue-600"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">案例三：连接池耗尽</h3>
+                <span class="tag-pill bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs">高频</span>
+            </div>
+        </div>
+
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-4 border border-blue-200 dark:border-blue-800">
+            <p class="text-sm text-blue-700 dark:text-blue-400"><strong>现象：</strong>接口偶发超时，不是每次都慢，监控显示连接池使用率偶尔飙到 100%</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">🔍 排查过程</h4>
+                <ol class="text-sm text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                    <li>监控发现连接池 Active Connections 偶尔达到 Max</li>
+                    <li>jstack 发现大量线程 WAITING on connection pool</li>
+                    <li>检查代码发现某些接口未关闭连接（或连接泄漏）</li>
+                    <li>还发现一个接口内部循环查询，每次查询都新建连接</li>
+                </ol>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">💡 根因分析</h4>
+                <p class="text-sm text-slate-600 dark:text-slate-400">偶发性是因为：连接池有 20 个连接，平时够用。但当某个大接口同时占用多个连接（或连接未释放），其他请求获取不到连接只能等待，导致偶发超时。</p>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono text-green-400"><code>// 问题代码 1：连接未释放（Spring 中事务未正确关闭）
+@Transactional
+public void processOrder() {
+    // 长时间持有连接，中间还调用了外部 HTTP 接口
+    orderDao.update(...);  // 获取连接
+    httpClient.call(...);   // 阻塞 2s，连接不释放！
+    orderDao.insert(...);    // 复用同一连接
+}
+
+// 问题代码 2：循环内每次新建连接
+public List<Order> getOrders(List<Long> ids) {
+    List<Order> result = new ArrayList<>();
+    for (Long id : ids) {
+        // 每次循环都走数据库！N+1 问题
+        result.add(orderDao.selectById(id));
+    }
+    return result;
+}
+
+// 修复方案 1：拆分事务，减少连接持有时间
+public void processOrder() {
+    orderDao.update(...);  // 事务 1，快速提交
+    httpClient.call(...);   // 外部调用
+    orderDao.insert(...);    // 事务 2
+}
+
+// 修复方案 2：批量查询
+public List<Order> getOrders(List<Long> ids) {
+    return orderDao.selectBatchIds(ids);  // 一条 SQL
+}</code></pre>
+        </div>
+    </div>
+
+    <!-- Case 4: GC -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 mb-8 hover-lift">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <i data-lucide="trash-2" class="w-5 h-5 text-green-600"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">案例四：GC 停顿（STW）</h3>
+                <span class="tag-pill bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">中频</span>
+            </div>
+        </div>
+
+        <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 mb-4 border border-green-200 dark:border-green-800">
+            <p class="text-sm text-green-700 dark:text-green-400"><strong>现象：</strong>接口偶发延迟尖刺（从 50ms 跳到 2-3s），无规律，所有接口都受影响</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">🔍 排查过程</h4>
+                <ol class="text-sm text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                    <li>SkyWalking 发现慢请求没有特定慢 Span</li>
+                    <li>所有 Span 耗时都正常，但总耗时异常长</li>
+                    <li>jstat 发现 FGC 次数突增，且 GC 耗时 > 2s</li>
+                    <li>jmap -histo 发现某个缓存类实例数暴涨</li>
+                </ol>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">💡 根因分析</h4>
+                <p class="text-sm text-slate-600 dark:text-slate-400">偶发性是因为：Full GC 不是每次请求都触发，而是当老年代积累到一定阈值才触发。GC 期间应用 STW，所有线程暂停，导致接口出现"毛刺"。</p>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono text-green-400"><code>// 问题代码：本地缓存无界增长
+private static final Map<String, Object> cache = new HashMap<>();
+
+public Object getData(String key) {
+    if (!cache.containsKey(key)) {
+        cache.put(key, loadFromDB(key));  // 只进不出！
+    }
+    return cache.get(key);
+}
+
+// 修复方案 1：使用有界缓存（Guava / Caffeine）
+LoadingCache<String, Object> cache = Caffeine.newBuilder()
+    .maximumSize(10000)
+    .expireAfterWrite(30, TimeUnit.MINUTES)
+    .build(key -> loadFromDB(key));
+
+// 修复方案 2：JVM 参数调优
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-Xms4g -Xmx4g  # 固定堆大小，避免动态扩展</code></pre>
+        </div>
+    </div>
+
+    <!-- Case 5: Third Party -->
+    <div class="glass-card rounded-2xl p-6 md:p-8 hover-lift">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <i data-lucide="cloud" class="w-5 h-5 text-purple-600"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">案例五：下游服务超时 / 网络抖动</h3>
+                <span class="tag-pill bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-xs">中频</span>
+            </div>
+        </div>
+
+        <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 mb-4 border border-purple-200 dark:border-purple-800">
+            <p class="text-sm text-purple-700 dark:text-purple-400"><strong>现象：</strong>接口偶发超时，SkyWalking 显示下游 RPC 调用耗时异常，但下游服务监控正常</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">🔍 排查过程</h4>
+                <ol class="text-sm text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                    <li>SkyWalking 显示下游服务 B 的某个接口偶发 5s+</li>
+                    <li>但服务 B 的监控显示该接口平均 20ms</li>
+                    <li>检查网络监控，发现偶发丢包 / 延迟尖刺</li>
+                    <li>发现服务 A 的 HTTP 连接池配置超时时间为 5s</li>
+                </ol>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-2">💡 根因分析</h4>
+                <p class="text-sm text-slate-600 dark:text-slate-400">偶发性是因为：网络抖动导致个别请求 RTT 增加，加上连接池超时设置不合理（太长导致阻塞，太短导致频繁超时），偶发性的网络问题被放大。</p>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+            <pre class="text-sm font-mono text-green-400"><code>// 问题配置：超时设置不合理
+RestTemplate restTemplate = new RestTemplate();
+// 默认超时很长，下游抖动时一直等待
+
+// 修复方案 1：合理设置超时 + 熔断
+@FeignClient(name = "order-service",
+    fallbackFactory = OrderFallbackFactory.class,
+    configuration = FeignConfig.class)
+public interface OrderClient {
+    @GetMapping("/orders/{id}")
+    @Retryable(maxAttempts = 2, backoff = @Backoff(delay = 100))
+    Order getOrder(@PathVariable Long id);
+}
+
+// 修复方案 2：Sentinel / Hystrix 熔断降级
+// 当下游接口错误率 > 50% 或 RT > 1s 时，自动熔断，走降级逻辑
+
+// 修复方案 3：异步调用 + 超时控制
+CompletableFuture<Order> future = CompletableFuture.supplyAsync(
+    () -> orderClient.getOrder(id),
+    executor
+).orTimeout(500, TimeUnit.MILLISECONDS)
+ .exceptionally(ex -> getDefaultOrder());</code></pre>
+        </div>
+    </div>
+</section>
+
+<!-- Part 3: Summary -->
+<section class="py-16 px-6 max-w-4xl mx-auto">
+    <div class="glass-card rounded-3xl p-8 md:p-12 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div class="relative z-10">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-6">面试回答要点</h2>
+            <div class="space-y-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">1</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">先定界再定位：</strong>先确认是单个接口还是全部接口、是偶发还是持续、是否有规律（整点/高峰/随机）。偶发性问题最怕"大海捞针"，必须先缩小范围。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">2</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">链路追踪是核心：</strong>SkyWalking / Zipkin 等 APM 工具是排查偶发性问题的核心手段，通过 TraceId 还原完整调用链，精准定位耗时环节（数据库 / Redis / RPC / 本地计算）。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">3</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">高频根因 TOP5：</strong>① 数据库慢查询（无索引/数据倾斜）② 锁竞争（synchronized 粒度太大）③ 连接池耗尽（连接泄漏/N+1查询）④ GC 停顿（Full GC STW）⑤ 下游服务超时/网络抖动。</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <span class="text-blue-600 font-bold text-sm">4</span>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-300"><strong class="text-slate-900 dark:text-white">工具链组合：</strong>APM（链路追踪）→ 日志（ELK 关联 TraceId）→ jstack（线程状态）→ Arthas（trace/stack 精准定位）→ 外部依赖监控（MySQL/Redis/网络）。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Decision Tree -->
+<section class="py-16 px-6 max-w-6xl mx-auto">
+    <div class="flex items-center gap-4 mb-10">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-xl font-bold shrink-0">03</div>
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">排查决策速查表</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-1">根据现象快速判断排查方向</p>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+            <tr class="border-b border-slate-200 dark:border-slate-700">
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">现象特征</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">可能原因</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">排查工具</th>
+                <th class="text-left py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">验证方法</th>
+            </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">单个接口慢，其他正常</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">代码逻辑 / 该接口依赖的外部服务</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">SkyWalking trace</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">看该接口的 Span 耗时分布</td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">全部接口都慢</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">服务器资源瓶颈 / GC / 连接池</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">jstat / jstack / 系统监控</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">CPU/内存/连接池使用率</td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">整点 / 固定时间慢</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">定时任务 / 批量操作 / 缓存失效</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">日志时间对齐 / 调度系统</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">查看定时任务执行时间</td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">高峰期慢，平时正常</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">容量不足 / 锁竞争 / 连接池耗尽</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">jstack / 连接池监控 / QPS对比</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">对比高峰/平时线程状态</td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">特定用户 / 参数慢</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">数据倾斜 / 大对象 / 慢SQL</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">慢查询日志 / 链路追踪</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">用该参数复现，EXPLAIN SQL</td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">完全随机，无规律</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">GC / 网络抖动 / 下游服务偶发</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">jstat / 网络监控 / 下游监控</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">GC 日志 / ping 延迟测试</td>
+            </tr>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td class="py-4 px-4 text-slate-700 dark:text-slate-300">延迟呈"毛刺"状（尖刺）</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">Full GC STW / 网络抖动</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">jstat / GC 日志</td>
+                <td class="py-4 px-4 text-slate-600 dark:text-slate-400">看 FGC 时间与尖刺是否对齐</td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-12 px-6 text-center border-t border-slate-200 dark:border-slate-800">
+    <p class="text-slate-500 dark:text-slate-400 text-sm">
+        基于线上接口偶发性延迟排查实践整理 · 适用于 Java 后端面试与生产问题排查
+    </p>
+    <div class="flex items-center justify-center gap-4 mt-4">
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">性能优化</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">链路追踪</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">JVM 诊断</span>
+        <span class="tag-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">数据库优化</span>
+    </div>
+</footer>
+
+<script>
+  lucide.createIcons();
+
+  function copyCode(btn) {
+    var pre = btn.parentElement.querySelector('pre');
+    var text = pre.innerText;
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = '已复制!';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = '复制';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  window.addEventListener('scroll', function() {
+    var scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    var scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    var progress = scrollTop / scrollHeight;
+    document.getElementById('scrollProgress').style.transform = 'scaleX(' + progress + ')';
+  });
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.glass-card').forEach(function(card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(20px)';
+    card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(card);
+  });
+
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.classList.add('dark');
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(event) {
+    if (event.matches) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  });
+</script>
+</body>
+</html>
