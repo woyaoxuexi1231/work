@@ -2,7 +2,7 @@
 import http.server, json, socket, os, time, threading
 import requests
 
-NACOS = os.getenv("NACOS_ADDR", "host.docker.internal:8848")
+NACOS = os.getenv("NACOS_ADDR", "192.168.3.100:8848")
 SVC   = os.getenv("SERVICE_NAME", "nacos-demo")
 PORT  = int(os.getenv("SERVER_PORT", "18080"))
 EPHEM = os.getenv("EPHEMERAL", "true")  # "true"=AP临时实例  "false"=CP持久实例
