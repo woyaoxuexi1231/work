@@ -1,0 +1,12 @@
+server:
+  port: 18083
+
+spring:
+  application:
+    name: product-demo-nacos-20260609
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.3.100:8848
+        namespace: public
+        cluster-name: DEFAULT
