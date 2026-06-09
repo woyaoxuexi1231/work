@@ -29,14 +29,15 @@ docker exec $MysqlCtn mysql -uroot "-p$MysqlPass" -e "CREATE DATABASE IF NOT EXI
 docker create --name nacos-init-tmp $Image 2>$null | Out-Null
 docker cp nacos-init-tmp:/home/nacos/conf/mysql-schema.sql "$env:TEMP\nacos-schema.sql" 2>$null
 docker rm nacos-init-tmp 2>$null | Out-Null
-Get-Content "$env:TEMP\nacos-schema.sql" | docker exec -i $MysqlCtn mysql -uroot "-p$MysqlPass" $MysqlDb
+Get-Content -Encoding UTF8 "$env:TEMP\nacos-schema.sql" | docker exec -i $MysqlCtn mysql -uroot "-p$MysqlPass" $MysqlDb
 
 log_info "Schema initialized"
 
 # ---- 3 Nacos Nodes ----
 for ($i = 0; $i -lt 3; $i++) {
     $node = $i + 1; $ctn = "nacos$node"
-    $p    = $BasePort + $i
+    $offset = $i * 100
+    $p    = $BasePort + $offset
     $g1   = $p + 1000; $g2 = $p + 1001
     $data = "${DataRoot}\nacos$node"
 
@@ -59,5 +60,5 @@ for ($i = 0; $i -lt 3; $i++) {
     log_info "$ctn  ->  http://localhost:${p}/nacos"
 }
 
-$urls = ((0..2).ForEach({ "http://localhost:$($BasePort + $_)/nacos" }) -join ', ')
+$urls = ((0..2).ForEach({ "http://localhost:$($BasePort + $_ * 100)/nacos" }) -join ', ')
 done_banner "Nacos Cluster | $urls | nacos/nacos"
