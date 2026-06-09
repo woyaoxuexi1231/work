@@ -154,28 +154,28 @@ docker run -d `
   -v "$data3\data:/home/nacos/data" `
   $Image | Out-Null
 log_info "nacos3 created"
-
-# ========== Step 8: Wait and Fix cluster.conf ==========
-log_info "Step 8: Wait 30s for Nacos to start, then fix cluster.conf"
-Start-Sleep 30
-
-log_info "Fixing cluster.conf for nacos1 ..."
-docker exec nacos1 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
-docker exec nacos1 cat /home/nacos/conf/cluster.conf
-
-log_info "Fixing cluster.conf for nacos2 ..."
-docker exec nacos2 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
-docker exec nacos2 cat /home/nacos/conf/cluster.conf
-
-log_info "Fixing cluster.conf for nacos3 ..."
-docker exec nacos3 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
-docker exec nacos3 cat /home/nacos/conf/cluster.conf
-
-# ========== Step 9: Restart to Apply cluster.conf ==========
-log_info "Step 9: Restart all nodes to apply cluster.conf"
-docker restart nacos1 nacos2 nacos3
-log_info "Waiting 60s for cluster to be ready..."
-Start-Sleep 60
+#
+## ========== Step 8: Wait and Fix cluster.conf ==========
+#log_info "Step 8: Wait 30s for Nacos to start, then fix cluster.conf"
+#Start-Sleep 30
+#
+#log_info "Fixing cluster.conf for nacos1 ..."
+#docker exec nacos1 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
+#docker exec nacos1 cat /home/nacos/conf/cluster.conf
+#
+#log_info "Fixing cluster.conf for nacos2 ..."
+#docker exec nacos2 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
+#docker exec nacos2 cat /home/nacos/conf/cluster.conf
+#
+#log_info "Fixing cluster.conf for nacos3 ..."
+#docker exec nacos3 bash -c "printf '192.168.3.100:8848\n192.168.3.100:8849\n192.168.3.100:8850\n' > /home/nacos/conf/cluster.conf"
+#docker exec nacos3 cat /home/nacos/conf/cluster.conf
+#
+## ========== Step 9: Restart to Apply cluster.conf ==========
+#log_info "Step 9: Restart all nodes to apply cluster.conf"
+#docker restart nacos1 nacos2 nacos3
+#log_info "Waiting 60s for cluster to be ready..."
+#Start-Sleep 60
 
 # ========== Step 10: Verify ==========
 log_info "Step 10: Verify cluster status"
