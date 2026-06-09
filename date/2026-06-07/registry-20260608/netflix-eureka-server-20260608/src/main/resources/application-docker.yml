@@ -20,3 +20,5 @@ eureka:
     renewal-percent-threshold: 0.85
     # 剔除检查间隔（默认60s，调短便于观察）
     eviction-interval-timer-in-ms: 5000
+    # 节点间复制超时（默认 200ms，Docker Desktop 可能不够）
+    peer-node-read-timeout-ms: 5000
