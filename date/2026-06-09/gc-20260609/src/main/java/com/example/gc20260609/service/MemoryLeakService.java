@@ -16,31 +16,31 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <h3>💣 这段代码有什么问题？</h3>
  * <p>
  * 模拟一个常见的生产环境场景：<br>
- * 开发同学加了一个<strong>本地缓存</strong>（HashMap），并做了容量控制（80 条后清空重建）。<br>
+ * 开发同学加了一个<strong>本地缓存</strong>（HashMap），并做了容量控制（60 条后清空重建）。<br>
  * 虽然不会 OOM，但每次清空后，旧数据晋升到了老年代变成了垃圾，<br>
  * 只有 Full GC 才能回收 → <strong>Full GC STW 导致接口偶发性毛刺</strong>。
  * </p>
  *
  * <h3>🔥 完整的故障链路（循环发生，不会 OOM）</h3>
  * <pre>
- *   1. 每 3 秒往缓存里写入 1MB 数据
+ *   1. 每 1 秒往缓存里写入 10MB 数据
  *   2. 这些 byte[] 长期存活，经过多次 Young GC 后晋升到老年代
- *   3. 缓存达到 80 条（80MB）→ 触发 clear() 清空重建
- *   4. 被清空的 byte[] 在老年代变成了"垃圾"（只有 Full GC 能回收老年代）
+ *   3. 缓存达到 60 条（600MB）→ 触发 clear() 清空重建
+ *   4. 被清空的 byte[] 在老年代变成了“垃圾”（只有 Full GC 能回收老年代）
  *   5. 新缓存数据继续填充 → 老年代再次逼近上限
  *   6. JVM 触发 Full GC（STW 2~5s）→ 回收上一轮清空的老数据
  *   7. Full GC 期间所有线程暂停 → 接口出现毛刺
  *   8. Full GC 结束 → 恢复正常 → 缓存继续增长 → 循环...
  * </pre>
  *
- * <h3>📊 堆内存布局（-Xms128m -Xmx128m，ParallelGC）</h3>
+ * <h3>📊 堆内存布局（-Xms1g -Xmx1g，ParallelGC）</h3>
  * <pre>
- *   堆总大小: 128MB
- *   新生代:   ~42MB（Eden ~34MB + Survivor ~4MB×2）
- *   老年代:   ~86MB
+ *   堆总大小: 1024MB (1GB)
+ *   新生代:   ~340MB（Eden ~272MB + Survivor ~34MB×2）
+ *   老年代:   ~684MB
  *
- *   缓存上限 80 条 × 1MB = 80MB → 接近老年代容量
- *   每 3 秒写入 1 条 → 约 4 分钟填满 → 清空 → Full GC 回收 → 循环
+ *   缓存上限 60 条 × 10MB = 600MB → 占老年代 88%
+ *   每 1 秒写入 10MB → 约 60 秒填满 → 清空 → Full GC 回收 → 循环
  * </pre>
  *
  * <h3>🔑 为什么不会 OOM？</h3>
@@ -71,7 +71,7 @@ public class MemoryLeakService {
      * 而不是全量清空重建：
      * <pre>
      * LoadingCache&lt;String, byte[]&gt; cache = Caffeine.newBuilder()
-     *     .maximumSize(80)
+     *     .maximumSize(60)
      *     .expireAfterWrite(10, TimeUnit.MINUTES)
      *     .build(key -&gt; loadFromDB(key));
      * </pre>
@@ -81,20 +81,20 @@ public class MemoryLeakService {
     /** 缓存写入计数器 */
     private final AtomicInteger writeCount = new AtomicInteger(0);
 
-    /** 每条缓存数据大小：1MB */
-    private static final int ENTRY_SIZE = 1 * 1024 * 1024;
+    /** 每条缓存数据大小：10MB */
+    private static final int ENTRY_SIZE = 10 * 1024 * 1024;
 
     /**
-     * 缓存上限：80 条 × 1MB = 80MB
+     * 缓存上限：60 条 × 10MB = 600MB
      * <p>
-     * 老年代约 86MB，缓存占 80MB → 接近填满。<br>
+     * 老年代约 684MB，缓存占 600MB（88%）→ 接近填满。<br>
      * 达到上限后清空重建，旧数据变成老年代垃圾 → 触发 Full GC。
      * </p>
      */
-    private static final int MAX_CACHE_SIZE = 80;
+    private static final int MAX_CACHE_SIZE = 60;
 
     /**
-     * 定时任务：每 3 秒往缓存里写入 1MB 数据
+     * 定时任务：每 1 秒往缓存里写入 10MB 数据
      * <p>
      * 当缓存达到 MAX_CACHE_SIZE 时，清空重建。<br>
      * 被清空的旧数据已经在老年代，变成垃圾后等待 Full GC 回收。
@@ -113,7 +113,7 @@ public class MemoryLeakService {
         int count = writeCount.incrementAndGet();
         String key = "cache-key-" + count;
 
-        // 每次分配 1MB 的 byte[]，模拟一条较大的缓存数据
+        // 每次分配 10MB 的 byte[]，模拟一条较大的缓存数据
         byte[] value = new byte[ENTRY_SIZE];
         // 填充一些数据，避免 JVM 优化掉分配
         for (int i = 0; i < 100; i++) {

@@ -15,9 +15,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  *
  * <h3>🔥 问题根因链路</h3>
  * <pre>
- *   MemoryLeakService 里有一个“本地缓存” HashMap（有上限 80 条，满了清空重建）
- *       ↓ 每 3 秒写入 1MB，对象长期存活，晋升到老年代
- *       ↓ 缓存达到 80 条 → clear() 清空重建
+ *   MemoryLeakService 里有一个“本地缓存” HashMap（有上限 60 条，满了清空重建）
+ *       ↓ 每 1 秒写入 10MB，对象长期存活，晋升到老年代
+ *       ↓ 缓存达到 60 条（600MB）→ clear() 清空重建
  *       ↓ 旧数据在老年代变成垃圾，但只有 Full GC 能回收老年代
  *       ↓ 新缓存继续填充 → 老年代再次逼近上限
  *       ↓ JVM 触发 Full GC（STW 2~5s）→ 回收上一轮的垃圾
@@ -28,14 +28,14 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * <h3>🚀 启动方式</h3>
  * <pre>
  * # 方式一：Maven（推荐，JVM 参数已配置在 application.yml 注释中）
- * mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Xms128m -Xmx128m -XX:+UseParallelGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log"
+ * mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Xms1g -Xmx1g -XX:+UseParallelGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log"
  *
  * # 方式二：先打包再运行
  * mvn clean package -DskipTests
- * java -Xms128m -Xmx128m -XX:+UseParallelGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log -jar target/gc-20260609-1.0.0.jar
+ * java -Xms1g -Xmx1g -XX:+UseParallelGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log -jar target/gc-20260609-1.0.0.jar
  *
  * # 方式三：不开启 GC 日志（模拟没有 GC 日志的生产环境）
- * java -Xms128m -Xmx128m -XX:+UseParallelGC -jar target/gc-20260609-1.0.0.jar
+ * java -Xms1g -Xmx1g -XX:+UseParallelGC -jar target/gc-20260609-1.0.0.jar
  * </pre>
  *
  * <h3>📡 测试接口</h3>
@@ -58,7 +58,7 @@ public class GcApplication {
         System.out.println("  GC 场景模拟项目已启动");
         System.out.println("  接口地址: http://localhost:8200/api/orders");
         System.out.println("  排查全靠 JDK 命令行工具（jstat / jmap / jcmd）");
-        System.out.println("  等待 Full GC 毛刺...（约 4 分钟后出现，之后循环发生）");
+        System.out.println("  等待 Full GC 毛刺...（约 1 分钟后出现，之后循环发生）");
         System.out.println("=======================================================");
     }
 }
