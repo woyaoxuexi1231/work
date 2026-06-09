@@ -1,108 +1,69 @@
-# Nacos Cluster v2.3.2 | 3 nodes + MySQL | Fixed for external access
-# 解决 Docker 内网 IP 导致的重定向问题
-
-param(
-    [string]$HostIP = "192.168.3.100",
-    [int]$BasePort = 8848,
-    [string]$MysqlPass = "123456"
-)
+# Nacos Cluster v2.3.2 - 3 nodes + MySQL
+# Use host IP to avoid Docker internal IP redirect issue
 
 $Network  = "nacos-net"
 $Image    = "nacos/nacos-server:v2.3.2"
+$BasePort = 8848
+$HostIP   = "192.168.3.100"
 $MysqlCtn = "mysql"
+$MysqlPass = "123456"
 $MysqlDb   = "nacos_config"
 $DataRoot = "C:\Users\code\Desktop\docker-data"
 
-# ========== 辅助函数 ==========
-function log_info($msg)  { 
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [INFO] $msg" 
+function log_info($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [INFO] $msg" }
+function log_warn($msg)  { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [WARN] $msg" -ForegroundColor Yellow }
+function log_error($msg) { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [ERROR] $msg" -ForegroundColor Red }
+
+# ========== Step 1: Check Docker ==========
+log_info "Step 1: Check Docker"
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { 
+    log_error "Docker not installed"; exit 1 
 }
-
-function log_warn($msg)  { 
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [WARN] $msg" -ForegroundColor Yellow 
+docker ps 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { 
+    log_error "Docker not running"; exit 1 
 }
+log_info "Docker OK"
 
-function log_error($msg) { 
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [ERROR] $msg" -ForegroundColor Red 
-}
-
-function check_docker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { 
-        log_error "Docker not installed" 
-        exit 1 
-    }
-    docker ps 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { 
-        log_error "Docker not running" 
-        exit 1 
-    }
-}
-
-function wait_for_container($name, $max=60) {
-    for ($i = 0; $i -lt $max; $i++) {
-        $output = docker ps --format '{{.Names}}' 2>$null | Select-String -Pattern "^$name$" -SimpleMatch
-        if ($output) { return $true }
-        Start-Sleep 1
-    }
-    log_error "Container $name did not start in ${max}s"
-    return $false
-}
-
-function fix_cluster_conf($ctn, $hostIP, $basePort) {
-    log_info "Fixing cluster.conf for $ctn ..."
-    
-    # 使用简单的方法写入配置
-    docker exec $ctn bash -c "printf '%s\n%s\n%s\n' '$hostIP`:$basePort' '$hostIP`:$(($basePort+100))' '$hostIP`:$(($basePort+200))' > /home/nacos/conf/cluster.conf"
-    
-    # 验证
-    log_info "Verifying cluster.conf for $ctn ..."
-    docker exec $ctn cat /home/nacos/conf/cluster.conf
-}
-
-# ========== 主流程 ==========
-
-check_docker
-
-log_info "=== Nacos Cluster Installation (Fixed) ==="
-log_info "Host IP: $HostIP"
-log_info "Base Port: $BasePort"
-
-# ---- Docker Network ----
+# ========== Step 2: Create Network ==========
+log_info "Step 2: Create Docker network"
 $netExists = docker network ls --format '{{.Name}}' 2>$null | Select-String "^$Network$"
 if (-not $netExists) {
     docker network create $Network
     log_info "Network '$Network' created"
 }
-
-# Connect existing mysql container to this network
 docker network connect $Network $MysqlCtn 2>$null
-log_info "Connected '$MysqlCtn' to '$Network'"
+log_info "Network ready"
 
-# ---- Init DB ----
-log_info "Pulling image: $Image"
-docker pull $Image | Out-Null
+# ========== Step 3: Init Database ==========
+log_info "Step 3: Init database"
+docker image inspect $Image 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    log_info "Pulling image: $Image"
+    docker pull $Image | Out-Null
+}
 
-log_info "Initializing database..."
 docker exec $MysqlCtn mysql -uroot "-p$MysqlPass" -e "CREATE DATABASE IF NOT EXISTS $MysqlDb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>$null
 
-# Copy and execute schema
 docker create --name nacos-init-tmp $Image 2>$null | Out-Null
 docker cp nacos-init-tmp:/home/nacos/conf/mysql-schema.sql "$env:TEMP\nacos-schema.sql" 2>$null
 docker rm nacos-init-tmp 2>$null | Out-Null
 Get-Content -Encoding UTF8 "$env:TEMP\nacos-schema.sql" | docker exec -i $MysqlCtn mysql -uroot "-p$MysqlPass" $MysqlDb 2>$null
 log_info "Database initialized"
 
-# ---- Stop and Remove Old Containers ----
-log_info "Cleaning up old containers..."
+# ========== Step 4: Clean Up Old Containers ==========
+log_info "Step 4: Clean up old containers"
 foreach ($ctn in @("nacos1", "nacos2", "nacos3")) {
     docker rm -f $ctn 2>$null | Out-Null
 }
+log_info "Old containers removed"
 
-# ---- Create 3 Nacos Nodes ----
-$port1 = $BasePort
-$port2 = $BasePort + 100
-$port3 = $BasePort + 200
-$ports = @($port1, $port2, $port3)
+# ========== Step 5: Create 3 Nacos Nodes ==========
+log_info "Step 5: Create 3 Nacos nodes"
+
+$nacosServers = "$HostIP`:$BasePort,$HostIP`:$($BasePort+100),$HostIP`:$($BasePort+200)"
+
+$ports = @($BasePort, $BasePort+100, $BasePort+200)
 
 for ($i = 0; $i -lt 3; $i++) {
     $node = $i + 1
@@ -114,13 +75,8 @@ for ($i = 0; $i -lt 3; $i++) {
 
     log_info "Creating $ctn (port: $p) ..."
 
-    # Create data directories
     New-Item -ItemType Directory -Force -Path "$data\logs", "$data\data" | Out-Null
 
-    # Build NACOS_SERVERS (all nodes use same config)
-    $nacosServers = "$HostIP`:$($ports[0]),$HostIP`:$($ports[1]),$HostIP`:$($ports[2])"
-
-    # Run container
     docker run -d `
       --name $ctn `
       --hostname $ctn `
@@ -147,52 +103,45 @@ for ($i = 0; $i -lt 3; $i++) {
       -v "$data\data:/home/nacos/data" `
       $Image | Out-Null
 
-    if (-not (wait_for_container $ctn 60)) {
-        exit 1
-    }
-
-    log_info "$ctn started successfully"
+    log_info "$ctn started"
 }
 
-# ---- Fix cluster.conf for All Nodes ----
-log_info "Fixing cluster.conf for all nodes..."
-Start-Sleep 10  # Wait for nodes to fully start
-
-foreach ($ctn in @("nacos1", "nacos2", "nacos3")) {
-    fix_cluster_conf $ctn $HostIP $BasePort
-}
-
-# ---- Restart All Nodes to Apply Changes ----
-log_info "Restarting all nodes to apply cluster.conf changes..."
-docker restart nacos1 nacos2 nacos3
+# ========== Step 6: Wait and Fix cluster.conf ==========
+log_info "Step 6: Wait 30s for Nacos to start, then fix cluster.conf"
 Start-Sleep 30
 
-# ---- Verify Cluster Status ----
-log_info "Verifying cluster status..."
+foreach ($ctn in @("nacos1", "nacos2", "nacos3")) {
+    log_info "Fixing cluster.conf for $ctn ..."
+    docker exec $ctn bash -c "printf '192.168.3.100:8848\n192.168.3.100:8948\n192.168.3.100:9848\n' > /home/nacos/conf/cluster.conf"
+    docker exec $ctn cat /home/nacos/conf/cluster.conf
+}
+
+# ========== Step 7: Restart to Apply cluster.conf ==========
+log_info "Step 7: Restart all nodes to apply cluster.conf"
+docker restart nacos1 nacos2 nacos3
+log_info "Waiting 60s for cluster to be ready..."
+Start-Sleep 60
+
+# ========== Step 8: Verify ==========
+log_info "Step 8: Verify cluster status"
 try {
     $url = "http://$HostIP`:$BasePort/nacos/v1/ns/operator/cluster/nodes"
     $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10
-    
-    log_info "Cluster nodes status:"
+    log_info "Cluster nodes:"
     foreach ($node in $response.data) {
-        $status = if ($node.state -eq "UP") { "UP" } else { $node.state }
-        Write-Host "  $($node.address) -> $status"
-        
-        if ($node.ip -like "172.*") {
-            log_warn "  Still using internal IP: $($node.ip)"
+        if ($node.state -eq "UP") {
+            Write-Host "  [UP] $($node.address)" -ForegroundColor Green
+        } else {
+            Write-Host "  [$($node.state)] $($node.address)" -ForegroundColor Red
         }
     }
-    
-    log_info "Cluster health check passed"
 }
 catch {
-    log_error "Failed to verify cluster status: $_"
+    log_error "Cluster check failed: $_"
+    log_info "You can check manually: curl http://$HostIP`:$BasePort/nacos/v1/ns/operator/cluster/nodes"
 }
 
-# ---- Done ----
-$url1 = "http://localhost:$port1/nacos"
-$url2 = "http://localhost:$port2/nacos"
-$url3 = "http://localhost:$port3/nacos"
+# ========== Done ==========
 log_info "=== Nacos Cluster Ready ==="
-log_info "Console URLs: $url1,$url2,$url3"
-log_info "Username/Password: nacos/nacos"
+log_info "URLs: http://localhost:8848/nacos, http://localhost:8948/nacos, http://localhost:9848/nacos"
+log_info "Account: nacos/nacos"
