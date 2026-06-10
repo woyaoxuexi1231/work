@@ -2,6 +2,9 @@
 -- 1. 一对多场景：用户(User) → 订单(Order)
 -- ============================
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS shipment;
+DROP TABLE IF EXISTS employee;
+DROP TABLE IF EXISTS department;
 DROP TABLE IF EXISTS user_order;
 DROP TABLE IF EXISTS user_info;
 DROP TABLE IF EXISTS student_course;
@@ -42,4 +45,30 @@ CREATE TABLE student_course (
     PRIMARY KEY (student_id, course_id),
     FOREIGN KEY (student_id) REFERENCES student(id),
     FOREIGN KEY (course_id)  REFERENCES course(id)
+);
+
+-- ============================
+-- 3. 练习题1：物流单(Shipment) ↔ 订单(Order) — association
+-- ============================
+CREATE TABLE shipment (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id    BIGINT NOT NULL,
+    tracking_no VARCHAR(50),
+    status      VARCHAR(20),
+    FOREIGN KEY (order_id) REFERENCES user_order(id)
+);
+
+-- ============================
+-- 4. 练习题2：部门(Department) ↔ 员工(Employee) — collection
+-- ============================
+CREATE TABLE department (
+    id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE employee (
+    id      BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name    VARCHAR(50) NOT NULL,
+    dept_id BIGINT NOT NULL,
+    FOREIGN KEY (dept_id) REFERENCES department(id)
 );

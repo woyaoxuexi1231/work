@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.demo.mybatis.exercise.TestMapper">
+    <resultMap id="orderWithShipment" type="com.demo.mybatis.exercise.v1.OrderWithShipment">
+        <id property="orderId" column="orderId"/>
+        <result property="productName" column="productName"/>
+        <result property="amount" column="amount"/>
+        <association property="shipment" javaType="com.demo.mybatis.exercise.v1.Shipment">
+            <id property="shipmentId" column="shipmentId"/>
+            <result property="trackingNumber" column="trackingNumber"/>
+            <result property="status" column="status"/>
+        </association>
+    </resultMap>
+
+    <resultMap id="departmentWithEmployee" type="com.demo.mybatis.exercise.v2.DepartmentWithEmployee">
+        <id property="departmentId" column="departmentId"/>
+        <result property="departmentName" column="departmentName"/>
+        <collection property="employees" ofType="com.demo.mybatis.exercise.v2.Employee">
+            <id property="employeeId" column="employeeId"/>
+            <result property="employeeName" column="employeeName"/>
+        </collection>
+    </resultMap>
+
+    <select id="v1" resultMap="orderWithShipment">
+        select uo.id           as orderId,
+               uo.product_name as productName,
+               uo.amount       as amount,
+               s.id            as shipmentId,
+               s.tracking_no   as trackingNumber,
+               s.status        as status
+        from user_order uo
+                 left join shipment s on uo.id = s.order_id
+    </select>
+
+    <select id="v2" resultMap="departmentWithEmployee">
+        select d.name as departmentName,
+               d.id   as departmentId,
+               e.name as employeeName,
+               e.id   as employeeId
+        from employee e
+                 inner join department d on e.dept_id = d.id
+    </select>
+</mapper>

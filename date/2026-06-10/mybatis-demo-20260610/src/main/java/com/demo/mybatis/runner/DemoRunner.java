@@ -1,6 +1,7 @@
 package com.demo.mybatis.runner;
 
 import com.demo.mybatis.entity.*;
+import com.demo.mybatis.exercise.TestBean;
 import com.demo.mybatis.mapper.*;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -16,13 +17,17 @@ public class DemoRunner implements CommandLineRunner {
     private final UserMapper userMapper;
     private final StudentMapper studentMapper;
     private final CourseMapper courseMapper;
+    private final TestBean testBean;
 
     public DemoRunner(OrderMapper orderMapper, UserMapper userMapper,
-                      StudentMapper studentMapper, CourseMapper courseMapper) {
+                      StudentMapper studentMapper, CourseMapper courseMapper,
+                      TestBean testBean
+                      ) {
         this.orderMapper = orderMapper;
         this.userMapper = userMapper;
         this.studentMapper = studentMapper;
         this.courseMapper = courseMapper;
+        this.testBean = testBean;
     }
 
     @Override
@@ -32,6 +37,8 @@ public class DemoRunner implements CommandLineRunner {
         demoAssociation();   // association：多对一
         demoCollection();    // collection：一对多（两种方式）
         demoManyToMany();    // collection：多对多
+        testBean.v1();
+        testBean.v2();
     }
 
     // ================================

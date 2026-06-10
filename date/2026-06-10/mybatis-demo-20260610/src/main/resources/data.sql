@@ -22,3 +22,20 @@ INSERT IGNORE INTO student_course (student_id, course_id) VALUES (1, 2);
 INSERT IGNORE INTO student_course (student_id, course_id) VALUES (1, 3);
 INSERT IGNORE INTO student_course (student_id, course_id) VALUES (2, 1);
 INSERT IGNORE INTO student_course (student_id, course_id) VALUES (2, 3);
+
+-- ============================
+-- 练习题1 数据：物流信息
+-- ============================
+INSERT IGNORE INTO shipment (id, order_id, tracking_no, status) VALUES (1, 101, 'SF1234567890', 'shipped');
+INSERT IGNORE INTO shipment (id, order_id, tracking_no, status) VALUES (2, 102, 'SF9876543210', 'delivered');
+-- 订单103 没有物流记录
+
+-- ============================
+-- 练习题2 数据：部门与员工
+-- ============================
+INSERT IGNORE INTO department (id, name) VALUES (1, '技术部');
+INSERT IGNORE INTO department (id, name) VALUES (2, '产品部');
+
+INSERT IGNORE INTO employee (id, name, dept_id) VALUES (1, '张三', 1);
+INSERT IGNORE INTO employee (id, name, dept_id) VALUES (2, '李四', 1);
+INSERT IGNORE INTO employee (id, name, dept_id) VALUES (3, '王五', 2);
