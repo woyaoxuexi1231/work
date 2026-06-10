@@ -1,0 +1,26 @@
+spring:
+  # H2 内存数据库配置
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true           # 开启 H2 控制台 http://localhost:8080/h2-console
+      path: /h2-console
+  sql:
+    init:
+      mode: always            # 每次启动都执行 schema.sql 和 data.sql
+
+# MyBatis 配置
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.demo.mybatis.entity
+  configuration:
+    map-underscore-to-camel-case: true   # 自动下划线转驼峰
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # SQL 日志输出到控制台
+
+logging:
+  level:
+    com.demo.mybatis.mapper: DEBUG
