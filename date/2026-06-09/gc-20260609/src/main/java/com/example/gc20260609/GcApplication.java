@@ -15,27 +15,25 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  *
  * <h3>🔥 问题根因链路</h3>
  * <pre>
- *   MemoryLeakService 里有一个“本地缓存” HashMap（有上限 60 条，满了清空重建）
- *       ↓ 每 1 秒写入 10MB，对象长期存活，晋升到老年代
- *       ↓ 缓存达到 60 条（600MB）→ clear() 清空重建
- *       ↓ 旧数据在老年代变成垃圾，但只有 Full GC 能回收老年代
- *       ↓ 新缓存继续填充 → 老年代再次逼近上限
- *       ↓ JVM 触发 Full GC（STW 2~5s）→ 回收上一轮的垃圾
- *       ↓ Full GC 期间所有线程暂停 → 接口“毛刺”
- *       ↓ Full GC 结束 → 恢复 → 缓存继续增长 → 循环…（不会 OOM）
+ *   MemoryLeakService 里有一个“本地缓存” HashMap（SoftReference 包装，120 条×10MB=1200MB）
+ *       ↓ 每 1 秒写入 10MB，SoftReference 保护对象不被 Young GC 回收
+ *       ↓ 缓存填满后老年代 1200MB 全是活对象
+ *       ↓ Full GC（SerialGC 单线程）扫描全部 1200MB 活对象 → STW 1.5~3s（毛刺！）
+ *       ↓ 扫描后 JVM 清除 SoftReference → 回收 1200MB
+ *       ↓ 缓存自动失效 → 重新填充 → 循环…（不会 OOM）
  * </pre>
  *
  * <h3>🚀 启动方式</h3>
  * <pre>
  * # 方式一：Maven（推荐，JVM 参数已配置在 application.yml 注释中）
- * mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Xms1g -Xmx1g -XX:+UseParallelGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log"
+ * mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Xms2g -Xmx2g -XX:+UseSerialGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log"
  *
  * # 方式二：先打包再运行
  * mvn clean package -DskipTests
- * java -Xms1g -Xmx1g -XX:+UseParallelGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log -jar target/gc-20260609-1.0.0.jar
+ * java -Xms2g -Xmx2g -XX:+UseSerialGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:./gc.log -jar target/gc-20260609-1.0.0.jar
  *
  * # 方式三：不开启 GC 日志（模拟没有 GC 日志的生产环境）
- * java -Xms1g -Xmx1g -XX:+UseParallelGC -jar target/gc-20260609-1.0.0.jar
+ * java -Xms2g -Xmx2g -XX:+UseSerialGC -jar target/gc-20260609-1.0.0.jar
  * </pre>
  *
  * <h3>📡 测试接口</h3>
@@ -58,7 +56,7 @@ public class GcApplication {
         System.out.println("  GC 场景模拟项目已启动");
         System.out.println("  接口地址: http://localhost:8200/api/orders");
         System.out.println("  排查全靠 JDK 命令行工具（jstat / jmap / jcmd）");
-        System.out.println("  等待 Full GC 毛刺...（约 1 分钟后出现，之后循环发生）");
+        System.out.println("  等待 Full GC 毛刺...（约 2 分钟后出现，之后循环发生）");
         System.out.println("=======================================================");
     }
 }

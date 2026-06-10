@@ -17,3 +17,50 @@ logging:
     # 关闭 Spring 框架的大量日志，方便观察 GC 相关输出
     org.springframework: WARN
     org.apache: WARN
+
+# ============================================================
+# JVM 启动参数（重要！请在启动命令中加上）
+# ============================================================
+#
+# ┌─────────────────────────────────────────────────────────────────┐
+# │  场景一：开启 GC 日志（推荐，生产环境也应该开启）                   │
+# │                                                                 │
+# │  mvn spring-boot:run -Dspring-boot.run.jvmArguments=" \          │
+# │    -Xms2g -Xmx2g \                                             │
+# │    -XX:+UseSerialGC \                                           │
+# │    -XX:+PrintGCDetails \                                        │
+# │    -XX:+PrintGCDateStamps \                                     │
+# │    -Xloggc:./gc.log"                                            │
+# │                                                                 │
+# │  或打包后运行：                                                   │
+# │  java -Xms2g -Xmx2g \                                          │
+# │    -XX:+UseSerialGC \                                           │
+# │    -XX:+PrintGCDetails -XX:+PrintGCDateStamps \                 │
+# │    -Xloggc:./gc.log \                                           │
+# │    -jar target/gc-20260609-1.0.0.jar                            │
+# ├─────────────────────────────────────────────────────────────────┤
+# │  场景二：不开启 GC 日志（模拟"裸奔"的生产环境）                    │
+# │                                                                 │
+# │  mvn spring-boot:run -Dspring-boot.run.jvmArguments="\          │
+# │    -Xms2g -Xmx2g \                                             │
+# │    -XX:+UseSerialGC"                                            │
+# │                                                                 │
+# │  或打包后运行：                                                   │
+# │  java -Xms2g -Xmx2g \                                          │
+# │    -XX:+UseSerialGC \                                           │
+# │    -jar target/gc-20260609-1.0.0.jar                            │
+# └─────────────────────────────────────────────────────────────────┘
+#
+# 参数说明：
+#   -Xms2g -Xmx2g           固定堆大小 2GB（接近真实生产环境）
+#   -XX:+UseSerialGC         使用 Serial GC（单线程 STW，毛刺效果明显）
+#                            ⚠️ 生产环境通常用 ParallelGC/G1，这里用 SerialGC
+#                            是为了在 2GB 堆上也能产生明显的 STW 停顿
+#   -XX:+PrintGCDetails      打印 GC 详细信息（JDK 8 写法）
+#   -XX:+PrintGCDateStamps   打印 GC 时间戳
+#   -Xloggc:./gc.log         GC 日志输出到文件
+#
+# ⚠️ JDK 9+ 的 GC 日志写法变了：
+#   -Xlog:gc*:file=gc.log:time,uptime,level,tags:filecount=5,filesize=10m
+#   替代 -XX:+PrintGCDetails、-XX:+PrintGCDateStamps、-Xloggc
+#
