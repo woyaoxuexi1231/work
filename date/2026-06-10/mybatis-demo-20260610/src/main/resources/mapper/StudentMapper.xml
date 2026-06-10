@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demo.mybatis.mapper.StudentMapper">
+
+    <!-- ==============================
+         🔑 collection 多对多
+         和一对多完全一样的 <collection> 标签！
+         区别只在 SQL：多对多要多 JOIN 一张中间表 student_course
+         ofType 指向"对面"的实体类型
+    ============================== -->
+    <resultMap id="StudentWithCoursesMap" type="com.demo.mybatis.entity.Student">
+        <id column="student_id" property="id"/>
+        <result column="student_name" property="name"/>
+
+        <collection property="courses" ofType="com.demo.mybatis.entity.Course">
+            <id column="course_id" property="id"/>
+            <result column="course_name" property="name"/>
+        </collection>
+    </resultMap>
+
+    <!-- 核心 SQL：学生 → 中间表 → 课程（三表 JOIN） -->
+    <select id="selectStudentWithCourses" resultMap="StudentWithCoursesMap">
+        SELECT s.id   AS student_id,
+               s.name AS student_name,
+               c.id   AS course_id,
+               c.name AS course_name
+        FROM student s
+                 LEFT JOIN student_course sc ON s.id = sc.student_id
+                 LEFT JOIN course c ON sc.course_id = c.id
+        WHERE s.id = #{id}
+    </select>
+
+    <!-- ==============================
+         子查询方式
+    ============================== -->
+    <resultMap id="StudentWithCoursesSubQueryMap" type="com.demo.mybatis.entity.Student">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+
+        <collection property="courses"
+                    ofType="com.demo.mybatis.entity.Course"
+                    select="selectCoursesByStudentId"
+                    column="id"/>
+    </resultMap>
+
+    <select id="selectStudentWithCoursesBySubQuery" resultMap="StudentWithCoursesSubQueryMap">
+        SELECT id, name FROM student WHERE id = #{id}
+    </select>
+
+    <select id="selectCoursesByStudentId" resultType="com.demo.mybatis.entity.Course">
+        SELECT c.id, c.name
+        FROM course c
+                 JOIN student_course sc ON c.id = sc.course_id
+        WHERE sc.student_id = #{id}
+    </select>
+
+</mapper>

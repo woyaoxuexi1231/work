@@ -1,11 +1,13 @@
 -- ============================
 -- 1. 一对多场景：用户(User) → 订单(Order)
 -- ============================
+SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS user_order;
 DROP TABLE IF EXISTS user_info;
 DROP TABLE IF EXISTS student_course;
 DROP TABLE IF EXISTS student;
 DROP TABLE IF EXISTS course;
+SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE user_info (
     id   BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demo.mybatis.mapper.OrderMapper">
+
+    <!-- ==============================
+         🔑 association 多对一/一对一
+         把 SQL 查询出来的 user 相关列，自动组装成一个 User 对象
+         放进 Order.user 属性里
+         关键：property="user" 对应 Order 类里的 user 字段
+    ============================== -->
+    <resultMap id="OrderWithUserMap" type="com.demo.mybatis.entity.Order">
+        <id column="order_id" property="id"/>
+        <result column="product_name" property="productName"/>
+        <result column="amount" property="amount"/>
+
+        <!-- ▼ association：多对一 — 订单属于一个用户 -->
+        <association property="user" javaType="com.demo.mybatis.entity.User">
+            <id column="user_id" property="id"/>
+            <result column="user_name" property="name"/>
+        </association>
+    </resultMap>
+
+    <!-- 左连接：一条 SQL 同时查订单和用户 -->
+    <select id="selectOrderWithUser" resultMap="OrderWithUserMap">
+        SELECT o.id        AS order_id,
+               o.product_name,
+               o.amount,
+               u.id        AS user_id,
+               u.name      AS user_name
+        FROM user_order o
+                 LEFT JOIN user_info u ON o.user_id = u.id
+        WHERE o.id = #{id}
+    </select>
+
+    <!-- 普通查询，不嵌套 -->
+    <select id="selectAll" resultType="com.demo.mybatis.entity.Order">
+        SELECT id, user_id, product_name, amount FROM user_order
+    </select>
+
+</mapper>

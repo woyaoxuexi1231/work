@@ -36,21 +36,12 @@
             <version>3.0.4</version>
         </dependency>
 
-        <!-- H2 内存数据库，方便练习无需安装 MySQL -->
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-
-        <!-- 如果要用真实 MySQL，取消下面的注释并注释掉 H2 -->
-        <!--
+        <!-- MySQL 8 驱动 -->
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
-        -->
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

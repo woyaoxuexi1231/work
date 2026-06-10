@@ -1,17 +1,13 @@
 spring:
-  # H2 内存数据库配置
   datasource:
-    url: jdbc:h2:mem:testdb;MODE=MySQL
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-  h2:
-    console:
-      enabled: true           # 开启 H2 控制台 http://localhost:8080/h2-console
-      path: /h2-console
+    url: jdbc:mysql://192.168.3.100:3306/mybatis_demo?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
   sql:
     init:
-      mode: always            # 每次启动都执行 schema.sql 和 data.sql
+      mode: always            # 每次启动执行 schema.sql + data.sql
+      continue-on-error: true # 表已存在时不报错
 
 # MyBatis 配置
 mybatis:

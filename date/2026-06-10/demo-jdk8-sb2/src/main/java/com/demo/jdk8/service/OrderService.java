@@ -1,13 +1,10 @@
 package com.demo.jdk8.service;
 
 import com.demo.jdk8.dto.OrderDTO;
-import com.demo.jdk8.dto.OrderStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -15,37 +12,11 @@ import java.util.concurrent.Executors;
 
 /**
  * <h3>JDK 8 经典写法 —— 展示当时的编码痛点</h3>
- *
- * <p>每个方法都对应 JDK 17/21 中的改进版本，方便对比。</p>
  */
 @Service
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-
-    private final List<OrderDTO> orders = Collections.synchronizedList(new ArrayList<>());
-    private long idCounter = 0;
-
-    public OrderDTO createOrder(String orderNo, BigDecimal amount) {
-        OrderDTO order = OrderDTO.builder()
-                .id(++idCounter)
-                .orderNo(orderNo)
-                .amount(amount)
-                .status(OrderStatus.PENDING.name())
-                .createTime(LocalDateTime.now())
-                .build();
-        orders.add(order);
-        log.info("✅ 创建订单: {}", order);
-        return order;
-    }
-
-    public Optional<OrderDTO> getOrder(Long id) {
-        return orders.stream().filter(o -> o.getId().equals(id)).findFirst();
-    }
-
-    public List<OrderDTO> getAllOrders() {
-        return new ArrayList<>(orders);
-    }
 
     // ========================================================================
     // 痛点 1：instanceof 需要先判断再强转
@@ -108,14 +79,13 @@ public class OrderService {
             return "logistics-info-" + orderId;
         }, executor);
 
-        // 等待全部完成
         CompletableFuture.allOf(orderFuture, payFuture, logisticsFuture).join();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order", orderFuture.join());
         result.put("payment", payFuture.join());
         result.put("logistics", logisticsFuture.join());
-        result.put("threadType", "platform-thread");
+        result.put("threadType", "platform-thread（每个 ~1MB）");
         result.put("codeStyle", "CompletableFuture");
 
         executor.shutdown();

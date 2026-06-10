@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demo.mybatis.mapper.UserMapper">
+
+    <!-- ==============================
+         方式一：一条 JOIN SQL + <collection>（推荐，一次查完）
+         🔑 collection 一对多
+         关键：property="orders" 对应用户类里的 orders 列表
+             ofType 是集合里装的是什么类型
+             必须指定一个 id 列，MyBatis 靠这个判断"分组"
+    ============================== -->
+    <resultMap id="UserWithOrdersMap" type="com.demo.mybatis.entity.User">
+        <id column="user_id" property="id"/>
+        <result column="user_name" property="name"/>
+
+        <!-- ▼ collection：一对多 — 用户的订单列表 -->
+        <collection property="orders" ofType="com.demo.mybatis.entity.Order">
+            <id column="order_id" property="id"/>
+            <result column="product_name" property="productName"/>
+            <result column="amount" property="amount"/>
+        </collection>
+    </resultMap>
+
+    <select id="selectUserWithOrders" resultMap="UserWithOrdersMap">
+        SELECT u.id        AS user_id,
+               u.name      AS user_name,
+               o.id        AS order_id,
+               o.product_name,
+               o.amount
+        FROM user_info u
+                 LEFT JOIN user_order o ON u.id = o.user_id
+        WHERE u.id = #{id}
+    </select>
+
+    <!-- ==============================
+         方式二：子查询方式（N+1 查询）
+         select 属性指向另一个 Mapper 的查询方法
+         column 把当前行的 user_id 传给子查询
+         注意：这种方式会产生 N+1 问题
+    ============================== -->
+    <resultMap id="UserWithOrdersSubQueryMap" type="com.demo.mybatis.entity.User">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+
+        <collection property="orders"
+                    ofType="com.demo.mybatis.entity.Order"
+                    select="selectOrdersByUserId"
+                    column="id"/>
+    </resultMap>
+
+    <select id="selectUserWithOrdersBySubQuery" resultMap="UserWithOrdersSubQueryMap">
+        SELECT id, name FROM user_info WHERE id = #{id}
+    </select>
+
+    <!-- 子查询：根据 userId 查订单 -->
+    <select id="selectOrdersByUserId" resultType="com.demo.mybatis.entity.Order">
+        SELECT id, user_id, product_name, amount FROM user_order WHERE user_id = #{id}
+    </select>
+
+    <!-- 普通查询 -->
+    <select id="selectAll" resultType="com.demo.mybatis.entity.User">
+        SELECT id, name FROM user_info
+    </select>
+
+</mapper>

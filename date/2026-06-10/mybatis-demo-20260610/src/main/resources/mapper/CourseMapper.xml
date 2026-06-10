@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demo.mybatis.mapper.CourseMapper">
+
+    <!-- ==============================
+         反向多对多：查课程时，查出选了这门课的所有学生
+         同样用 <collection>
+    ============================== -->
+    <resultMap id="CourseWithStudentsMap" type="com.demo.mybatis.entity.Course">
+        <id column="course_id" property="id"/>
+        <result column="course_name" property="name"/>
+
+        <collection property="students" ofType="com.demo.mybatis.entity.Student">
+            <id column="student_id" property="id"/>
+            <result column="student_name" property="name"/>
+        </collection>
+    </resultMap>
+
+    <select id="selectCourseWithStudents" resultMap="CourseWithStudentsMap">
+        SELECT c.id   AS course_id,
+               c.name AS course_name,
+               s.id   AS student_id,
+               s.name AS student_name
+        FROM course c
+                 LEFT JOIN student_course sc ON c.id = sc.course_id
+                 LEFT JOIN student s ON sc.student_id = s.id
+        WHERE c.id = #{id}
+    </select>
+
+</mapper>
