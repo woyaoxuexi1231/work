@@ -10,8 +10,12 @@ $Net    = "rmq"
 $Data   = "${DataRoot}\rocketmq-data"
 
 check_docker
-docker network ls --format '{{.Name}}' 2>$null | Select-String $Net | Out-Null
-if (-not $?) { docker network create $Net }
+
+# 修复：正确的网络存在性检查
+if (-not (docker network inspect $Net 2>$null)) {
+    docker network create $Net
+}
+
 New-Item -ItemType Directory -Force -Path "$Data\namesrv","$Data\broker","$Data\store" | Out-Null
 
 pull_image $Image
