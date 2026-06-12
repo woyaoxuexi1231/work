@@ -1,6 +1,0 @@
-server:
-  port: 8081
-
-spring:
-  application:
-    name: demo-jdk8-sb2

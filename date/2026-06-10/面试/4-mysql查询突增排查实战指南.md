@@ -190,7 +190,7 @@ WHERE o.user_id = 12345
 ORDER BY o.created_at DESC;
 
 SHOW PROFILES;                    -- 记录 Query_ID
-SHOW PROFILE FOR QUERY <Query_ID>;
+SHOW PROFILE ALL FOR QUERY <Query_ID>;
 ```
 
 ---
