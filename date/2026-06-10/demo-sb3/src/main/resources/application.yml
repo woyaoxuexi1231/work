@@ -1,0 +1,34 @@
+server:
+  port: 9005
+
+spring:
+  application:
+    name: demo-sb3
+  # SB3 特性：虚线程配置（3.2+ 支持）
+  threads:
+    virtual:
+      enabled: true
+
+# SB3 ProblemDetail 标准错误格式（RFC 7807）
+  mvc:
+    problemdetail:
+      enabled: true
+
+# Actuator + Micrometer Observability
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      show-details: always
+  observations:
+    key-values:
+      application: ${spring.application.name}
+
+info:
+  app:
+    description: "Spring Boot 3 特性演示项目"
+    jdk: "21"
+    namespace: "jakarta.*"

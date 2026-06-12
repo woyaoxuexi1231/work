@@ -1,0 +1,39 @@
+server:
+  port: 9004
+
+spring:
+  application:
+    name: demo-sb2
+
+# SB2 特性演示：@ConfigurationProperties 配置绑定
+app:
+  name: MyDemoApp
+  version: 2.0.0
+  features:
+    - web
+    - actuator
+    - webflux
+  database:
+    host: localhost
+    port: 3306
+    name: demo_db
+
+# Actuator 端点配置（SB2 统一迁移到 /actuator 路径）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+
+# 自定义 info（通过 /actuator/info 暴露）
+info:
+  app:
+    description: "Spring Boot 2 特性演示项目"
+    jdk: "1.8"
+    namespace: "javax.*"

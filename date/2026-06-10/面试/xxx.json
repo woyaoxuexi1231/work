@@ -1,0 +1,85 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "12.04"
+    },
+    "ordering_operation": {
+      "using_filesort": true,
+      "nested_loop": [
+        {
+          "table": {
+            "table_name": "o",
+            "access_type": "ref",
+            "possible_keys": [
+              "PRIMARY",
+              "idx_user_id",
+              "idx_status",
+              "idx_created_at",
+              "idx_status_created"
+            ],
+            "key": "idx_user_id",
+            "used_key_parts": [
+              "user_id"
+            ],
+            "key_length": "8",
+            "ref": [
+              "const"
+            ],
+            "rows_examined_per_scan": 11,
+            "rows_produced_per_join": 0,
+            "filtered": "1.33",
+            "cost_info": {
+              "read_cost": "10.29",
+              "eval_cost": "0.01",
+              "prefix_cost": "11.39",
+              "data_read_per_join": "24"
+            },
+            "used_columns": [
+              "id",
+              "user_id",
+              "order_no",
+              "status",
+              "amount",
+              "created_at"
+            ],
+            "attached_condition": "((`perf_test`.`o`.`status` = 0) and (`perf_test`.`o`.`created_at` > <cache>((now() - interval 30 day))))"
+          }
+        },
+        {
+          "table": {
+            "table_name": "oi",
+            "access_type": "ref",
+            "possible_keys": [
+              "idx_order_id"
+            ],
+            "key": "idx_order_id",
+            "used_key_parts": [
+              "order_id"
+            ],
+            "key_length": "8",
+            "ref": [
+              "perf_test.o.id"
+            ],
+            "rows_examined_per_scan": 4,
+            "rows_produced_per_join": 0,
+            "filtered": "100.00",
+            "cost_info": {
+              "read_cost": "0.59",
+              "eval_cost": "0.06",
+              "prefix_cost": "12.04",
+              "data_read_per_join": "24"
+            },
+            "used_columns": [
+              "id",
+              "order_id",
+              "product_id",
+              "quantity",
+              "price"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
