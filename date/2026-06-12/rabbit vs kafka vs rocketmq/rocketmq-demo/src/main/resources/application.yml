@@ -1,0 +1,26 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: rocketmq-demo
+
+# RocketMQ 配置
+rocketmq:
+  name-server: 192.168.3.100:9876
+  producer:
+    group: demo-producer-group
+    # 发送超时（毫秒）
+    send-message-timeout: 3000
+    # 同步发送重试次数（实际发送次数 = retryTimesWhenSendFailed + 1）
+    retry-times-when-send-failed: 3
+    # 异步发送重试次数
+    retry-times-when-send-async-failed: 3
+    # 消息体最大大小（4MB）
+    max-message-size: 4194304
+    # 消息压缩阈值（超过4KB自动压缩）
+    compress-message-body-threshold: 4096
+
+logging:
+  level:
+    com.demo.rocketmq: debug

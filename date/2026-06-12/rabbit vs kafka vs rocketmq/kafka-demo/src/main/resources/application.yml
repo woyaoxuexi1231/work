@@ -1,0 +1,44 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: kafka-demo
+  kafka:
+    bootstrap-servers: 192.168.3.100:9092
+    producer:
+      # acks=all: 所有 ISR 副本都确认后才算成功，最强可靠性
+      acks: all
+      # 重试次数
+      retries: 3
+      # 重试间隔
+      retry.backoff.ms: 100
+      # 开启幂等生产者，防止重复发送
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+      # 批量发送配置
+      batch-size: 16384
+      buffer-memory: 33554432
+      # 序列化
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      # 消费者组ID
+      group-id: demo-consumer-group
+      # 自动提交关闭，使用手动提交
+      enable-auto-commit: false
+      # 从最早的消息开始消费（新组第一次消费时生效）
+      auto-offset-reset: earliest
+      # 反序列化
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      # 手动 ACK 模式
+      ack-mode: manual_immediate
+      # 消费者并发数
+      concurrency: 3
+
+logging:
+  level:
+    com.demo.kafka: debug

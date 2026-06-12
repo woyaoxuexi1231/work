@@ -1,0 +1,28 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: rabbitmq-demo
+  rabbitmq:
+    host: 192.168.3.100
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    # 开启发布确认和返回
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000
+          multiplier: 2
+
+logging:
+  level:
+    com.demo.rabbitmq: debug
