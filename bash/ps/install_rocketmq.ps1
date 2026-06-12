@@ -11,8 +11,9 @@ $Data   = "${DataRoot}\rocketmq-data"
 
 check_docker
 
-# 修复：正确的网络存在性检查
-if (-not (docker network inspect $Net 2>$null)) {
+# 检查并创建 Docker 网络
+docker network inspect $Net 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
     docker network create $Net
 }
 
