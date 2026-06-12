@@ -35,7 +35,9 @@ if (-not (check_container_exists $BR)) {
     cleanup_container $BR
     docker run -d --name $BR --restart unless-stopped --network $Net `
       -p ${BrPort}:10911 -p 10909:10909 -p 8080:8080 -p 8081:8081 `
-      -e "NAMESRV_ADDR=${NS}:9876" -e "JAVA_OPT=-Xms512m -Xmx1g" -e TZ=Asia/Shanghai `
+      -e "NAMESRV_ADDR=${NS}:9876" `
+      -e "JAVA_OPT=-Xms512m -Xmx1g -Drocketmq.broker.ip1=192.168.3.100" `
+      -e TZ=Asia/Shanghai `
       -v "${Data}\broker:/home/rocketmq/logs/rocketmqlogs" `
       -v "${Data}\store:/home/rocketmq/store" `
       $Image sh mqbroker --enable-proxy -n "${NS}:9876" autoCreateTopicEnable=true 2>$null

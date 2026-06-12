@@ -11,7 +11,7 @@ rocketmq:
   producer:
     group: demo-producer-group
     # 发送超时（毫秒）
-    send-message-timeout: 3000
+    send-message-timeout: 10000
     # 同步发送重试次数（实际发送次数 = retryTimesWhenSendFailed + 1）
     retry-times-when-send-failed: 3
     # 异步发送重试次数

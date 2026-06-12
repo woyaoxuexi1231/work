@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -107,33 +109,41 @@ public class RabbitProducer {
         AtomicInteger confirmed = new AtomicInteger(0);
         AtomicInteger failed = new AtomicInteger(0);
 
-        // 设置 ConfirmCallback 统计确认结果
-        rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
-            if (ack) {
-                confirmed.incrementAndGet();
-            } else {
-                failed.incrementAndGet();
-                log.error("❌ 消息发送失败: {}", cause);
-            }
-        });
-
         long start = System.currentTimeMillis();
         List<Long> latencies = new ArrayList<>();
+        List<CompletableFuture<CorrelationData.Confirm>> futures = new ArrayList<>();
 
         for (int i = 0; i < count; i++) {
             long sendTime = System.nanoTime();
             CorrelationData cd = new CorrelationData(UUID.randomUUID().toString());
+            CompletableFuture<CorrelationData.Confirm> future = cd.getFuture();
+            futures.add(future);
             rabbitTemplate.convertAndSend(RabbitConfig.BENCH_EXCHANGE, RabbitConfig.BENCH_ROUTING_KEY, payload, cd);
             long sendNanos = System.nanoTime() - sendTime;
             latencies.add(sendNanos / 1000); // 转为微秒
         }
         long elapsed = System.currentTimeMillis() - start;
 
-        // 等待 confirm 回调（最多3秒）
-        try {
-            Thread.sleep(3000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        // 等待所有消息的 CorrelationData Confirm（每条最多3秒）
+        long confirmDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        for (CompletableFuture<CorrelationData.Confirm> future : futures) {
+            try {
+                long remaining = confirmDeadline - System.nanoTime();
+                if (remaining <= 0) break;
+                CorrelationData.Confirm confirm = future.get(remaining, TimeUnit.NANOSECONDS);
+                if (confirm.isAck()) {
+                    confirmed.incrementAndGet();
+                } else {
+                    failed.incrementAndGet();
+                    log.error("❌ 消息发送失败: {}", confirm.getReason());
+                }
+            } catch (java.util.concurrent.TimeoutException e) {
+                failed.incrementAndGet();
+                log.error("❌ 消息确认超时");
+            } catch (Exception e) {
+                failed.incrementAndGet();
+                log.error("❌ 消息确认异常: {}", e.getMessage());
+            }
         }
 
         // 统计延迟分布
@@ -171,39 +181,41 @@ public class RabbitProducer {
         Map<String, Object> result = new HashMap<>();
         List<String> events = new ArrayList<>();
 
-        // 设置 ReturnCallback - 消息无法路由时触发
-        rabbitTemplate.setReturnsCallback(returned -> {
-            String event = String.format("❌ 消息被退回: exchange=%s, routingKey=%s, replyCode=%d, replyText=%s",
-                    returned.getExchange(), returned.getRoutingKey(),
-                    returned.getReplyCode(), returned.getReplyText());
-            log.error(event);
-            events.add(event);
-        });
-
-        // 场景1: 正常发送 - 会收到 confirm
+        // 场景1: 正常发送 - 使用 CorrelationData.getFuture() 等待确认
         CorrelationData cd1 = new CorrelationData("reliable-normal-" + UUID.randomUUID());
-        rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
-            String event = ack ? "✅ 消息确认成功: " + correlationData.getId()
-                    : "❌ 消息确认失败: " + correlationData.getId() + ", 原因: " + cause;
-            log.info(event);
-            events.add(event);
-        });
         rabbitTemplate.convertAndSend(RabbitConfig.RELIABLE_EXCHANGE, RabbitConfig.RELIABLE_ROUTING_KEY,
                 "可靠性测试-正常消息", cd1);
+        try {
+            CorrelationData.Confirm confirm = cd1.getFuture().get(2, TimeUnit.SECONDS);
+            String event = confirm.isAck()
+                    ? "✅ 消息确认成功: " + cd1.getId()
+                    : "❌ 消息确认失败: " + cd1.getId() + ", 原因: " + confirm.getReason();
+            log.info(event);
+            events.add(event);
+        } catch (Exception e) {
+            String event = "❌ 消息确认超时/异常: " + cd1.getId() + ", " + e.getMessage();
+            log.error(event);
+            events.add(event);
+        }
 
-        // 场景2: 发送到不存在的 routingKey - 会触发 ReturnCallback
+        // 场景2: 发送到不存在的 routingKey - 消息无法路由
         CorrelationData cd2 = new CorrelationData("reliable-unroutable-" + UUID.randomUUID());
         rabbitTemplate.convertAndSend(RabbitConfig.RELIABLE_EXCHANGE, "non.existent.key",
                 "可靠性测试-不可路由消息", cd2);
-
-        // 等待回调
         try {
-            Thread.sleep(2000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            CorrelationData.Confirm confirm = cd2.getFuture().get(2, TimeUnit.SECONDS);
+            String event = confirm.isAck()
+                    ? "✅ 消息确认成功: " + cd2.getId()
+                    : "❌ 消息确认失败: " + cd2.getId() + ", 原因: " + confirm.getReason();
+            log.info(event);
+            events.add(event);
+        } catch (Exception e) {
+            String event = "❌ 消息确认超时/异常: " + cd2.getId() + ", " + e.getMessage();
+            log.error(event);
+            events.add(event);
         }
 
-        result.put("说明", "Publisher Confirm: broker确认收到消息; Publisher Return: 消息无法路由时退回");
+        result.put("说明", "Publisher Confirm: 使用CorrelationData.getFuture()逐条等待broker确认");
         result.put("事件列表", events);
         return result;
     }
