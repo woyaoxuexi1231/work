@@ -1,5 +1,4 @@
-# RocketMQ 5.3.2 | Ports: 9876, 10911, 8888(Dashboard)
-# 跨机器访问时: $env:BROKER_HOST="你的宿主机IP"  (不设则默认 127.0.0.1)
+# RocketMQ 5.3.2 | Ports: 9876, 10911, 8888(Dashboard) | Host: 192.168.3.100
 . "$PSScriptRoot/lib/common.ps1"
 
 $Image      = "apache/rocketmq:$($env:ROCKETMQ_VERSION -replace '^$','5.3.2')"
@@ -10,7 +9,7 @@ $BrPort     = if ($env:BROKER_PORT_2) { $env:BROKER_PORT_2 } else { "10911" }
 $DbPort     = if ($env:ROCKETMQ_DASHBOARD_PORT) { $env:ROCKETMQ_DASHBOARD_PORT } else { "8888" }
 $Net        = "rmq"
 $Data       = "${DataRoot}\rocketmq-data"
-$BrokerHost = if ($env:BROKER_HOST) { $env:BROKER_HOST } else { "127.0.0.1" }
+$BrokerHost = "192.168.3.100"
 
 check_docker
 

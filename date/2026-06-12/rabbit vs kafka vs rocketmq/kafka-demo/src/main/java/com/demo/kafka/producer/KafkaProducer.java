@@ -75,50 +75,29 @@ public class KafkaProducer {
     // ==================== 性能压测 ====================
 
     /**
-     * 性能压测 - 批量发送并统计吞吐量
-     * 利用 Kafka 的 batch.size 和 linger.ms 自动批量发送
+     * 性能压测 - 只管发，不等待确认，纯测吞吐量
+     * （实际收到多少条请去 Kafka 消费者或工具看）
      */
     public Map<String, Object> benchmark(int count, int size) {
         String payload = "X".repeat(Math.max(1, size));
 
-        AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger failed = new AtomicInteger(0);
-
         long start = System.currentTimeMillis();
-        List<CompletableFuture<?>> futures = new ArrayList<>();
-
         for (int i = 0; i < count; i++) {
-            CompletableFuture<SendResult<String, String>> future =
-                    kafkaTemplate.send(KafkaConfig.BENCH_TOPIC, payload);
-            futures.add(future);
-
-            future.whenComplete((result, ex) -> {
-                if (ex != null) {
-                    failed.incrementAndGet();
-                    log.error("❌ Kafka发送失败: {}", ex.getMessage());
-                } else {
-                    success.incrementAndGet();
-                }
-            });
+            kafkaTemplate.send(KafkaConfig.BENCH_TOPIC, payload);
         }
-
-        // 等待所有消息发送完成
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         long elapsed = System.currentTimeMillis() - start;
 
-        double throughput = count * 1000.0 / elapsed;
+        double throughput = count * 1000.0 / Math.max(1, elapsed);
 
-        log.info("✅ Kafka压测完成: 发送{}条(每条{}字节), 耗时{}ms, 吞吐量={}/s, 成功={}, 失败={}",
-                count, size, elapsed, String.format("%.0f", throughput), success.get(), failed.get());
+        log.info("✅ Kafka压测完成: 发送{}条(每条{}字节), 耗时{}ms, 吞吐量={}/s",
+                count, size, elapsed, String.format("%.0f", throughput));
 
         Map<String, Object> result = new HashMap<>();
         result.put("消息数量", count);
         result.put("消息大小字节", size);
         result.put("总耗时ms", elapsed);
         result.put("吞吐量每秒", String.format("%.0f", throughput));
-        result.put("成功数", success.get());
-        result.put("失败数", failed.get());
-        result.put("说明", "Kafka 高吞吐的秘密：批量发送(batch.size) + 延迟发送(linger.ms) + 顺序写入 + 零拷贝");
+        result.put("说明", "实际收到数量请查看Kafka消费者");
         return result;
     }
 

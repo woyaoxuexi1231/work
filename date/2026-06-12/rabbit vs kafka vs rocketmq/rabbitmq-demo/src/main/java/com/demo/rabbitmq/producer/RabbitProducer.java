@@ -97,76 +97,29 @@ public class RabbitProducer {
     // ==================== 性能压测 ====================
 
     /**
-     * 性能压测 - 批量发送消息并统计吞吐量和延迟
-     *
-     * @param count 消息数量
-     * @param size  每条消息体大小（字节）
+     * 性能压测 - 只管发，不等待确认，纯测吞吐量
+     * （实际收到多少条请去 RabbitMQ Management 看）
      */
     public Map<String, Object> benchmark(int count, int size) {
-        // 构造指定大小的消息体
         String payload = "X".repeat(Math.max(1, size));
 
-        AtomicInteger confirmed = new AtomicInteger(0);
-        AtomicInteger failed = new AtomicInteger(0);
-
         long start = System.currentTimeMillis();
-        List<Long> latencies = new ArrayList<>();
-        List<CompletableFuture<CorrelationData.Confirm>> futures = new ArrayList<>();
-
         for (int i = 0; i < count; i++) {
-            long sendTime = System.nanoTime();
-            CorrelationData cd = new CorrelationData(UUID.randomUUID().toString());
-            CompletableFuture<CorrelationData.Confirm> future = cd.getFuture();
-            futures.add(future);
-            rabbitTemplate.convertAndSend(RabbitConfig.BENCH_EXCHANGE, RabbitConfig.BENCH_ROUTING_KEY, payload, cd);
-            long sendNanos = System.nanoTime() - sendTime;
-            latencies.add(sendNanos / 1000); // 转为微秒
+            rabbitTemplate.convertAndSend(RabbitConfig.BENCH_EXCHANGE, RabbitConfig.BENCH_ROUTING_KEY, payload);
         }
         long elapsed = System.currentTimeMillis() - start;
 
-        // 等待所有消息的 CorrelationData Confirm（每条最多3秒）
-        long confirmDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
-        for (CompletableFuture<CorrelationData.Confirm> future : futures) {
-            try {
-                long remaining = confirmDeadline - System.nanoTime();
-                if (remaining <= 0) break;
-                CorrelationData.Confirm confirm = future.get(remaining, TimeUnit.NANOSECONDS);
-                if (confirm.isAck()) {
-                    confirmed.incrementAndGet();
-                } else {
-                    failed.incrementAndGet();
-                    log.error("❌ 消息发送失败: {}", confirm.getReason());
-                }
-            } catch (java.util.concurrent.TimeoutException e) {
-                failed.incrementAndGet();
-                log.error("❌ 消息确认超时");
-            } catch (Exception e) {
-                failed.incrementAndGet();
-                log.error("❌ 消息确认异常: {}", e.getMessage());
-            }
-        }
+        double throughput = count * 1000.0 / Math.max(1, elapsed);
 
-        // 统计延迟分布
-        latencies.sort(Long::compareTo);
-        double avgLatencyUs = latencies.stream().mapToLong(Long::longValue).average().orElse(0);
-        long p50 = latencies.get(latencies.size() / 2);
-        long p99 = latencies.get((int) (latencies.size() * 0.99));
-
-        double throughput = count * 1000.0 / elapsed;
-
-        log.info("✅ 压测完成: 发送{}条(每条{}字节), 耗时{}ms, 吞吐量={}/s, 平均延迟={}μs, P50={}μs, P99={}μs",
-                count, size, elapsed, String.format("%.0f", throughput), String.format("%.0f", avgLatencyUs), p50, p99);
+        log.info("✅ RabbitMQ压测完成: 发送{}条(每条{}字节), 耗时{}ms, 吞吐量={}/s",
+                count, size, elapsed, String.format("%.0f", throughput));
 
         Map<String, Object> result = new HashMap<>();
         result.put("消息数量", count);
         result.put("消息大小字节", size);
         result.put("总耗时ms", elapsed);
         result.put("吞吐量每秒", String.format("%.0f", throughput));
-        result.put("平均延迟μs", String.format("%.0f", avgLatencyUs));
-        result.put("P50延迟μs", p50);
-        result.put("P99延迟μs", p99);
-        result.put("Broker确认数", confirmed.get());
-        result.put("失败数", failed.get());
+        result.put("说明", "实际收到数量请查看RabbitMQ Management");
         return result;
     }
 

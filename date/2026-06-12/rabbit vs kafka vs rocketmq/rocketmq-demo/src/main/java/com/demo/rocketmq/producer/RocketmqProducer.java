@@ -116,53 +116,29 @@ public class RocketmqProducer {
     // ==================== 性能压测 ====================
 
     /**
-     * 性能压测 - 同步发送 N 条消息，统计吞吐量和延迟
+     * 性能压测 - 只管发，不等待确认，纯测吞吐量
+     * （实际收到多少条请去 RocketMQ Dashboard 或消费者看）
      */
     public Map<String, Object> benchmark(int count, int size) {
         String payload = "X".repeat(Math.max(1, size));
 
         long start = System.currentTimeMillis();
-        AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger failed = new AtomicInteger(0);
-        List<Long> latencies = new ArrayList<>();
-
         for (int i = 0; i < count; i++) {
-            long sendTime = System.nanoTime();
-            try {
-                SendResult result = rocketMQTemplate.syncSend(RocketmqConfig.BENCH_TOPIC, payload);
-                long sendNanos = System.nanoTime() - sendTime;
-                latencies.add(sendNanos / 1000); // 微秒
-                success.incrementAndGet();
-            } catch (Exception e) {
-                failed.incrementAndGet();
-                log.error("❌ 压测发送失败: {}", e.getMessage());
-            }
+            rocketMQTemplate.sendOneWay(RocketmqConfig.BENCH_TOPIC, payload);
         }
         long elapsed = System.currentTimeMillis() - start;
 
-        // 统计延迟分布
-        if (!latencies.isEmpty()) {
-            latencies.sort(Long::compareTo);
-        }
-        double avgLatencyUs = latencies.stream().mapToLong(Long::longValue).average().orElse(0);
-        long p50 = latencies.isEmpty() ? 0 : latencies.get(latencies.size() / 2);
-        long p99 = latencies.isEmpty() ? 0 : latencies.get((int) (latencies.size() * 0.99));
+        double throughput = count * 1000.0 / Math.max(1, elapsed);
 
-        double throughput = success.get() * 1000.0 / Math.max(1, elapsed);
-
-        log.info("✅ RocketMQ压测完成: 发送{}条(每条{}字节), 耗时{}ms, 吞吐量={}/s, P50={}μs, P99={}μs",
-                success.get(), size, elapsed, String.format("%.0f", throughput), p50, p99);
+        log.info("✅ RocketMQ压测完成: 发送{}条(每条{}字节), 耗时{}ms, 吞吐量={}/s",
+                count, size, elapsed, String.format("%.0f", throughput));
 
         Map<String, Object> result = new HashMap<>();
         result.put("消息数量", count);
         result.put("消息大小字节", size);
         result.put("总耗时ms", elapsed);
         result.put("吞吐量每秒", String.format("%.0f", throughput));
-        result.put("平均延迟μs", String.format("%.0f", avgLatencyUs));
-        result.put("P50延迟μs", p50);
-        result.put("P99延迟μs", p99);
-        result.put("成功数", success.get());
-        result.put("失败数", failed.get());
+        result.put("说明", "单向发送（sendOneWay），实际收到数量请查看Dashboard/消费者");
         return result;
     }
 
